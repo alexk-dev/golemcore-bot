@@ -3,7 +3,7 @@ package me.golemcore.bot.plugin.runtime;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.AudioFormat;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.port.outbound.RuntimeConfigQueryPort;
 import me.golemcore.bot.plugin.runtime.extension.PluginExtensionApiMapper;
 import me.golemcore.bot.port.outbound.VoicePort;
 import me.golemcore.plugin.api.extension.spi.SttProvider;
@@ -29,7 +29,7 @@ public class PluginVoicePort implements VoicePort {
     private static final String LEGACY_WHISPER_PROVIDER = "whisper";
     private static final String DEFAULT_WHISPER_PROVIDER = "golemcore/whisper";
 
-    private final RuntimeConfigService runtimeConfigService;
+    private final RuntimeConfigQueryPort runtimeConfigQueryPort;
     private final SttProviderRegistry sttProviderRegistry;
     private final TtsProviderRegistry ttsProviderRegistry;
     private final PluginExtensionApiMapper pluginApiMapper;
@@ -76,7 +76,7 @@ public class PluginVoicePort implements VoicePort {
 
     @Override
     public boolean isAvailable() {
-        if (!runtimeConfigService.isVoiceEnabled()) {
+        if (!runtimeConfigQueryPort.isVoiceEnabled()) {
             return false;
         }
         String sttProviderId = resolveSttProviderId();
@@ -102,7 +102,7 @@ public class PluginVoicePort implements VoicePort {
     }
 
     private String resolveSttProviderId() {
-        String configuredProviderId = normalizeProviderId(runtimeConfigService.getSttProvider());
+        String configuredProviderId = normalizeProviderId(runtimeConfigQueryPort.getSttProvider());
         if (configuredProviderId != null) {
             return configuredProviderId;
         }
@@ -110,7 +110,7 @@ public class PluginVoicePort implements VoicePort {
     }
 
     private String resolveTtsProviderId() {
-        String configuredProviderId = normalizeProviderId(runtimeConfigService.getTtsProvider());
+        String configuredProviderId = normalizeProviderId(runtimeConfigQueryPort.getTtsProvider());
         if (configuredProviderId != null) {
             return configuredProviderId;
         }

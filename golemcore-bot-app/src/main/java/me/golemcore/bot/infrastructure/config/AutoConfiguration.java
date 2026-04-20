@@ -25,7 +25,6 @@ import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import me.golemcore.bot.domain.service.LegacyPluginConfigurationMigrationService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.plugin.runtime.ChannelRegistry;
 import me.golemcore.bot.plugin.runtime.PluginManager;
@@ -65,7 +64,7 @@ public class AutoConfiguration {
     private final BotProperties properties;
     private final ChannelRegistry channelRegistry;
     private final RuntimeConfigService runtimeConfigService;
-    private final LegacyPluginConfigurationMigrationService legacyPluginConfigurationMigrationService;
+    private final me.golemcore.bot.domain.service.LegacyPluginConfigurationMigrationService legacyPluginConfigurationMigrationService;
     private final PluginManager pluginManager;
     private final ObjectProvider<BuildProperties> buildPropertiesProvider;
     private final ObjectProvider<GitProperties> gitPropertiesProvider;

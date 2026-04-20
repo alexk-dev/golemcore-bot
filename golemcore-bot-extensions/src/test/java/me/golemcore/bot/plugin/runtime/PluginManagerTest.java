@@ -1,7 +1,7 @@
 package me.golemcore.bot.plugin.runtime;
 
-import me.golemcore.bot.domain.service.ToolCallExecutionService;
-import me.golemcore.bot.infrastructure.config.BotProperties;
+import me.golemcore.bot.plugin.runtime.config.PluginRuntimeProperties;
+import me.golemcore.bot.port.outbound.ToolRegistryPort;
 import me.golemcore.bot.plugin.runtime.extension.PluginExtensionApiMapper;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -198,11 +198,11 @@ class PluginManagerTest {
     }
 
     private PluginManager createManager(Path pluginsDir, String hostVersion) {
-        BotProperties properties = new BotProperties();
-        properties.getPlugins().setEnabled(true);
-        properties.getPlugins().setAutoReload(false);
-        properties.getPlugins().setAutoStart(false);
-        properties.getPlugins().setDirectory(pluginsDir.toString());
+        PluginRuntimeProperties properties = new PluginRuntimeProperties();
+        properties.setEnabled(true);
+        properties.setAutoReload(false);
+        properties.setAutoStart(false);
+        properties.setDirectory(pluginsDir.toString());
 
         applicationContext = new AnnotationConfigApplicationContext();
         applicationContext.refresh();
@@ -224,7 +224,7 @@ class PluginManagerTest {
                 ragIngestionRegistry,
                 new PluginSettingsRegistry(),
                 telegramWebhookUpdateConsumerRegistry,
-                mock(ToolCallExecutionService.class),
+                mock(ToolRegistryPort.class),
                 new PluginExtensionApiMapper());
     }
 

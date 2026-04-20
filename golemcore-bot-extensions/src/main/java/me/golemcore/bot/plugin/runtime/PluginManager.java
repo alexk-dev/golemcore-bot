@@ -4,13 +4,13 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import me.golemcore.bot.infrastructure.config.BotProperties;
+import me.golemcore.bot.plugin.runtime.config.PluginRuntimeProperties;
 import me.golemcore.bot.plugin.runtime.extension.PluginToolAdapter;
 import me.golemcore.bot.plugin.runtime.extension.PluginExtensionApiMapper;
 import me.golemcore.bot.plugin.runtime.extension.PluginChannelPortAdapter;
 import me.golemcore.bot.plugin.runtime.extension.PluginConfirmationPortAdapter;
 import me.golemcore.bot.domain.component.ToolComponent;
-import me.golemcore.bot.domain.service.ToolCallExecutionService;
+import me.golemcore.bot.port.outbound.ToolRegistryPort;
 import me.golemcore.bot.port.channel.ChannelPort;
 import me.golemcore.bot.port.outbound.ConfirmationPort;
 import me.golemcore.plugin.api.extension.spi.PluginBootstrap;
@@ -62,7 +62,7 @@ public class PluginManager {
     private static final String PLUGIN_MANIFEST_PATH = "META-INF/golemcore/plugin.yaml";
     private static final int HOST_PLUGIN_API_VERSION = 1;
 
-    private final BotProperties botProperties;
+    private final PluginRuntimeProperties pluginRuntimeProperties;
     private final ConfigurableApplicationContext applicationContext;
     private final ObjectProvider<BuildProperties> buildPropertiesProvider;
     private final ChannelRegistry channelRegistry;
@@ -73,7 +73,7 @@ public class PluginManager {
     private final RagIngestionProviderRegistry ragIngestionProviderRegistry;
     private final PluginSettingsRegistry pluginSettingsRegistry;
     private final TelegramWebhookUpdateConsumerRegistry telegramWebhookUpdateConsumerRegistry;
-    private final ToolCallExecutionService toolCallExecutionService;
+    private final ToolRegistryPort toolRegistryPort;
     private final PluginExtensionApiMapper pluginApiMapper;
 
     private final Map<Path, LoadedPlugin> pluginsByJar = new LinkedHashMap<>();
@@ -84,10 +84,10 @@ public class PluginManager {
 
     @PostConstruct
     public synchronized void startPolling() {
-        if (!botProperties.getPlugins().isEnabled() || !botProperties.getPlugins().isAutoReload()) {
+        if (!pluginRuntimeProperties.isEnabled() || !pluginRuntimeProperties.isAutoReload()) {
             return;
         }
-        Duration interval = botProperties.getPlugins().getPollInterval();
+        Duration interval = pluginRuntimeProperties.getPollInterval();
         pollExecutor = Executors.newSingleThreadScheduledExecutor(r -> {
             Thread t = new Thread(r, "plugin-runtime-poller");
             t.setDaemon(true);
@@ -112,7 +112,7 @@ public class PluginManager {
     }
 
     public synchronized void reloadAll() {
-        if (!botProperties.getPlugins().isEnabled()) {
+        if (!pluginRuntimeProperties.isEnabled()) {
             return;
         }
         synchronizeActiveArtifacts(discoverActiveArtifacts());
@@ -314,9 +314,9 @@ public class PluginManager {
         ragProviderRegistry.replaceProviders(pluginId, plugin.ragProviders());
         ragIngestionProviderRegistry.replaceProviders(pluginId, plugin.ragIngestionProviders());
         telegramWebhookUpdateConsumerRegistry.replaceConsumers(pluginId, plugin.telegramWebhookUpdateConsumers());
-        plugin.tools().forEach(toolCallExecutionService::registerTool);
+        plugin.tools().forEach(toolRegistryPort::registerTool);
         pluginSettingsRegistry.replaceContributors(plugin.descriptor(), plugin.settingsContributors());
-        if (botProperties.getPlugins().isAutoStart()) {
+        if (pluginRuntimeProperties.isAutoStart()) {
             plugin.channels().forEach(this::safeStartChannel);
         }
     }
@@ -334,7 +334,7 @@ public class PluginManager {
         ragProviderRegistry.removeProviders(pluginId);
         ragIngestionProviderRegistry.removeProviders(pluginId);
         telegramWebhookUpdateConsumerRegistry.removeConsumers(pluginId);
-        toolCallExecutionService.unregisterTools(plugin.tools().stream()
+        toolRegistryPort.unregisterTools(plugin.tools().stream()
                 .map(ToolComponent::getToolName)
                 .toList());
         pluginSettingsRegistry.removePlugin(pluginId);
@@ -363,7 +363,7 @@ public class PluginManager {
 
     private Map<String, PluginArtifactCandidate> discoverActiveArtifacts() {
         Map<String, PluginArtifactCandidate> result = new LinkedHashMap<>();
-        Path pluginsRoot = Path.of(botProperties.getPlugins().getDirectory()).toAbsolutePath().normalize();
+        Path pluginsRoot = Path.of(pluginRuntimeProperties.getDirectory()).toAbsolutePath().normalize();
         if (!Files.isDirectory(pluginsRoot)) {
             return result;
         }
