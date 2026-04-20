@@ -18,17 +18,17 @@ package me.golemcore.bot.domain.model;
  * Contact: alex@kuleshov.tech
  */
 
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 import lombok.Builder;
 import lombok.Singular;
 import lombok.Value;
 
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-
 /**
- * A transport-oriented response produced by domain systems and consumed by
- * {@link me.golemcore.bot.domain.system.ResponseRoutingSystem}.
+ * A transport-oriented response produced by domain systems and consumed by the
+ * runtime routing layer.
+ *
  * <p>
  * This object intentionally separates "what to send" from the internal
  * {@link LlmResponse} contract.

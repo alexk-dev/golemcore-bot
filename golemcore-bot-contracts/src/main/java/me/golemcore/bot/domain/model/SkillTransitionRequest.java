@@ -24,10 +24,9 @@ import java.util.Objects;
  * Machine-readable request to transition the active skill.
  *
  * <p>
- * This is an internal pipeline control signal (stored in {@link AgentContext}
- * attributes) that tells
- * {@link me.golemcore.bot.domain.system.ContextBuildingSystem} to load and
- * activate a different skill for the next iteration.
+ * This is an internal pipeline control signal stored in {@link AgentContext}
+ * attributes. Runtime systems use it to load and activate a different skill for
+ * the next iteration.
  *
  * @param targetSkill
  *            target skill name
