@@ -1,6 +1,6 @@
 package me.golemcore.bot.adapter.inbound.web.controller;
 
-import me.golemcore.bot.adapter.inbound.web.dto.HiveStatusResponse;
+import me.golemcore.bot.client.dto.HiveStatusResponse;
 import me.golemcore.bot.domain.service.HiveConnectionService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;

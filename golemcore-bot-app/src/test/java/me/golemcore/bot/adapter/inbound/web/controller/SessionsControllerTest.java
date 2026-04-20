@@ -1,13 +1,13 @@
 package me.golemcore.bot.adapter.inbound.web.controller;
 
-import me.golemcore.bot.adapter.inbound.web.dto.ActiveSessionRequest;
-import me.golemcore.bot.adapter.inbound.web.dto.ActiveSessionResponse;
-import me.golemcore.bot.adapter.inbound.web.dto.CreateSessionRequest;
-import me.golemcore.bot.adapter.inbound.web.dto.SessionDetailDto;
-import me.golemcore.bot.adapter.inbound.web.dto.SessionSummaryDto;
-import me.golemcore.bot.adapter.inbound.web.dto.SessionTraceSummaryDto;
+import me.golemcore.bot.client.dto.ActiveSessionRequest;
+import me.golemcore.bot.client.dto.ActiveSessionResponse;
+import me.golemcore.bot.client.dto.CreateSessionRequest;
+import me.golemcore.bot.client.dto.SessionDetailDto;
+import me.golemcore.bot.client.dto.SessionSummaryDto;
+import me.golemcore.bot.client.dto.SessionTraceSummaryDto;
 import me.golemcore.bot.adapter.inbound.web.mapper.SessionWebDtoMapper;
-import me.golemcore.bot.adapter.shared.dto.SessionTraceExportPayload;
+import me.golemcore.bot.client.dto.SessionTraceExportPayload;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.Message;

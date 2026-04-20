@@ -43,6 +43,8 @@
     <modules>
         <module>golemcore-bot-contracts</module>
         <module>golemcore-bot-app</module>
+        <module>golemcore-bot-self-evolving</module>
+        <module>golemcore-bot-client</module>
     </modules>
 
     <properties>

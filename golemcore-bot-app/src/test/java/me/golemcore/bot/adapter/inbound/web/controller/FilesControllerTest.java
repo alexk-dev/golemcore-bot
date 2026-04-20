@@ -1,8 +1,8 @@
 package me.golemcore.bot.adapter.inbound.web.controller;
 
-import me.golemcore.bot.adapter.inbound.web.dto.FileCreateRequest;
-import me.golemcore.bot.adapter.inbound.web.dto.FileRenameRequest;
-import me.golemcore.bot.adapter.inbound.web.dto.FileSaveRequest;
+import me.golemcore.bot.client.dto.FileCreateRequest;
+import me.golemcore.bot.client.dto.FileRenameRequest;
+import me.golemcore.bot.client.dto.FileSaveRequest;
 import me.golemcore.bot.domain.model.DashboardFileContent;
 import me.golemcore.bot.domain.model.DashboardFileNode;
 import me.golemcore.bot.domain.model.ToolArtifactDownload;

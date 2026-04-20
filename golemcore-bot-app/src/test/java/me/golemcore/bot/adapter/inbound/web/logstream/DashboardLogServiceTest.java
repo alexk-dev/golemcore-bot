@@ -3,7 +3,7 @@ package me.golemcore.bot.adapter.inbound.web.logstream;
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.classic.spi.ThrowableProxy;
-import me.golemcore.bot.adapter.inbound.web.dto.LogEntryDto;
+import me.golemcore.bot.client.dto.LogEntryDto;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import org.junit.jupiter.api.Test;
 import reactor.test.StepVerifier;

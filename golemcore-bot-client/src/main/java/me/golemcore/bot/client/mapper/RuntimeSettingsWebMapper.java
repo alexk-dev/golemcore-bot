@@ -1,0 +1,222 @@
+package me.golemcore.bot.client.mapper;
+
+import lombok.RequiredArgsConstructor;
+import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.AutoModeConfigDto;
+import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.CompactionConfigDto;
+import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.HiveConfigDto;
+import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.LlmConfigDto;
+import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.LlmProviderConfigDto;
+import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.McpCatalogEntryDto;
+import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.McpConfigDto;
+import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.MemoryConfigDto;
+import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.ModelRouterConfigDto;
+import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.PlanConfigDto;
+import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.RateLimitConfigDto;
+import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.ResilienceConfigDto;
+import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.RuntimeConfigDto;
+import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.SecurityConfigDto;
+import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.ShellEnvironmentVariableDto;
+import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.SkillsConfigDto;
+import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.TelemetryConfigDto;
+import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.ToolsConfigDto;
+import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.TracingConfigDto;
+import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.TurnConfigDto;
+import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.UsageConfigDto;
+import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.VoiceConfigDto;
+import me.golemcore.bot.domain.model.RuntimeConfig;
+import org.springframework.stereotype.Component;
+
+@Component
+@RequiredArgsConstructor
+public class RuntimeSettingsWebMapper {
+
+    public RuntimeConfigDto toRuntimeConfigDto(RuntimeConfig source) {
+        return copy(source, new RuntimeConfigDto());
+    }
+
+    public RuntimeConfig toRuntimeConfig(RuntimeConfigDto source) {
+        return copy(source, new RuntimeConfig());
+    }
+
+    public ModelRouterConfigDto toModelRouterConfigDto(RuntimeConfig.ModelRouterConfig source) {
+        return copy(source, new ModelRouterConfigDto());
+    }
+
+    public RuntimeConfig.ModelRouterConfig toModelRouterConfig(ModelRouterConfigDto source) {
+        return copy(source, new RuntimeConfig.ModelRouterConfig());
+    }
+
+    public LlmConfigDto toLlmConfigDto(RuntimeConfig.LlmConfig source) {
+        return copy(source, new LlmConfigDto());
+    }
+
+    public RuntimeConfig.LlmConfig toLlmConfig(LlmConfigDto source) {
+        return copy(source, new RuntimeConfig.LlmConfig());
+    }
+
+    public LlmProviderConfigDto toLlmProviderConfigDto(RuntimeConfig.LlmProviderConfig source) {
+        return copy(source, new LlmProviderConfigDto());
+    }
+
+    public RuntimeConfig.LlmProviderConfig toLlmProviderConfig(LlmProviderConfigDto source) {
+        return copy(source, new RuntimeConfig.LlmProviderConfig());
+    }
+
+    public ToolsConfigDto toToolsConfigDto(RuntimeConfig.ToolsConfig source) {
+        return copy(source, new ToolsConfigDto());
+    }
+
+    public RuntimeConfig.ToolsConfig toToolsConfig(ToolsConfigDto source) {
+        return copy(source, new RuntimeConfig.ToolsConfig());
+    }
+
+    public ShellEnvironmentVariableDto toShellEnvironmentVariableDto(RuntimeConfig.ShellEnvironmentVariable source) {
+        return copy(source, new ShellEnvironmentVariableDto());
+    }
+
+    public RuntimeConfig.ShellEnvironmentVariable toShellEnvironmentVariable(ShellEnvironmentVariableDto source) {
+        return copy(source, new RuntimeConfig.ShellEnvironmentVariable());
+    }
+
+    public VoiceConfigDto toVoiceConfigDto(RuntimeConfig.VoiceConfig source) {
+        return copy(source, new VoiceConfigDto());
+    }
+
+    public RuntimeConfig.VoiceConfig toVoiceConfig(VoiceConfigDto source) {
+        return copy(source, new RuntimeConfig.VoiceConfig());
+    }
+
+    public TurnConfigDto toTurnConfigDto(RuntimeConfig.TurnConfig source) {
+        return copy(source, new TurnConfigDto());
+    }
+
+    public RuntimeConfig.TurnConfig toTurnConfig(TurnConfigDto source) {
+        return copy(source, new RuntimeConfig.TurnConfig());
+    }
+
+    public MemoryConfigDto toMemoryConfigDto(RuntimeConfig.MemoryConfig source) {
+        return copy(source, new MemoryConfigDto());
+    }
+
+    public RuntimeConfig.MemoryConfig toMemoryConfig(MemoryConfigDto source) {
+        return copy(source, new RuntimeConfig.MemoryConfig());
+    }
+
+    public SkillsConfigDto toSkillsConfigDto(RuntimeConfig.SkillsConfig source) {
+        return copy(source, new SkillsConfigDto());
+    }
+
+    public RuntimeConfig.SkillsConfig toSkillsConfig(SkillsConfigDto source) {
+        return copy(source, new RuntimeConfig.SkillsConfig());
+    }
+
+    public UsageConfigDto toUsageConfigDto(RuntimeConfig.UsageConfig source) {
+        return copy(source, new UsageConfigDto());
+    }
+
+    public RuntimeConfig.UsageConfig toUsageConfig(UsageConfigDto source) {
+        return copy(source, new RuntimeConfig.UsageConfig());
+    }
+
+    public TelemetryConfigDto toTelemetryConfigDto(RuntimeConfig.TelemetryConfig source) {
+        return copy(source, new TelemetryConfigDto());
+    }
+
+    public RuntimeConfig.TelemetryConfig toTelemetryConfig(TelemetryConfigDto source) {
+        return copy(source, new RuntimeConfig.TelemetryConfig());
+    }
+
+    public McpConfigDto toMcpConfigDto(RuntimeConfig.McpConfig source) {
+        return copy(source, new McpConfigDto());
+    }
+
+    public RuntimeConfig.McpConfig toMcpConfig(McpConfigDto source) {
+        return copy(source, new RuntimeConfig.McpConfig());
+    }
+
+    public McpCatalogEntryDto toMcpCatalogEntryDto(RuntimeConfig.McpCatalogEntry source) {
+        return copy(source, new McpCatalogEntryDto());
+    }
+
+    public RuntimeConfig.McpCatalogEntry toMcpCatalogEntry(McpCatalogEntryDto source) {
+        return copy(source, new RuntimeConfig.McpCatalogEntry());
+    }
+
+    public HiveConfigDto toHiveConfigDto(RuntimeConfig.HiveConfig source) {
+        return copy(source, new HiveConfigDto());
+    }
+
+    public RuntimeConfig.HiveConfig toHiveConfig(HiveConfigDto source) {
+        return copy(source, new RuntimeConfig.HiveConfig());
+    }
+
+    public PlanConfigDto toPlanConfigDto(RuntimeConfig.PlanConfig source) {
+        return copy(source, new PlanConfigDto());
+    }
+
+    public RuntimeConfig.PlanConfig toPlanConfig(PlanConfigDto source) {
+        return copy(source, new RuntimeConfig.PlanConfig());
+    }
+
+    public AutoModeConfigDto toAutoModeConfigDto(RuntimeConfig.AutoModeConfig source) {
+        return copy(source, new AutoModeConfigDto());
+    }
+
+    public RuntimeConfig.AutoModeConfig toAutoModeConfig(AutoModeConfigDto source) {
+        return copy(source, new RuntimeConfig.AutoModeConfig());
+    }
+
+    public TracingConfigDto toTracingConfigDto(RuntimeConfig.TracingConfig source) {
+        return copy(source, new TracingConfigDto());
+    }
+
+    public RuntimeConfig.TracingConfig toTracingConfig(TracingConfigDto source) {
+        return copy(source, new RuntimeConfig.TracingConfig());
+    }
+
+    public RuntimeConfig.RateLimitConfig toRateLimitConfig(RateLimitConfigDto source) {
+        return copy(source, new RuntimeConfig.RateLimitConfig());
+    }
+
+    public RuntimeConfig.SecurityConfig toSecurityConfig(SecurityConfigDto source) {
+        return copy(source, new RuntimeConfig.SecurityConfig());
+    }
+
+    public RuntimeConfig.CompactionConfig toCompactionConfig(CompactionConfigDto source) {
+        return copy(source, new RuntimeConfig.CompactionConfig());
+    }
+
+    public RuntimeConfig.ResilienceConfig toResilienceConfig(ResilienceConfigDto source) {
+        return copy(source, new RuntimeConfig.ResilienceConfig());
+    }
+
+    private <S, T> T copy(S source, T target) {
+        if (source == null) {
+            return null;
+        }
+        try {
+            java.beans.BeanInfo beanInfo = java.beans.Introspector.getBeanInfo(source.getClass(), Object.class);
+            for (java.beans.PropertyDescriptor descriptor : beanInfo.getPropertyDescriptors()) {
+                java.lang.reflect.Method readMethod = descriptor.getReadMethod();
+                java.lang.reflect.Method writeMethod = findWriteMethod(target.getClass(), descriptor.getName(),
+                        descriptor.getPropertyType());
+                if (readMethod != null && writeMethod != null) {
+                    Object value = readMethod.invoke(source);
+                    writeMethod.invoke(target, value);
+                }
+            }
+            return target;
+        } catch (java.beans.IntrospectionException | ReflectiveOperationException exception) {
+            throw new IllegalStateException("Failed to map runtime settings DTO", exception);
+        }
+    }
+
+    private java.lang.reflect.Method findWriteMethod(Class<?> targetClass, String propertyName, Class<?> propertyType) {
+        try {
+            String setterName = "set" + Character.toUpperCase(propertyName.charAt(0)) + propertyName.substring(1);
+            return targetClass.getMethod(setterName, propertyType);
+        } catch (NoSuchMethodException exception) {
+            return null;
+        }
+    }
+}

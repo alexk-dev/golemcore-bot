@@ -3,7 +3,7 @@ package me.golemcore.bot.adapter.shared.mapper;
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.Map;
-import me.golemcore.bot.adapter.shared.dto.SessionTraceExportPayload;
+import me.golemcore.bot.client.dto.SessionTraceExportPayload;
 import me.golemcore.bot.domain.view.SessionTraceExportView;
 import me.golemcore.bot.domain.view.SessionTraceStorageStatsView;
 

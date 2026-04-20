@@ -1,11 +1,11 @@
 package me.golemcore.bot.adapter.inbound.web.controller;
 
-import me.golemcore.bot.adapter.inbound.web.dto.PreferencesUpdateRequest;
-import me.golemcore.bot.adapter.inbound.web.dto.SettingsResponse;
+import me.golemcore.bot.client.dto.PreferencesUpdateRequest;
+import me.golemcore.bot.client.dto.SettingsResponse;
 import me.golemcore.bot.application.settings.RuntimeSettingsFacade;
-import me.golemcore.bot.adapter.inbound.web.mapper.RuntimeSettingsWebMapper;
-import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.ShellEnvironmentVariableDto;
-import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos;
+import me.golemcore.bot.client.mapper.RuntimeSettingsWebMapper;
+import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.ShellEnvironmentVariableDto;
+import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos;
 import me.golemcore.bot.application.models.ProviderModelDiscoveryService;
 import me.golemcore.bot.application.models.ProviderModelImportService;
 import me.golemcore.bot.application.settings.RuntimeSettingsMergeService;

@@ -1,0 +1,19 @@
+package me.golemcore.bot.client.dto;
+
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+@Data
+@Builder
+@NoArgsConstructor
+@AllArgsConstructor
+public class PromptSectionDto {
+    private String name;
+    private String description;
+    private int order;
+    private boolean enabled;
+    private boolean deletable;
+    private String content;
+}

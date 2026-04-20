@@ -28,6 +28,7 @@ import me.golemcore.bot.domain.model.Skill;
 import me.golemcore.bot.domain.model.UserPreferences;
 import me.golemcore.bot.domain.model.catalog.ModelCatalogEntry;
 import me.golemcore.bot.port.outbound.ModelConfigPort;
+import me.golemcore.bot.port.outbound.ModelSelectionQueryPort;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -43,7 +44,7 @@ import java.util.Map;
 @Service
 @RequiredArgsConstructor
 @Slf4j
-public class ModelSelectionService {
+public class ModelSelectionService implements ModelSelectionQueryPort {
 
     private final RuntimeConfigService runtimeConfigService;
     private final ModelConfigPort modelConfigService;
@@ -74,6 +75,15 @@ public class ModelSelectionService {
             return validateResolvedSelection(tier, override);
         }
         return validateResolvedSelection(tier, resolveFromRouter(tier));
+    }
+
+    /**
+     * Query-port adapter for capability modules that depend only on contracts.
+     */
+    @Override
+    public ModelSelectionQueryPort.ModelSelection resolveExplicitSelection(String tier) {
+        ModelSelection selection = resolveForExplicitTier(tier);
+        return new ModelSelectionQueryPort.ModelSelection(selection.model(), selection.reasoning());
     }
 
     /**

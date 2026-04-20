@@ -34,6 +34,7 @@ import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.Secret;
 import me.golemcore.bot.domain.selfevolving.SelfEvolvingBootstrapOverrideService;
 import me.golemcore.bot.port.outbound.EmbeddingProviderIds;
+import me.golemcore.bot.port.outbound.SelfEvolvingRuntimeConfigPort;
 import me.golemcore.bot.port.outbound.RuntimeConfigPersistencePort;
 import org.springframework.stereotype.Service;
 
@@ -56,7 +57,7 @@ import org.springframework.stereotype.Service;
  */
 @Service
 @Slf4j
-public class RuntimeConfigService {
+public class RuntimeConfigService implements SelfEvolvingRuntimeConfigPort {
 
     private static final String REASONING_NONE = "none";
     private static final String DEFAULT_BALANCED_MODEL = null;

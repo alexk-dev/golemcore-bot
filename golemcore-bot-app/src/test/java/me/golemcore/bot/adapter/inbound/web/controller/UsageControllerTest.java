@@ -1,6 +1,6 @@
 package me.golemcore.bot.adapter.inbound.web.controller;
 
-import me.golemcore.bot.adapter.inbound.web.dto.UsageStatsResponse;
+import me.golemcore.bot.client.dto.UsageStatsResponse;
 import me.golemcore.bot.domain.model.UsageMetric;
 import me.golemcore.bot.domain.model.UsageStats;
 import me.golemcore.bot.domain.system.toolloop.resilience.ProviderCircuitBreaker;

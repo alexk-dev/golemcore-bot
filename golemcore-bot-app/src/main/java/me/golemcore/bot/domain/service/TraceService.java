@@ -10,6 +10,7 @@ import me.golemcore.bot.domain.model.trace.TraceSpanKind;
 import me.golemcore.bot.domain.model.trace.TraceSpanRecord;
 import me.golemcore.bot.domain.model.trace.TraceStatusCode;
 import me.golemcore.bot.domain.model.trace.TraceStorageStats;
+import me.golemcore.bot.port.outbound.TraceOperationsPort;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
@@ -20,7 +21,7 @@ import java.util.Map;
 import java.util.UUID;
 
 @Service
-public class TraceService {
+public class TraceService implements TraceOperationsPort {
 
     private static final String ZSTD = "zstd";
     private static final long BYTES_PER_MB = 1024L * 1024L;

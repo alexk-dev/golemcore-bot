@@ -3,7 +3,7 @@ package me.golemcore.bot.adapter.inbound.web;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import me.golemcore.bot.adapter.inbound.web.dto.LogEntryDto;
+import me.golemcore.bot.client.dto.LogEntryDto;
 import me.golemcore.bot.adapter.inbound.web.logstream.DashboardLogService;
 import org.springframework.stereotype.Component;
 import me.golemcore.bot.infrastructure.security.JwtTokenProvider;
