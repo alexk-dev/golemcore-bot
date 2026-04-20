@@ -6,7 +6,7 @@ import java.util.Map;
 import java.util.concurrent.CompletionException;
 import java.util.NoSuchElementException;
 import lombok.RequiredArgsConstructor;
-import me.golemcore.bot.adapter.inbound.web.dto.SkillDto;
+import me.golemcore.bot.client.dto.SkillDto;
 import me.golemcore.bot.application.skills.SkillManagementFacade;
 import me.golemcore.bot.domain.model.Skill;
 import me.golemcore.bot.domain.model.SkillInstallRequest;

@@ -31,6 +31,16 @@
             <version>${project.version}</version>
         </dependency>
         <dependency>
+            <groupId>me.golemcore</groupId>
+            <artifactId>golemcore-bot-self-evolving</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>me.golemcore</groupId>
+            <artifactId>golemcore-bot-client</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-webflux</artifactId>
         </dependency>

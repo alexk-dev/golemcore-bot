@@ -10,6 +10,7 @@ import me.golemcore.bot.port.outbound.SkillSettingsPort;
 import me.golemcore.bot.port.outbound.ToolRuntimeSettingsPort;
 import me.golemcore.bot.port.outbound.UpdateSettingsPort;
 import me.golemcore.bot.port.outbound.WorkspaceSettingsPort;
+import me.golemcore.bot.port.outbound.StorageSettingsPort;
 import org.springframework.stereotype.Component;
 
 /**
@@ -19,7 +20,7 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 public class BotPropertiesSettingsAdapter
         implements MemorySettingsPort, SkillSettingsPort, PromptSettingsPort, ToolRuntimeSettingsPort,
-        UpdateSettingsPort, WorkspaceSettingsPort, SelfEvolvingBootstrapSettingsPort {
+        UpdateSettingsPort, WorkspaceSettingsPort, StorageSettingsPort, SelfEvolvingBootstrapSettingsPort {
 
     private final BotProperties botProperties;
 
@@ -74,6 +75,13 @@ public class BotPropertiesSettingsAdapter
                 properties.getUpdatesPath(),
                 properties.getMaxKeptVersions(),
                 properties.getCheckInterval());
+    }
+
+    @Override
+    public StorageSettings storage() {
+        BotProperties.StorageProperties storage = botProperties.getStorage();
+        BotProperties.LocalStorageProperties local = storage != null ? storage.getLocal() : null;
+        return new StorageSettings(local != null ? local.getBasePath() : null);
     }
 
     @Override

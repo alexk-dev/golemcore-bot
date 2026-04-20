@@ -18,13 +18,13 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-import me.golemcore.bot.adapter.inbound.web.dto.ChangePasswordRequest;
-import me.golemcore.bot.adapter.inbound.web.dto.LoginRequest;
-import me.golemcore.bot.adapter.inbound.web.dto.LoginResponse;
-import me.golemcore.bot.adapter.inbound.web.dto.MfaDisableRequest;
-import me.golemcore.bot.adapter.inbound.web.dto.MfaEnableRequest;
-import me.golemcore.bot.adapter.inbound.web.dto.MfaSetupResponse;
-import me.golemcore.bot.adapter.inbound.web.dto.MfaStatusResponse;
+import me.golemcore.bot.client.dto.ChangePasswordRequest;
+import me.golemcore.bot.client.dto.LoginRequest;
+import me.golemcore.bot.client.dto.LoginResponse;
+import me.golemcore.bot.client.dto.MfaDisableRequest;
+import me.golemcore.bot.client.dto.MfaEnableRequest;
+import me.golemcore.bot.client.dto.MfaSetupResponse;
+import me.golemcore.bot.client.dto.MfaStatusResponse;
 
 import java.util.Map;
 
@@ -98,7 +98,7 @@ class AuthControllerTest {
         when(hiveSsoService.exchange("code-1", "verifier-1")).thenReturn(tokenResponse);
         when(authService.authenticateHiveSso(tokenResponse)).thenReturn(tokens);
 
-        me.golemcore.bot.adapter.inbound.web.dto.HiveSsoExchangeRequest request = new me.golemcore.bot.adapter.inbound.web.dto.HiveSsoExchangeRequest();
+        me.golemcore.bot.client.dto.HiveSsoExchangeRequest request = new me.golemcore.bot.client.dto.HiveSsoExchangeRequest();
         request.setCode("code-1");
         request.setCodeVerifier("verifier-1");
 

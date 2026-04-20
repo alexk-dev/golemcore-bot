@@ -1,7 +1,7 @@
 package me.golemcore.bot.adapter.inbound.web.controller;
 
-import me.golemcore.bot.adapter.inbound.web.dto.LogEntryDto;
-import me.golemcore.bot.adapter.inbound.web.dto.SystemHealthResponse;
+import me.golemcore.bot.client.dto.LogEntryDto;
+import me.golemcore.bot.client.dto.SystemHealthResponse;
 import me.golemcore.bot.adapter.inbound.web.logstream.DashboardLogService;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchStatus;
 import me.golemcore.bot.domain.selfevolving.tactic.LocalEmbeddingBootstrapService;

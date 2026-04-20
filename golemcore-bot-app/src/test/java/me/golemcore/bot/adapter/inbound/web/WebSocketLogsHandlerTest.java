@@ -2,7 +2,7 @@ package me.golemcore.bot.adapter.inbound.web;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import me.golemcore.bot.adapter.inbound.web.dto.LogEntryDto;
+import me.golemcore.bot.client.dto.LogEntryDto;
 import me.golemcore.bot.adapter.inbound.web.logstream.DashboardLogService;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.infrastructure.security.JwtTokenProvider;

@@ -19,8 +19,8 @@ class SettingsControllerArchitectureTest {
 
         assertTrue(source.contains("RuntimeSettingsWebMapper"),
                 "SettingsController should delegate HTTP mapping to RuntimeSettingsWebMapper");
-        assertTrue(source.contains("adapter.inbound.web.dto.settings"),
-                "SettingsController should use dedicated settings web DTOs instead of exposing domain config objects directly");
+        assertTrue(source.contains("client.dto.settings"),
+                "SettingsController should use reusable client DTOs instead of exposing domain config objects directly");
     }
 
     @Test

@@ -14,7 +14,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import me.golemcore.bot.adapter.outbound.hive.HiveInspectionPayloadMapper;
-import me.golemcore.bot.adapter.shared.dto.SessionTraceExportPayload;
+import me.golemcore.bot.client.dto.SessionTraceExportPayload;
 import me.golemcore.bot.domain.model.HiveControlCommandEnvelope;
 import me.golemcore.bot.domain.model.HiveInspectionRequestBody;
 import me.golemcore.bot.domain.model.HiveInspectionResponse;

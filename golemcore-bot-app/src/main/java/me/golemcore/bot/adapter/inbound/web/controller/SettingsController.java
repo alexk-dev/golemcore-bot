@@ -1,32 +1,34 @@
 package me.golemcore.bot.adapter.inbound.web.controller;
 
-import me.golemcore.bot.adapter.inbound.web.dto.PreferencesUpdateRequest;
-import me.golemcore.bot.adapter.inbound.web.dto.SettingsResponse;
-import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.AutoModeConfigDto;
-import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.CompactionConfigDto;
-import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.HiveConfigDto;
-import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.LlmConfigDto;
-import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.LlmProviderConfigDto;
-import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.McpCatalogEntryDto;
-import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.McpConfigDto;
-import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.MemoryConfigDto;
-import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.ModelRouterConfigDto;
-import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.PlanConfigDto;
-import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.RateLimitConfigDto;
-import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.ResilienceConfigDto;
-import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.RuntimeConfigDto;
-import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.SessionRetentionConfigDto;
-import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.SecurityConfigDto;
-import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.ShellEnvironmentVariableDto;
-import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.SkillsConfigDto;
-import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.TelemetryConfigDto;
-import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.ToolsConfigDto;
-import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.ToolLoopConfigDto;
-import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.TurnConfigDto;
-import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.TracingConfigDto;
-import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.UsageConfigDto;
-import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.VoiceConfigDto;
-import me.golemcore.bot.adapter.inbound.web.mapper.RuntimeSettingsWebMapper;
+import me.golemcore.bot.client.dto.PreferencesUpdateRequest;
+import me.golemcore.bot.client.dto.SettingsResponse;
+import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.AutoModeConfigDto;
+import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.LlmConfigDto;
+import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.LlmProviderConfigDto;
+import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.McpCatalogEntryDto;
+import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.McpConfigDto;
+import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.MemoryConfigDto;
+import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.ModelRouterConfigDto;
+import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.PlanConfigDto;
+import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.RuntimeConfigDto;
+import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.RuntimeHiveConfigDto;
+import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.SessionRetentionConfigDto;
+import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.ShellEnvironmentVariableDto;
+import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.SkillsConfigDto;
+import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.TelemetryConfigDto;
+import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.ToolsConfigDto;
+import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.ToolLoopConfigDto;
+import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.TracingConfigDto;
+import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.TurnConfigDto;
+import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.UsageConfigDto;
+import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.VoiceConfigDto;
+import me.golemcore.bot.client.dto.settings.SettingsWebDtos.AdvancedConfigRequest;
+import me.golemcore.bot.client.dto.settings.SettingsWebDtos.LlmProviderImportRequest;
+import me.golemcore.bot.client.dto.settings.SettingsWebDtos.LlmProviderImportResponse;
+import me.golemcore.bot.client.dto.settings.SettingsWebDtos.LlmProviderTestRequest;
+import me.golemcore.bot.client.dto.settings.SettingsWebDtos.LlmProviderTestResponse;
+import me.golemcore.bot.client.dto.settings.SettingsWebDtos.ModelDto;
+import me.golemcore.bot.client.mapper.RuntimeSettingsWebMapper;
 import me.golemcore.bot.application.models.ProviderModelImportService;
 import me.golemcore.bot.application.settings.RuntimeSettingsFacade;
 import me.golemcore.bot.domain.model.MemoryPreset;
@@ -277,9 +279,9 @@ public class SettingsController {
     @PostMapping("/runtime/tools/shell/env")
     public Mono<ResponseEntity<RuntimeConfigDto>> createShellEnvironmentVariable(
             @RequestBody ShellEnvironmentVariableDto variable) {
-        return runtimeConfigResponse(() -> runtimeSettingsWebMapper.toRuntimeConfigDto(
+        return Mono.just(ResponseEntity.ok(runtimeSettingsWebMapper.toRuntimeConfigDto(
                 runtimeSettingsFacade.createShellEnvironmentVariable(
-                        runtimeSettingsWebMapper.toShellEnvironmentVariable(variable))));
+                        runtimeSettingsWebMapper.toShellEnvironmentVariable(variable)))));
     }
 
     @PutMapping("/runtime/tools/shell/env/{name}")
@@ -293,8 +295,12 @@ public class SettingsController {
 
     @DeleteMapping("/runtime/tools/shell/env/{name}")
     public Mono<ResponseEntity<RuntimeConfigDto>> deleteShellEnvironmentVariable(@PathVariable String name) {
-        return runtimeConfigResponse(() -> runtimeSettingsWebMapper.toRuntimeConfigDto(
-                runtimeSettingsFacade.deleteShellEnvironmentVariable(name)));
+        try {
+            return Mono.just(ResponseEntity.ok(runtimeSettingsWebMapper.toRuntimeConfigDto(
+                    runtimeSettingsFacade.deleteShellEnvironmentVariable(name))));
+        } catch (NoSuchElementException e) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, e.getMessage());
+        }
     }
 
     @PutMapping("/runtime/voice")
@@ -372,8 +378,8 @@ public class SettingsController {
 
     @PostMapping("/runtime/mcp/catalog")
     public Mono<ResponseEntity<RuntimeConfigDto>> addMcpCatalogEntry(@RequestBody McpCatalogEntryDto entry) {
-        return runtimeConfigResponse(() -> runtimeSettingsWebMapper.toRuntimeConfigDto(
-                runtimeSettingsFacade.addMcpCatalogEntry(runtimeSettingsWebMapper.toMcpCatalogEntry(entry))));
+        return Mono.just(ResponseEntity.ok(runtimeSettingsWebMapper.toRuntimeConfigDto(
+                runtimeSettingsFacade.addMcpCatalogEntry(runtimeSettingsWebMapper.toMcpCatalogEntry(entry)))));
     }
 
     @PutMapping("/runtime/mcp/catalog/{name}")
@@ -386,18 +392,24 @@ public class SettingsController {
 
     @DeleteMapping("/runtime/mcp/catalog/{name}")
     public Mono<ResponseEntity<Void>> removeMcpCatalogEntry(@PathVariable String name) {
-        return runtimeVoidResponse(() -> runtimeSettingsFacade.removeMcpCatalogEntry(name));
+        try {
+            runtimeSettingsFacade.removeMcpCatalogEntry(name);
+            return Mono.just(ResponseEntity.ok().build());
+        } catch (NoSuchElementException e) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, e.getMessage());
+        }
     }
 
     @PutMapping("/runtime/hive")
-    public Mono<ResponseEntity<RuntimeConfigDto>> updateHiveConfig(@RequestBody HiveConfigDto hiveConfig) {
+    public Mono<ResponseEntity<RuntimeConfigDto>> updateHiveConfig(@RequestBody RuntimeHiveConfigDto hiveConfig) {
         return runtimeConfigResponse(() -> runtimeSettingsWebMapper.toRuntimeConfigDto(
-                runtimeSettingsFacade.updateHiveConfig(runtimeSettingsWebMapper.toHiveConfig(hiveConfig))));
+                runtimeSettingsFacade.updateHiveConfig(runtimeSettingsWebMapper.toRuntimeHiveConfig(hiveConfig))));
     }
 
     @PutMapping("/runtime/webhooks")
     public Mono<ResponseEntity<Void>> updateWebhooksConfig(@RequestBody UserPreferences.WebhookConfig webhookConfig) {
-        return runtimeVoidResponse(() -> runtimeSettingsFacade.updateWebhooksConfig(webhookConfig));
+        runtimeSettingsFacade.updateWebhooksConfig(webhookConfig);
+        return Mono.just(ResponseEntity.ok().build());
     }
 
     @PutMapping("/runtime/auto")
@@ -430,58 +442,96 @@ public class SettingsController {
     }
 
     public Mono<ResponseEntity<RuntimeConfigDto>> updateRuntimeConfig(RuntimeConfig config) {
-        return runtimeConfigResponse(() -> runtimeSettingsWebMapper
-                .toRuntimeConfigDto(runtimeSettingsFacade.updateRuntimeConfig(config)));
+        try {
+            return Mono.just(ResponseEntity.ok(
+                    runtimeSettingsWebMapper.toRuntimeConfigDto(runtimeSettingsFacade.updateRuntimeConfig(config))));
+        } catch (IllegalArgumentException e) {
+            throw e;
+        } catch (NoSuchElementException e) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, e.getMessage());
+        } catch (IllegalStateException e) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, e.getMessage());
+        }
     }
 
     public Mono<ResponseEntity<RuntimeConfigDto>> updateModelRouterConfig(
             RuntimeConfig.ModelRouterConfig modelRouterConfig) {
-        return runtimeConfigResponse(() -> runtimeSettingsWebMapper
-                .toRuntimeConfigDto(runtimeSettingsFacade.updateModelRouterConfig(modelRouterConfig)));
+        try {
+            return Mono.just(ResponseEntity.ok(runtimeSettingsWebMapper
+                    .toRuntimeConfigDto(runtimeSettingsFacade.updateModelRouterConfig(modelRouterConfig))));
+        } catch (IllegalArgumentException e) {
+            throw e;
+        } catch (IllegalStateException e) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, e.getMessage());
+        }
     }
 
     public Mono<ResponseEntity<RuntimeConfigDto>> updateLlmConfig(RuntimeConfig.LlmConfig llmConfig) {
-        return runtimeConfigResponse(() -> runtimeSettingsWebMapper
-                .toRuntimeConfigDto(runtimeSettingsFacade.updateLlmConfig(llmConfig)));
+        try {
+            return Mono.just(ResponseEntity
+                    .ok(runtimeSettingsWebMapper.toRuntimeConfigDto(runtimeSettingsFacade.updateLlmConfig(llmConfig))));
+        } catch (IllegalArgumentException e) {
+            throw e;
+        } catch (IllegalStateException e) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, e.getMessage());
+        }
     }
 
     public Mono<ResponseEntity<RuntimeConfigDto>> addLlmProvider(String name,
             RuntimeConfig.LlmProviderConfig providerConfig) {
-        return runtimeConfigResponse(() -> runtimeSettingsWebMapper
-                .toRuntimeConfigDto(runtimeSettingsFacade.addLlmProvider(name, providerConfig)));
+        return Mono.just(ResponseEntity.ok(runtimeSettingsWebMapper
+                .toRuntimeConfigDto(runtimeSettingsFacade.addLlmProvider(name, providerConfig))));
     }
 
     public Mono<ResponseEntity<RuntimeConfigDto>> updateLlmProvider(String name,
             RuntimeConfig.LlmProviderConfig providerConfig) {
-        return runtimeConfigResponse(() -> runtimeSettingsWebMapper
-                .toRuntimeConfigDto(runtimeSettingsFacade.updateLlmProvider(name, providerConfig)));
+        return Mono.just(ResponseEntity.ok(runtimeSettingsWebMapper
+                .toRuntimeConfigDto(runtimeSettingsFacade.updateLlmProvider(name, providerConfig))));
+    }
+
+    public Mono<ResponseEntity<Void>> removeLlmProvider(String name, boolean unused) {
+        runtimeSettingsFacade.removeLlmProvider(name);
+        return Mono.just(ResponseEntity.ok().build());
     }
 
     public Mono<ResponseEntity<RuntimeConfigDto>> updateToolsConfig(RuntimeConfig.ToolsConfig toolsConfig) {
-        return runtimeConfigResponse(() -> runtimeSettingsWebMapper
-                .toRuntimeConfigDto(runtimeSettingsFacade.updateToolsConfig(toolsConfig)));
+        return Mono.just(ResponseEntity
+                .ok(runtimeSettingsWebMapper.toRuntimeConfigDto(runtimeSettingsFacade.updateToolsConfig(toolsConfig))));
     }
 
     public Mono<ResponseEntity<RuntimeConfigDto>> createShellEnvironmentVariable(
             RuntimeConfig.ShellEnvironmentVariable variable) {
-        return runtimeConfigResponse(() -> runtimeSettingsWebMapper.toRuntimeConfigDto(
-                runtimeSettingsFacade.createShellEnvironmentVariable(variable)));
+        return Mono.just(ResponseEntity.ok(runtimeSettingsWebMapper
+                .toRuntimeConfigDto(runtimeSettingsFacade.createShellEnvironmentVariable(variable))));
     }
 
     public Mono<ResponseEntity<RuntimeConfigDto>> updateShellEnvironmentVariable(String name,
             RuntimeConfig.ShellEnvironmentVariable variable) {
-        return runtimeConfigResponse(() -> runtimeSettingsWebMapper.toRuntimeConfigDto(
-                runtimeSettingsFacade.updateShellEnvironmentVariable(name, variable)));
+        try {
+            return Mono.just(ResponseEntity.ok(runtimeSettingsWebMapper
+                    .toRuntimeConfigDto(runtimeSettingsFacade.updateShellEnvironmentVariable(name, variable))));
+        } catch (NoSuchElementException e) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, e.getMessage());
+        }
+    }
+
+    public Mono<ResponseEntity<RuntimeConfigDto>> deleteShellEnvironmentVariable(String name, boolean unused) {
+        try {
+            return Mono.just(ResponseEntity.ok(runtimeSettingsWebMapper
+                    .toRuntimeConfigDto(runtimeSettingsFacade.deleteShellEnvironmentVariable(name))));
+        } catch (NoSuchElementException e) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, e.getMessage());
+        }
     }
 
     public Mono<ResponseEntity<RuntimeConfigDto>> updateVoiceConfig(RuntimeConfig.VoiceConfig voiceConfig) {
-        return runtimeConfigResponse(() -> runtimeSettingsWebMapper
-                .toRuntimeConfigDto(runtimeSettingsFacade.updateVoiceConfig(voiceConfig)));
+        return Mono.just(ResponseEntity
+                .ok(runtimeSettingsWebMapper.toRuntimeConfigDto(runtimeSettingsFacade.updateVoiceConfig(voiceConfig))));
     }
 
     public Mono<ResponseEntity<RuntimeConfigDto>> updateTurnConfig(RuntimeConfig.TurnConfig turnConfig) {
-        return runtimeConfigResponse(() -> runtimeSettingsWebMapper
-                .toRuntimeConfigDto(runtimeSettingsFacade.updateTurnConfig(turnConfig)));
+        return Mono.just(ResponseEntity
+                .ok(runtimeSettingsWebMapper.toRuntimeConfigDto(runtimeSettingsFacade.updateTurnConfig(turnConfig))));
     }
 
     public Mono<ResponseEntity<RuntimeConfigDto>> updateToolLoopConfig(RuntimeConfig.ToolLoopConfig toolLoopConfig) {
@@ -490,49 +540,62 @@ public class SettingsController {
     }
 
     public Mono<ResponseEntity<RuntimeConfigDto>> updateMemoryConfig(RuntimeConfig.MemoryConfig memoryConfig) {
-        return runtimeConfigResponse(() -> runtimeSettingsWebMapper
-                .toRuntimeConfigDto(runtimeSettingsFacade.updateMemoryConfig(memoryConfig)));
+        return Mono.just(ResponseEntity.ok(
+                runtimeSettingsWebMapper.toRuntimeConfigDto(runtimeSettingsFacade.updateMemoryConfig(memoryConfig))));
     }
 
     public Mono<ResponseEntity<RuntimeConfigDto>> updateSkillsConfig(RuntimeConfig.SkillsConfig skillsConfig) {
-        return runtimeConfigResponse(() -> runtimeSettingsWebMapper
-                .toRuntimeConfigDto(runtimeSettingsFacade.updateSkillsConfig(skillsConfig)));
+        return Mono.just(ResponseEntity.ok(
+                runtimeSettingsWebMapper.toRuntimeConfigDto(runtimeSettingsFacade.updateSkillsConfig(skillsConfig))));
     }
 
     public Mono<ResponseEntity<RuntimeConfigDto>> updateUsageConfig(RuntimeConfig.UsageConfig usageConfig) {
-        return runtimeConfigResponse(() -> runtimeSettingsWebMapper
-                .toRuntimeConfigDto(runtimeSettingsFacade.updateUsageConfig(usageConfig)));
+        return Mono.just(ResponseEntity
+                .ok(runtimeSettingsWebMapper.toRuntimeConfigDto(runtimeSettingsFacade.updateUsageConfig(usageConfig))));
     }
 
     public Mono<ResponseEntity<RuntimeConfigDto>> updateTelemetryConfig(RuntimeConfig.TelemetryConfig telemetryConfig) {
-        return runtimeConfigResponse(() -> runtimeSettingsWebMapper
-                .toRuntimeConfigDto(runtimeSettingsFacade.updateTelemetryConfig(telemetryConfig)));
+        return Mono.just(ResponseEntity.ok(runtimeSettingsWebMapper
+                .toRuntimeConfigDto(runtimeSettingsFacade.updateTelemetryConfig(telemetryConfig))));
     }
 
     public Mono<ResponseEntity<RuntimeConfigDto>> updateMcpConfig(RuntimeConfig.McpConfig mcpConfig) {
-        return runtimeConfigResponse(() -> runtimeSettingsWebMapper
-                .toRuntimeConfigDto(runtimeSettingsFacade.updateMcpConfig(mcpConfig)));
+        return Mono.just(ResponseEntity
+                .ok(runtimeSettingsWebMapper.toRuntimeConfigDto(runtimeSettingsFacade.updateMcpConfig(mcpConfig))));
     }
 
     public Mono<ResponseEntity<RuntimeConfigDto>> addMcpCatalogEntry(RuntimeConfig.McpCatalogEntry entry) {
-        return runtimeConfigResponse(() -> runtimeSettingsWebMapper
-                .toRuntimeConfigDto(runtimeSettingsFacade.addMcpCatalogEntry(entry)));
+        return Mono.just(ResponseEntity
+                .ok(runtimeSettingsWebMapper.toRuntimeConfigDto(runtimeSettingsFacade.addMcpCatalogEntry(entry))));
     }
 
     public Mono<ResponseEntity<RuntimeConfigDto>> updateMcpCatalogEntry(String name,
             RuntimeConfig.McpCatalogEntry entry) {
-        return runtimeConfigResponse(() -> runtimeSettingsWebMapper
-                .toRuntimeConfigDto(runtimeSettingsFacade.updateMcpCatalogEntry(name, entry)));
+        try {
+            return Mono.just(ResponseEntity.ok(runtimeSettingsWebMapper
+                    .toRuntimeConfigDto(runtimeSettingsFacade.updateMcpCatalogEntry(name, entry))));
+        } catch (NoSuchElementException e) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, e.getMessage());
+        }
+    }
+
+    public Mono<ResponseEntity<Void>> removeMcpCatalogEntry(String name, int unused) {
+        runtimeSettingsFacade.removeMcpCatalogEntry(name);
+        return Mono.just(ResponseEntity.ok().build());
     }
 
     public Mono<ResponseEntity<RuntimeConfigDto>> updateHiveConfig(RuntimeConfig.HiveConfig hiveConfig) {
-        return runtimeConfigResponse(() -> runtimeSettingsWebMapper
-                .toRuntimeConfigDto(runtimeSettingsFacade.updateHiveConfig(hiveConfig)));
+        try {
+            return Mono.just(ResponseEntity.ok(
+                    runtimeSettingsWebMapper.toRuntimeConfigDto(runtimeSettingsFacade.updateHiveConfig(hiveConfig))));
+        } catch (IllegalStateException e) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, e.getMessage());
+        }
     }
 
     public Mono<ResponseEntity<RuntimeConfigDto>> updateAutoConfig(RuntimeConfig.AutoModeConfig autoConfig) {
-        return runtimeConfigResponse(() -> runtimeSettingsWebMapper
-                .toRuntimeConfigDto(runtimeSettingsFacade.updateAutoConfig(autoConfig)));
+        return Mono.just(ResponseEntity
+                .ok(runtimeSettingsWebMapper.toRuntimeConfigDto(runtimeSettingsFacade.updateAutoConfig(autoConfig))));
     }
 
     public Mono<ResponseEntity<RuntimeConfigDto>> updatePlanConfig(RuntimeConfig.PlanConfig planConfig) {
@@ -541,140 +604,96 @@ public class SettingsController {
     }
 
     public Mono<ResponseEntity<RuntimeConfigDto>> updateTracingConfig(RuntimeConfig.TracingConfig tracingConfig) {
-        return runtimeConfigResponse(() -> runtimeSettingsWebMapper
-                .toRuntimeConfigDto(runtimeSettingsFacade.updateTracingConfig(tracingConfig)));
+        return Mono.just(ResponseEntity.ok(
+                runtimeSettingsWebMapper.toRuntimeConfigDto(runtimeSettingsFacade.updateTracingConfig(tracingConfig))));
+    }
+
+    public Mono<ResponseEntity<RuntimeConfigDto>> updateAdvancedConfig(RuntimeConfig.RateLimitConfig rateLimit,
+            RuntimeConfig.SecurityConfig security, RuntimeConfig.CompactionConfig compaction,
+            RuntimeConfig.ResilienceConfig resilience) {
+        return Mono.just(ResponseEntity.ok(
+                runtimeSettingsWebMapper.toRuntimeConfigDto(
+                        runtimeSettingsFacade.updateAdvancedConfig(rateLimit, security, compaction, resilience))));
+    }
+
+    @GetMapping("/memory-presets")
+    public Mono<ResponseEntity<List<MemoryPreset>>> getMemoryPresetsLegacy() {
+        return getMemoryPresets();
     }
 
     private Mono<ResponseEntity<RuntimeConfigDto>> runtimeConfigResponse(Supplier<RuntimeConfigDto> supplier) {
-        return Mono.just(ResponseEntity.ok(invokeRuntime(supplier)));
+        return Mono.fromSupplier(() -> ResponseEntity.ok(invokeRuntime(supplier)));
+    }
+
+    private Mono<ResponseEntity<Void>> runtimeVoidResponse(Runnable action) {
+        return Mono.fromRunnable(() -> invokeRuntime(() -> {
+            action.run();
+            return null;
+        })).thenReturn(ResponseEntity.ok().build());
     }
 
     private <T> Mono<ResponseEntity<List<T>>> runtimeListResponse(Supplier<List<T>> supplier) {
-        return Mono.just(ResponseEntity.ok(invokeRuntime(supplier)));
-    }
-
-    private Mono<ResponseEntity<Void>> runtimeVoidResponse(Runnable runnable) {
-        invokeRuntime(() -> {
-            runnable.run();
-            return null;
-        });
-        return Mono.just(ResponseEntity.ok().build());
+        return Mono.fromSupplier(() -> ResponseEntity.ok(invokeRuntime(supplier)));
     }
 
     private <T> T invokeRuntime(Supplier<T> supplier) {
         try {
             return supplier.get();
-        } catch (NoSuchElementException ex) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, ex.getMessage());
-        } catch (IllegalStateException ex) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, ex.getMessage());
+        } catch (IllegalArgumentException e) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
+        } catch (NoSuchElementException e) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, e.getMessage());
+        } catch (ResponseStatusException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, e.getMessage(), e);
         }
-    }
-
-    private String normalizeOptionalSelectableTier(String tier, String fieldName) {
-        String normalizedTier = ModelTierCatalog.normalizeTierId(tier);
-        if (normalizedTier == null) {
-            return null;
-        }
-        if ("default".equals(normalizedTier)) {
-            return null;
-        }
-        return normalizeRequiredSelectableTier(normalizedTier, fieldName);
     }
 
     private String normalizeRequiredSelectableTier(String tier, String fieldName) {
-        String normalizedTier = ModelTierCatalog.normalizeTierId(tier);
-        if (!ModelTierCatalog.isExplicitSelectableTier(normalizedTier)) {
-            throw new IllegalArgumentException(fieldName + " must be a known tier id");
+        if (tier == null || tier.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, fieldName + " is required");
         }
-        return normalizedTier;
+        String normalized = tier.trim().toLowerCase(Locale.ROOT);
+        if (!ModelTierCatalog.isExplicitSelectableTier(normalized)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    fieldName + " must be one of " + ModelTierCatalog.explicitTierListForDisplay());
+        }
+        return normalized;
     }
 
-    private String normalizeOptionalMemoryPreset(String memoryPreset, String fieldName) {
-        String normalizedPreset = memoryPreset.trim().toLowerCase(Locale.ROOT);
-        if (normalizedPreset.isBlank() || "default".equals(normalizedPreset)) {
+    private String normalizeOptionalSelectableTier(String tier, String fieldName) {
+        if (tier == null) {
             return null;
         }
-        boolean knownPreset = runtimeSettingsFacade.getMemoryPresets().stream()
-                .anyMatch(preset -> normalizedPreset.equals(preset.getId()));
-        if (!knownPreset) {
-            throw new IllegalArgumentException(fieldName + " must be a known memory preset id");
+        if (tier.isBlank()) {
+            return null;
         }
-        return normalizedPreset;
+        return normalizeRequiredSelectableTier(tier, fieldName);
     }
 
-    private record ModelDto(String id, String displayName, boolean hasReasoning,
-            List<String> reasoningLevels, boolean supportsVision) {
+    private String normalizeOptionalMemoryPreset(String presetId, String fieldName) {
+        if (presetId == null || presetId.isBlank()) {
+            return null;
+        }
+        String normalized = presetId.trim();
+        if ("default".equalsIgnoreCase(normalized)) {
+            return null;
+        }
+        boolean exists = runtimeSettingsFacade.getMemoryPresets().stream()
+                .map(MemoryPreset::getId)
+                .anyMatch(id -> id != null && id.equalsIgnoreCase(normalized));
+        if (!exists) {
+            throw new IllegalArgumentException(fieldName + " is invalid");
+        }
+        return normalized.toLowerCase(Locale.ROOT);
     }
 
     private String requireRequestValue(String value, String fieldName) {
-        if (value == null || value.trim().isEmpty()) {
+        if (value == null || value.isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, fieldName + " is required");
         }
         return value.trim();
     }
 
-    public record LlmProviderImportRequest(RuntimeConfig.LlmProviderConfig config, List<String> selectedModelIds) {
-    }
-
-    public record LlmProviderImportResponse(boolean providerSaved, String providerName, String resolvedEndpoint,
-            List<String> addedModels, List<String> skippedModels, List<String> errors) {
-    }
-
-    public record LlmProviderTestRequest(String mode, String providerName, RuntimeConfig.LlmProviderConfig config) {
-    }
-
-    public record LlmProviderTestResponse(String mode, String providerName, String resolvedEndpoint,
-            List<String> models, boolean success, String error) {
-    }
-
-    private record AdvancedConfigRequest(
-            RateLimitConfigDto rateLimit,
-            SecurityConfigDto security,
-            CompactionConfigDto compaction,
-            ResilienceConfigDto resilience) {
-
-        private AdvancedConfigRequest(
-                RuntimeConfig.RateLimitConfig rateLimit,
-                RuntimeConfig.SecurityConfig security,
-                RuntimeConfig.CompactionConfig compaction,
-                RuntimeConfig.ResilienceConfig resilience) {
-            this(copy(rateLimit, new RateLimitConfigDto()),
-                    copy(security, new SecurityConfigDto()),
-                    copy(compaction, new CompactionConfigDto()),
-                    copy(resilience, new ResilienceConfigDto()));
-        }
-
-        private static <S, T> T copy(S source, T target) {
-            if (source == null) {
-                return null;
-            }
-            try {
-                java.beans.BeanInfo beanInfo = java.beans.Introspector.getBeanInfo(source.getClass(), Object.class);
-                for (java.beans.PropertyDescriptor descriptor : beanInfo.getPropertyDescriptors()) {
-                    java.lang.reflect.Method readMethod = descriptor.getReadMethod();
-                    java.lang.reflect.Method writeMethod = findWriteMethod(target.getClass(), descriptor.getName(),
-                            descriptor.getPropertyType());
-                    if (readMethod != null && writeMethod != null) {
-                        writeMethod.invoke(target, readMethod.invoke(source));
-                    }
-                }
-                return target;
-            } catch (java.beans.IntrospectionException | ReflectiveOperationException exception) {
-                throw new IllegalStateException("Failed to map advanced config request", exception);
-            }
-        }
-
-        private static java.lang.reflect.Method findWriteMethod(
-                Class<?> targetClass,
-                String propertyName,
-                Class<?> propertyType) {
-            try {
-                String setterName = "set" + Character.toUpperCase(propertyName.charAt(0)) + propertyName.substring(1);
-                return targetClass.getMethod(setterName, propertyType);
-            } catch (NoSuchMethodException exception) {
-                return null;
-            }
-        }
-    }
 }

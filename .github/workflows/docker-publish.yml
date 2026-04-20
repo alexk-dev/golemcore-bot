@@ -317,30 +317,38 @@ jobs:
         run: mvn -B -ntp -Djgitver.skip=true -f golemcore-plugins/pom.xml -pl extension-api,runtime-api -am install -DskipTests
 
       - name: Check formatting
-        run: ./mvnw -f golemcore-bot-app/pom.xml formatter:validate -DskipGitHooks=true
+        run: ./mvnw -B -ntp -DskipGitHooks=true net.revelc.code.formatter:formatter-maven-plugin:2.29.0:validate
 
       - name: Run PMD
-        run: ./mvnw -f golemcore-bot-app/pom.xml -P strict pmd:check -DskipGitHooks=true
+        run: ./mvnw -B -ntp -P strict -Dfrontend.skip=true -DskipTests -DskipGitHooks=true test-compile org.apache.maven.plugins:maven-pmd-plugin:3.28.0:check
 
       - name: Run SpotBugs
-        run: ./mvnw -f golemcore-bot-app/pom.xml -P strict compile spotbugs:check -DskipGitHooks=true
+        run: ./mvnw -B -ntp -P strict -Dfrontend.skip=true -DskipTests -DskipGitHooks=true compile com.github.spotbugs:spotbugs-maven-plugin:4.9.8.3:check
 
       - name: Generate Javadoc
-        run: ./mvnw -f golemcore-bot-app/pom.xml -B -ntp javadoc:javadoc -DskipGitHooks=true
+        run: ./mvnw -pl ./golemcore-bot-app -am -B -ntp -Dfrontend.skip=true -DskipTests -DskipGitHooks=true test-compile org.apache.maven.plugins:maven-javadoc-plugin:3.12.0:javadoc
 
       - name: Upload PMD report
         if: always()
         uses: actions/upload-artifact@v7
         with:
           name: pmd-report
-          path: golemcore-bot-app/target/pmd.xml
+          path: |
+            golemcore-bot-contracts/target/pmd.xml
+            golemcore-bot-self-evolving/target/pmd.xml
+            golemcore-bot-client/target/pmd.xml
+            golemcore-bot-app/target/pmd.xml
 
       - name: Upload SpotBugs report
         if: always()
         uses: actions/upload-artifact@v7
         with:
           name: spotbugs-report
-          path: golemcore-bot-app/target/spotbugsXml.xml
+          path: |
+            golemcore-bot-contracts/target/spotbugsXml.xml
+            golemcore-bot-self-evolving/target/spotbugsXml.xml
+            golemcore-bot-client/target/spotbugsXml.xml
+            golemcore-bot-app/target/spotbugsXml.xml
 
   sonar:
     name: SonarCloud Analysis
@@ -456,7 +464,7 @@ jobs:
 
       - name: Build and push app image (${{ matrix.arch }})
         run: |
-          ./mvnw -f golemcore-bot-app/pom.xml prepare-package jib:build \
+          ./mvnw -pl ./golemcore-bot-app -am prepare-package com.google.cloud.tools:jib-maven-plugin:build \
             -DskipTests \
             -DskipGitHooks=true \
             -Djib.from.image=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-base:latest \

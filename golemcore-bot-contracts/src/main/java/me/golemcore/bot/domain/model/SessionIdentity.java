@@ -21,17 +21,10 @@ package me.golemcore.bot.domain.model;
 /**
  * Canonical logical session identity across channels.
  */
-public record SessionIdentity(String channelType, String conversationKey) {
+public record SessionIdentity(String channelType,String conversationKey){
 
-    public boolean isValid() {
-        return !isBlank(channelType) && !isBlank(conversationKey);
-    }
+public boolean isValid(){return!isBlank(channelType)&&!isBlank(conversationKey);}
 
-    public String asKey() {
-        return (channelType != null ? channelType : "") + ":" + (conversationKey != null ? conversationKey : "");
-    }
+public String asKey(){return(channelType!=null?channelType:"")+":"+(conversationKey!=null?conversationKey:"");}
 
-    private boolean isBlank(String value) {
-        return value == null || value.isBlank();
-    }
-}
+private boolean isBlank(String value){return value==null||value.isBlank();}}

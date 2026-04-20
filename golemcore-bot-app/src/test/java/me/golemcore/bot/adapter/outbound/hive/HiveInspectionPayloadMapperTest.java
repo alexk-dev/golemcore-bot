@@ -5,7 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 
 import java.time.Instant;
 import java.util.List;
-import me.golemcore.bot.adapter.shared.dto.SessionTraceExportPayload;
+import me.golemcore.bot.client.dto.SessionTraceExportPayload;
 import me.golemcore.bot.domain.view.SessionTraceExportView;
 import me.golemcore.bot.domain.view.SessionTraceStorageStatsView;
 import org.junit.jupiter.api.Test;

@@ -1,6 +1,6 @@
 package me.golemcore.bot.adapter.inbound.web;
 
-import me.golemcore.bot.adapter.inbound.web.dto.ApiErrorResponse;
+import me.golemcore.bot.client.dto.ApiErrorResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;

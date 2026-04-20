@@ -1,10 +1,11 @@
 package me.golemcore.bot.adapter.inbound.web.controller;
 
-import me.golemcore.bot.adapter.inbound.web.dto.FileCreateRequest;
-import me.golemcore.bot.adapter.inbound.web.dto.FileRenameRequest;
-import me.golemcore.bot.adapter.inbound.web.dto.FileSaveRequest;
-import me.golemcore.bot.adapter.inbound.web.dto.InlineEditRequest;
-import me.golemcore.bot.adapter.inbound.web.inlineedit.WebInlineEditService;
+import me.golemcore.bot.client.dto.FileCreateRequest;
+import me.golemcore.bot.client.dto.FileRenameRequest;
+import me.golemcore.bot.client.dto.FileSaveRequest;
+import me.golemcore.bot.client.dto.InlineEditRequest;
+import me.golemcore.bot.client.dto.InlineEditResponse;
+import me.golemcore.bot.client.inlineedit.InlineEditFacade;
 import me.golemcore.bot.domain.model.DashboardFileContent;
 import me.golemcore.bot.domain.model.DashboardFileNode;
 import me.golemcore.bot.domain.model.ToolArtifactDownload;
@@ -35,15 +36,15 @@ class FilesControllerTest {
 
     private DashboardFileService dashboardFileService;
     private ToolArtifactService toolArtifactService;
-    private WebInlineEditService webInlineEditService;
+    private InlineEditFacade inlineEditFacade;
     private FilesController filesController;
 
     @BeforeEach
     void setUp() {
         dashboardFileService = mock(DashboardFileService.class);
         toolArtifactService = mock(ToolArtifactService.class);
-        webInlineEditService = mock(WebInlineEditService.class);
-        filesController = new FilesController(dashboardFileService, toolArtifactService, webInlineEditService);
+        inlineEditFacade = mock(InlineEditFacade.class);
+        filesController = new FilesController(dashboardFileService, toolArtifactService, inlineEditFacade);
     }
 
     @Test
@@ -411,15 +412,11 @@ class FilesControllerTest {
                 .instruction("refactor this")
                 .build();
 
-        when(webInlineEditService.createInlineEdit(
-                "src/App.tsx",
-                "const x = 1;",
-                0,
-                11,
-                "const x = 1",
-                "refactor this",
-                "client-1"))
-                .thenReturn(new WebInlineEditService.InlineEditResult("src/App.tsx", "const value = 1"));
+        when(inlineEditFacade.createInlineEdit(request, "client-1"))
+                .thenReturn(InlineEditResponse.builder()
+                        .path("src/App.tsx")
+                        .replacement("const value = 1")
+                        .build());
 
         StepVerifier.create(filesController.inlineEdit(request, "client-1"))
                 .assertNext(response -> {
@@ -442,14 +439,7 @@ class FilesControllerTest {
                 .instruction("refactor this")
                 .build();
 
-        when(webInlineEditService.createInlineEdit(
-                "src/App.tsx",
-                "const x = 1;",
-                0,
-                11,
-                "const x = 1",
-                "refactor this",
-                null))
+        when(inlineEditFacade.createInlineEdit(request, null))
                 .thenThrow(new IllegalArgumentException("Instruction is required"));
 
         StepVerifier.create(filesController.inlineEdit(request, null))
