@@ -496,4 +496,27 @@ class RuntimeSettingsFacadeTest {
         assertEquals(usage, current.getUsage());
         assertEquals(telemetry, current.getTelemetry());
     }
+
+    @Test
+    void shouldUpdateSessionRetentionConfig() {
+        RuntimeConfig current = RuntimeConfig.builder().build();
+        RuntimeConfig apiView = RuntimeConfig.builder().build();
+        RuntimeConfig.SessionRetentionConfig sessionRetentionConfig = RuntimeConfig.SessionRetentionConfig.builder()
+                .enabled(true)
+                .maxAge("P14D")
+                .cleanupInterval("PT12H")
+                .protectActiveSessions(true)
+                .protectSessionsWithPlans(true)
+                .protectSessionsWithDelayedActions(false)
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(current);
+        when(runtimeConfigService.getRuntimeConfigForApi()).thenReturn(apiView);
+
+        RuntimeConfig response = facade.updateSessionRetentionConfig(sessionRetentionConfig);
+
+        assertEquals(apiView, response);
+        assertEquals(sessionRetentionConfig, current.getSessionRetention());
+        verify(runtimeConfigService).updateRuntimeConfig(current);
+    }
+
 }

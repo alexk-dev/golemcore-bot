@@ -2927,4 +2927,29 @@ class SettingsControllerTest {
                         fourth.getClass()));
         return constructor.invoke(first, second, third, fourth);
     }
+
+    @Test
+    void shouldUpdateSessionRetentionConfig() {
+        RuntimeConfig runtimeConfig = RuntimeConfig.builder()
+                .sessionRetention(RuntimeConfig.SessionRetentionConfig.builder().build())
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
+
+        RuntimeSettingsWebDtos.SessionRetentionConfigDto sessionRetentionConfig = new RuntimeSettingsWebDtos.SessionRetentionConfigDto();
+        sessionRetentionConfig.setEnabled(true);
+        sessionRetentionConfig.setMaxAge("P14D");
+        sessionRetentionConfig.setCleanupInterval("PT12H");
+        sessionRetentionConfig.setProtectActiveSessions(true);
+        sessionRetentionConfig.setProtectSessionsWithPlans(true);
+        sessionRetentionConfig.setProtectSessionsWithDelayedActions(false);
+
+        StepVerifier.create(controller.updateSessionRetentionConfig(sessionRetentionConfig))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+
+        ArgumentCaptor<RuntimeConfig> captor = ArgumentCaptor.forClass(RuntimeConfig.class);
+        verify(runtimeConfigService).updateRuntimeConfig(captor.capture());
+        assertEquals(sessionRetentionConfig, captor.getValue().getSessionRetention());
+    }
+
 }

@@ -240,6 +240,21 @@ class SessionServiceTest {
         assertDoesNotThrow(() -> service.delete(NONEXISTENT));
     }
 
+    @Test
+    void deleteRestoresCachedSessionWhenStorageDeleteFails() {
+        when(storagePort.getObject(SESSIONS_DIR, SESSION_FILE))
+                .thenReturn(CompletableFuture.failedFuture(new RuntimeException(NOT_FOUND)));
+        when(storagePort.deleteObject(SESSIONS_DIR, SESSION_FILE))
+                .thenReturn(CompletableFuture.failedFuture(new RuntimeException("error")));
+
+        AgentSession session = service.getOrCreate(CHANNEL_TELEGRAM, CHAT_ID);
+
+        service.delete(SESSION_ID);
+
+        assertTrue(service.get(SESSION_ID).isPresent());
+        assertSame(session, service.get(SESSION_ID).orElseThrow());
+    }
+
     // ==================== clearMessages ====================
 
     @Test
@@ -470,6 +485,65 @@ class SessionServiceTest {
 
         assertEquals(1, owned.size());
         assertEquals("telegram:conv-1", owned.get(0).getId());
+    }
+
+    @Test
+    void cleanupExpiredSessionsDeletesOnlySessionsOlderThanCutoff() {
+        when(storagePort.getObject(SESSIONS_DIR, "telegram:old.pb"))
+                .thenReturn(CompletableFuture.failedFuture(new RuntimeException(NOT_FOUND)));
+        when(storagePort.getObject(SESSIONS_DIR, "telegram:fresh.pb"))
+                .thenReturn(CompletableFuture.failedFuture(new RuntimeException(NOT_FOUND)));
+
+        AgentSession oldSession = service.getOrCreate(CHANNEL_TELEGRAM, "old");
+        oldSession.setUpdatedAt(FIXED_TIME.minusSeconds(3_600));
+        AgentSession freshSession = service.getOrCreate(CHANNEL_TELEGRAM, "fresh");
+        freshSession.setUpdatedAt(FIXED_TIME.plusSeconds(3_600));
+
+        int deleted = service.cleanupExpiredSessions(FIXED_TIME, session -> false);
+
+        assertEquals(1, deleted);
+        verify(storagePort).deleteObject(SESSIONS_DIR, "telegram:old.pb");
+        verify(storagePort, never()).deleteObject(SESSIONS_DIR, "telegram:fresh.pb");
+    }
+
+    @Test
+    void cleanupExpiredSessionsRetainsSessionsMatchingPredicate() {
+        when(storagePort.getObject(SESSIONS_DIR, "telegram:old.pb"))
+                .thenReturn(CompletableFuture.failedFuture(new RuntimeException(NOT_FOUND)));
+
+        AgentSession oldSession = service.getOrCreate(CHANNEL_TELEGRAM, "old");
+        oldSession.setUpdatedAt(FIXED_TIME.minusSeconds(3_600));
+
+        int deleted = service.cleanupExpiredSessions(FIXED_TIME, session -> "telegram:old".equals(session.getId()));
+
+        assertEquals(0, deleted);
+        verify(storagePort, never()).deleteObject(SESSIONS_DIR, "telegram:old.pb");
+    }
+
+    @Test
+    void cleanupExpiredSessionsRejectsNullShouldRetainPredicate() {
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> service.cleanupExpiredSessions(FIXED_TIME, null));
+
+        assertTrue(error.getMessage().contains("shouldRetain"),
+                "error should name the missing argument so misuse is obvious");
+        verify(storagePort, never()).deleteObject(anyString(), anyString());
+    }
+
+    @Test
+    void cleanupExpiredSessionsDoesNotCountDeletionFailures() {
+        when(storagePort.getObject(SESSIONS_DIR, "telegram:old.pb"))
+                .thenReturn(CompletableFuture.failedFuture(new RuntimeException(NOT_FOUND)));
+        when(storagePort.deleteObject(SESSIONS_DIR, "telegram:old.pb"))
+                .thenReturn(CompletableFuture.failedFuture(new RuntimeException("error")));
+
+        AgentSession oldSession = service.getOrCreate(CHANNEL_TELEGRAM, "old");
+        oldSession.setUpdatedAt(FIXED_TIME.minusSeconds(3_600));
+
+        int deleted = service.cleanupExpiredSessions(FIXED_TIME, session -> false);
+
+        assertEquals(0, deleted);
+        assertTrue(service.get("telegram:old").isPresent());
     }
 
     // ==================== getMessageCount ====================

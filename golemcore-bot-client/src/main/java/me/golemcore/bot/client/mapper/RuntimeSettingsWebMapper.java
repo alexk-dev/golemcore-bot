@@ -1,6 +1,5 @@
 package me.golemcore.bot.client.mapper;
 
-import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.AutoModeConfigDto;
 import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.CompactionConfigDto;
 import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.HiveConfigDto;
@@ -15,6 +14,7 @@ import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.RateLimitConf
 import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.ResilienceConfigDto;
 import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.RuntimeConfigDto;
 import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.SecurityConfigDto;
+import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.SessionRetentionConfigDto;
 import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.ShellEnvironmentVariableDto;
 import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.SkillsConfigDto;
 import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.TelemetryConfigDto;
@@ -27,15 +27,18 @@ import me.golemcore.bot.domain.model.RuntimeConfig;
 import org.springframework.stereotype.Component;
 
 @Component
-@RequiredArgsConstructor
 public class RuntimeSettingsWebMapper {
 
     public RuntimeConfigDto toRuntimeConfigDto(RuntimeConfig source) {
-        return copy(source, new RuntimeConfigDto());
+        RuntimeConfigDto target = new RuntimeConfigDto();
+        copyRuntimeConfig(source, target);
+        return target;
     }
 
     public RuntimeConfig toRuntimeConfig(RuntimeConfigDto source) {
-        return copy(source, new RuntimeConfig());
+        RuntimeConfig target = RuntimeConfig.builder().build();
+        copyRuntimeConfig(source, target);
+        return target;
     }
 
     public ModelRouterConfigDto toModelRouterConfigDto(RuntimeConfig.ModelRouterConfig source) {
@@ -92,6 +95,14 @@ public class RuntimeSettingsWebMapper {
 
     public RuntimeConfig.TurnConfig toTurnConfig(TurnConfigDto source) {
         return copy(source, new RuntimeConfig.TurnConfig());
+    }
+
+    public SessionRetentionConfigDto toSessionRetentionConfigDto(RuntimeConfig.SessionRetentionConfig source) {
+        return copy(source, new SessionRetentionConfigDto());
+    }
+
+    public RuntimeConfig.SessionRetentionConfig toSessionRetentionConfig(SessionRetentionConfigDto source) {
+        return copy(source, new RuntimeConfig.SessionRetentionConfig());
     }
 
     public MemoryConfigDto toMemoryConfigDto(RuntimeConfig.MemoryConfig source) {
@@ -188,6 +199,36 @@ public class RuntimeSettingsWebMapper {
 
     public RuntimeConfig.ResilienceConfig toResilienceConfig(ResilienceConfigDto source) {
         return copy(source, new RuntimeConfig.ResilienceConfig());
+    }
+
+    private void copyRuntimeConfig(RuntimeConfig source, RuntimeConfig target) {
+        if (source == null || target == null) {
+            return;
+        }
+        target.setTelegram(source.getTelegram());
+        target.setModelRouter(source.getModelRouter());
+        target.setLlm(source.getLlm());
+        target.setTools(source.getTools());
+        target.setVoice(source.getVoice());
+        target.setAutoMode(source.getAutoMode());
+        target.setUpdate(source.getUpdate());
+        target.setTracing(source.getTracing());
+        target.setRateLimit(source.getRateLimit());
+        target.setSecurity(source.getSecurity());
+        target.setCompaction(source.getCompaction());
+        target.setResilience(source.getResilience());
+        target.setTurn(source.getTurn());
+        target.setSessionRetention(source.getSessionRetention());
+        target.setMemory(source.getMemory());
+        target.setSkills(source.getSkills());
+        target.setModelRegistry(source.getModelRegistry());
+        target.setUsage(source.getUsage());
+        target.setTelemetry(source.getTelemetry());
+        target.setMcp(source.getMcp());
+        target.setPlan(source.getPlan());
+        target.setDelayedActions(source.getDelayedActions());
+        target.setHive(source.getHive());
+        target.setSelfEvolving(source.getSelfEvolving());
     }
 
     private <S, T> T copy(S source, T target) {
