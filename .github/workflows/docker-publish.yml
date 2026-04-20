@@ -290,9 +290,16 @@ jobs:
             echo "jib-tags=dev-latest-${ARCH}" >> $GITHUB_OUTPUT
           fi
 
+      - name: Build app artifacts
+        run: |
+          ./mvnw -pl ./golemcore-bot-app -am install \
+            -DskipTests \
+            -DskipGitHooks=true \
+            -Djib.skip=true
+
       - name: Build and push app image (${{ matrix.arch }})
         run: |
-          ./mvnw -pl ./golemcore-bot-app -am prepare-package com.google.cloud.tools:jib-maven-plugin:build \
+          ./mvnw -f golemcore-bot-app/pom.xml com.google.cloud.tools:jib-maven-plugin:build \
             -DskipTests \
             -DskipGitHooks=true \
             -Djib.from.image=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-base:latest \
