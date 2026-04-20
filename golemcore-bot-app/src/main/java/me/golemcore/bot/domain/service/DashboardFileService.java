@@ -4,6 +4,7 @@ import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.domain.model.DashboardFileContent;
 import me.golemcore.bot.domain.model.DashboardFileNode;
 import me.golemcore.bot.domain.model.ToolArtifactDownload;
+import me.golemcore.bot.port.outbound.WorkspaceEditorPort;
 import me.golemcore.bot.port.outbound.WorkspaceFilePort;
 import org.springframework.stereotype.Service;
 
@@ -23,7 +24,7 @@ import java.util.Locale;
 
 @Service
 @RequiredArgsConstructor
-public class DashboardFileService {
+public class DashboardFileService implements WorkspaceEditorPort {
 
     private static final int DEFAULT_TREE_DEPTH = Integer.MAX_VALUE;
 
@@ -244,6 +245,7 @@ public class DashboardFileService {
         }
     }
 
+    @Override
     public void validateEditablePath(String relativePath) {
         DashboardFileContent content = getContent(relativePath);
         if (!content.isEditable()) {

@@ -1,9 +1,11 @@
-package me.golemcore.bot.adapter.inbound.web.inlineedit;
+package me.golemcore.bot.client.inlineedit;
 
+import me.golemcore.bot.client.dto.InlineEditRequest;
+import me.golemcore.bot.client.dto.InlineEditResponse;
 import me.golemcore.bot.domain.model.LlmRequest;
 import me.golemcore.bot.domain.model.LlmResponse;
-import me.golemcore.bot.domain.service.DashboardFileService;
 import me.golemcore.bot.port.outbound.LlmPort;
+import me.golemcore.bot.port.outbound.WorkspaceEditorPort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -22,19 +24,19 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-class WebInlineEditServiceTest {
+class InlineEditFacadeTest {
 
-    private DashboardFileService dashboardFileService;
+    private WorkspaceEditorPort workspaceEditorPort;
     private LlmPort llmPort;
-    private WebInlineEditPromptFactory promptFactory;
-    private WebInlineEditService webInlineEditService;
+    private InlineEditPromptFactory promptFactory;
+    private InlineEditFacade inlineEditFacade;
 
     @BeforeEach
     void setUp() {
-        dashboardFileService = mock(DashboardFileService.class);
+        workspaceEditorPort = mock(WorkspaceEditorPort.class);
         llmPort = mock(LlmPort.class);
-        promptFactory = new WebInlineEditPromptFactory();
-        webInlineEditService = new WebInlineEditService(dashboardFileService, llmPort, promptFactory);
+        promptFactory = new InlineEditPromptFactory();
+        inlineEditFacade = new InlineEditFacade(workspaceEditorPort, llmPort, promptFactory);
     }
 
     @Test
@@ -43,18 +45,11 @@ class WebInlineEditServiceTest {
                 .thenReturn(
                         CompletableFuture.completedFuture(LlmResponse.builder().content("const value = 1;").build()));
 
-        WebInlineEditService.InlineEditResult result = webInlineEditService.createInlineEdit(
-                "src/App.tsx",
-                "const x = 1;",
-                0,
-                11,
-                "const x = 1",
-                "refactor this",
-                "client-1");
+        InlineEditResponse response = inlineEditFacade.createInlineEdit(buildRequest(), "client-1");
 
-        assertEquals("src/App.tsx", result.path());
-        assertEquals("const value = 1;", result.replacement());
-        verify(dashboardFileService).validateEditablePath("src/App.tsx");
+        assertEquals("src/App.tsx", response.getPath());
+        assertEquals("const value = 1;", response.getReplacement());
+        verify(workspaceEditorPort).validateEditablePath("src/App.tsx");
     }
 
     @Test
@@ -64,14 +59,7 @@ class WebInlineEditServiceTest {
                 .thenReturn(
                         CompletableFuture.completedFuture(LlmResponse.builder().content("const value = 1;").build()));
 
-        webInlineEditService.createInlineEdit(
-                "src/App.tsx",
-                "const x = 1;",
-                0,
-                11,
-                "const x = 1",
-                "refactor this",
-                "client-1");
+        inlineEditFacade.createInlineEdit(buildRequest(), "client-1");
 
         org.mockito.ArgumentCaptor<LlmRequest> captor = org.mockito.ArgumentCaptor.forClass(LlmRequest.class);
         verify(llmPort).chat(captor.capture());
@@ -85,16 +73,9 @@ class WebInlineEditServiceTest {
                         .content("```java\nconst value = 1;\n```")
                         .build()));
 
-        WebInlineEditService.InlineEditResult result = webInlineEditService.createInlineEdit(
-                "src/App.tsx",
-                "const x = 1;",
-                0,
-                11,
-                "const x = 1",
-                "refactor this",
-                "client-1");
+        InlineEditResponse response = inlineEditFacade.createInlineEdit(buildRequest(), "client-1");
 
-        assertEquals("const value = 1;", result.replacement());
+        assertEquals("const value = 1;", response.getReplacement());
     }
 
     @Test
@@ -103,14 +84,7 @@ class WebInlineEditServiceTest {
                 .thenReturn(
                         CompletableFuture.completedFuture(LlmResponse.builder().content("const value = 1;").build()));
 
-        webInlineEditService.createInlineEdit(
-                "src/App.tsx",
-                "const x = 1;",
-                0,
-                11,
-                "const x = 1",
-                "refactor this",
-                " ");
+        inlineEditFacade.createInlineEdit(buildRequest(), " ");
 
         org.mockito.ArgumentCaptor<LlmRequest> captor = org.mockito.ArgumentCaptor.forClass(LlmRequest.class);
         verify(llmPort).chat(captor.capture());
@@ -119,91 +93,75 @@ class WebInlineEditServiceTest {
     }
 
     @Test
-    void shouldRejectInvalidSelectionRange() {
+    void shouldRejectNullRequest() {
         IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
-                () -> webInlineEditService.createInlineEdit(
-                        "src/App.tsx",
-                        "const x = 1;",
-                        4,
-                        4,
-                        "",
-                        "refactor this",
-                        "client-1"));
+                () -> inlineEditFacade.createInlineEdit(null, "client-1"));
+
+        assertEquals("Request is required", exception.getMessage());
+    }
+
+    @Test
+    void shouldRejectInvalidSelectionRange() {
+        InlineEditRequest request = buildRequest();
+        request.setSelectionTo(0);
+
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
+                () -> inlineEditFacade.createInlineEdit(request, "client-1"));
 
         assertTrue(exception.getMessage().contains("Selection range is invalid"));
     }
 
     @Test
     void shouldRejectSelectionMismatch() {
+        InlineEditRequest request = buildRequest();
+        request.setSelectedText("wrong");
+
         IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
-                () -> webInlineEditService.createInlineEdit(
-                        "src/App.tsx",
-                        "const x = 1;",
-                        0,
-                        11,
-                        "wrong",
-                        "refactor this",
-                        "client-1"));
+                () -> inlineEditFacade.createInlineEdit(request, "client-1"));
 
         assertTrue(exception.getMessage().contains("Selected text does not match file content"));
     }
 
     @Test
     void shouldRejectSelectionThatExceedsContent() {
+        InlineEditRequest request = buildRequest();
+        request.setSelectionTo(99);
+
         IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
-                () -> webInlineEditService.createInlineEdit(
-                        "src/App.tsx",
-                        "const x = 1;",
-                        0,
-                        99,
-                        "const x = 1",
-                        "refactor this",
-                        "client-1"));
+                () -> inlineEditFacade.createInlineEdit(request, "client-1"));
 
         assertTrue(exception.getMessage().contains("Selection range exceeds file content"));
     }
 
     @Test
     void shouldRejectBlankPath() {
+        InlineEditRequest request = buildRequest();
+        request.setPath(" ");
+
         IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
-                () -> webInlineEditService.createInlineEdit(
-                        " ",
-                        "const x = 1;",
-                        0,
-                        11,
-                        "const x = 1",
-                        "refactor this",
-                        "client-1"));
+                () -> inlineEditFacade.createInlineEdit(request, "client-1"));
 
         assertEquals("Path is required", exception.getMessage());
     }
 
     @Test
     void shouldRejectNullContent() {
+        InlineEditRequest request = buildRequest();
+        request.setContent(null);
+
         IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
-                () -> webInlineEditService.createInlineEdit(
-                        "src/App.tsx",
-                        null,
-                        0,
-                        11,
-                        "const x = 1",
-                        "refactor this",
-                        "client-1"));
+                () -> inlineEditFacade.createInlineEdit(request, "client-1"));
 
         assertEquals("Content is required", exception.getMessage());
     }
 
     @Test
     void shouldRejectBlankInstruction() {
+        InlineEditRequest request = buildRequest();
+        request.setInstruction(" ");
+
         IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
-                () -> webInlineEditService.createInlineEdit(
-                        "src/App.tsx",
-                        "const x = 1;",
-                        0,
-                        11,
-                        "const x = 1",
-                        " ",
-                        "client-1"));
+                () -> inlineEditFacade.createInlineEdit(request, "client-1"));
 
         assertEquals("Instruction is required", exception.getMessage());
     }
@@ -215,14 +173,7 @@ class WebInlineEditServiceTest {
         when(llmPort.chat(any(LlmRequest.class))).thenReturn(failed);
 
         IllegalStateException exception = assertThrows(IllegalStateException.class,
-                () -> webInlineEditService.createInlineEdit(
-                        "src/App.tsx",
-                        "const x = 1;",
-                        0,
-                        11,
-                        "const x = 1",
-                        "refactor this",
-                        "client-1"));
+                () -> inlineEditFacade.createInlineEdit(buildRequest(), "client-1"));
 
         assertTrue(exception.getMessage().contains("llm offline"));
     }
@@ -232,14 +183,7 @@ class WebInlineEditServiceTest {
         when(llmPort.chat(any(LlmRequest.class))).thenReturn(new TimeoutFuture());
 
         IllegalStateException exception = assertThrows(IllegalStateException.class,
-                () -> webInlineEditService.createInlineEdit(
-                        "src/App.tsx",
-                        "const x = 1;",
-                        0,
-                        11,
-                        "const x = 1",
-                        "refactor this",
-                        "client-1"));
+                () -> inlineEditFacade.createInlineEdit(buildRequest(), "client-1"));
 
         assertTrue(exception.getMessage().contains("timed out"));
     }
@@ -250,14 +194,7 @@ class WebInlineEditServiceTest {
 
         try {
             IllegalStateException exception = assertThrows(IllegalStateException.class,
-                    () -> webInlineEditService.createInlineEdit(
-                            "src/App.tsx",
-                            "const x = 1;",
-                            0,
-                            11,
-                            "const x = 1",
-                            "refactor this",
-                            "client-1"));
+                    () -> inlineEditFacade.createInlineEdit(buildRequest(), "client-1"));
 
             assertTrue(exception.getMessage().contains("interrupted"));
             assertTrue(Thread.currentThread().isInterrupted());
@@ -272,14 +209,7 @@ class WebInlineEditServiceTest {
                 .thenReturn(
                         CompletableFuture.completedFuture(LlmResponse.builder().content("const value = 1;").build()));
 
-        webInlineEditService.createInlineEdit(
-                "src/App.tsx",
-                "const x = 1;",
-                0,
-                11,
-                "const x = 1",
-                "refactor this",
-                "client-1");
+        inlineEditFacade.createInlineEdit(buildRequest(), "client-1");
 
         org.mockito.ArgumentCaptor<LlmRequest> captor = org.mockito.ArgumentCaptor.forClass(LlmRequest.class);
         verify(llmPort).chat(captor.capture());
@@ -292,6 +222,17 @@ class WebInlineEditServiceTest {
         assertEquals("const x = 1", metadata.get("session.web.selection.text"));
         assertEquals("refactor this", metadata.get("session.web.inlineEdit.instruction"));
         assertEquals("client-1", metadata.get("session.web.client.instance.id"));
+    }
+
+    private InlineEditRequest buildRequest() {
+        return InlineEditRequest.builder()
+                .path("src/App.tsx")
+                .content("const x = 1;")
+                .selectionFrom(0)
+                .selectionTo(11)
+                .selectedText("const x = 1")
+                .instruction("refactor this")
+                .build();
     }
 
     private static final class TimeoutFuture extends CompletableFuture<LlmResponse> {

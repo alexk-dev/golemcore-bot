@@ -1,12 +1,14 @@
-package me.golemcore.bot.adapter.inbound.web.inlineedit;
+package me.golemcore.bot.client.inlineedit;
 
 import lombok.RequiredArgsConstructor;
+import me.golemcore.bot.client.dto.InlineEditRequest;
+import me.golemcore.bot.client.dto.InlineEditResponse;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.LlmRequest;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
-import me.golemcore.bot.domain.service.DashboardFileService;
 import me.golemcore.bot.port.outbound.LlmPort;
+import me.golemcore.bot.port.outbound.WorkspaceEditorPort;
 import org.springframework.stereotype.Component;
 
 import java.util.LinkedHashMap;
@@ -18,25 +20,29 @@ import java.util.concurrent.TimeoutException;
 
 @Component
 @RequiredArgsConstructor
-public class WebInlineEditService {
+public class InlineEditFacade {
 
     private static final int MAX_TOKENS = 1200;
     private static final int TIMEOUT_SECONDS = 30;
 
-    private final DashboardFileService dashboardFileService;
+    private final WorkspaceEditorPort workspaceEditorPort;
     private final LlmPort llmPort;
-    private final WebInlineEditPromptFactory promptFactory;
+    private final InlineEditPromptFactory promptFactory;
 
-    public InlineEditResult createInlineEdit(
-            String path,
-            String content,
-            int selectionFrom,
-            int selectionTo,
-            String selectedText,
-            String instruction,
-            String clientInstanceId) {
+    public InlineEditResponse createInlineEdit(InlineEditRequest request, String clientInstanceId) {
+        if (request == null) {
+            throw new IllegalArgumentException("Request is required");
+        }
+
+        String path = request.getPath();
+        String content = request.getContent();
+        Integer selectionFrom = request.getSelectionFrom();
+        Integer selectionTo = request.getSelectionTo();
+        String selectedText = request.getSelectedText();
+        String instruction = request.getInstruction();
+
         validateRequest(path, content, selectionFrom, selectionTo, selectedText, instruction);
-        dashboardFileService.validateEditablePath(path);
+        workspaceEditorPort.validateEditablePath(path);
 
         String prompt = promptFactory.buildPrompt(selectedText, instruction);
         Message message = Message.builder()
@@ -44,7 +50,7 @@ public class WebInlineEditService {
                 .content(prompt)
                 .metadata(buildMetadata(path, selectionFrom, selectionTo, selectedText, instruction, clientInstanceId))
                 .build();
-        LlmRequest request = LlmRequest.builder()
+        LlmRequest llmRequest = LlmRequest.builder()
                 .model(resolveModel())
                 .messages(List.of(message))
                 .temperature(0.0)
@@ -52,28 +58,31 @@ public class WebInlineEditService {
                 .build();
 
         try {
-            LlmResponse response = llmPort.chat(request).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
+            LlmResponse response = llmPort.chat(llmRequest).get(TIMEOUT_SECONDS, TimeUnit.SECONDS);
             String replacement = sanitizeReplacement(response != null ? response.getContent() : null);
             if (replacement.isBlank()) {
                 throw new IllegalStateException("Inline edit returned empty content");
             }
-            return new InlineEditResult(path, replacement);
-        } catch (InterruptedException e) {
+            return InlineEditResponse.builder()
+                    .path(path)
+                    .replacement(replacement)
+                    .build();
+        } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
-            throw new IllegalStateException("Inline edit failed: interrupted", e);
-        } catch (ExecutionException | TimeoutException e) {
-            String messageText = e.getCause() != null && e.getCause().getMessage() != null
-                    ? e.getCause().getMessage()
-                    : e.getMessage();
-            throw new IllegalStateException("Inline edit failed: " + messageText, e);
+            throw new IllegalStateException("Inline edit failed: interrupted", exception);
+        } catch (ExecutionException | TimeoutException exception) {
+            String messageText = exception.getCause() != null && exception.getCause().getMessage() != null
+                    ? exception.getCause().getMessage()
+                    : exception.getMessage();
+            throw new IllegalStateException("Inline edit failed: " + messageText, exception);
         }
     }
 
     private void validateRequest(
             String path,
             String content,
-            int selectionFrom,
-            int selectionTo,
+            Integer selectionFrom,
+            Integer selectionTo,
             String selectedText,
             String instruction) {
         if (path == null || path.isBlank()) {
@@ -85,7 +94,8 @@ public class WebInlineEditService {
         if (instruction == null || instruction.trim().isBlank()) {
             throw new IllegalArgumentException("Instruction is required");
         }
-        if (selectionFrom < 0 || selectionTo < 0 || selectionTo <= selectionFrom) {
+        if (selectionFrom == null || selectionTo == null || selectionFrom < 0 || selectionTo < 0
+                || selectionTo <= selectionFrom) {
             throw new IllegalArgumentException("Selection range is invalid");
         }
         if (selectionTo > content.length()) {
@@ -99,8 +109,8 @@ public class WebInlineEditService {
 
     private Map<String, Object> buildMetadata(
             String path,
-            int selectionFrom,
-            int selectionTo,
+            Integer selectionFrom,
+            Integer selectionTo,
             String selectedText,
             String instruction,
             String clientInstanceId) {
@@ -140,8 +150,5 @@ public class WebInlineEditService {
             }
         }
         return trimmed;
-    }
-
-    public record InlineEditResult(String path, String replacement) {
     }
 }
