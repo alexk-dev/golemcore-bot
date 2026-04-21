@@ -1389,6 +1389,14 @@ public class RuntimeConfig {
          */
         @Builder.Default
         private FollowThroughConfig followThrough = new FollowThroughConfig();
+
+        /**
+         * Auto-Proceed classifier: detects rhetorical "ready to continue?" questions in
+         * the assistant reply and sends a synthetic affirmative user message so the
+         * agent keeps moving without waiting for human input.
+         */
+        @Builder.Default
+        private AutoProceedConfig autoProceed = new AutoProceedConfig();
     }
 
     /**
@@ -1417,6 +1425,38 @@ public class RuntimeConfig {
         /** Maximum consecutive follow-through nudges allowed per conversation. */
         @Builder.Default
         private Integer maxChainDepth = 1;
+    }
+
+    /**
+     * Settings for the Auto-Proceed resilience classifier. When the assistant
+     * closes its reply with a rhetorical confirmation question that has no
+     * branching alternatives (for example "Ready to continue?", "Shall I
+     * proceed?"), the classifier dispatches a synthetic affirmative user message so
+     * the loop carries on without a human in the loop.
+     *
+     * <p>
+     * Off by default: this is an aggressive driver and must be opted into.
+     */
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    public static class AutoProceedConfig {
+        /** Enables the Auto-Proceed classifier. Default: off. */
+        @Builder.Default
+        private Boolean enabled = false;
+
+        /** Model tier used for the classifier LLM call. Default: routing. */
+        @Builder.Default
+        private String modelTier = "routing";
+
+        /** Per-call timeout in seconds for the classifier LLM call. */
+        @Builder.Default
+        private Integer timeoutSeconds = 5;
+
+        /** Maximum consecutive auto-proceed affirmations allowed per conversation. */
+        @Builder.Default
+        private Integer maxChainDepth = 2;
     }
 
     @Data

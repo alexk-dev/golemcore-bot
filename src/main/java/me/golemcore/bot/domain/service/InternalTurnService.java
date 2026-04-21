@@ -31,6 +31,7 @@ public class InternalTurnService {
 
     private static final String INTERNAL_SENDER_ID = "internal:auto-continue";
     private static final String FOLLOW_THROUGH_SENDER_ID = "internal:follow-through";
+    private static final String AUTO_PROCEED_SENDER_ID = "internal:auto-proceed";
     private static final String AUTO_CONTINUE_PROMPT = "Continue and finish the previous response. "
             + "This is an internal auto-continue retry after a model failure. "
             + "Use the latest visible user request already in the conversation context. "
@@ -133,6 +134,65 @@ public class InternalTurnService {
 
         inboundMessageDispatchPort.dispatch(message);
         log.info("[InternalTurn] scheduled follow-through nudge (sessionId={}, chainDepth={})",
+                session.getId(), nextChainDepth);
+        return true;
+    }
+
+    /**
+     * Publish an Auto-Proceed affirmation on behalf of the resilience classifier.
+     * When the assistant ends with a rhetorical confirmation question that has a
+     * single obvious forward path, the classifier-authored affirmation prompt is
+     * delivered as an internal user message so the agent proceeds without waiting
+     * for human input.
+     *
+     * @param context
+     *            active agent context
+     * @param affirmationPrompt
+     *            classifier-generated affirmation text; must be non-blank
+     * @param previousChainDepth
+     *            chain depth observed on the triggering turn; the dispatched
+     *            affirmation records {@code previousChainDepth + 1}
+     * @return {@code true} when the affirmation was dispatched, otherwise
+     *         {@code false}
+     */
+    public boolean scheduleAutoProceedAffirmation(AgentContext context, String affirmationPrompt,
+            int previousChainDepth) {
+        if (context == null || context.getSession() == null) {
+            return false;
+        }
+        if (affirmationPrompt == null || affirmationPrompt.isBlank()) {
+            return false;
+        }
+
+        AgentSession session = context.getSession();
+        int nextChainDepth = Math.max(0, previousChainDepth) + 1;
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put(ContextAttributes.MESSAGE_INTERNAL, true);
+        metadata.put(ContextAttributes.MESSAGE_INTERNAL_KIND,
+                ContextAttributes.MESSAGE_INTERNAL_KIND_AUTO_PROCEED);
+        metadata.put(ContextAttributes.TURN_QUEUE_KIND, ContextAttributes.TURN_QUEUE_KIND_INTERNAL_RETRY);
+        metadata.put(ContextAttributes.RESILIENCE_AUTO_PROCEED_CHAIN_DEPTH, nextChainDepth);
+        copyStringAttribute(context, metadata, ContextAttributes.TRANSPORT_CHAT_ID);
+        copyStringAttribute(context, metadata, ContextAttributes.CONVERSATION_KEY);
+        copyStringAttribute(context, metadata, ContextAttributes.WEB_CLIENT_INSTANCE_ID);
+        metadata = TraceContextSupport.ensureRootMetadata(
+                metadata,
+                TraceSpanKind.INTERNAL,
+                TraceNamingSupport.RESILIENCE_AUTO_PROCEED_AFFIRMATION);
+
+        Message message = Message.builder()
+                .id(UUID.randomUUID().toString())
+                .role("user")
+                .content(affirmationPrompt)
+                .channelType(session.getChannelType())
+                .chatId(session.getChatId())
+                .senderId(AUTO_PROCEED_SENDER_ID)
+                .metadata(metadata)
+                .timestamp(clock.instant())
+                .build();
+
+        inboundMessageDispatchPort.dispatch(message);
+        log.info("[InternalTurn] scheduled auto-proceed affirmation (sessionId={}, chainDepth={})",
                 session.getId(), nextChainDepth);
         return true;
     }

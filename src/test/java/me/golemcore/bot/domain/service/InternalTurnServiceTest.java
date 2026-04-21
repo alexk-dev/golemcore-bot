@@ -238,6 +238,116 @@ class InternalTurnServiceTest {
     }
 
     @Test
+    void shouldPublishAutoProceedAffirmationWithAffirmationPromptAsUserMessage() {
+        InboundMessageDispatchPort inboundMessageDispatchPort = mock(InboundMessageDispatchPort.class);
+        Clock clock = Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC);
+        InternalTurnService service = new InternalTurnService(inboundMessageDispatchPort, clock);
+
+        AgentSession session = AgentSession.builder()
+                .id("session-1")
+                .channelType("telegram")
+                .chatId("chat-1")
+                .messages(new ArrayList<>())
+                .build();
+        AgentContext context = AgentContext.builder()
+                .session(session)
+                .messages(new ArrayList<>())
+                .build();
+        context.setAttribute(ContextAttributes.TRANSPORT_CHAT_ID, "transport-1");
+        context.setAttribute(ContextAttributes.CONVERSATION_KEY, "conversation-1");
+
+        boolean scheduled = service.scheduleAutoProceedAffirmation(context, "Yes, please proceed.", 0);
+
+        assertTrue(scheduled);
+        ArgumentCaptor<Message> messageCaptor = ArgumentCaptor.forClass(Message.class);
+        verify(inboundMessageDispatchPort).dispatch(messageCaptor.capture());
+        Message message = messageCaptor.getValue();
+        assertNotNull(message);
+        assertEquals("user", message.getRole());
+        assertEquals("Yes, please proceed.", message.getContent());
+        assertEquals("telegram", message.getChannelType());
+        assertEquals("chat-1", message.getChatId());
+        assertEquals("internal:auto-proceed", message.getSenderId());
+        assertEquals(FIXED_INSTANT, message.getTimestamp());
+        assertTrue(message.isInternalMessage());
+        assertEquals(true, message.getMetadata().get(ContextAttributes.MESSAGE_INTERNAL));
+        assertEquals(ContextAttributes.MESSAGE_INTERNAL_KIND_AUTO_PROCEED,
+                message.getMetadata().get(ContextAttributes.MESSAGE_INTERNAL_KIND));
+        assertEquals(ContextAttributes.TURN_QUEUE_KIND_INTERNAL_RETRY,
+                message.getMetadata().get(ContextAttributes.TURN_QUEUE_KIND));
+        assertEquals(1, message.getMetadata().get(ContextAttributes.RESILIENCE_AUTO_PROCEED_CHAIN_DEPTH));
+        assertEquals("transport-1", message.getMetadata().get(ContextAttributes.TRANSPORT_CHAT_ID));
+        assertEquals("conversation-1", message.getMetadata().get(ContextAttributes.CONVERSATION_KEY));
+        assertEquals("INTERNAL", message.getMetadata().get("trace.root.kind"));
+        assertEquals("resilience.auto_proceed.affirmation", message.getMetadata().get("trace.name"));
+        assertNotNull(message.getMetadata().get("trace.id"));
+        assertNotNull(message.getMetadata().get("trace.span.id"));
+    }
+
+    @Test
+    void shouldIncrementChainDepthForAutoProceedAffirmationRelativeToInboundDepth() {
+        InboundMessageDispatchPort inboundMessageDispatchPort = mock(InboundMessageDispatchPort.class);
+        Clock clock = Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC);
+        InternalTurnService service = new InternalTurnService(inboundMessageDispatchPort, clock);
+
+        AgentSession session = AgentSession.builder()
+                .id("session-1")
+                .channelType("telegram")
+                .chatId("chat-1")
+                .messages(new ArrayList<>())
+                .build();
+        AgentContext context = AgentContext.builder()
+                .session(session)
+                .messages(new ArrayList<>())
+                .build();
+
+        assertTrue(service.scheduleAutoProceedAffirmation(context, "Yes.", 1));
+
+        ArgumentCaptor<Message> messageCaptor = ArgumentCaptor.forClass(Message.class);
+        verify(inboundMessageDispatchPort).dispatch(messageCaptor.capture());
+        assertEquals(2, messageCaptor.getValue().getMetadata()
+                .get(ContextAttributes.RESILIENCE_AUTO_PROCEED_CHAIN_DEPTH));
+    }
+
+    @Test
+    void shouldRefuseAutoProceedAffirmationWhenPromptIsBlank() {
+        InboundMessageDispatchPort inboundMessageDispatchPort = mock(InboundMessageDispatchPort.class);
+        Clock clock = Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC);
+        InternalTurnService service = new InternalTurnService(inboundMessageDispatchPort, clock);
+
+        AgentSession session = AgentSession.builder()
+                .id("session-1")
+                .channelType("telegram")
+                .chatId("chat-1")
+                .messages(new ArrayList<>())
+                .build();
+        AgentContext context = AgentContext.builder()
+                .session(session)
+                .messages(new ArrayList<>())
+                .build();
+
+        assertFalse(service.scheduleAutoProceedAffirmation(context, null, 0));
+        assertFalse(service.scheduleAutoProceedAffirmation(context, "   ", 0));
+        verifyNoInteractions(inboundMessageDispatchPort);
+    }
+
+    @Test
+    void shouldReturnFalseForAutoProceedAffirmationWhenContextOrSessionMissing() {
+        InboundMessageDispatchPort inboundMessageDispatchPort = mock(InboundMessageDispatchPort.class);
+        Clock clock = Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC);
+        InternalTurnService service = new InternalTurnService(inboundMessageDispatchPort, clock);
+
+        assertFalse(service.scheduleAutoProceedAffirmation(null, "Yes.", 0));
+
+        AgentContext contextWithoutSession = AgentContext.builder()
+                .messages(new ArrayList<>())
+                .build();
+        assertFalse(service.scheduleAutoProceedAffirmation(contextWithoutSession, "Yes.", 0));
+
+        verifyNoInteractions(inboundMessageDispatchPort);
+    }
+
+    @Test
     void shouldAttachTraceMetadataToInternalRetryMessage() {
         InboundMessageDispatchPort inboundMessageDispatchPort = mock(InboundMessageDispatchPort.class);
         Clock clock = Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC);

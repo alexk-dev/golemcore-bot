@@ -421,6 +421,19 @@ public class RuntimeConfigService {
         return enabled == null || enabled;
     }
 
+    public RuntimeConfig.AutoProceedConfig getAutoProceedConfig() {
+        RuntimeConfig.AutoProceedConfig cfg = getResilienceConfig().getAutoProceed();
+        return cfg != null ? cfg : RuntimeConfig.AutoProceedConfig.builder().build();
+    }
+
+    public boolean isAutoProceedEnabled() {
+        if (!isResilienceEnabled()) {
+            return false;
+        }
+        Boolean enabled = getAutoProceedConfig().getEnabled();
+        return enabled != null && enabled;
+    }
+
     public RuntimeConfig.SelfEvolvingConfig getSelfEvolvingConfig() {
         RuntimeConfig.SelfEvolvingConfig selfEvolvingConfig = getRuntimeConfig().getSelfEvolving();
         return selfEvolvingConfig != null ? selfEvolvingConfig : RuntimeConfig.SelfEvolvingConfig.builder().build();

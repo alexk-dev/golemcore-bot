@@ -299,6 +299,26 @@ public final class ContextAttributes {
      */
     public static final String RESILIENCE_FOLLOW_THROUGH_CHAIN_DEPTH = "resilience.follow_through.chain_depth";
 
+    /**
+     * String value for {@link #MESSAGE_INTERNAL_KIND}: Auto-Proceed classifier
+     * affirmative reply after the assistant asked a rhetorical confirmation
+     * question.
+     */
+    public static final String MESSAGE_INTERNAL_KIND_AUTO_PROCEED = "auto_proceed";
+
+    /**
+     * Boolean - Auto-Proceed classifier scheduled an affirmative reply in the
+     * current turn.
+     */
+    public static final String RESILIENCE_AUTO_PROCEED_SCHEDULED = "resilience.auto_proceed.scheduled";
+
+    /**
+     * Integer - consecutive Auto-Proceed affirmation chain depth. Incremented each
+     * time an affirmation is scheduled; used to enforce the max-chain-depth
+     * anti-loop guard.
+     */
+    public static final String RESILIENCE_AUTO_PROCEED_CHAIN_DEPTH = "resilience.auto_proceed.chain_depth";
+
     /** Boolean ? current inbound message is an internal runtime-only message. */
     public static final String TURN_INPUT_INTERNAL = "turn.input.internal";
 

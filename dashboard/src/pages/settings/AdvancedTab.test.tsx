@@ -88,6 +88,12 @@ function buildResilienceConfig(
       timeoutSeconds: 5,
       maxChainDepth: followThroughMaxChainDepth,
     },
+    autoProceed: {
+      enabled: false,
+      modelTier: 'routing',
+      timeoutSeconds: 5,
+      maxChainDepth: 2,
+    },
   };
 }
 
