@@ -50,6 +50,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Coordinates execution of {@link AgentLoop} per session.
@@ -89,6 +90,7 @@ public class SessionRunCoordinator {
             .synchronizedMap(new IdentityHashMap<>());
     private final Map<Message, List<Runnable>> pendingStartCallbacks = Collections
             .synchronizedMap(new IdentityHashMap<>());
+    private final AtomicLong realUserActivitySequence = new AtomicLong();
 
     public SessionRunCoordinator(SessionPort sessionPort, AgentLoop agentLoop, ExecutorService sessionRunExecutor,
             RuntimeEventService runtimeEventService, RuntimeConfigService runtimeConfigService,
@@ -105,9 +107,10 @@ public class SessionRunCoordinator {
 
     public void enqueue(Message inbound) {
         Objects.requireNonNull(inbound, "inbound");
-        if (delayedSessionActionService != null
-                && !inbound.isInternalMessage()
-                && !AutoRunContextSupport.isAutoMessage(inbound)) {
+        Long activitySequence = isRealUserActivity(inbound)
+                ? Long.valueOf(realUserActivitySequence.incrementAndGet())
+                : null;
+        if (delayedSessionActionService != null && activitySequence != null) {
             try {
                 delayedSessionActionService.cancelOnUserActivity(inbound);
             } catch (RuntimeException e) { // NOSONAR - inbound delivery must remain available
@@ -117,7 +120,17 @@ public class SessionRunCoordinator {
         }
         SessionKey key = new SessionKey(inbound.getChannelType(), inbound.getChatId());
         SessionRunner runner = runners.computeIfAbsent(key, SessionRunner::new);
-        runner.enqueue(inbound);
+        runner.enqueue(inbound, activitySequence);
+    }
+
+    public boolean enqueueInternalContinuationIfNoNewerRealUserActivity(
+            Message inbound,
+            long baselineRealUserActivitySequence) {
+        Objects.requireNonNull(inbound, "inbound");
+        SessionKey key = new SessionKey(inbound.getChannelType(), inbound.getChatId());
+        SessionRunner runner = runners.computeIfAbsent(key, SessionRunner::new);
+        return runner.enqueueInternalContinuationIfNoNewerRealUserActivity(
+                inbound, baselineRealUserActivitySequence);
     }
 
     /**
@@ -205,7 +218,9 @@ public class SessionRunCoordinator {
         private final Object lock = new Object();
         private final Deque<Message> queuedSteeringMessages = new ArrayDeque<>();
         private final Deque<Message> queuedFollowUpMessages = new ArrayDeque<>();
+        private final Deque<Message> queuedInternalContinuationMessages = new ArrayDeque<>();
 
+        private long latestRealUserActivitySequence = 0L;
         private boolean pausedAfterStop = false;
         private Optional<Future<?>> runningTask = Optional.empty();
         private Message runningInbound;
@@ -214,11 +229,17 @@ public class SessionRunCoordinator {
             this.key = key;
         }
 
-        void enqueue(Message inbound) {
+        void enqueue(Message inbound, Long activitySequence) {
             Objects.requireNonNull(inbound, "inbound");
 
             String queueKind = resolveQueueKind(inbound);
             synchronized (lock) {
+                if (activitySequence != null) {
+                    recordRealUserActivityLocked(inbound, activitySequence.longValue());
+                }
+                if (shouldDropStaleInternalContinuationLocked(inbound, queueKind)) {
+                    return;
+                }
                 if (pausedAfterStop) {
                     if (inbound.isInternalMessage()) {
                         // Internal traffic (resilience retries, follow-through nudges, delayed
@@ -248,6 +269,42 @@ public class SessionRunCoordinator {
             startRun(inbound, new ArrayDeque<>());
         }
 
+        boolean enqueueInternalContinuationIfNoNewerRealUserActivity(
+                Message inbound,
+                long baselineRealUserActivitySequence) {
+            Objects.requireNonNull(inbound, "inbound");
+
+            long normalizedBaseline = Math.max(0L, baselineRealUserActivitySequence);
+            synchronized (lock) {
+                if (latestRealUserActivitySequence > normalizedBaseline) {
+                    log.debug(
+                            "[SessionRunCoordinator] dropped internal continuation due to newer user activity: channel={}, chatId={}",
+                            key.channelType(), key.chatId());
+                    return false;
+                }
+                attachRealUserActivitySequence(inbound,
+                        normalizedBaseline > 0L ? normalizedBaseline : latestRealUserActivitySequence);
+                if (pausedAfterStop) {
+                    rejectPendingCompletion(inbound, "Dropped internal inbound after stop");
+                    log.debug(
+                            "[SessionRunCoordinator] dropped internal continuation during paused-after-stop: channel={}, chatId={}",
+                            key.channelType(), key.chatId());
+                    return false;
+                }
+                if (isRunning()
+                        || !queuedSteeringMessages.isEmpty()
+                        || !queuedFollowUpMessages.isEmpty()
+                        || !queuedInternalContinuationMessages.isEmpty()) {
+                    enqueueInternalContinuation(inbound);
+                    return true;
+                }
+            }
+
+            markQueueKind(inbound, ContextAttributes.TURN_QUEUE_KIND_INTERNAL_CONTINUATION);
+            startRun(inbound, new ArrayDeque<>());
+            return true;
+        }
+
         void requestStop(String expectedRunId, String expectedCommandId) {
             Future<?> taskToCancel;
             boolean shouldPause;
@@ -265,7 +322,10 @@ public class SessionRunCoordinator {
                     }
                 }
                 shouldPause = !targetedHiveStop
-                        && (isRunning() || !queuedSteeringMessages.isEmpty() || !queuedFollowUpMessages.isEmpty());
+                        && (isRunning()
+                                || !queuedSteeringMessages.isEmpty()
+                                || !queuedFollowUpMessages.isEmpty()
+                                || !queuedInternalContinuationMessages.isEmpty());
                 pausedAfterStop = shouldPause;
                 taskToCancel = runningTask.orElse(null);
             }
@@ -323,6 +383,10 @@ public class SessionRunCoordinator {
                 markQueueKind(steering, ContextAttributes.TURN_QUEUE_KIND_STEERING);
                 queued.add(steering);
             }
+            while (!queuedInternalContinuationMessages.isEmpty()) {
+                Message internalContinuation = queuedInternalContinuationMessages.removeFirst();
+                rejectPendingCompletion(internalContinuation, "Skipped after stop request");
+            }
 
             queued.sort(Comparator.comparing(this::resolveTimestamp));
             return new ArrayDeque<>(queued);
@@ -341,6 +405,7 @@ public class SessionRunCoordinator {
                 return isRunning()
                         || !queuedSteeringMessages.isEmpty()
                         || !queuedFollowUpMessages.isEmpty()
+                        || !queuedInternalContinuationMessages.isEmpty()
                         || pausedAfterStop;
             }
         }
@@ -445,7 +510,42 @@ public class SessionRunCoordinator {
                 markQueueKind(nextFollowUp, resolveQueueKind(nextFollowUp));
                 return nextFollowUp;
             }
+            if (!queuedInternalContinuationMessages.isEmpty()) {
+                Message nextInternalContinuation = queuedInternalContinuationMessages.removeFirst();
+                markQueueKind(nextInternalContinuation, ContextAttributes.TURN_QUEUE_KIND_INTERNAL_CONTINUATION);
+                return nextInternalContinuation;
+            }
             return null;
+        }
+
+        private boolean shouldDropStaleInternalContinuationLocked(Message inbound, String queueKind) {
+            if (!ContextAttributes.TURN_QUEUE_KIND_INTERNAL_CONTINUATION.equals(queueKind)) {
+                return false;
+            }
+            long baselineRealUserActivitySequence = resolveRealUserActivitySequence(inbound);
+            if (latestRealUserActivitySequence > baselineRealUserActivitySequence) {
+                rejectPendingCompletion(inbound,
+                        "Dropped stale internal continuation after newer real user activity");
+                log.debug(
+                        "[SessionRunCoordinator] dropped stale internal continuation: channel={}, chatId={}",
+                        key.channelType(), key.chatId());
+                return true;
+            }
+            attachRealUserActivitySequence(inbound, baselineRealUserActivitySequence > 0L
+                    ? baselineRealUserActivitySequence
+                    : latestRealUserActivitySequence);
+            return false;
+        }
+
+        private long resolveRealUserActivitySequence(Message message) {
+            if (message == null || message.getMetadata() == null) {
+                return 0L;
+            }
+            Object raw = message.getMetadata().get(ContextAttributes.MESSAGE_REAL_USER_ACTIVITY_SEQUENCE);
+            if (raw instanceof Number number) {
+                return Math.max(0L, number.longValue());
+            }
+            return 0L;
         }
 
         private void enqueueSteering(Message inbound) {
@@ -477,6 +577,10 @@ public class SessionRunCoordinator {
                 enqueueWithBound(queuedFollowUpMessages, inbound, "internal-retry");
                 return;
             }
+            if (ContextAttributes.TURN_QUEUE_KIND_INTERNAL_CONTINUATION.equals(queueKind)) {
+                enqueueInternalContinuation(inbound);
+                return;
+            }
             if (ContextAttributes.TURN_QUEUE_KIND_DELAYED_ACTION.equals(queueKind)) {
                 enqueueFollowUpWithBound(inbound, "delayed-action");
                 return;
@@ -494,6 +598,38 @@ public class SessionRunCoordinator {
                         "[SessionRunCoordinator] follow-up queue mode one-at-a-time: replaced pending follow-up message");
             }
             enqueueFollowUpWithBound(inbound, "follow-up");
+        }
+
+        private void enqueueInternalContinuation(Message inbound) {
+            while (!queuedInternalContinuationMessages.isEmpty()) {
+                Message replaced = queuedInternalContinuationMessages.removeFirst();
+                rejectPendingCompletion(replaced, "Replaced by a newer internal continuation message");
+            }
+            queuedInternalContinuationMessages.addLast(inbound);
+        }
+
+        private void recordRealUserActivityLocked(Message inbound, long activitySequence) {
+            latestRealUserActivitySequence = Math.max(latestRealUserActivitySequence, activitySequence);
+            attachRealUserActivitySequence(inbound, latestRealUserActivitySequence);
+            dropQueuedInternalContinuationsLocked("Cancelled by newer real user activity");
+        }
+
+        private void dropQueuedInternalContinuationsLocked(String reason) {
+            while (!queuedInternalContinuationMessages.isEmpty()) {
+                Message queued = queuedInternalContinuationMessages.removeFirst();
+                rejectPendingCompletion(queued, reason);
+            }
+        }
+
+        private void attachRealUserActivitySequence(Message message, long activitySequence) {
+            if (message == null) {
+                return;
+            }
+            Map<String, Object> metadata = message.getMetadata() != null
+                    ? new LinkedHashMap<>(message.getMetadata())
+                    : new LinkedHashMap<>();
+            metadata.put(ContextAttributes.MESSAGE_REAL_USER_ACTIVITY_SEQUENCE, activitySequence);
+            message.setMetadata(metadata);
         }
 
         private void enqueueFollowUpWithBound(Message inbound, String queueLabel) {
@@ -662,7 +798,9 @@ public class SessionRunCoordinator {
         private boolean isEvictable() {
             synchronized (lock) {
                 return !pausedAfterStop && !isRunning() && queuedSteeringMessages.isEmpty()
-                        && queuedFollowUpMessages.isEmpty() && runningInbound == null;
+                        && queuedFollowUpMessages.isEmpty()
+                        && queuedInternalContinuationMessages.isEmpty()
+                        && runningInbound == null;
             }
         }
 
@@ -713,6 +851,12 @@ public class SessionRunCoordinator {
             log.info("[SessionRunCoordinator] flushed {} queued messages ({} -> {})",
                     prefix.size(), before, session.getMessages().size());
         }
+    }
+
+    private boolean isRealUserActivity(Message inbound) {
+        return inbound != null
+                && !inbound.isInternalMessage()
+                && !AutoRunContextSupport.isAutoMessage(inbound);
     }
 
     private void registerPendingCompletion(Message message, CompletableFuture<Void> completion) {
@@ -843,6 +987,9 @@ public class SessionRunCoordinator {
             }
             if (ContextAttributes.TURN_QUEUE_KIND_DELAYED_ACTION.equals(normalized)) {
                 return ContextAttributes.TURN_QUEUE_KIND_DELAYED_ACTION;
+            }
+            if (ContextAttributes.TURN_QUEUE_KIND_INTERNAL_CONTINUATION.equals(normalized)) {
+                return ContextAttributes.TURN_QUEUE_KIND_INTERNAL_CONTINUATION;
             }
             if (ContextAttributes.TURN_QUEUE_KIND_FOLLOW_UP.equals(normalized)) {
                 return ContextAttributes.TURN_QUEUE_KIND_FOLLOW_UP;

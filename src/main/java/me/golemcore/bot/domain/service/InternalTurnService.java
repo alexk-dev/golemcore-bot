@@ -18,6 +18,7 @@ import org.springframework.stereotype.Service;
 
 import java.time.Clock;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -113,12 +114,14 @@ public class InternalTurnService {
 
         AgentSession session = context.getSession();
         int nextChainDepth = Math.max(0, previousChainDepth) + 1;
+        long baselineRealUserActivitySequence = resolveBaselineRealUserActivitySequence(context);
         Map<String, Object> metadata = new LinkedHashMap<>();
         metadata.put(ContextAttributes.MESSAGE_INTERNAL, true);
         metadata.put(ContextAttributes.MESSAGE_INTERNAL_KIND,
                 ContextAttributes.MESSAGE_INTERNAL_KIND_FOLLOW_THROUGH_NUDGE);
-        metadata.put(ContextAttributes.TURN_QUEUE_KIND, ContextAttributes.TURN_QUEUE_KIND_INTERNAL_RETRY);
+        metadata.put(ContextAttributes.TURN_QUEUE_KIND, ContextAttributes.TURN_QUEUE_KIND_INTERNAL_CONTINUATION);
         metadata.put(ContextAttributes.RESILIENCE_FOLLOW_THROUGH_CHAIN_DEPTH, nextChainDepth);
+        metadata.put(ContextAttributes.MESSAGE_REAL_USER_ACTIVITY_SEQUENCE, baselineRealUserActivitySequence);
         copyStringAttribute(context, metadata, ContextAttributes.TRANSPORT_CHAT_ID);
         copyStringAttribute(context, metadata, ContextAttributes.CONVERSATION_KEY);
         copyStringAttribute(context, metadata, ContextAttributes.WEB_CLIENT_INSTANCE_ID);
@@ -178,12 +181,14 @@ public class InternalTurnService {
 
         AgentSession session = context.getSession();
         int nextChainDepth = Math.max(0, previousChainDepth) + 1;
+        long baselineRealUserActivitySequence = resolveBaselineRealUserActivitySequence(context);
         Map<String, Object> metadata = new LinkedHashMap<>();
         metadata.put(ContextAttributes.MESSAGE_INTERNAL, true);
         metadata.put(ContextAttributes.MESSAGE_INTERNAL_KIND,
                 ContextAttributes.MESSAGE_INTERNAL_KIND_AUTO_PROCEED);
-        metadata.put(ContextAttributes.TURN_QUEUE_KIND, ContextAttributes.TURN_QUEUE_KIND_INTERNAL_RETRY);
+        metadata.put(ContextAttributes.TURN_QUEUE_KIND, ContextAttributes.TURN_QUEUE_KIND_INTERNAL_CONTINUATION);
         metadata.put(ContextAttributes.RESILIENCE_AUTO_PROCEED_CHAIN_DEPTH, nextChainDepth);
+        metadata.put(ContextAttributes.MESSAGE_REAL_USER_ACTIVITY_SEQUENCE, baselineRealUserActivitySequence);
         copyStringAttribute(context, metadata, ContextAttributes.TRANSPORT_CHAT_ID);
         copyStringAttribute(context, metadata, ContextAttributes.CONVERSATION_KEY);
         copyStringAttribute(context, metadata, ContextAttributes.WEB_CLIENT_INSTANCE_ID);
@@ -213,6 +218,32 @@ public class InternalTurnService {
                     session.getId(), exception.getMessage());
             return false;
         }
+    }
+
+    private long resolveBaselineRealUserActivitySequence(AgentContext context) {
+        Message lastUserMessage = findLastUserMessage(context);
+        if (lastUserMessage == null || lastUserMessage.getMetadata() == null) {
+            return 0L;
+        }
+        Object raw = lastUserMessage.getMetadata().get(ContextAttributes.MESSAGE_REAL_USER_ACTIVITY_SEQUENCE);
+        if (raw instanceof Number number) {
+            return Math.max(0L, number.longValue());
+        }
+        return 0L;
+    }
+
+    private Message findLastUserMessage(AgentContext context) {
+        List<Message> messages = context != null ? context.getMessages() : null;
+        if (messages == null) {
+            return null;
+        }
+        for (int i = messages.size() - 1; i >= 0; i--) {
+            Message message = messages.get(i);
+            if ("user".equalsIgnoreCase(message.getRole())) {
+                return message;
+            }
+        }
+        return null;
     }
 
     private void copyStringAttribute(AgentContext context, Map<String, Object> target, String key) {

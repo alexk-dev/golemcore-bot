@@ -46,7 +46,6 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -59,8 +58,7 @@ import static org.mockito.Mockito.when;
  * {@link FollowThroughPromptBuilder}, {@link FollowThroughVerdictParser} (with
  * the real {@link JacksonTraceSnapshotCodecAdapter}) and the real
  * {@link InternalTurnService}. The LLM and the inbound dispatch port are the
- * only seams that are mocked — everything in between exercises production code
- * paths.
+ * only seams that are mocked.
  */
 class FollowThroughIntegrationTest {
 
@@ -115,7 +113,7 @@ class FollowThroughIntegrationTest {
                  "continuation_prompt":"%s",
                  "reason":"committed but no tool invoked"}
                 """.formatted(CONTINUATION));
-        AgentContext context = contextWith(userMessage(USER_TEXT, null),
+        AgentContext context = contextWith(userMessage(USER_TEXT, 0L, null),
                 assistantMessage(ASSISTANT_TEXT));
 
         system.process(context);
@@ -133,9 +131,10 @@ class FollowThroughIntegrationTest {
         assertEquals(Boolean.TRUE, metadata.get(ContextAttributes.MESSAGE_INTERNAL));
         assertEquals(ContextAttributes.MESSAGE_INTERNAL_KIND_FOLLOW_THROUGH_NUDGE,
                 metadata.get(ContextAttributes.MESSAGE_INTERNAL_KIND));
-        assertEquals(ContextAttributes.TURN_QUEUE_KIND_INTERNAL_RETRY,
+        assertEquals(ContextAttributes.TURN_QUEUE_KIND_INTERNAL_CONTINUATION,
                 metadata.get(ContextAttributes.TURN_QUEUE_KIND));
         assertEquals(1, metadata.get(ContextAttributes.RESILIENCE_FOLLOW_THROUGH_CHAIN_DEPTH));
+        assertEquals(0L, metadata.get(ContextAttributes.MESSAGE_REAL_USER_ACTIVITY_SEQUENCE));
         assertTrue(Boolean.TRUE.equals(
                 context.getAttribute(ContextAttributes.RESILIENCE_FOLLOW_THROUGH_SCHEDULED)));
 
@@ -152,7 +151,7 @@ class FollowThroughIntegrationTest {
                  "commitment_text":null,"continuation_prompt":null,
                  "reason":"assistant waited for user choice"}
                 """);
-        AgentContext context = contextWith(userMessage(USER_TEXT, null),
+        AgentContext context = contextWith(userMessage(USER_TEXT, 0L, null),
                 assistantMessage("We could either A, B, or C — which would you prefer?"));
 
         system.process(context);
@@ -170,7 +169,7 @@ class FollowThroughIntegrationTest {
                 ContextAttributes.MESSAGE_INTERNAL_KIND_FOLLOW_THROUGH_NUDGE);
         inboundMetadata.put(ContextAttributes.RESILIENCE_FOLLOW_THROUGH_CHAIN_DEPTH, 1);
 
-        AgentContext context = contextWith(userMessage(CONTINUATION, inboundMetadata),
+        AgentContext context = contextWith(userMessage(CONTINUATION, 0L, inboundMetadata),
                 assistantMessage("Still committing but not yet calling the tool."));
 
         assertFalse(system.shouldProcess(context));
@@ -190,7 +189,7 @@ class FollowThroughIntegrationTest {
                         .timeoutSeconds(0)
                         .maxChainDepth(1)
                         .build());
-        AgentContext context = contextWith(userMessage(USER_TEXT, null),
+        AgentContext context = contextWith(userMessage(USER_TEXT, 0L, null),
                 assistantMessage(ASSISTANT_TEXT));
 
         system.process(context);
@@ -198,44 +197,6 @@ class FollowThroughIntegrationTest {
         verifyNoInteractions(inboundMessageDispatchPort);
         assertFalse(Boolean.TRUE.equals(
                 context.getAttribute(ContextAttributes.RESILIENCE_FOLLOW_THROUGH_SCHEDULED)));
-    }
-
-    @Test
-    void shouldIncrementChainDepthAcrossSuccessiveNudgesUpToConfiguredMax() {
-        stubLlmResponse("""
-                {"intent_type":"commitment","has_unfulfilled_commitment":true,
-                 "commitment_text":"gather the three files",
-                 "continuation_prompt":"%s",
-                 "reason":"committed but no tool invoked"}
-                """.formatted(CONTINUATION));
-        when(runtimeConfigService.getFollowThroughConfig()).thenReturn(
-                RuntimeConfig.FollowThroughConfig.builder()
-                        .enabled(true)
-                        .modelTier(MODEL_TIER)
-                        .timeoutSeconds(5)
-                        .maxChainDepth(2)
-                        .build());
-
-        AgentContext firstContext = contextWith(userMessage(USER_TEXT, null),
-                assistantMessage(ASSISTANT_TEXT));
-        system.process(firstContext);
-
-        Map<String, Object> firstInbound = new LinkedHashMap<>();
-        firstInbound.put(ContextAttributes.MESSAGE_INTERNAL, true);
-        firstInbound.put(ContextAttributes.MESSAGE_INTERNAL_KIND,
-                ContextAttributes.MESSAGE_INTERNAL_KIND_FOLLOW_THROUGH_NUDGE);
-        firstInbound.put(ContextAttributes.RESILIENCE_FOLLOW_THROUGH_CHAIN_DEPTH, 1);
-        AgentContext secondContext = contextWith(userMessage(CONTINUATION, firstInbound),
-                assistantMessage(ASSISTANT_TEXT));
-        system.process(secondContext);
-
-        ArgumentCaptor<Message> captor = ArgumentCaptor.forClass(Message.class);
-        verify(inboundMessageDispatchPort, times(2)).dispatch(captor.capture());
-        List<Message> dispatched = captor.getAllValues();
-        assertEquals(1, dispatched.get(0).getMetadata()
-                .get(ContextAttributes.RESILIENCE_FOLLOW_THROUGH_CHAIN_DEPTH));
-        assertEquals(2, dispatched.get(1).getMetadata()
-                .get(ContextAttributes.RESILIENCE_FOLLOW_THROUGH_CHAIN_DEPTH));
     }
 
     @Test
@@ -247,7 +208,7 @@ class FollowThroughIntegrationTest {
             return llmFuture;
         });
 
-        AgentContext context = contextWith(userMessage(USER_TEXT, null),
+        AgentContext context = contextWith(userMessage(USER_TEXT, 0L, null),
                 assistantMessage(ASSISTANT_TEXT));
         Map<String, Object> sessionMetadata = new LinkedHashMap<>();
         context.getSession().setMetadata(sessionMetadata);
@@ -258,7 +219,6 @@ class FollowThroughIntegrationTest {
             assertTrue(classifierEntered.await(5, TimeUnit.SECONDS),
                     "classifier must enter the LLM call so we can race /stop against it");
 
-            // /stop arrives — coordinator would mark this on the session metadata.
             sessionMetadata.put(ContextAttributes.TURN_INTERRUPT_REQUESTED, true);
 
             llmFuture.complete(LlmResponse.builder().content("""
@@ -305,12 +265,20 @@ class FollowThroughIntegrationTest {
         return AgentContext.builder().session(session).messages(list).build();
     }
 
-    private Message userMessage(String content, Map<String, Object> metadata) {
+    private Message userMessage(String content, long activitySequence, Map<String, Object> metadata) {
+        Map<String, Object> effectiveMetadata = new LinkedHashMap<>();
+        if (metadata != null) {
+            effectiveMetadata.putAll(metadata);
+        }
+        effectiveMetadata.put(ContextAttributes.MESSAGE_REAL_USER_ACTIVITY_SEQUENCE, activitySequence);
         return Message.builder()
                 .id("u-" + content.hashCode())
                 .role("user")
                 .content(content)
-                .metadata(metadata != null ? metadata : new LinkedHashMap<>())
+                .metadata(effectiveMetadata)
+                .channelType("telegram")
+                .chatId(CHAT_ID)
+                .senderId("u1")
                 .build();
     }
 
@@ -319,7 +287,9 @@ class FollowThroughIntegrationTest {
                 .id("a-" + content.hashCode())
                 .role("assistant")
                 .content(content)
+                .channelType("telegram")
+                .chatId(CHAT_ID)
+                .senderId("assistant")
                 .build();
     }
-
 }

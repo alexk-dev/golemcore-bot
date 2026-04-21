@@ -247,9 +247,21 @@ public final class ContextAttributes {
     public static final String TURN_QUEUE_KIND_DELAYED_ACTION = "delayed_action";
 
     /**
+     * String value for {@link #TURN_QUEUE_KIND}: low-priority internal continuation
+     * that must yield to real user follow-up.
+     */
+    public static final String TURN_QUEUE_KIND_INTERNAL_CONTINUATION = "internal_continuation";
+
+    /**
      * Boolean - current turn scheduled an internal retry instead of user feedback.
      */
     public static final String TURN_INTERNAL_RETRY_SCHEDULED = "turn.internal.retry.scheduled";
+
+    /**
+     * Long - latest real non-internal user activity sequence observed for the
+     * session when this message was accepted or scheduled.
+     */
+    public static final String MESSAGE_REAL_USER_ACTIVITY_SEQUENCE = "message.real_user_activity.sequence";
 
     /** Boolean ? message metadata flag for invisible internal messages. */
     public static final String MESSAGE_INTERNAL = "message.internal";

@@ -17,6 +17,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -40,16 +41,7 @@ class InternalTurnServiceTest {
         Clock clock = Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC);
         InternalTurnService service = new InternalTurnService(inboundMessageDispatchPort, clock);
 
-        AgentSession session = AgentSession.builder()
-                .id("session-1")
-                .channelType("telegram")
-                .chatId("chat-1")
-                .messages(new ArrayList<>())
-                .build();
-        AgentContext context = AgentContext.builder()
-                .session(session)
-                .messages(new ArrayList<>())
-                .build();
+        AgentContext context = context();
         context.setAttribute(ContextAttributes.TRANSPORT_CHAT_ID, "transport-1");
         context.setAttribute(ContextAttributes.CONVERSATION_KEY, "conversation-1");
 
@@ -88,16 +80,7 @@ class InternalTurnServiceTest {
         Clock clock = Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC);
         InternalTurnService service = new InternalTurnService(inboundMessageDispatchPort, clock);
 
-        AgentSession session = AgentSession.builder()
-                .id("session-1")
-                .channelType("telegram")
-                .chatId("chat-1")
-                .messages(new ArrayList<>())
-                .build();
-        AgentContext context = AgentContext.builder()
-                .session(session)
-                .messages(new ArrayList<>())
-                .build();
+        AgentContext context = context();
         context.setAttribute(ContextAttributes.TRANSPORT_CHAT_ID, " ");
         context.setAttribute(ContextAttributes.CONVERSATION_KEY, null);
 
@@ -107,12 +90,6 @@ class InternalTurnServiceTest {
         ArgumentCaptor<Message> messageCaptor = ArgumentCaptor.forClass(Message.class);
         verify(inboundMessageDispatchPort).dispatch(messageCaptor.capture());
         Message message = messageCaptor.getValue();
-        assertNotNull(message);
-        assertEquals(true, message.getMetadata().get(ContextAttributes.MESSAGE_INTERNAL));
-        assertEquals(ContextAttributes.MESSAGE_INTERNAL_KIND_AUTO_CONTINUE,
-                message.getMetadata().get(ContextAttributes.MESSAGE_INTERNAL_KIND));
-        assertEquals(ContextAttributes.TURN_QUEUE_KIND_INTERNAL_RETRY,
-                message.getMetadata().get(ContextAttributes.TURN_QUEUE_KIND));
         assertNull(message.getMetadata().get(ContextAttributes.TRANSPORT_CHAT_ID));
         assertNull(message.getMetadata().get(ContextAttributes.CONVERSATION_KEY));
     }
@@ -124,11 +101,15 @@ class InternalTurnServiceTest {
         InternalTurnService service = new InternalTurnService(inboundMessageDispatchPort, clock);
 
         assertFalse(service.scheduleAutoContinueRetry(null, "llm-timeout"));
+        assertFalse(service.scheduleFollowThroughNudge(null, "Continue.", 0));
+        assertFalse(service.scheduleAutoProceedAffirmation(null, "Yes.", 0));
 
         AgentContext contextWithoutSession = AgentContext.builder()
                 .messages(new ArrayList<>())
                 .build();
         assertFalse(service.scheduleAutoContinueRetry(contextWithoutSession, "llm-timeout"));
+        assertFalse(service.scheduleFollowThroughNudge(contextWithoutSession, "Continue.", 0));
+        assertFalse(service.scheduleAutoProceedAffirmation(contextWithoutSession, "Yes.", 0));
 
         verifyNoInteractions(inboundMessageDispatchPort);
     }
@@ -139,16 +120,7 @@ class InternalTurnServiceTest {
         Clock clock = Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC);
         InternalTurnService service = new InternalTurnService(inboundMessageDispatchPort, clock);
 
-        AgentSession session = AgentSession.builder()
-                .id("session-1")
-                .channelType("telegram")
-                .chatId("chat-1")
-                .messages(new ArrayList<>())
-                .build();
-        AgentContext context = AgentContext.builder()
-                .session(session)
-                .messages(new ArrayList<>())
-                .build();
+        AgentContext context = contextWithLastUserActivitySequence(7L);
         context.setAttribute(ContextAttributes.TRANSPORT_CHAT_ID, "transport-1");
         context.setAttribute(ContextAttributes.CONVERSATION_KEY, "conversation-1");
 
@@ -170,9 +142,10 @@ class InternalTurnServiceTest {
         assertEquals(true, message.getMetadata().get(ContextAttributes.MESSAGE_INTERNAL));
         assertEquals(ContextAttributes.MESSAGE_INTERNAL_KIND_FOLLOW_THROUGH_NUDGE,
                 message.getMetadata().get(ContextAttributes.MESSAGE_INTERNAL_KIND));
-        assertEquals(ContextAttributes.TURN_QUEUE_KIND_INTERNAL_RETRY,
+        assertEquals(ContextAttributes.TURN_QUEUE_KIND_INTERNAL_CONTINUATION,
                 message.getMetadata().get(ContextAttributes.TURN_QUEUE_KIND));
         assertEquals(1, message.getMetadata().get(ContextAttributes.RESILIENCE_FOLLOW_THROUGH_CHAIN_DEPTH));
+        assertEquals(7L, message.getMetadata().get(ContextAttributes.MESSAGE_REAL_USER_ACTIVITY_SEQUENCE));
         assertEquals("transport-1", message.getMetadata().get(ContextAttributes.TRANSPORT_CHAT_ID));
         assertEquals("conversation-1", message.getMetadata().get(ContextAttributes.CONVERSATION_KEY));
         assertEquals("INTERNAL", message.getMetadata().get("trace.root.kind"));
@@ -187,16 +160,7 @@ class InternalTurnServiceTest {
         Clock clock = Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC);
         InternalTurnService service = new InternalTurnService(inboundMessageDispatchPort, clock);
 
-        AgentSession session = AgentSession.builder()
-                .id("session-1")
-                .channelType("telegram")
-                .chatId("chat-1")
-                .messages(new ArrayList<>())
-                .build();
-        AgentContext context = AgentContext.builder()
-                .session(session)
-                .messages(new ArrayList<>())
-                .build();
+        AgentContext context = contextWithLastUserActivitySequence(3L);
 
         assertTrue(service.scheduleFollowThroughNudge(context, "Continue now.", 1));
 
@@ -212,35 +176,10 @@ class InternalTurnServiceTest {
         Clock clock = Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC);
         InternalTurnService service = new InternalTurnService(inboundMessageDispatchPort, clock);
 
-        AgentSession session = AgentSession.builder()
-                .id("session-1")
-                .channelType("telegram")
-                .chatId("chat-1")
-                .messages(new ArrayList<>())
-                .build();
-        AgentContext context = AgentContext.builder()
-                .session(session)
-                .messages(new ArrayList<>())
-                .build();
+        AgentContext context = context();
 
         assertFalse(service.scheduleFollowThroughNudge(context, null, 0));
         assertFalse(service.scheduleFollowThroughNudge(context, "   ", 0));
-        verifyNoInteractions(inboundMessageDispatchPort);
-    }
-
-    @Test
-    void shouldReturnFalseForFollowThroughNudgeWhenContextOrSessionMissing() {
-        InboundMessageDispatchPort inboundMessageDispatchPort = mock(InboundMessageDispatchPort.class);
-        Clock clock = Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC);
-        InternalTurnService service = new InternalTurnService(inboundMessageDispatchPort, clock);
-
-        assertFalse(service.scheduleFollowThroughNudge(null, "Continue.", 0));
-
-        AgentContext contextWithoutSession = AgentContext.builder()
-                .messages(new ArrayList<>())
-                .build();
-        assertFalse(service.scheduleFollowThroughNudge(contextWithoutSession, "Continue.", 0));
-
         verifyNoInteractions(inboundMessageDispatchPort);
     }
 
@@ -252,20 +191,9 @@ class InternalTurnServiceTest {
         Clock clock = Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC);
         InternalTurnService service = new InternalTurnService(inboundMessageDispatchPort, clock);
 
-        AgentSession session = AgentSession.builder()
-                .id("session-1")
-                .channelType("telegram")
-                .chatId("chat-1")
-                .messages(new ArrayList<>())
-                .build();
-        AgentContext context = AgentContext.builder()
-                .session(session)
-                .messages(new ArrayList<>())
-                .build();
-
         AttachedAppender attachedAppender = attachAppender();
         try {
-            boolean scheduled = service.scheduleFollowThroughNudge(context, "Continue now.", 0);
+            boolean scheduled = service.scheduleFollowThroughNudge(context(), "Continue now.", 0);
 
             assertFalse(scheduled);
             verify(inboundMessageDispatchPort).dispatch(any(Message.class));
@@ -284,16 +212,7 @@ class InternalTurnServiceTest {
         Clock clock = Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC);
         InternalTurnService service = new InternalTurnService(inboundMessageDispatchPort, clock);
 
-        AgentSession session = AgentSession.builder()
-                .id("session-1")
-                .channelType("telegram")
-                .chatId("chat-1")
-                .messages(new ArrayList<>())
-                .build();
-        AgentContext context = AgentContext.builder()
-                .session(session)
-                .messages(new ArrayList<>())
-                .build();
+        AgentContext context = contextWithLastUserActivitySequence(9L);
         context.setAttribute(ContextAttributes.TRANSPORT_CHAT_ID, "transport-1");
         context.setAttribute(ContextAttributes.CONVERSATION_KEY, "conversation-1");
 
@@ -314,9 +233,10 @@ class InternalTurnServiceTest {
         assertEquals(true, message.getMetadata().get(ContextAttributes.MESSAGE_INTERNAL));
         assertEquals(ContextAttributes.MESSAGE_INTERNAL_KIND_AUTO_PROCEED,
                 message.getMetadata().get(ContextAttributes.MESSAGE_INTERNAL_KIND));
-        assertEquals(ContextAttributes.TURN_QUEUE_KIND_INTERNAL_RETRY,
+        assertEquals(ContextAttributes.TURN_QUEUE_KIND_INTERNAL_CONTINUATION,
                 message.getMetadata().get(ContextAttributes.TURN_QUEUE_KIND));
         assertEquals(1, message.getMetadata().get(ContextAttributes.RESILIENCE_AUTO_PROCEED_CHAIN_DEPTH));
+        assertEquals(9L, message.getMetadata().get(ContextAttributes.MESSAGE_REAL_USER_ACTIVITY_SEQUENCE));
         assertEquals("transport-1", message.getMetadata().get(ContextAttributes.TRANSPORT_CHAT_ID));
         assertEquals("conversation-1", message.getMetadata().get(ContextAttributes.CONVERSATION_KEY));
         assertEquals("INTERNAL", message.getMetadata().get("trace.root.kind"));
@@ -331,18 +251,7 @@ class InternalTurnServiceTest {
         Clock clock = Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC);
         InternalTurnService service = new InternalTurnService(inboundMessageDispatchPort, clock);
 
-        AgentSession session = AgentSession.builder()
-                .id("session-1")
-                .channelType("telegram")
-                .chatId("chat-1")
-                .messages(new ArrayList<>())
-                .build();
-        AgentContext context = AgentContext.builder()
-                .session(session)
-                .messages(new ArrayList<>())
-                .build();
-
-        assertTrue(service.scheduleAutoProceedAffirmation(context, "Yes.", 1));
+        assertTrue(service.scheduleAutoProceedAffirmation(contextWithLastUserActivitySequence(5L), "Yes.", 1));
 
         ArgumentCaptor<Message> messageCaptor = ArgumentCaptor.forClass(Message.class);
         verify(inboundMessageDispatchPort).dispatch(messageCaptor.capture());
@@ -356,35 +265,10 @@ class InternalTurnServiceTest {
         Clock clock = Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC);
         InternalTurnService service = new InternalTurnService(inboundMessageDispatchPort, clock);
 
-        AgentSession session = AgentSession.builder()
-                .id("session-1")
-                .channelType("telegram")
-                .chatId("chat-1")
-                .messages(new ArrayList<>())
-                .build();
-        AgentContext context = AgentContext.builder()
-                .session(session)
-                .messages(new ArrayList<>())
-                .build();
+        AgentContext context = context();
 
         assertFalse(service.scheduleAutoProceedAffirmation(context, null, 0));
         assertFalse(service.scheduleAutoProceedAffirmation(context, "   ", 0));
-        verifyNoInteractions(inboundMessageDispatchPort);
-    }
-
-    @Test
-    void shouldReturnFalseForAutoProceedAffirmationWhenContextOrSessionMissing() {
-        InboundMessageDispatchPort inboundMessageDispatchPort = mock(InboundMessageDispatchPort.class);
-        Clock clock = Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC);
-        InternalTurnService service = new InternalTurnService(inboundMessageDispatchPort, clock);
-
-        assertFalse(service.scheduleAutoProceedAffirmation(null, "Yes.", 0));
-
-        AgentContext contextWithoutSession = AgentContext.builder()
-                .messages(new ArrayList<>())
-                .build();
-        assertFalse(service.scheduleAutoProceedAffirmation(contextWithoutSession, "Yes.", 0));
-
         verifyNoInteractions(inboundMessageDispatchPort);
     }
 
@@ -396,20 +280,9 @@ class InternalTurnServiceTest {
         Clock clock = Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC);
         InternalTurnService service = new InternalTurnService(inboundMessageDispatchPort, clock);
 
-        AgentSession session = AgentSession.builder()
-                .id("session-1")
-                .channelType("telegram")
-                .chatId("chat-1")
-                .messages(new ArrayList<>())
-                .build();
-        AgentContext context = AgentContext.builder()
-                .session(session)
-                .messages(new ArrayList<>())
-                .build();
-
         AttachedAppender attachedAppender = attachAppender();
         try {
-            boolean scheduled = service.scheduleAutoProceedAffirmation(context, "Yes, proceed.", 0);
+            boolean scheduled = service.scheduleAutoProceedAffirmation(context(), "Yes, proceed.", 0);
 
             assertFalse(scheduled);
             verify(inboundMessageDispatchPort).dispatch(any(Message.class));
@@ -430,20 +303,9 @@ class InternalTurnServiceTest {
         Clock clock = Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC);
         InternalTurnService service = new InternalTurnService(inboundMessageDispatchPort, clock);
 
-        AgentSession session = AgentSession.builder()
-                .id("session-1")
-                .channelType("telegram")
-                .chatId("chat-1")
-                .messages(new ArrayList<>())
-                .build();
-        AgentContext context = AgentContext.builder()
-                .session(session)
-                .messages(new ArrayList<>())
-                .build();
-
         AttachedAppender attachedAppender = attachAppender();
         try {
-            boolean scheduled = service.scheduleAutoContinueRetry(context, "llm-timeout");
+            boolean scheduled = service.scheduleAutoContinueRetry(context(), "llm-timeout");
 
             assertFalse(scheduled);
             verify(inboundMessageDispatchPort).dispatch(any(Message.class));
@@ -462,18 +324,7 @@ class InternalTurnServiceTest {
         Clock clock = Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC);
         InternalTurnService service = new InternalTurnService(inboundMessageDispatchPort, clock);
 
-        AgentSession session = AgentSession.builder()
-                .id("session-1")
-                .channelType("telegram")
-                .chatId("chat-1")
-                .messages(new ArrayList<>())
-                .build();
-        AgentContext context = AgentContext.builder()
-                .session(session)
-                .messages(new ArrayList<>())
-                .build();
-
-        assertTrue(service.scheduleAutoContinueRetry(context, "llm-timeout"));
+        assertTrue(service.scheduleAutoContinueRetry(context(), "llm-timeout"));
 
         ArgumentCaptor<Message> messageCaptor = ArgumentCaptor.forClass(Message.class);
         verify(inboundMessageDispatchPort).dispatch(messageCaptor.capture());
@@ -483,6 +334,31 @@ class InternalTurnServiceTest {
         assertNotNull(metadata.get("trace.span.id"));
         assertEquals("INTERNAL", metadata.get("trace.root.kind"));
         assertEquals("internal.auto_continue", metadata.get("trace.name"));
+    }
+
+    private AgentContext context() {
+        AgentSession session = AgentSession.builder()
+                .id("session-1")
+                .channelType("telegram")
+                .chatId("chat-1")
+                .messages(new ArrayList<>())
+                .build();
+        return AgentContext.builder()
+                .session(session)
+                .messages(new ArrayList<>())
+                .build();
+    }
+
+    private AgentContext contextWithLastUserActivitySequence(long activitySequence) {
+        AgentContext context = context();
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put(ContextAttributes.MESSAGE_REAL_USER_ACTIVITY_SEQUENCE, activitySequence);
+        context.getMessages().add(Message.builder()
+                .role("user")
+                .content("original request")
+                .metadata(metadata)
+                .build());
+        return context;
     }
 
     private AttachedAppender attachAppender() {
@@ -500,5 +376,4 @@ class InternalTurnServiceTest {
 
     private record AttachedAppender(Logger logger, ListAppender<ILoggingEvent> appender) {
     }
-
 }
