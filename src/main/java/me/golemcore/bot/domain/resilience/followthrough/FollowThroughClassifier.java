@@ -44,6 +44,7 @@ import java.util.concurrent.TimeoutException;
 public class FollowThroughClassifier {
 
     private static final double CLASSIFIER_TEMPERATURE = 0.1;
+    private static final String CALLER_TAG = "follow_through";
 
     private final LlmPort llmPort;
     private final ModelSelectionService modelSelectionService;
@@ -61,14 +62,17 @@ public class FollowThroughClassifier {
         }
 
         LlmResponse response;
+        CompletableFuture<LlmResponse> future = null;
         try {
-            CompletableFuture<LlmResponse> future = llmPort.chat(llmRequest);
+            future = llmPort.chat(llmRequest);
             response = future.get(timeout.toMillis(), TimeUnit.MILLISECONDS);
         } catch (TimeoutException exception) {
             log.debug("[FollowThrough] classifier timed out after {}ms", timeout.toMillis());
+            cancelQuietly(future);
             return ClassifierVerdict.nonCommitment(IntentType.UNKNOWN, "classifier call timed out");
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
+            cancelQuietly(future);
             return ClassifierVerdict.nonCommitment(IntentType.UNKNOWN, "classifier call interrupted");
         } catch (ExecutionException exception) { // NOSONAR — domain swallow, fail closed
             Throwable cause = exception.getCause() != null ? exception.getCause() : exception;
@@ -77,6 +81,7 @@ public class FollowThroughClassifier {
                     "classifier call failed: " + cause.getMessage());
         } catch (RuntimeException exception) { // NOSONAR — domain swallow, fail closed
             log.debug("[FollowThrough] classifier call failed: {}", exception.getMessage());
+            cancelQuietly(future);
             return ClassifierVerdict.nonCommitment(IntentType.UNKNOWN,
                     "classifier call failed: " + exception.getMessage());
         }
@@ -96,10 +101,17 @@ public class FollowThroughClassifier {
         return LlmRequest.builder()
                 .model(selection.model())
                 .modelTier(modelTier)
+                .callerTag(CALLER_TAG)
                 .systemPrompt(promptBuilder.systemPrompt())
                 .messages(List.of(userMessage))
                 .temperature(CLASSIFIER_TEMPERATURE)
                 .reasoningEffort(selection.reasoning())
                 .build();
+    }
+
+    private static void cancelQuietly(CompletableFuture<?> future) {
+        if (future != null && !future.isDone()) {
+            future.cancel(true);
+        }
     }
 }
