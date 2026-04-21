@@ -14,4 +14,4 @@ import com.fasterxml.jackson.annotation.JsonProperty;
  * in domain code (only the ObjectMapper/JsonNode runtime types are forbidden by
  * the hexagonal architecture contract).
  */
-@JsonIgnoreProperties(ignoreUnknown=true)record VerdictDto(@JsonProperty("intent_type")String intentType,@JsonProperty("has_unfulfilled_commitment")Boolean hasUnfulfilledCommitment,@JsonProperty("commitment_text")String commitmentText,@JsonProperty("continuation_prompt")String continuationPrompt,@JsonProperty("reason")String reason){}
+@JsonIgnoreProperties(ignoreUnknown=true)record VerdictDto(@JsonProperty("intent_type")String intentType,@JsonProperty("has_unfulfilled_commitment")Boolean hasUnfulfilledCommitment,@JsonProperty("commitment_category")String commitmentCategory,@JsonProperty("risk_level")String riskLevel,@JsonProperty("commitment_text")String commitmentText,@JsonProperty("continuation_prompt")String continuationPrompt,@JsonProperty("reason")String reason){}

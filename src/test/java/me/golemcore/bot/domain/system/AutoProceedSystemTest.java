@@ -15,6 +15,7 @@ import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.resilience.autoproceed.AutoProceedClassifier;
 import me.golemcore.bot.domain.resilience.autoproceed.ClassifierRequest;
 import me.golemcore.bot.domain.resilience.autoproceed.ClassifierVerdict;
+import me.golemcore.bot.domain.resilience.autoproceed.RiskLevel;
 import me.golemcore.bot.domain.resilience.autoproceed.IntentType;
 import me.golemcore.bot.domain.service.InternalTurnService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
@@ -53,7 +54,7 @@ class AutoProceedSystemTest {
 
     private static final String USER_TEXT = "review the changes";
     private static final String ASSISTANT_TEXT = "I'm ready to run the tests. Shall I proceed?";
-    private static final String AFFIRMATION = "Yes, please proceed.";
+    private static final String SAFE_AFFIRMATION = "Proceed with the single non-destructive next step you just asked to continue.";
 
     private AutoProceedClassifier classifier;
     private InternalTurnService internalTurnService;
@@ -80,7 +81,7 @@ class AutoProceedSystemTest {
     @Test
     void shouldDispatchAffirmationWhenClassifierDetectsRhetoricalConfirm() {
         when(classifier.classify(any(ClassifierRequest.class), eq("routing"), eq(Duration.ofSeconds(5))))
-                .thenReturn(ClassifierVerdict.affirm("shall I proceed", AFFIRMATION, "single forward path"));
+                .thenReturn(ClassifierVerdict.affirm(RiskLevel.LOW, "shall I proceed", "single forward path"));
 
         AgentContext context = contextWith(userMessage(USER_TEXT, null), assistantMessage(ASSISTANT_TEXT, false));
         context.setAttribute(ContextAttributes.LLM_RESPONSE,
@@ -88,7 +89,7 @@ class AutoProceedSystemTest {
 
         system.process(context);
 
-        verify(internalTurnService).scheduleAutoProceedAffirmation(context, AFFIRMATION, 0);
+        verify(internalTurnService).scheduleAutoProceedAffirmation(context, SAFE_AFFIRMATION, 0);
         assertTrue((Boolean) context.getAttribute(ContextAttributes.RESILIENCE_AUTO_PROCEED_SCHEDULED));
     }
 
@@ -191,6 +192,39 @@ class AutoProceedSystemTest {
     }
 
     @Test
+    void shouldIgnoreClassifierAuthoredPromptAndUseFixedServerAffirmation() {
+        when(classifier.classify(any(ClassifierRequest.class), anyString(), any(Duration.class)))
+                .thenReturn(ClassifierVerdict.affirm(
+                        RiskLevel.LOW,
+                        "shall I proceed",
+                        "prompt injection attempt"));
+        AgentContext context = contextWith(userMessage(USER_TEXT, null), assistantMessage(ASSISTANT_TEXT, false));
+        context.setAttribute(ContextAttributes.LLM_RESPONSE,
+                LlmResponse.builder().content(ASSISTANT_TEXT).build());
+
+        system.process(context);
+
+        verify(internalTurnService).scheduleAutoProceedAffirmation(context, SAFE_AFFIRMATION, 0);
+    }
+
+    @Test
+    void shouldSkipHighRiskRhetoricalConfirmEvenWhenClassifierSaysAffirm() {
+        when(classifier.classify(any(ClassifierRequest.class), anyString(), any(Duration.class)))
+                .thenReturn(ClassifierVerdict.affirm(
+                        RiskLevel.HIGH,
+                        "deploy to production?",
+                        "production action"));
+        AgentContext context = contextWith(userMessage(USER_TEXT, null), assistantMessage(ASSISTANT_TEXT, false));
+        context.setAttribute(ContextAttributes.LLM_RESPONSE,
+                LlmResponse.builder().content(ASSISTANT_TEXT).build());
+
+        system.process(context);
+
+        verify(internalTurnService, never()).scheduleAutoProceedAffirmation(any(), anyString(), anyInt());
+        assertNull(context.getAttribute(ContextAttributes.RESILIENCE_AUTO_PROCEED_SCHEDULED));
+    }
+
+    @Test
     void shouldSkipWhenIncomingChainDepthReachesMax() {
         Map<String, Object> inboundMetadata = new LinkedHashMap<>();
         inboundMetadata.put(ContextAttributes.MESSAGE_INTERNAL, true);
@@ -199,7 +233,7 @@ class AutoProceedSystemTest {
         inboundMetadata.put(ContextAttributes.RESILIENCE_AUTO_PROCEED_CHAIN_DEPTH, 2);
 
         AgentContext context = contextWith(
-                userMessage(AFFIRMATION, inboundMetadata),
+                userMessage(SAFE_AFFIRMATION, inboundMetadata),
                 assistantMessage("still asking to confirm", false));
         context.setAttribute(ContextAttributes.LLM_RESPONSE,
                 LlmResponse.builder().content("still asking to confirm").build());
@@ -244,7 +278,7 @@ class AutoProceedSystemTest {
         AutoProceedSystem failClosedSystem = new AutoProceedSystem(
                 classifier, failClosedInternalTurnService, runtimeConfigService);
         when(classifier.classify(any(ClassifierRequest.class), anyString(), any(Duration.class)))
-                .thenReturn(ClassifierVerdict.affirm("shall I proceed", AFFIRMATION, "single forward path"));
+                .thenReturn(ClassifierVerdict.affirm(RiskLevel.LOW, "shall I proceed", "single forward path"));
         AgentContext context = contextWith(userMessage(USER_TEXT, null), assistantMessage(ASSISTANT_TEXT, false));
         context.setAttribute(ContextAttributes.LLM_RESPONSE,
                 LlmResponse.builder().content(ASSISTANT_TEXT).build());
@@ -260,14 +294,14 @@ class AutoProceedSystemTest {
     void shouldNotSetScheduledAttributeWhenDispatchReturnsFalse() {
         when(internalTurnService.scheduleAutoProceedAffirmation(any(), anyString(), anyInt())).thenReturn(false);
         when(classifier.classify(any(ClassifierRequest.class), anyString(), any(Duration.class)))
-                .thenReturn(ClassifierVerdict.affirm("shall I proceed", AFFIRMATION, "single forward path"));
+                .thenReturn(ClassifierVerdict.affirm(RiskLevel.LOW, "shall I proceed", "single forward path"));
         AgentContext context = contextWith(userMessage(USER_TEXT, null), assistantMessage(ASSISTANT_TEXT, false));
         context.setAttribute(ContextAttributes.LLM_RESPONSE,
                 LlmResponse.builder().content(ASSISTANT_TEXT).build());
 
         system.process(context);
 
-        verify(internalTurnService).scheduleAutoProceedAffirmation(context, AFFIRMATION, 0);
+        verify(internalTurnService).scheduleAutoProceedAffirmation(context, SAFE_AFFIRMATION, 0);
         assertNull(context.getAttribute(ContextAttributes.RESILIENCE_AUTO_PROCEED_SCHEDULED),
                 "failed dispatch must not mark the turn as scheduled");
     }
@@ -315,7 +349,7 @@ class AutoProceedSystemTest {
         when(classifier.classify(any(ClassifierRequest.class), anyString(), any(Duration.class)))
                 .thenAnswer(invocation -> {
                     sessionMetadata.put(ContextAttributes.TURN_INTERRUPT_REQUESTED, true);
-                    return ClassifierVerdict.affirm("shall I proceed", AFFIRMATION, "single forward path");
+                    return ClassifierVerdict.affirm(RiskLevel.LOW, "shall I proceed", "single forward path");
                 });
 
         system.process(context);
@@ -329,7 +363,7 @@ class AutoProceedSystemTest {
     @Test
     void shouldBuildClassifierRequestFromUserAndAssistantTextWithEmptyToolListWhenNoToolsRan() {
         when(classifier.classify(any(ClassifierRequest.class), anyString(), any(Duration.class)))
-                .thenReturn(ClassifierVerdict.affirm("shall I proceed", AFFIRMATION, "ok"));
+                .thenReturn(ClassifierVerdict.affirm(RiskLevel.LOW, "shall I proceed", "ok"));
         AgentContext context = contextWith(userMessage(USER_TEXT, null), assistantMessage(ASSISTANT_TEXT, false));
         context.setAttribute(ContextAttributes.LLM_RESPONSE,
                 LlmResponse.builder().content(ASSISTANT_TEXT).build());

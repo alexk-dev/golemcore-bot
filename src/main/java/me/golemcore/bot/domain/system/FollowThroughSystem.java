@@ -47,6 +47,8 @@ import java.util.Map;
 @Slf4j
 public class FollowThroughSystem implements AgentSystem {
 
+    static final String SAFE_CONTINUATION_PROMPT = "Continue with the concrete next action you just promised, using only the latest user request and visible conversation context. Do not broaden scope. If the action is destructive, asks for credentials, sends external messages, modifies production, or is ambiguous, ask the real user for confirmation.";
+
     private final FollowThroughClassifier classifier;
     private final InternalTurnService internalTurnService;
     private final RuntimeConfigService runtimeConfigService;
@@ -116,24 +118,23 @@ public class FollowThroughSystem implements AgentSystem {
                 executedToolsSinceLastUserMessage(context));
         ClassifierVerdict verdict = classifier.classify(request, modelTier, timeout);
 
-        if (!verdict.hasUnfulfilledCommitment()
-                || verdict.continuationPrompt() == null
-                || verdict.continuationPrompt().isBlank()) {
+        if (!verdict.hasUnfulfilledCommitment()) {
             log.debug("[FollowThrough] classifier declined to nudge (intent={}, reason={})",
                     verdict.intentType(), verdict.reason());
             return context;
         }
+        if (verdict.riskLevel() != null && verdict.riskLevel().isHighRisk()) {
+            log.debug("[FollowThrough] classifier marked commitment high risk; skipping nudge (reason={})",
+                    verdict.reason());
+            return context;
+        }
         if (isInterruptRequested(context)) {
-            // /stop arrived while the classifier was in-flight. The coordinator
-            // will drop the synthetic inbound at enqueue time, but short-circuit
-            // here to keep the outcome deterministic and avoid leaving the turn
-            // marked as scheduled.
             log.debug("[FollowThrough] skipping nudge dispatch: interrupt requested mid-classifier");
             return context;
         }
 
         boolean scheduled = internalTurnService.scheduleFollowThroughNudge(
-                context, verdict.continuationPrompt(), incomingDepth);
+                context, SAFE_CONTINUATION_PROMPT, incomingDepth);
         if (scheduled) {
             context.setAttribute(ContextAttributes.RESILIENCE_FOLLOW_THROUGH_SCHEDULED, true);
             log.info("[FollowThrough] nudge scheduled (sessionId={}, nextDepth={})",
@@ -260,9 +261,10 @@ public class FollowThroughSystem implements AgentSystem {
         if (Boolean.TRUE.equals(context.getAttribute(ContextAttributes.TURN_INTERRUPT_REQUESTED))) {
             return true;
         }
-        Map<String, Object> metadata = context.getSession() != null
-                ? context.getSession().getMetadata()
-                : null;
-        return metadata != null && Boolean.TRUE.equals(metadata.get(ContextAttributes.TURN_INTERRUPT_REQUESTED));
+        if (context.getSession() == null || context.getSession().getMetadata() == null) {
+            return false;
+        }
+        Object raw = context.getSession().getMetadata().get(ContextAttributes.TURN_INTERRUPT_REQUESTED);
+        return Boolean.TRUE.equals(raw);
     }
 }

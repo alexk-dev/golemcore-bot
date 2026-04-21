@@ -30,6 +30,7 @@ class AutoProceedVerdictParserTest {
                 {
                   "intent_type": "rhetorical_confirm",
                   "should_auto_affirm": true,
+                  "risk_level": "low",
                   "question_text": "shall I run the tests",
                   "affirmation_prompt": "Yes, please proceed.",
                   "reason": "single forward path, no alternatives"
@@ -41,7 +42,7 @@ class AutoProceedVerdictParserTest {
         assertEquals(IntentType.RHETORICAL_CONFIRM, verdict.intentType());
         assertTrue(verdict.shouldAutoAffirm());
         assertEquals("shall I run the tests", verdict.questionText());
-        assertEquals("Yes, please proceed.", verdict.affirmationPrompt());
+        assertEquals(RiskLevel.LOW, verdict.riskLevel());
         assertNotNull(verdict.reason());
     }
 
@@ -51,6 +52,7 @@ class AutoProceedVerdictParserTest {
                 {
                   "intent_type": "choice_request",
                   "should_auto_affirm": true,
+                  "risk_level": "low",
                   "question_text": "A or B",
                   "affirmation_prompt": "A.",
                   "reason": "offered choices"
@@ -62,7 +64,6 @@ class AutoProceedVerdictParserTest {
         assertEquals(IntentType.CHOICE_REQUEST, verdict.intentType());
         assertFalse(verdict.shouldAutoAffirm(),
                 "choice_request must never produce an auto-affirmation");
-        assertNull(verdict.affirmationPrompt());
     }
 
     @Test
@@ -115,22 +116,23 @@ class AutoProceedVerdictParserTest {
     }
 
     @Test
-    void shouldTreatRhetoricalConfirmWithoutAffirmationPromptAsNonActionable() {
+    void shouldKeepStructuredAffirmationWhenPromptFieldIsMissing() {
         String json = """
                 {
                   "intent_type": "rhetorical_confirm",
                   "should_auto_affirm": true,
+                  "risk_level": "low",
                   "question_text": "ready?",
-                  "reason": "missing affirmation prompt"
+                  "reason": "missing prompt is fine because server builds it"
                 }
                 """;
 
         ClassifierVerdict verdict = parser.parse(json);
 
         assertEquals(IntentType.RHETORICAL_CONFIRM, verdict.intentType());
-        assertFalse(verdict.shouldAutoAffirm(),
-                "missing affirmation_prompt must downgrade to non-actionable");
-        assertNull(verdict.affirmationPrompt());
+        assertTrue(verdict.shouldAutoAffirm(),
+                "missing affirmation_prompt must stay actionable because the server authors the safe prompt");
+        assertEquals(RiskLevel.LOW, verdict.riskLevel());
     }
 
     @Test
@@ -213,6 +215,7 @@ class AutoProceedVerdictParserTest {
                 {
                   "intent_type": "rhetorical_confirm",
                   "should_auto_affirm": false,
+                  "risk_level": "medium",
                   "question_text": "ok to keep going",
                   "reason": "model said no, keep human in loop"
                 }
@@ -222,15 +225,15 @@ class AutoProceedVerdictParserTest {
 
         assertEquals(IntentType.RHETORICAL_CONFIRM, verdict.intentType());
         assertFalse(verdict.shouldAutoAffirm());
-        assertNull(verdict.affirmationPrompt());
     }
 
     @Test
-    void shouldTrimQuestionTextAndAffirmationPrompt() {
+    void shouldTrimQuestionTextAndRiskLevel() {
         String json = """
                 {
                   "intent_type": "rhetorical_confirm",
                   "should_auto_affirm": true,
+                  "risk_level": "  low  ",
                   "question_text": "   ready?  ",
                   "affirmation_prompt": "  Yes, proceed.  ",
                   "reason": "ok"
@@ -241,6 +244,42 @@ class AutoProceedVerdictParserTest {
 
         assertTrue(verdict.shouldAutoAffirm());
         assertEquals("ready?", verdict.questionText());
-        assertEquals("Yes, proceed.", verdict.affirmationPrompt());
+        assertEquals(RiskLevel.LOW, verdict.riskLevel());
+    }
+
+    @Test
+    void shouldDefaultMissingRiskToHighSoCallerFailsClosed() {
+        String json = """
+                {
+                  "intent_type": "rhetorical_confirm",
+                  "should_auto_affirm": true,
+                  "question_text": "ready?",
+                  "reason": "missing risk"
+                }
+                """;
+
+        ClassifierVerdict verdict = parser.parse(json);
+
+        assertTrue(verdict.shouldAutoAffirm());
+        assertEquals(RiskLevel.HIGH, verdict.riskLevel(),
+                "missing risk must fail closed to high so the system refuses to auto-affirm");
+    }
+
+    @Test
+    void shouldParseHighRiskRhetoricalConfirmAsUnsafeStructuredVerdict() {
+        String json = """
+                {
+                  "intent_type": "rhetorical_confirm",
+                  "should_auto_affirm": true,
+                  "risk_level": "high",
+                  "question_text": "deploy to production?",
+                  "reason": "production change"
+                }
+                """;
+
+        ClassifierVerdict verdict = parser.parse(json);
+
+        assertTrue(verdict.shouldAutoAffirm());
+        assertEquals(RiskLevel.HIGH, verdict.riskLevel());
     }
 }

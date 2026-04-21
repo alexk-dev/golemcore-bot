@@ -30,6 +30,8 @@ class FollowThroughVerdictParserTest {
                 {
                   "intent_type": "commitment",
                   "has_unfulfilled_commitment": true,
+                  "commitment_category": "read_files",
+                  "risk_level": "low",
                   "commitment_text": "gather the three files",
                   "continuation_prompt": "Proceed with gathering the three files you committed to.",
                   "reason": "assistant said 'I'll now gather' without invoking any tool"
@@ -41,8 +43,8 @@ class FollowThroughVerdictParserTest {
         assertEquals(IntentType.COMMITMENT, verdict.intentType());
         assertTrue(verdict.hasUnfulfilledCommitment());
         assertEquals("gather the three files", verdict.commitmentText());
-        assertEquals("Proceed with gathering the three files you committed to.",
-                verdict.continuationPrompt());
+        assertEquals(CommitmentCategory.READ_FILES, verdict.commitmentCategory());
+        assertEquals(RiskLevel.LOW, verdict.riskLevel());
         assertNotNull(verdict.reason());
     }
 
@@ -52,6 +54,8 @@ class FollowThroughVerdictParserTest {
                 {
                   "intent_type": "options_offered",
                   "has_unfulfilled_commitment": true,
+                  "commitment_category": "run_tests",
+                  "risk_level": "low",
                   "commitment_text": "any of the three",
                   "continuation_prompt": "Pick option A.",
                   "reason": "offered choices"
@@ -99,22 +103,25 @@ class FollowThroughVerdictParserTest {
     }
 
     @Test
-    void shouldTreatCommitmentWithoutContinuationPromptAsFulfilled() {
+    void shouldKeepStructuredCommitmentWhenPromptFieldIsMissing() {
         String json = """
                 {
                   "intent_type": "commitment",
                   "has_unfulfilled_commitment": true,
+                  "commitment_category": "summarize",
+                  "risk_level": "medium",
                   "commitment_text": "summarise the result",
-                  "reason": "missing continuation prompt"
+                  "reason": "missing prompt is fine because server builds it"
                 }
                 """;
 
         ClassifierVerdict verdict = parser.parse(json);
 
         assertEquals(IntentType.COMMITMENT, verdict.intentType());
-        assertFalse(verdict.hasUnfulfilledCommitment(),
-                "missing continuation_prompt must downgrade to non-actionable to avoid nudging with empty text");
-        assertNull(verdict.continuationPrompt());
+        assertTrue(verdict.hasUnfulfilledCommitment(),
+                "missing continuation_prompt must stay actionable because the server authors the safe prompt");
+        assertEquals(CommitmentCategory.SUMMARIZE, verdict.commitmentCategory());
+        assertEquals(RiskLevel.MEDIUM, verdict.riskLevel());
     }
 
     @Test
@@ -247,6 +254,8 @@ class FollowThroughVerdictParserTest {
                 {
                   "intent_type": "commitment",
                   "has_unfulfilled_commitment": false,
+                  "commitment_category": "read_files",
+                  "risk_level": "low",
                   "commitment_text": "already done",
                   "reason": "carried out"
                 }
@@ -265,6 +274,8 @@ class FollowThroughVerdictParserTest {
                 {
                   "intent_type": "commitment",
                   "has_unfulfilled_commitment": true,
+                  "commitment_category": "   read_files  ",
+                  "risk_level": "  low  ",
                   "commitment_text": "   read the file  ",
                   "continuation_prompt": "  Read the file now.  ",
                   "reason": "ok"
@@ -275,6 +286,46 @@ class FollowThroughVerdictParserTest {
 
         assertTrue(verdict.hasUnfulfilledCommitment());
         assertEquals("read the file", verdict.commitmentText());
-        assertEquals("Read the file now.", verdict.continuationPrompt());
+        assertEquals(CommitmentCategory.READ_FILES, verdict.commitmentCategory());
+        assertEquals(RiskLevel.LOW, verdict.riskLevel());
+    }
+
+    @Test
+    void shouldDefaultStructuredFieldsWhenClassifierOmitsCategoryAndRisk() {
+        String json = """
+                {
+                  "intent_type": "commitment",
+                  "has_unfulfilled_commitment": true,
+                  "commitment_text": "run the checks",
+                  "reason": "unfulfilled"
+                }
+                """;
+
+        ClassifierVerdict verdict = parser.parse(json);
+
+        assertTrue(verdict.hasUnfulfilledCommitment());
+        assertEquals(CommitmentCategory.UNKNOWN, verdict.commitmentCategory());
+        assertEquals(RiskLevel.HIGH, verdict.riskLevel(),
+                "missing risk must fail closed to high so the system refuses to nudge");
+    }
+
+    @Test
+    void shouldTreatHighRiskCommitmentAsStructuredButUnsafe() {
+        String json = """
+                {
+                  "intent_type": "commitment",
+                  "has_unfulfilled_commitment": true,
+                  "commitment_category": "run_tests",
+                  "risk_level": "high",
+                  "commitment_text": "deploy to production",
+                  "reason": "destructive or production action"
+                }
+                """;
+
+        ClassifierVerdict verdict = parser.parse(json);
+
+        assertTrue(verdict.hasUnfulfilledCommitment());
+        assertEquals(CommitmentCategory.RUN_TESTS, verdict.commitmentCategory());
+        assertEquals(RiskLevel.HIGH, verdict.riskLevel());
     }
 }

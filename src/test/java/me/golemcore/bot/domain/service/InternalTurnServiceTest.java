@@ -133,7 +133,9 @@ class InternalTurnServiceTest {
         Message message = messageCaptor.getValue();
         assertNotNull(message);
         assertEquals("user", message.getRole());
-        assertEquals("Gather the three files you committed to.", message.getContent());
+        assertEquals(
+                "Continue with the concrete next action you just promised, using only the latest user request and visible conversation context. Do not broaden scope. If the action is destructive, asks for credentials, sends external messages, modifies production, or is ambiguous, ask the real user for confirmation.",
+                message.getContent());
         assertEquals("telegram", message.getChannelType());
         assertEquals("chat-1", message.getChatId());
         assertEquals("internal:follow-through", message.getSenderId());
@@ -224,7 +226,8 @@ class InternalTurnServiceTest {
         Message message = messageCaptor.getValue();
         assertNotNull(message);
         assertEquals("user", message.getRole());
-        assertEquals("Yes, please proceed.", message.getContent());
+        assertEquals("Proceed with the single non-destructive next step you just asked to continue.",
+                message.getContent());
         assertEquals("telegram", message.getChannelType());
         assertEquals("chat-1", message.getChatId());
         assertEquals("internal:auto-proceed", message.getSenderId());

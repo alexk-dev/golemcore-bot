@@ -50,6 +50,8 @@ import java.util.Map;
 @Slf4j
 public class AutoProceedSystem implements AgentSystem {
 
+    static final String SAFE_AFFIRMATION_PROMPT = "Proceed with the single non-destructive next step you just asked to continue.";
+
     private final AutoProceedClassifier classifier;
     private final InternalTurnService internalTurnService;
     private final RuntimeConfigService runtimeConfigService;
@@ -88,8 +90,6 @@ public class AutoProceedSystem implements AgentSystem {
             return false;
         }
         if (Boolean.TRUE.equals(context.getAttribute(ContextAttributes.RESILIENCE_FOLLOW_THROUGH_SCHEDULED))) {
-            // Follow-Through already dispatched a nudge for this turn; avoid
-            // piling a second synthetic message on the same commitment.
             return false;
         }
         if (toolsExecutedSinceLastUserMessage(context)) {
@@ -124,11 +124,14 @@ public class AutoProceedSystem implements AgentSystem {
                 executedToolsSinceLastUserMessage(context));
         ClassifierVerdict verdict = classifier.classify(request, modelTier, timeout);
 
-        if (!verdict.shouldAutoAffirm()
-                || verdict.affirmationPrompt() == null
-                || verdict.affirmationPrompt().isBlank()) {
+        if (!verdict.shouldAutoAffirm()) {
             log.debug("[AutoProceed] classifier declined to affirm (intent={}, reason={})",
                     verdict.intentType(), verdict.reason());
+            return context;
+        }
+        if (verdict.riskLevel() != null && verdict.riskLevel().isHighRisk()) {
+            log.debug("[AutoProceed] classifier marked rhetorical confirm high risk; skipping affirmation (reason={})",
+                    verdict.reason());
             return context;
         }
         if (isInterruptRequested(context)) {
@@ -137,7 +140,7 @@ public class AutoProceedSystem implements AgentSystem {
         }
 
         boolean scheduled = internalTurnService.scheduleAutoProceedAffirmation(
-                context, verdict.affirmationPrompt(), incomingDepth);
+                context, SAFE_AFFIRMATION_PROMPT, incomingDepth);
         if (scheduled) {
             context.setAttribute(ContextAttributes.RESILIENCE_AUTO_PROCEED_SCHEDULED, true);
             log.info("[AutoProceed] affirmation scheduled (sessionId={}, nextDepth={})",
@@ -264,9 +267,10 @@ public class AutoProceedSystem implements AgentSystem {
         if (Boolean.TRUE.equals(context.getAttribute(ContextAttributes.TURN_INTERRUPT_REQUESTED))) {
             return true;
         }
-        Map<String, Object> metadata = context.getSession() != null
-                ? context.getSession().getMetadata()
-                : null;
-        return metadata != null && Boolean.TRUE.equals(metadata.get(ContextAttributes.TURN_INTERRUPT_REQUESTED));
+        if (context.getSession() == null || context.getSession().getMetadata() == null) {
+            return false;
+        }
+        Object raw = context.getSession().getMetadata().get(ContextAttributes.TURN_INTERRUPT_REQUESTED);
+        return Boolean.TRUE.equals(raw);
     }
 }

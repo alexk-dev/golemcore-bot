@@ -37,17 +37,12 @@ public class InternalTurnService {
             + "This is an internal auto-continue retry after a model failure. "
             + "Use the latest visible user request already in the conversation context. "
             + "Do not ask the user to repeat it unless truly necessary.";
+    private static final String SAFE_FOLLOW_THROUGH_PROMPT = "Continue with the concrete next action you just promised, using only the latest user request and visible conversation context. Do not broaden scope. If the action is destructive, asks for credentials, sends external messages, modifies production, or is ambiguous, ask the real user for confirmation.";
+    private static final String SAFE_AUTO_PROCEED_PROMPT = "Proceed with the single non-destructive next step you just asked to continue.";
 
     private final InboundMessageDispatchPort inboundMessageDispatchPort;
     private final Clock clock;
 
-    /**
-     * Publish a one-time internal auto-continue retry message for the current
-     * session.
-     *
-     * @return {@code true} when the retry event was published, otherwise
-     *         {@code false}
-     */
     public boolean scheduleAutoContinueRetry(AgentContext context, String reasonCode) {
         if (context == null || context.getSession() == null) {
             return false;
@@ -91,18 +86,7 @@ public class InternalTurnService {
 
     /**
      * Publish a follow-through continuation nudge on behalf of the resilience
-     * follow-through classifier. The continuation prompt authored by the classifier
-     * is delivered as an internal user message so the agent loop resumes from the
-     * assistant's unfulfilled commitment.
-     *
-     * @param context
-     *            active agent context
-     * @param continuationPrompt
-     *            classifier-generated continuation text; must be non-blank
-     * @param previousChainDepth
-     *            chain depth observed on the triggering turn; the dispatched nudge
-     *            records {@code previousChainDepth + 1}
-     * @return {@code true} when the nudge was dispatched, otherwise {@code false}
+     * follow-through classifier.
      */
     public boolean scheduleFollowThroughNudge(AgentContext context, String continuationPrompt, int previousChainDepth) {
         if (context == null || context.getSession() == null) {
@@ -133,7 +117,7 @@ public class InternalTurnService {
         Message message = Message.builder()
                 .id(UUID.randomUUID().toString())
                 .role("user")
-                .content(continuationPrompt)
+                .content(SAFE_FOLLOW_THROUGH_PROMPT)
                 .channelType(session.getChannelType())
                 .chatId(session.getChatId())
                 .senderId(FOLLOW_THROUGH_SENDER_ID)
@@ -155,20 +139,6 @@ public class InternalTurnService {
 
     /**
      * Publish an Auto-Proceed affirmation on behalf of the resilience classifier.
-     * When the assistant ends with a rhetorical confirmation question that has a
-     * single obvious forward path, the classifier-authored affirmation prompt is
-     * delivered as an internal user message so the agent proceeds without waiting
-     * for human input.
-     *
-     * @param context
-     *            active agent context
-     * @param affirmationPrompt
-     *            classifier-generated affirmation text; must be non-blank
-     * @param previousChainDepth
-     *            chain depth observed on the triggering turn; the dispatched
-     *            affirmation records {@code previousChainDepth + 1}
-     * @return {@code true} when the affirmation was dispatched, otherwise
-     *         {@code false}
      */
     public boolean scheduleAutoProceedAffirmation(AgentContext context, String affirmationPrompt,
             int previousChainDepth) {
@@ -200,7 +170,7 @@ public class InternalTurnService {
         Message message = Message.builder()
                 .id(UUID.randomUUID().toString())
                 .role("user")
-                .content(affirmationPrompt)
+                .content(SAFE_AUTO_PROCEED_PROMPT)
                 .channelType(session.getChannelType())
                 .chatId(session.getChatId())
                 .senderId(AUTO_PROCEED_SENDER_ID)

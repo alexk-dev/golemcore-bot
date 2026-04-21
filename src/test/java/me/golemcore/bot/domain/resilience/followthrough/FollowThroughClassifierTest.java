@@ -52,6 +52,7 @@ class FollowThroughClassifierTest {
     void shouldReturnUnfulfilledCommitmentWhenLlmRespondsWithCommitmentVerdict() {
         String responseJson = """
                 {"intent_type":"commitment","has_unfulfilled_commitment":true,
+                 "commitment_category":"read_files","risk_level":"low",
                  "commitment_text":"gather the files","continuation_prompt":"Gather the files now.",
                  "reason":"committed but no tool invoked"}
                 """;
@@ -65,7 +66,8 @@ class FollowThroughClassifierTest {
 
         assertEquals(IntentType.COMMITMENT, verdict.intentType());
         assertTrue(verdict.hasUnfulfilledCommitment());
-        assertEquals("Gather the files now.", verdict.continuationPrompt());
+        assertEquals(CommitmentCategory.READ_FILES, verdict.commitmentCategory());
+        assertEquals(RiskLevel.LOW, verdict.riskLevel());
     }
 
     @Test
@@ -167,11 +169,12 @@ class FollowThroughClassifierTest {
     }
 
     @Test
-    void shouldDowngradeCommitmentWithoutContinuationPromptToNonActionable() {
+    void shouldKeepStructuredCommitmentWithoutContinuationPromptActionable() {
         when(llmPort.chat(any(LlmRequest.class)))
                 .thenReturn(CompletableFuture.completedFuture(
                         LlmResponse.builder().content("""
                                 {"intent_type":"commitment","has_unfulfilled_commitment":true,
+                                 "commitment_category":"summarize","risk_level":"medium",
                                  "commitment_text":"do X","reason":"missing prompt"}
                                 """).build()));
 
@@ -179,6 +182,8 @@ class FollowThroughClassifierTest {
                 new ClassifierRequest("q", "I'll do X", List.of()), TIER, TIMEOUT);
 
         assertEquals(IntentType.COMMITMENT, verdict.intentType());
-        assertFalse(verdict.hasUnfulfilledCommitment());
+        assertTrue(verdict.hasUnfulfilledCommitment());
+        assertEquals(CommitmentCategory.SUMMARIZE, verdict.commitmentCategory());
+        assertEquals(RiskLevel.MEDIUM, verdict.riskLevel());
     }
 }

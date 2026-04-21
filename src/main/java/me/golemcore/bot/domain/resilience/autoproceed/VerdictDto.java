@@ -12,4 +12,4 @@ import com.fasterxml.jackson.annotation.JsonProperty;
  * Wire DTO for the Auto-Proceed classifier LLM JSON response. Kept
  * package-private and only touched by {@link AutoProceedVerdictParser}.
  */
-@JsonIgnoreProperties(ignoreUnknown=true)record VerdictDto(@JsonProperty("intent_type")String intentType,@JsonProperty("should_auto_affirm")Boolean shouldAutoAffirm,@JsonProperty("question_text")String questionText,@JsonProperty("affirmation_prompt")String affirmationPrompt,@JsonProperty("reason")String reason){}
+@JsonIgnoreProperties(ignoreUnknown=true)record VerdictDto(@JsonProperty("intent_type")String intentType,@JsonProperty("should_auto_affirm")Boolean shouldAutoAffirm,@JsonProperty("risk_level")String riskLevel,@JsonProperty("question_text")String questionText,@JsonProperty("affirmation_prompt")String affirmationPrompt,@JsonProperty("reason")String reason){}

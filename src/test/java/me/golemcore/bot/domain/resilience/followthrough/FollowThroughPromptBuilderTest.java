@@ -37,14 +37,25 @@ class FollowThroughPromptBuilderTest {
     }
 
     @Test
-    void systemPromptShouldRequireStrictJsonAndNamedFields() {
+    void systemPromptShouldRequireStructuredVerdictWithoutSyntheticUserPromptField() {
         String systemPrompt = builder.systemPrompt();
 
         assertTrue(systemPrompt.toLowerCase(Locale.ROOT).contains("json"),
                 "system prompt must mention JSON output");
         assertTrue(systemPrompt.contains("intent_type"));
         assertTrue(systemPrompt.contains("has_unfulfilled_commitment"));
-        assertTrue(systemPrompt.contains("continuation_prompt"));
+        assertTrue(systemPrompt.contains("commitment_category"));
+        assertTrue(systemPrompt.contains("risk_level"));
+        assertFalse(systemPrompt.contains("continuation_prompt"),
+                "classifier must no longer author the internal user prompt");
+    }
+
+    @Test
+    void systemPromptShouldExplicitlySayServerBuildsSafeContinuationPrompt() {
+        String systemPrompt = builder.systemPrompt().toLowerCase(Locale.ROOT);
+
+        assertTrue(systemPrompt.contains("server") && systemPrompt.contains("fixed safe internal continuation"),
+                "prompt must make it explicit that the classifier cannot write the follow-up text");
     }
 
     @Test
@@ -104,7 +115,7 @@ class FollowThroughPromptBuilderTest {
 
         assertTrue(userPrompt.length() < huge.length(),
                 "user prompt must truncate very long assistant replies");
-        assertTrue(userPrompt.contains("truncated") || userPrompt.contains("…"),
+        assertTrue(userPrompt.contains("truncated") || userPrompt.contains("?"),
                 "truncation must be marked so the classifier knows content was cut");
     }
 

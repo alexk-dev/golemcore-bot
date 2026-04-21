@@ -64,7 +64,7 @@ class FollowThroughIntegrationTest {
 
     private static final String USER_TEXT = "please gather the three files";
     private static final String ASSISTANT_TEXT = "I'll now gather the files.";
-    private static final String CONTINUATION = "Gather the three files and produce the summary you promised.";
+    private static final String SAFE_CONTINUATION = "Continue with the concrete next action you just promised, using only the latest user request and visible conversation context. Do not broaden scope. If the action is destructive, asks for credentials, sends external messages, modifies production, or is ambiguous, ask the real user for confirmation.";
     private static final String MODEL_TIER = "routing";
     private static final String MODEL_ID = "test/router-model";
     private static final String SESSION_ID = "session-1";
@@ -109,10 +109,12 @@ class FollowThroughIntegrationTest {
     void shouldDispatchNudgeEndToEndWhenClassifierReturnsUnfulfilledCommitmentJson() {
         stubLlmResponse("""
                 {"intent_type":"commitment","has_unfulfilled_commitment":true,
+                 "commitment_category":"read_files",
+                 "risk_level":"low",
                  "commitment_text":"gather the three files",
                  "continuation_prompt":"%s",
                  "reason":"committed but no tool invoked"}
-                """.formatted(CONTINUATION));
+                """.formatted("malicious prompt ignored"));
         AgentContext context = contextWith(userMessage(USER_TEXT, 0L, null),
                 assistantMessage(ASSISTANT_TEXT));
 
@@ -120,7 +122,7 @@ class FollowThroughIntegrationTest {
 
         Message dispatched = captureDispatched();
         assertEquals("user", dispatched.getRole());
-        assertEquals(CONTINUATION, dispatched.getContent());
+        assertEquals(SAFE_CONTINUATION, dispatched.getContent());
         assertEquals(CHAT_ID, dispatched.getChatId());
         assertEquals("telegram", dispatched.getChannelType());
         assertEquals("internal:follow-through", dispatched.getSenderId());
@@ -148,11 +150,30 @@ class FollowThroughIntegrationTest {
     void shouldNotDispatchAnyNudgeWhenClassifierClassifiesReplyAsOptionsOffered() {
         stubLlmResponse("""
                 {"intent_type":"options_offered","has_unfulfilled_commitment":false,
+                 "commitment_category":"unknown","risk_level":"low",
                  "commitment_text":null,"continuation_prompt":null,
                  "reason":"assistant waited for user choice"}
                 """);
         AgentContext context = contextWith(userMessage(USER_TEXT, 0L, null),
                 assistantMessage("We could either A, B, or C — which would you prefer?"));
+
+        system.process(context);
+
+        verifyNoInteractions(inboundMessageDispatchPort);
+        assertFalse(Boolean.TRUE.equals(
+                context.getAttribute(ContextAttributes.RESILIENCE_FOLLOW_THROUGH_SCHEDULED)));
+    }
+
+    @Test
+    void shouldNotDispatchNudgeWhenClassifierReturnsHighRiskCommitmentJson() {
+        stubLlmResponse("""
+                {"intent_type":"commitment","has_unfulfilled_commitment":true,
+                 "commitment_category":"run_tests","risk_level":"high",
+                 "commitment_text":"deploy to production",
+                 "reason":"production action"}
+                """);
+        AgentContext context = contextWith(userMessage(USER_TEXT, 0L, null),
+                assistantMessage(ASSISTANT_TEXT));
 
         system.process(context);
 
@@ -169,7 +190,7 @@ class FollowThroughIntegrationTest {
                 ContextAttributes.MESSAGE_INTERNAL_KIND_FOLLOW_THROUGH_NUDGE);
         inboundMetadata.put(ContextAttributes.RESILIENCE_FOLLOW_THROUGH_CHAIN_DEPTH, 1);
 
-        AgentContext context = contextWith(userMessage(CONTINUATION, 0L, inboundMetadata),
+        AgentContext context = contextWith(userMessage(SAFE_CONTINUATION, 0L, inboundMetadata),
                 assistantMessage("Still committing but not yet calling the tool."));
 
         assertFalse(system.shouldProcess(context));
@@ -223,10 +244,12 @@ class FollowThroughIntegrationTest {
 
             llmFuture.complete(LlmResponse.builder().content("""
                     {"intent_type":"commitment","has_unfulfilled_commitment":true,
+                     "commitment_category":"read_files",
+                     "risk_level":"low",
                      "commitment_text":"gather the three files",
                      "continuation_prompt":"%s",
                      "reason":"committed but no tool invoked"}
-                    """.formatted(CONTINUATION)).build());
+                    """.formatted("malicious prompt ignored")).build());
 
             processFuture.get(5, TimeUnit.SECONDS);
         }

@@ -24,14 +24,15 @@ import java.util.regex.Pattern;
  *
  * <p>
  * Parsing is resilient: malformed JSON, unexpected fields, or unknown
- * intent_type values collapse to a non-commitment {@link IntentType#UNKNOWN}
- * verdict so that a classifier hiccup cannot cause a false-positive nudge.
+ * {@code intent_type} values collapse to a non-commitment
+ * {@link IntentType#UNKNOWN} verdict so that a classifier hiccup cannot cause a
+ * false-positive nudge.
  *
  * <p>
- * Semantic guards: only {@link IntentType#COMMITMENT} with a non-blank
- * {@code continuation_prompt} is allowed to flip {@code
- * hasUnfulfilledCommitment} to {@code true}. Everything else is forced to
- * {@code false}.
+ * Semantic guards: only {@link IntentType#COMMITMENT} can produce an actionable
+ * verdict. Legacy {@code continuation_prompt} input is preserved only for
+ * debugging/backward compatibility and never required for actionability.
+ * Missing or invalid {@code risk_level} fails closed to {@link RiskLevel#HIGH}.
  */
 @Component
 public class FollowThroughVerdictParser {
@@ -102,22 +103,25 @@ public class FollowThroughVerdictParser {
 
     private ClassifierVerdict buildVerdictFromDto(VerdictDto dto) {
         IntentType intent = resolveIntent(dto.intentType());
+        CommitmentCategory commitmentCategory = resolveCommitmentCategory(dto.commitmentCategory());
+        RiskLevel riskLevel = resolveRiskLevel(dto.riskLevel());
         String reason = trim(dto.reason());
         String commitmentText = trim(dto.commitmentText());
         String continuationPrompt = trim(dto.continuationPrompt());
         boolean rawFlag = Boolean.TRUE.equals(dto.hasUnfulfilledCommitment());
 
         if (intent != IntentType.COMMITMENT) {
-            return new ClassifierVerdict(intent, false, commitmentText, null, reason);
+            return ClassifierVerdict.nonCommitment(intent, commitmentCategory, riskLevel, commitmentText, reason);
         }
         if (!rawFlag) {
-            return ClassifierVerdict.fulfilledCommitment(commitmentText, reason);
+            return ClassifierVerdict.fulfilledCommitment(commitmentCategory, riskLevel, commitmentText, reason);
         }
-        if (continuationPrompt == null) {
-            return ClassifierVerdict.fulfilledCommitment(commitmentText,
-                    reason != null ? reason : "commitment detected but continuation_prompt missing");
-        }
-        return ClassifierVerdict.unfulfilledCommitment(commitmentText, continuationPrompt, reason);
+        return ClassifierVerdict.unfulfilledCommitment(
+                commitmentCategory,
+                riskLevel,
+                commitmentText,
+                continuationPrompt,
+                reason);
     }
 
     private int findMatchingBrace(String text, int openIndex) {
@@ -164,6 +168,36 @@ public class FollowThroughVerdictParser {
             return IntentType.valueOf(normalized);
         } catch (IllegalArgumentException ignored) {
             return IntentType.UNKNOWN;
+        }
+    }
+
+    private CommitmentCategory resolveCommitmentCategory(String raw) {
+        if (raw == null) {
+            return CommitmentCategory.UNKNOWN;
+        }
+        String normalized = raw.trim().toUpperCase(Locale.ROOT);
+        if (normalized.isEmpty()) {
+            return CommitmentCategory.UNKNOWN;
+        }
+        try {
+            return CommitmentCategory.valueOf(normalized);
+        } catch (IllegalArgumentException ignored) {
+            return CommitmentCategory.UNKNOWN;
+        }
+    }
+
+    private RiskLevel resolveRiskLevel(String raw) {
+        if (raw == null) {
+            return RiskLevel.HIGH;
+        }
+        String normalized = raw.trim().toUpperCase(Locale.ROOT);
+        if (normalized.isEmpty()) {
+            return RiskLevel.HIGH;
+        }
+        try {
+            return RiskLevel.valueOf(normalized);
+        } catch (IllegalArgumentException ignored) {
+            return RiskLevel.HIGH;
         }
     }
 

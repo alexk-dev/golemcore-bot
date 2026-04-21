@@ -24,14 +24,14 @@ import java.util.regex.Pattern;
  *
  * <p>
  * Parsing is resilient: malformed JSON, unexpected fields, or unknown
- * intent_type values collapse to a non-actionable {@link IntentType#UNKNOWN}
- * verdict so that a classifier hiccup cannot cause a false-positive
- * affirmation.
+ * {@code intent_type} values collapse to a non-actionable
+ * {@link IntentType#UNKNOWN} verdict so that a classifier hiccup cannot cause a
+ * false-positive affirmation.
  *
  * <p>
- * Semantic guard: only {@link IntentType#RHETORICAL_CONFIRM} with a non-blank
- * {@code affirmation_prompt} is allowed to flip {@code shouldAutoAffirm} to
- * {@code true}. Everything else is forced to {@code false}.
+ * Semantic guard: only {@link IntentType#RHETORICAL_CONFIRM} is actionable.
+ * Missing or invalid {@code risk_level} fails closed to {@link RiskLevel#HIGH}.
+ * Any legacy {@code affirmation_prompt} is ignored by callers.
  */
 @Component
 public class AutoProceedVerdictParser {
@@ -102,22 +102,20 @@ public class AutoProceedVerdictParser {
 
     private ClassifierVerdict buildVerdictFromDto(VerdictDto dto) {
         IntentType intent = resolveIntent(dto.intentType());
+        RiskLevel riskLevel = resolveRiskLevel(dto.riskLevel());
         String reason = trim(dto.reason());
         String questionText = trim(dto.questionText());
         String affirmationPrompt = trim(dto.affirmationPrompt());
         boolean rawFlag = Boolean.TRUE.equals(dto.shouldAutoAffirm());
 
         if (intent != IntentType.RHETORICAL_CONFIRM) {
-            return new ClassifierVerdict(intent, false, questionText, null, reason);
+            return ClassifierVerdict.nonActionable(intent, riskLevel, questionText, reason);
         }
         if (!rawFlag) {
-            return new ClassifierVerdict(IntentType.RHETORICAL_CONFIRM, false, questionText, null, reason);
+            return ClassifierVerdict.nonActionable(IntentType.RHETORICAL_CONFIRM, riskLevel, questionText, reason);
         }
-        if (affirmationPrompt == null) {
-            return new ClassifierVerdict(IntentType.RHETORICAL_CONFIRM, false, questionText, null,
-                    reason != null ? reason : "rhetorical confirm detected but affirmation_prompt missing");
-        }
-        return ClassifierVerdict.affirm(questionText, affirmationPrompt, reason);
+        return new ClassifierVerdict(IntentType.RHETORICAL_CONFIRM, true, riskLevel, questionText,
+                affirmationPrompt, reason);
     }
 
     private int findMatchingBrace(String text, int openIndex) {
@@ -164,6 +162,21 @@ public class AutoProceedVerdictParser {
             return IntentType.valueOf(normalized);
         } catch (IllegalArgumentException ignored) {
             return IntentType.UNKNOWN;
+        }
+    }
+
+    private RiskLevel resolveRiskLevel(String raw) {
+        if (raw == null) {
+            return RiskLevel.HIGH;
+        }
+        String normalized = raw.trim().toUpperCase(Locale.ROOT);
+        if (normalized.isEmpty()) {
+            return RiskLevel.HIGH;
+        }
+        try {
+            return RiskLevel.valueOf(normalized);
+        } catch (IllegalArgumentException ignored) {
+            return RiskLevel.HIGH;
         }
     }
 

@@ -17,8 +17,9 @@ import java.util.List;
  * <p>
  * The system prompt is a static instruction that defines the intent taxonomy,
  * the strict JSON output schema, and the semantic rules that forbid nudging
- * when the assistant is waiting on user input. The user prompt is built per
- * request and carries the concrete turn data.
+ * when the assistant is waiting on user input. The classifier returns only a
+ * structured verdict. The server, not the classifier, authors the internal
+ * continuation message from a fixed safe template.
  */
 @Component
 public class FollowThroughPromptBuilder {
@@ -36,10 +37,14 @@ public class FollowThroughPromptBuilder {
             {
               "intent_type": "commitment | options_offered | question | completion | acknowledgement",
               "has_unfulfilled_commitment": true | false,
+              "commitment_category": "read_files | run_tests | summarize | unknown",
+              "risk_level": "low | medium | high",
               "commitment_text": "short paraphrase of what the agent committed to, or null",
-              "continuation_prompt": "one short user-style imperative that tells the agent to actually do it, or null",
               "reason": "one concise sentence explaining the classification"
             }
+
+            The server builds a fixed safe internal continuation prompt. Do NOT write or paraphrase
+            any user-style follow-up text. Return only the structured verdict fields above.
 
             Intent taxonomy (pick exactly one):
               - commitment:       agent unambiguously says IT WILL do the next step itself right now
@@ -51,34 +56,48 @@ public class FollowThroughPromptBuilder {
               - acknowledgement:  agent acknowledged the input but did not commit to any concrete
                                   next action.
 
+            commitment_category guidance:
+              - read_files: commitment is mainly to inspect/read files or logs.
+              - run_tests: commitment is mainly to run checks, tests, or verification commands.
+              - summarize: commitment is mainly to summarize, explain, or report findings.
+              - unknown: anything else or uncertain.
+
+            risk_level guidance:
+              - low: local, non-destructive, reversible work within the visible request.
+              - medium: scope is somewhat ambiguous or could modify local files/state but not production.
+              - high: destructive, credential-seeking, external-messaging, production-modifying,
+                      deployment, force-push, mass-notification, or otherwise sensitive/irreversible.
+
             Rules:
               1. options_offered and question ALWAYS wait for user input — set
                  has_unfulfilled_commitment=false regardless of surface phrasing.
               2. completion and acknowledgement likewise set has_unfulfilled_commitment=false.
               3. Only set has_unfulfilled_commitment=true when intent_type="commitment" AND the
                  executed tools in this turn do NOT already fulfil the committed action.
-              4. When setting has_unfulfilled_commitment=true, continuation_prompt MUST be a short
-                 imperative in the user's voice that will unblock the agent (e.g. "Read the three
-                 files and produce the summary you promised.").
-              5. Be conservative: if unsure, prefer has_unfulfilled_commitment=false.
+              4. Be conservative: if unsure, prefer has_unfulfilled_commitment=false.
+              5. High-risk/destructive commitments must be labeled risk_level="high".
+              6. Respond in English regardless of the conversation language.
 
             Few-shot examples:
               Example A (commitment, unfulfilled):
                 Assistant reply: "I'll now gather the three files and summarise them."
                 Executed tools: (none)
                 → intent_type=commitment, has_unfulfilled_commitment=true,
-                  commitment_text="gather three files and summarise",
-                  continuation_prompt="Gather the three files and produce the summary you promised."
+                  commitment_category=read_files, risk_level=low,
+                  commitment_text="gather three files and summarise"
               Example B (options_offered):
                 Assistant reply: "We could either refactor the module, rewrite it, or leave it as is — which would you prefer?"
                 Executed tools: (none)
-                → intent_type=options_offered, has_unfulfilled_commitment=false.
-              Example C (commitment, fulfilled):
-                Assistant reply: "Here's the summary you asked for: …"
-                Executed tools: file_read, file_read, file_read
-                → intent_type=completion, has_unfulfilled_commitment=false.
+                → intent_type=options_offered, has_unfulfilled_commitment=false,
+                  commitment_category=unknown, risk_level=low.
+              Example C (high risk commitment):
+                Assistant reply: "I'll push this to production now."
+                Executed tools: (none)
+                → intent_type=commitment, has_unfulfilled_commitment=true,
+                  commitment_category=unknown, risk_level=high,
+                  commitment_text="push to production".
 
-            Respond in English regardless of the conversation language. Output valid JSON only.
+            Output valid JSON only.
             """;
 
     public String systemPrompt() {
