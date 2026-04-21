@@ -18,16 +18,21 @@ import me.golemcore.bot.domain.resilience.followthrough.FollowThroughClassifier;
 import me.golemcore.bot.domain.resilience.followthrough.IntentType;
 import me.golemcore.bot.domain.service.InternalTurnService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.port.outbound.InboundMessageDispatchPort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
+import java.time.Clock;
 import java.time.Duration;
+import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -36,6 +41,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -229,6 +235,30 @@ class FollowThroughSystemTest {
 
         verifyNoInteractions(classifier);
         verify(internalTurnService, never()).scheduleFollowThroughNudge(any(), anyString(), anyInt());
+    }
+
+    @Test
+    void shouldNotThrowOrMarkScheduledWhenInternalTurnDispatchFailsClosed() {
+        InboundMessageDispatchPort inboundMessageDispatchPort = mock(InboundMessageDispatchPort.class);
+        doThrow(new IllegalStateException("queue unavailable"))
+                .when(inboundMessageDispatchPort).dispatch(any(Message.class));
+        InternalTurnService failClosedInternalTurnService = new InternalTurnService(
+                inboundMessageDispatchPort,
+                Clock.fixed(Instant.parse("2026-04-21T03:00:00Z"), ZoneOffset.UTC));
+        FollowThroughSystem failClosedSystem = new FollowThroughSystem(
+                classifier, failClosedInternalTurnService, runtimeConfigService);
+        when(classifier.classify(any(ClassifierRequest.class), anyString(), any(Duration.class)))
+                .thenReturn(ClassifierVerdict.unfulfilledCommitment(
+                        "gather the files", CONTINUATION, "committed but no tool invoked"));
+        AgentContext context = contextWith(userMessage(USER_TEXT, null), assistantMessage(ASSISTANT_TEXT, false));
+        context.setAttribute(ContextAttributes.LLM_RESPONSE,
+                LlmResponse.builder().content(ASSISTANT_TEXT).build());
+
+        assertDoesNotThrow(() -> failClosedSystem.process(context));
+
+        verify(inboundMessageDispatchPort).dispatch(any(Message.class));
+        assertNull(context.getAttribute(ContextAttributes.RESILIENCE_FOLLOW_THROUGH_SCHEDULED),
+                "failed dispatch must not mark the turn as scheduled");
     }
 
     @Test

@@ -1,5 +1,9 @@
 package me.golemcore.bot.domain.service;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.ContextAttributes;
@@ -7,6 +11,7 @@ import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.port.outbound.InboundMessageDispatchPort;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.slf4j.LoggerFactory;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -19,6 +24,8 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -238,6 +245,40 @@ class InternalTurnServiceTest {
     }
 
     @Test
+    void shouldReturnFalseAndLogWarnWhenFollowThroughDispatchThrows() {
+        InboundMessageDispatchPort inboundMessageDispatchPort = mock(InboundMessageDispatchPort.class);
+        doThrow(new IllegalStateException("queue unavailable"))
+                .when(inboundMessageDispatchPort).dispatch(any(Message.class));
+        Clock clock = Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC);
+        InternalTurnService service = new InternalTurnService(inboundMessageDispatchPort, clock);
+
+        AgentSession session = AgentSession.builder()
+                .id("session-1")
+                .channelType("telegram")
+                .chatId("chat-1")
+                .messages(new ArrayList<>())
+                .build();
+        AgentContext context = AgentContext.builder()
+                .session(session)
+                .messages(new ArrayList<>())
+                .build();
+
+        AttachedAppender attachedAppender = attachAppender();
+        try {
+            boolean scheduled = service.scheduleFollowThroughNudge(context, "Continue now.", 0);
+
+            assertFalse(scheduled);
+            verify(inboundMessageDispatchPort).dispatch(any(Message.class));
+            assertTrue(attachedAppender.appender().list.stream()
+                    .anyMatch(event -> event.getLevel() == Level.WARN
+                            && event.getFormattedMessage().contains("failed to schedule follow-through nudge")
+                            && event.getFormattedMessage().contains("queue unavailable")));
+        } finally {
+            detachAppender(attachedAppender);
+        }
+    }
+
+    @Test
     void shouldPublishAutoProceedAffirmationWithAffirmationPromptAsUserMessage() {
         InboundMessageDispatchPort inboundMessageDispatchPort = mock(InboundMessageDispatchPort.class);
         Clock clock = Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC);
@@ -348,6 +389,74 @@ class InternalTurnServiceTest {
     }
 
     @Test
+    void shouldReturnFalseAndLogWarnWhenAutoProceedDispatchThrows() {
+        InboundMessageDispatchPort inboundMessageDispatchPort = mock(InboundMessageDispatchPort.class);
+        doThrow(new IllegalStateException("queue unavailable"))
+                .when(inboundMessageDispatchPort).dispatch(any(Message.class));
+        Clock clock = Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC);
+        InternalTurnService service = new InternalTurnService(inboundMessageDispatchPort, clock);
+
+        AgentSession session = AgentSession.builder()
+                .id("session-1")
+                .channelType("telegram")
+                .chatId("chat-1")
+                .messages(new ArrayList<>())
+                .build();
+        AgentContext context = AgentContext.builder()
+                .session(session)
+                .messages(new ArrayList<>())
+                .build();
+
+        AttachedAppender attachedAppender = attachAppender();
+        try {
+            boolean scheduled = service.scheduleAutoProceedAffirmation(context, "Yes, proceed.", 0);
+
+            assertFalse(scheduled);
+            verify(inboundMessageDispatchPort).dispatch(any(Message.class));
+            assertTrue(attachedAppender.appender().list.stream()
+                    .anyMatch(event -> event.getLevel() == Level.WARN
+                            && event.getFormattedMessage().contains("failed to schedule auto-proceed affirmation")
+                            && event.getFormattedMessage().contains("queue unavailable")));
+        } finally {
+            detachAppender(attachedAppender);
+        }
+    }
+
+    @Test
+    void shouldReturnFalseAndLogWarnWhenAutoContinueDispatchThrows() {
+        InboundMessageDispatchPort inboundMessageDispatchPort = mock(InboundMessageDispatchPort.class);
+        doThrow(new IllegalStateException("queue unavailable"))
+                .when(inboundMessageDispatchPort).dispatch(any(Message.class));
+        Clock clock = Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC);
+        InternalTurnService service = new InternalTurnService(inboundMessageDispatchPort, clock);
+
+        AgentSession session = AgentSession.builder()
+                .id("session-1")
+                .channelType("telegram")
+                .chatId("chat-1")
+                .messages(new ArrayList<>())
+                .build();
+        AgentContext context = AgentContext.builder()
+                .session(session)
+                .messages(new ArrayList<>())
+                .build();
+
+        AttachedAppender attachedAppender = attachAppender();
+        try {
+            boolean scheduled = service.scheduleAutoContinueRetry(context, "llm-timeout");
+
+            assertFalse(scheduled);
+            verify(inboundMessageDispatchPort).dispatch(any(Message.class));
+            assertTrue(attachedAppender.appender().list.stream()
+                    .anyMatch(event -> event.getLevel() == Level.WARN
+                            && event.getFormattedMessage().contains("failed to schedule auto-continue retry")
+                            && event.getFormattedMessage().contains("queue unavailable")));
+        } finally {
+            detachAppender(attachedAppender);
+        }
+    }
+
+    @Test
     void shouldAttachTraceMetadataToInternalRetryMessage() {
         InboundMessageDispatchPort inboundMessageDispatchPort = mock(InboundMessageDispatchPort.class);
         Clock clock = Clock.fixed(FIXED_INSTANT, ZoneOffset.UTC);
@@ -375,4 +484,21 @@ class InternalTurnServiceTest {
         assertEquals("INTERNAL", metadata.get("trace.root.kind"));
         assertEquals("internal.auto_continue", metadata.get("trace.name"));
     }
+
+    private AttachedAppender attachAppender() {
+        Logger logger = (Logger) LoggerFactory.getLogger(InternalTurnService.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        return new AttachedAppender(logger, appender);
+    }
+
+    private void detachAppender(AttachedAppender attachedAppender) {
+        attachedAppender.logger().detachAppender(attachedAppender.appender());
+        attachedAppender.appender().stop();
+    }
+
+    private record AttachedAppender(Logger logger, ListAppender<ILoggingEvent> appender) {
+    }
+
 }

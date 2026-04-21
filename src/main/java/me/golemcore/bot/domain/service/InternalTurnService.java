@@ -76,10 +76,16 @@ public class InternalTurnService {
                 .timestamp(clock.instant())
                 .build();
 
-        inboundMessageDispatchPort.dispatch(message);
-        log.info("[InternalTurn] scheduled auto-continue retry (sessionId={}, reasonCode={})",
-                session.getId(), reasonCode);
-        return true;
+        try {
+            inboundMessageDispatchPort.dispatch(message);
+            log.info("[InternalTurn] scheduled auto-continue retry (sessionId={}, reasonCode={})",
+                    session.getId(), reasonCode);
+            return true;
+        } catch (RuntimeException exception) {
+            log.warn("[InternalTurn] failed to schedule auto-continue retry (sessionId={}): {}",
+                    session.getId(), exception.getMessage());
+            return false;
+        }
     }
 
     /**
@@ -132,10 +138,16 @@ public class InternalTurnService {
                 .timestamp(clock.instant())
                 .build();
 
-        inboundMessageDispatchPort.dispatch(message);
-        log.info("[InternalTurn] scheduled follow-through nudge (sessionId={}, chainDepth={})",
-                session.getId(), nextChainDepth);
-        return true;
+        try {
+            inboundMessageDispatchPort.dispatch(message);
+            log.info("[InternalTurn] scheduled follow-through nudge (sessionId={}, chainDepth={})",
+                    session.getId(), nextChainDepth);
+            return true;
+        } catch (RuntimeException exception) {
+            log.warn("[InternalTurn] failed to schedule follow-through nudge (sessionId={}): {}",
+                    session.getId(), exception.getMessage());
+            return false;
+        }
     }
 
     /**
@@ -191,10 +203,16 @@ public class InternalTurnService {
                 .timestamp(clock.instant())
                 .build();
 
-        inboundMessageDispatchPort.dispatch(message);
-        log.info("[InternalTurn] scheduled auto-proceed affirmation (sessionId={}, chainDepth={})",
-                session.getId(), nextChainDepth);
-        return true;
+        try {
+            inboundMessageDispatchPort.dispatch(message);
+            log.info("[InternalTurn] scheduled auto-proceed affirmation (sessionId={}, chainDepth={})",
+                    session.getId(), nextChainDepth);
+            return true;
+        } catch (RuntimeException exception) {
+            log.warn("[InternalTurn] failed to schedule auto-proceed affirmation (sessionId={}): {}",
+                    session.getId(), exception.getMessage());
+            return false;
+        }
     }
 
     private void copyStringAttribute(AgentContext context, Map<String, Object> target, String key) {
