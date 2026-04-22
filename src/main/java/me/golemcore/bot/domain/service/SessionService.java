@@ -56,6 +56,7 @@ public class SessionService implements SessionPort {
     private final StoragePort storagePort;
     private final SessionRecordCodecPort sessionRecordCodecPort;
     private final Clock clock;
+    private final AutoModeService autoModeService;
 
     private final Map<String, AgentSession> sessionCache = new ConcurrentHashMap<>();
 
@@ -107,9 +108,11 @@ public class SessionService implements SessionPort {
 
     public void delete(String sessionId) {
         AgentSession removed = sessionCache.remove(sessionId);
-        if (!deletePersistedSession(sessionId)) {
-            restoreCachedSession(sessionId, removed);
+        if (deletePersistedSession(sessionId)) {
+            autoModeService.deleteSessionGoals(sessionId);
+            return;
         }
+        restoreCachedSession(sessionId, removed);
     }
 
     public void clearMessages(String sessionId) {
@@ -250,6 +253,7 @@ public class SessionService implements SessionPort {
             }
             sessionCache.remove(session.getId());
             if (deletePersistedSession(session.getId())) {
+                autoModeService.deleteSessionGoals(session.getId());
                 deletedCount++;
                 continue;
             }

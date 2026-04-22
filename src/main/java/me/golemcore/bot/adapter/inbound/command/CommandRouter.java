@@ -165,10 +165,10 @@ public class CommandRouter implements CommandPort {
             case "model" -> modelSelectionCommandHandler.handleModel(args);
             case "sessions" -> handleSessions(channelType);
             case "auto" -> automationCommandHandler.handleAuto(args, channelType, autoSessionChatId, transportChatId);
-            case "goals" -> automationCommandHandler.handleGoals();
-            case CMD_GOAL -> automationCommandHandler.handleGoal(args);
-            case "diary" -> automationCommandHandler.handleDiary(args);
-            case "tasks" -> automationCommandHandler.handleTasks();
+            case "goals" -> automationCommandHandler.handleGoals(sessionId);
+            case CMD_GOAL -> automationCommandHandler.handleGoal(args, sessionId);
+            case "diary" -> automationCommandHandler.handleDiary(args, sessionId);
+            case "tasks" -> automationCommandHandler.handleTasks(sessionId);
             case "schedule" -> automationCommandHandler.handleSchedule(args);
             case CMD_LATER -> automationCommandHandler.handleLater(args, channelType, conversationKey);
             case CMD_PLAN -> planCommandHandler.handlePlan(args, sessionIdentity, transportChatId);
@@ -338,9 +338,9 @@ public class CommandRouter implements CommandPort {
             builder.append("\n");
             if (automationCommandHandler.isAutoModeEnabled()) {
                 builder.append(msg("command.status.auto.title")).append("\n");
-                List<Goal> activeGoals = automationCommandHandler.getActiveGoals();
+                List<Goal> activeGoals = automationCommandHandler.getActiveGoals(sessionId);
                 builder.append(msg("command.status.auto.goals", activeGoals.size())).append("\n");
-                automationCommandHandler.getNextPendingTask()
+                automationCommandHandler.getNextPendingTask(sessionId)
                         .ifPresent(
                                 task -> builder.append(msg("command.status.auto.task", task.getTitle())).append("\n"));
             } else {

@@ -55,6 +55,7 @@ public class AutoRunHistoryService {
     private List<RunAggregate> collectRuns() {
         Map<String, Goal> goalById = buildGoalById();
         Map<String, AutoTask> taskById = buildTaskById(goalById);
+        Map<String, me.golemcore.bot.domain.model.ScheduledTask> scheduledTaskById = buildScheduledTaskById();
         Map<String, ScheduleEntry> scheduleById = buildScheduleById();
 
         Map<String, RunAggregate> runsById = new LinkedHashMap<>();
@@ -80,7 +81,7 @@ public class AutoRunHistoryService {
                         session.getChannelType(),
                         conversationKey,
                         transportChatId));
-                aggregate.captureContext(metadata, scheduleById, goalById, taskById);
+                aggregate.captureContext(metadata, scheduleById, goalById, taskById, scheduledTaskById);
                 aggregate.addMessage(message);
             }
         }
@@ -93,6 +94,15 @@ public class AutoRunHistoryService {
         boolean goalMatches = StringValueSupport.isBlank(goalId) || goalId.equals(run.goalId);
         boolean taskMatches = StringValueSupport.isBlank(taskId) || taskId.equals(run.taskId);
         return scheduleMatches && goalMatches && taskMatches;
+    }
+
+
+    private Map<String, me.golemcore.bot.domain.model.ScheduledTask> buildScheduledTaskById() {
+        Map<String, me.golemcore.bot.domain.model.ScheduledTask> scheduledTaskById = new LinkedHashMap<>();
+        for (me.golemcore.bot.domain.model.ScheduledTask scheduledTask : autoModeService.getScheduledTasks()) {
+            scheduledTaskById.put(scheduledTask.getId(), scheduledTask);
+        }
+        return scheduledTaskById;
     }
 
     private Map<String, ScheduleEntry> buildScheduleById() {
@@ -211,7 +221,8 @@ public class AutoRunHistoryService {
                 Map<String, Object> metadata,
                 Map<String, ScheduleEntry> scheduleById,
                 Map<String, Goal> goalById,
-                Map<String, AutoTask> taskById) {
+                Map<String, AutoTask> taskById,
+                Map<String, me.golemcore.bot.domain.model.ScheduledTask> scheduledTaskById) {
             String resolvedScheduleId = AutoRunContextSupport.readMetadataString(metadata,
                     ContextAttributes.AUTO_SCHEDULE_ID);
             if (StringValueSupport.isBlank(scheduleId) && !StringValueSupport.isBlank(resolvedScheduleId)) {
@@ -220,7 +231,7 @@ public class AutoRunHistoryService {
                 if (schedule != null) {
                     scheduleTargetType = schedule.getType().name();
                     scheduleTargetId = schedule.getTargetId();
-                    scheduleTargetLabel = resolveScheduleTargetLabel(schedule, goalById, taskById);
+                    scheduleTargetLabel = resolveScheduleTargetLabel(schedule, goalById, taskById, scheduledTaskById);
                 }
             }
 
@@ -372,10 +383,15 @@ public class AutoRunHistoryService {
         private static String resolveScheduleTargetLabel(
                 ScheduleEntry schedule,
                 Map<String, Goal> goalById,
-                Map<String, AutoTask> taskById) {
+                Map<String, AutoTask> taskById,
+                Map<String, me.golemcore.bot.domain.model.ScheduledTask> scheduledTaskById) {
             if (schedule.getType() == ScheduleEntry.ScheduleType.GOAL) {
                 Goal goal = goalById.get(schedule.getTargetId());
                 return goal != null ? goal.getTitle() : schedule.getTargetId();
+            }
+            if (schedule.getType() == ScheduleEntry.ScheduleType.SCHEDULED_TASK) {
+                me.golemcore.bot.domain.model.ScheduledTask task = scheduledTaskById.get(schedule.getTargetId());
+                return task != null ? task.getTitle() : schedule.getTargetId();
             }
             AutoTask task = taskById.get(schedule.getTargetId());
             return task != null ? task.getTitle() : schedule.getTargetId();

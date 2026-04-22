@@ -34,12 +34,12 @@ public class AutomationCommandService {
         return autoModeService.isAutoModeEnabled();
     }
 
-    public List<Goal> getActiveGoals() {
-        return List.copyOf(autoModeService.getActiveGoals());
+    public List<Goal> getActiveGoals(String sessionId) {
+        return List.copyOf(autoModeService.getActiveGoals(sessionId));
     }
 
-    public java.util.Optional<AutoTask> getNextPendingTask() {
-        return autoModeService.getNextPendingTask();
+    public java.util.Optional<AutoTask> getNextPendingTask(String sessionId) {
+        return autoModeService.getNextPendingTask(sessionId);
     }
 
     public boolean isLaterFeatureEnabled() {
@@ -69,18 +69,18 @@ public class AutomationCommandService {
         return new AutoDisabled();
     }
 
-    public GoalsOutcome getGoals() {
+    public GoalsOutcome getGoals(String sessionId) {
         if (!autoModeService.isFeatureEnabled()) {
             return new AutoFeatureUnavailable();
         }
-        List<Goal> goals = autoModeService.getGoals();
+        List<Goal> goals = autoModeService.getGoals(sessionId);
         if (goals.isEmpty()) {
             return new EmptyGoals();
         }
         return new GoalsOverview(List.copyOf(goals));
     }
 
-    public GoalCreationOutcome createGoal(String description) {
+    public GoalCreationOutcome createGoal(String sessionId, String description) {
         if (!autoModeService.isFeatureEnabled()) {
             return new AutoFeatureUnavailable();
         }
@@ -88,18 +88,18 @@ public class AutomationCommandService {
             return new GoalDescriptionRequired();
         }
         try {
-            Goal goal = autoModeService.createGoal(description, null);
+            Goal goal = autoModeService.createGoal(sessionId, description, null, null, null, false);
             return new GoalCreated(goal);
         } catch (IllegalStateException exception) {
             return new GoalLimitReached(runtimeConfigService.getAutoMaxGoals());
         }
     }
 
-    public TasksOutcome getTasks() {
+    public TasksOutcome getTasks(String sessionId) {
         if (!autoModeService.isFeatureEnabled()) {
             return new AutoFeatureUnavailable();
         }
-        List<Goal> goals = autoModeService.getGoals();
+        List<Goal> goals = autoModeService.getGoals(sessionId);
         boolean hasTasks = goals.stream().anyMatch(goal -> !goal.getTasks().isEmpty());
         if (goals.isEmpty() || !hasTasks) {
             return new EmptyTasks();
@@ -107,11 +107,11 @@ public class AutomationCommandService {
         return new TasksOverview(List.copyOf(goals));
     }
 
-    public DiaryOutcome getDiary(int count) {
+    public DiaryOutcome getDiary(String sessionId, int count) {
         if (!autoModeService.isFeatureEnabled()) {
             return new AutoFeatureUnavailable();
         }
-        List<DiaryEntry> entries = autoModeService.getRecentDiary(count);
+        List<DiaryEntry> entries = autoModeService.getRecentDiary(sessionId, count);
         if (entries.isEmpty()) {
             return new EmptyDiary();
         }
@@ -136,10 +136,7 @@ public class AutomationCommandService {
         if (args.size() < MIN_SCHEDULE_ARGS) {
             return new GoalScheduleUsage();
         }
-        if (autoModeService.getGoal(goalId).isEmpty()) {
-            return new GoalNotFound(goalId);
-        }
-        return createScheduleFromArgs(ScheduleEntry.ScheduleType.GOAL, goalId, args.subList(1, args.size()));
+        return new InvalidCron("Goal schedules are no longer supported");
     }
 
     public ScheduleOutcome createTaskSchedule(String taskId, List<String> args) {
@@ -149,10 +146,7 @@ public class AutomationCommandService {
         if (args.size() < MIN_SCHEDULE_ARGS) {
             return new TaskScheduleUsage();
         }
-        if (autoModeService.findGoalForTask(taskId).isEmpty()) {
-            return new TaskNotFound(taskId);
-        }
-        return createScheduleFromArgs(ScheduleEntry.ScheduleType.TASK, taskId, args.subList(1, args.size()));
+        return new InvalidCron("Task schedules are no longer supported");
     }
 
     public ScheduleOutcome deleteSchedule(String scheduleId) {

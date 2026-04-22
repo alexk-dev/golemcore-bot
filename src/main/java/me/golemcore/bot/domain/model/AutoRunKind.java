@@ -19,12 +19,8 @@ package me.golemcore.bot.domain.model;
  */
 
 /**
- * Auto execution context mode:
- * <ul>
- * <li>{@code GOAL_RUN} — task belongs to a shared goal context.</li>
- * <li>{@code TASK_RUN} — standalone isolated task context.</li>
- * </ul>
+ * Auto execution context mode.
  */
 public enum AutoRunKind {
-    GOAL_RUN, TASK_RUN
+    GOAL_RUN, TASK_RUN, SCHEDULED_TASK_RUN
 }

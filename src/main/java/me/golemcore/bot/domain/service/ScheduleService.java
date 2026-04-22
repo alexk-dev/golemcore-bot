@@ -20,6 +20,7 @@ package me.golemcore.bot.domain.service;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
@@ -33,12 +34,7 @@ import me.golemcore.bot.port.outbound.SchedulePersistencePort;
 
 /**
  * Domain service for managing cron-based schedules for autonomous goal/task
- * execution. Schedules are persisted in {@code auto/schedules.json} via
- * {@link me.golemcore.bot.port.outbound.StoragePort}.
- *
- * <p>
- * Only GOAL and TASK schedule types exist. Goals/tasks without explicit
- * schedules are never auto-processed.
+ * execution.
  */
 @Slf4j
 public class ScheduleService {
@@ -46,44 +42,35 @@ public class ScheduleService {
     private final SchedulePersistencePort schedulePersistencePort;
     private final ScheduleCronPort scheduleCronPort;
     private final Clock clock;
+    private final AutoModeMigrationService autoModeMigrationService;
 
     private volatile List<ScheduleEntry> schedulesCache;
 
     public ScheduleService(
             SchedulePersistencePort schedulePersistencePort,
             ScheduleCronPort scheduleCronPort,
-            Clock clock) {
+            Clock clock,
+            AutoModeMigrationService autoModeMigrationService) {
         this.schedulePersistencePort = schedulePersistencePort;
         this.scheduleCronPort = scheduleCronPort;
         this.clock = clock;
+        this.autoModeMigrationService = autoModeMigrationService;
     }
 
-    /**
-     * Create a new schedule entry. Validates the cron expression, computes the next
-     * execution time, and persists.
-     */
     public ScheduleEntry createSchedule(ScheduleEntry.ScheduleType type, String targetId,
             String cronExpression, int maxExecutions) {
         return createSchedule(type, targetId, cronExpression, maxExecutions, false);
     }
 
-    /**
-     * Create a new schedule entry. Validates the cron expression, computes the next
-     * execution time, and persists.
-     */
     public ScheduleEntry createSchedule(ScheduleEntry.ScheduleType type, String targetId,
             String cronExpression, int maxExecutions, boolean clearContextBeforeRun) {
         return createSchedule(type, targetId, cronExpression, maxExecutions, clearContextBeforeRun, null);
     }
 
-    /**
-     * Create a new schedule entry with nested report configuration.
-     */
     public ScheduleEntry createSchedule(ScheduleEntry.ScheduleType type, String targetId,
             String cronExpression, int maxExecutions, boolean clearContextBeforeRun,
             ScheduleReportConfig report) {
         String normalizedCron = normalizeCronExpression(cronExpression);
-
         Instant now = clock.instant();
         Instant nextExecution = computeNextExecution(normalizedCron, now);
 
@@ -106,14 +93,10 @@ public class ScheduleService {
         List<ScheduleEntry> schedules = getSchedules();
         schedules.add(entry);
         saveSchedules(schedules);
-
         log.info("[Schedule] Created {} schedule for target {}: {}", type, targetId, normalizedCron);
         return entry;
     }
 
-    /**
-     * Update an existing schedule entry.
-     */
     public ScheduleEntry updateSchedule(
             String id,
             ScheduleEntry.ScheduleType type,
@@ -124,9 +107,6 @@ public class ScheduleService {
         return updateSchedule(id, type, targetId, cronExpression, maxExecutions, enabled, null);
     }
 
-    /**
-     * Update an existing schedule entry.
-     */
     public ScheduleEntry updateSchedule(
             String id,
             ScheduleEntry.ScheduleType type,
@@ -139,9 +119,6 @@ public class ScheduleService {
                 ScheduleReportConfigUpdate.noChange());
     }
 
-    /**
-     * Update an existing schedule entry with explicit report config semantics.
-     */
     public ScheduleEntry updateSchedule(
             String id,
             ScheduleEntry.ScheduleType type,
@@ -182,56 +159,38 @@ public class ScheduleService {
         return entry;
     }
 
-    private static ScheduleReportConfig copyReport(ScheduleReportConfig report) {
-        if (report == null) {
-            return null;
-        }
-        return ScheduleReportConfig.builder()
-                .channelType(report.getChannelType())
-                .chatId(report.getChatId())
-                .webhookUrl(report.getWebhookUrl())
-                .webhookBearerToken(report.getWebhookBearerToken())
-                .build();
-    }
-
-    /**
-     * Get all schedules (cached, loaded on first access).
-     */
     public synchronized List<ScheduleEntry> getSchedules() {
         if (schedulesCache == null) {
+            if (autoModeMigrationService != null) {
+                autoModeMigrationService.migrateIfNeeded();
+            }
             schedulesCache = schedulePersistencePort.loadSchedules();
             schedulesCache.forEach(this::normalizeLoadedSchedule);
         }
         return schedulesCache;
     }
 
-    /**
-     * Find a schedule by its ID.
-     */
+    public synchronized void replaceSchedules(List<ScheduleEntry> schedules) {
+        List<ScheduleEntry> normalizedSchedules = schedules != null ? new ArrayList<>(schedules) : new ArrayList<>();
+        normalizedSchedules.forEach(this::normalizeLoadedSchedule);
+        saveSchedules(normalizedSchedules);
+    }
+
     public Optional<ScheduleEntry> findSchedule(String id) {
         return getSchedules().stream()
-                .filter(s -> s.getId().equals(id))
+                .filter(schedule -> schedule.getId().equals(id))
                 .findFirst();
     }
 
-    /**
-     * Find all schedules targeting a specific goal or task.
-     */
     public List<ScheduleEntry> findSchedulesForTarget(String targetId) {
         return getSchedules().stream()
-                .filter(s -> s.getTargetId().equals(targetId))
+                .filter(schedule -> schedule.getTargetId().equals(targetId))
                 .toList();
     }
 
-    /**
-     * Delete a schedule by ID.
-     *
-     * @throws IllegalArgumentException
-     *             if not found
-     */
     public void deleteSchedule(String id) {
         List<ScheduleEntry> schedules = getSchedules();
-        boolean removed = schedules.removeIf(s -> s.getId().equals(id));
+        boolean removed = schedules.removeIf(schedule -> schedule.getId().equals(id));
         if (!removed) {
             throw new IllegalArgumentException("Schedule not found: " + id);
         }
@@ -239,23 +198,15 @@ public class ScheduleService {
         log.info("[Schedule] Deleted schedule: {}", id);
     }
 
-    /**
-     * Get schedules that are due for execution (enabled, not exhausted, next
-     * execution at or before now).
-     */
     public List<ScheduleEntry> getDueSchedules() {
         Instant now = clock.instant();
         return getSchedules().stream()
                 .filter(ScheduleEntry::isEnabled)
-                .filter(s -> !s.isExhausted())
-                .filter(s -> s.getNextExecutionAt() != null && !s.getNextExecutionAt().isAfter(now))
+                .filter(schedule -> !schedule.isExhausted())
+                .filter(schedule -> schedule.getNextExecutionAt() != null && !schedule.getNextExecutionAt().isAfter(now))
                 .toList();
     }
 
-    /**
-     * Record an execution: increment count, update timestamps, recompute next
-     * execution. Disables exhausted schedules.
-     */
     public void recordExecution(String id) {
         ScheduleEntry entry = findSchedule(id)
                 .orElseThrow(() -> new IllegalArgumentException("Schedule not found: " + id));
@@ -270,29 +221,16 @@ public class ScheduleService {
             entry.setNextExecutionAt(null);
             log.info("[Schedule] Schedule {} exhausted after {} executions", id, entry.getExecutionCount());
         } else {
-            Instant nextExecution = computeNextExecution(entry.getCronExpression(), now);
-            entry.setNextExecutionAt(nextExecution);
+            entry.setNextExecutionAt(computeNextExecution(entry.getCronExpression(), now));
         }
 
         saveSchedules(getSchedules());
     }
 
-    /**
-     * Normalize a cron expression: converts 5-field (minute-level) to 6-field
-     * (Spring format with seconds). Validates the result.
-     *
-     * @throws IllegalArgumentException
-     *             if the cron expression is invalid
-     */
     String normalizeCronExpression(String input) {
         return scheduleCronPort.normalize(input);
     }
 
-    /**
-     * Compute the next execution time after the given instant.
-     *
-     * @return next execution instant, or null if no future execution exists
-     */
     Instant computeNextExecution(String cronExpression, Instant after) {
         return scheduleCronPort.nextExecution(cronExpression, after);
     }
@@ -314,5 +252,17 @@ public class ScheduleService {
         if (emptyChannel && emptyChat && emptyWebhookUrl && emptyWebhookToken) {
             entry.setReport(null);
         }
+    }
+
+    private static ScheduleReportConfig copyReport(ScheduleReportConfig report) {
+        if (report == null) {
+            return null;
+        }
+        return ScheduleReportConfig.builder()
+                .channelType(report.getChannelType())
+                .chatId(report.getChatId())
+                .webhookUrl(report.getWebhookUrl())
+                .webhookBearerToken(report.getWebhookBearerToken())
+                .build();
     }
 }

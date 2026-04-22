@@ -46,12 +46,12 @@ class AutomationCommandHandler {
         return automationCommandService.isAutoModeEnabled();
     }
 
-    List<Goal> getActiveGoals() {
-        return automationCommandService.getActiveGoals();
+    List<Goal> getActiveGoals(String sessionId) {
+        return automationCommandService.getActiveGoals(sessionId);
     }
 
-    Optional<AutoTask> getNextPendingTask() {
-        return automationCommandService.getNextPendingTask();
+    Optional<AutoTask> getNextPendingTask(String sessionId) {
+        return automationCommandService.getNextPendingTask(sessionId);
     }
 
     boolean isLaterFeatureEnabled() {
@@ -93,8 +93,8 @@ class AutomationCommandHandler {
         };
     }
 
-    CommandPort.CommandResult handleGoals() {
-        AutomationCommandService.GoalsOutcome outcome = automationCommandService.getGoals();
+    CommandPort.CommandResult handleGoals(String sessionId) {
+        AutomationCommandService.GoalsOutcome outcome = automationCommandService.getGoals(sessionId);
         if (outcome instanceof AutomationCommandService.AutoFeatureUnavailable) {
             return CommandPort.CommandResult.success(msg(MSG_AUTO_NOT_AVAILABLE));
         }
@@ -125,13 +125,13 @@ class AutomationCommandHandler {
         return CommandPort.CommandResult.success(builder.toString());
     }
 
-    CommandPort.CommandResult handleGoal(List<String> args) {
+    CommandPort.CommandResult handleGoal(List<String> args, String sessionId) {
         if (args.isEmpty()) {
             return CommandPort.CommandResult.success(msg("command.goals.empty"));
         }
 
         AutomationCommandService.GoalCreationOutcome outcome = automationCommandService
-                .createGoal(String.join(" ", args));
+                .createGoal(sessionId, String.join(" ", args));
         if (outcome instanceof AutomationCommandService.AutoFeatureUnavailable) {
             return CommandPort.CommandResult.success(msg(MSG_AUTO_NOT_AVAILABLE));
         }
@@ -144,8 +144,8 @@ class AutomationCommandHandler {
         return CommandPort.CommandResult.success(msg("command.goals.empty"));
     }
 
-    CommandPort.CommandResult handleTasks() {
-        AutomationCommandService.TasksOutcome outcome = automationCommandService.getTasks();
+    CommandPort.CommandResult handleTasks(String sessionId) {
+        AutomationCommandService.TasksOutcome outcome = automationCommandService.getTasks(sessionId);
         if (outcome instanceof AutomationCommandService.AutoFeatureUnavailable) {
             return CommandPort.CommandResult.success(msg(MSG_AUTO_NOT_AVAILABLE));
         }
@@ -186,7 +186,7 @@ class AutomationCommandHandler {
         return CommandPort.CommandResult.success(builder.toString().trim());
     }
 
-    CommandPort.CommandResult handleDiary(List<String> args) {
+    CommandPort.CommandResult handleDiary(List<String> args, String sessionId) {
         int count = 10;
         if (!args.isEmpty()) {
             try {
@@ -196,7 +196,7 @@ class AutomationCommandHandler {
             }
         }
 
-        AutomationCommandService.DiaryOutcome outcome = automationCommandService.getDiary(count);
+        AutomationCommandService.DiaryOutcome outcome = automationCommandService.getDiary(sessionId, count);
         if (outcome instanceof AutomationCommandService.AutoFeatureUnavailable) {
             return CommandPort.CommandResult.success(msg(MSG_AUTO_NOT_AVAILABLE));
         }

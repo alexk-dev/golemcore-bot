@@ -62,7 +62,7 @@ public class ScheduleEntry {
      * Schedule target types.
      */
     public enum ScheduleType {
-        GOAL, TASK
+        GOAL, TASK, SCHEDULED_TASK
     }
 
     /**

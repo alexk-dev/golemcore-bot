@@ -451,6 +451,9 @@ public final class ContextAttributes {
     /** String ? active auto task identifier for the turn. */
     public static final String AUTO_TASK_ID = "auto.task.id";
 
+    /** String ? active scheduled task identifier for the turn. */
+    public static final String AUTO_SCHEDULED_TASK_ID = "auto.scheduled_task.id";
+
     /** String ? active skill name applied during the current turn or message. */
     public static final String ACTIVE_SKILL_NAME = "skill.active.name";
 

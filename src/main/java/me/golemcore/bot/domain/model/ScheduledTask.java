@@ -19,39 +19,30 @@ package me.golemcore.bot.domain.model;
  */
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import java.time.Instant;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import java.time.Instant;
-import java.util.ArrayList;
-import java.util.List;
-
 /**
- * Represents a high-level objective for autonomous mode. Goals contain multiple
- * tasks and track overall progress and status.
+ * Persistent autonomous task that can be scheduled independently of any chat
+ * session goal/task tree.
  */
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class Goal {
+@JsonIgnoreProperties(ignoreUnknown = true)
+public class ScheduledTask {
 
     private String id;
-    private String sessionId;
     private String title;
     private String description;
     private String prompt;
     private String reflectionModelTier;
     private boolean reflectionTierPriority;
-    private boolean systemInbox;
-
-    @Builder.Default
-    private GoalStatus status = GoalStatus.ACTIVE;
-
-    @Builder.Default
-    private List<AutoTask> tasks = new ArrayList<>();
 
     @Builder.Default
     private int consecutiveFailureCount = 0;
@@ -63,23 +54,15 @@ public class Goal {
     private String lastFailureFingerprint;
     private String reflectionStrategy;
     private String lastUsedSkillName;
+    private String legacySourceType;
+    private String legacySourceId;
     private Instant lastFailureAt;
     private Instant lastReflectionAt;
     private Instant createdAt;
     private Instant updatedAt;
 
     /**
-     * Calculates the number of completed tasks (not serialized to JSON).
-     */
-    @JsonIgnore
-    public long getCompletedTaskCount() {
-        return tasks.stream()
-                .filter(t -> t.getStatus() == AutoTask.TaskStatus.COMPLETED)
-                .count();
-    }
-
-    /**
-     * Returns the prompt that should be used for autonomous execution.
+     * Returns the prompt that should be used for scheduled execution.
      */
     @JsonIgnore
     public String getExecutionPrompt() {
@@ -88,12 +71,5 @@ public class Goal {
             return basePrompt;
         }
         return basePrompt + "\n\nRecovery strategy from previous reflection:\n" + reflectionStrategy;
-    }
-
-    /**
-     * Goal lifecycle states.
-     */
-    public enum GoalStatus {
-        ACTIVE, COMPLETED, PAUSED, CANCELLED
     }
 }

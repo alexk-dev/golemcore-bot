@@ -53,6 +53,7 @@ public final class AutoRunContextSupport {
         copyStringAttribute(context, metadata, ContextAttributes.AUTO_SCHEDULE_ID);
         copyStringAttribute(context, metadata, ContextAttributes.AUTO_GOAL_ID);
         copyStringAttribute(context, metadata, ContextAttributes.AUTO_TASK_ID);
+        copyStringAttribute(context, metadata, ContextAttributes.AUTO_SCHEDULED_TASK_ID);
         copyStringAttribute(context, metadata, ContextAttributes.ACTIVE_SKILL_NAME);
         copyStringAttribute(context, metadata, ContextAttributes.AUTO_RUN_ACTIVE_SKILL);
         copyStringAttribute(context, metadata, ContextAttributes.AUTO_REFLECTION_TIER);
@@ -85,7 +86,8 @@ public final class AutoRunContextSupport {
             String scheduleId,
             String runId,
             String goalId,
-            String taskId) {
+            String taskId,
+            String scheduledTaskId) {
         Map<String, String> context = new LinkedHashMap<>();
         putString(context, ContextAttributes.SESSION_IDENTITY_CHANNEL, channelType);
         putString(context, ContextAttributes.CONVERSATION_KEY, conversationKey);
@@ -94,6 +96,7 @@ public final class AutoRunContextSupport {
         putString(context, ContextAttributes.AUTO_RUN_ID, runId);
         putString(context, ContextAttributes.AUTO_GOAL_ID, goalId);
         putString(context, ContextAttributes.AUTO_TASK_ID, taskId);
+        putString(context, ContextAttributes.AUTO_SCHEDULED_TASK_ID, scheduledTaskId);
         return context;
     }
 
@@ -110,7 +113,8 @@ public final class AutoRunContextSupport {
                 readMetadataString(metadata, ContextAttributes.AUTO_SCHEDULE_ID),
                 readMetadataString(metadata, ContextAttributes.AUTO_RUN_ID),
                 readMetadataString(metadata, ContextAttributes.AUTO_GOAL_ID),
-                readMetadataString(metadata, ContextAttributes.AUTO_TASK_ID));
+                readMetadataString(metadata, ContextAttributes.AUTO_TASK_ID),
+                readMetadataString(metadata, ContextAttributes.AUTO_SCHEDULED_TASK_ID));
     }
 
     private static void copyStringAttribute(AgentContext context, Map<String, Object> target, String key) {

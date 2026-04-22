@@ -185,7 +185,7 @@ class ScheduledRunExecutorTest {
     void shouldResetCompletedTaskBeforeRun() {
         ScheduleEntry schedule = buildSchedule(GOAL_ID, ScheduleEntry.ScheduleType.TASK);
         ScheduledRunMessage runMessage = new ScheduledRunMessage(
-                "prompt", AutoRunKind.GOAL_RUN, GOAL_ID, TASK_ID,
+                "prompt", AutoRunKind.GOAL_RUN, null, GOAL_ID, TASK_ID,
                 "Goal", "Task", false, null, false, true);
         ScheduleDeliveryContext ctx = new ScheduleDeliveryContext("telegram", "sess", "trans");
         when(scheduledRunMessageFactory.buildForSchedule(schedule)).thenReturn(Optional.of(runMessage));
@@ -218,7 +218,7 @@ class ScheduledRunExecutorTest {
     void shouldSkipRecordFailureWhenGoalIdIsBlank() {
         ScheduleEntry schedule = buildSchedule(null, ScheduleEntry.ScheduleType.GOAL);
         ScheduledRunMessage runMessage = new ScheduledRunMessage(
-                "prompt", AutoRunKind.GOAL_RUN, "", null,
+                "prompt", AutoRunKind.GOAL_RUN, null, "", null,
                 null, null, false, null, false, false);
         ScheduleDeliveryContext ctx = ScheduleDeliveryContext.auto();
         when(scheduledRunMessageFactory.buildForSchedule(schedule)).thenReturn(Optional.of(runMessage));
@@ -233,10 +233,62 @@ class ScheduledRunExecutorTest {
     }
 
     @Test
+    void shouldRecordScheduledTaskSuccessWhenScheduledTaskRunCompletes() {
+        ScheduleEntry schedule = buildSchedule("scheduled-task-1", ScheduleEntry.ScheduleType.SCHEDULED_TASK);
+        ScheduledRunMessage runMessage = new ScheduledRunMessage(
+                "prompt", AutoRunKind.SCHEDULED_TASK_RUN, "scheduled-task-1", null, null,
+                null, "Nightly cleanup", false, null, false, false);
+        ScheduleDeliveryContext ctx = new ScheduleDeliveryContext("telegram", "sess", "trans");
+        when(scheduledRunMessageFactory.buildForSchedule(schedule)).thenReturn(Optional.of(runMessage));
+
+        Message syntheticMessage = stubSyntheticMessage(runMessage, schedule, ctx);
+        stubSuccessfulRun(syntheticMessage, "done");
+
+        executor.executeSchedule(schedule, ctx, TIMEOUT);
+
+        verify(autoModeService).recordScheduledTaskSuccess(eq("scheduled-task-1"), isNull());
+    }
+
+    @Test
+    void shouldRecordScheduledTaskFailureWhenScheduledTaskRunFails() {
+        ScheduleEntry schedule = buildSchedule("scheduled-task-1", ScheduleEntry.ScheduleType.SCHEDULED_TASK);
+        ScheduledRunMessage runMessage = new ScheduledRunMessage(
+                "prompt", AutoRunKind.SCHEDULED_TASK_RUN, "scheduled-task-1", null, null,
+                null, "Nightly cleanup", false, null, false, false);
+        ScheduleDeliveryContext ctx = new ScheduleDeliveryContext("telegram", "sess", "trans");
+        when(scheduledRunMessageFactory.buildForSchedule(schedule)).thenReturn(Optional.of(runMessage));
+        when(runtimeConfigService.isAutoReflectionEnabled()).thenReturn(false);
+
+        Message syntheticMessage = stubSyntheticMessage(runMessage, schedule, ctx);
+        stubFailedRun(syntheticMessage, "boom", "fp");
+
+        executor.executeSchedule(schedule, ctx, TIMEOUT);
+
+        verify(autoModeService).recordScheduledTaskFailure(eq("scheduled-task-1"), eq("boom"), eq("fp"), isNull());
+    }
+
+    @Test
+    void shouldApplyScheduledTaskReflectionResultWhenReflectionIsActive() {
+        ScheduleEntry schedule = buildSchedule("scheduled-task-1", ScheduleEntry.ScheduleType.SCHEDULED_TASK);
+        ScheduledRunMessage runMessage = new ScheduledRunMessage(
+                "prompt", AutoRunKind.SCHEDULED_TASK_RUN, "scheduled-task-1", null, null,
+                null, "Nightly cleanup", true, null, false, false);
+        ScheduleDeliveryContext ctx = new ScheduleDeliveryContext("telegram", "sess", "trans");
+        when(scheduledRunMessageFactory.buildForSchedule(schedule)).thenReturn(Optional.of(runMessage));
+
+        Message syntheticMessage = stubSyntheticMessage(runMessage, schedule, ctx);
+        stubSuccessfulRun(syntheticMessage, "new strategy");
+
+        executor.executeSchedule(schedule, ctx, TIMEOUT);
+
+        verify(autoModeService).applyScheduledTaskReflectionResult("scheduled-task-1", "new strategy");
+    }
+
+    @Test
     void shouldApplyReflectionResultWhenReflectionIsActive() {
         ScheduleEntry schedule = buildSchedule(GOAL_ID, ScheduleEntry.ScheduleType.GOAL);
         ScheduledRunMessage runMessage = new ScheduledRunMessage(
-                "prompt", AutoRunKind.GOAL_RUN, GOAL_ID, TASK_ID,
+                "prompt", AutoRunKind.GOAL_RUN, null, GOAL_ID, TASK_ID,
                 "Goal", "Task", true, null, false, false);
         ScheduleDeliveryContext ctx = new ScheduleDeliveryContext("telegram", "sess", "trans");
         when(scheduledRunMessageFactory.buildForSchedule(schedule)).thenReturn(Optional.of(runMessage));
@@ -261,7 +313,7 @@ class ScheduledRunExecutorTest {
         when(autoModeService.shouldTriggerReflection(GOAL_ID, TASK_ID)).thenReturn(true);
 
         ScheduledRunMessage reflectionMessage = new ScheduledRunMessage(
-                "reflection prompt", AutoRunKind.GOAL_RUN, GOAL_ID, TASK_ID,
+                "reflection prompt", AutoRunKind.GOAL_RUN, null, GOAL_ID, TASK_ID,
                 "Goal", "Task", true, null, false, false);
         when(scheduledRunMessageFactory.buildReflectionMessage(runMessage, schedule.getId()))
                 .thenReturn(Optional.of(reflectionMessage));
@@ -325,7 +377,7 @@ class ScheduledRunExecutorTest {
         when(autoModeService.shouldTriggerReflection(GOAL_ID, TASK_ID)).thenReturn(true);
 
         ScheduledRunMessage reflectionMessage = new ScheduledRunMessage(
-                "reflection prompt", AutoRunKind.GOAL_RUN, GOAL_ID, TASK_ID,
+                "reflection prompt", AutoRunKind.GOAL_RUN, null, GOAL_ID, TASK_ID,
                 "Goal", "Task", true, null, false, false);
         when(scheduledRunMessageFactory.buildReflectionMessage(runMessage, schedule.getId()))
                 .thenReturn(Optional.of(reflectionMessage));
@@ -352,7 +404,7 @@ class ScheduledRunExecutorTest {
         when(autoModeService.shouldTriggerReflection(GOAL_ID, TASK_ID)).thenReturn(true);
 
         ScheduledRunMessage reflectionMessage = new ScheduledRunMessage(
-                "reflection prompt", AutoRunKind.GOAL_RUN, GOAL_ID, TASK_ID,
+                "reflection prompt", AutoRunKind.GOAL_RUN, null, GOAL_ID, TASK_ID,
                 "Goal", "Task", true, null, false, false);
         when(scheduledRunMessageFactory.buildReflectionMessage(runMessage, schedule.getId()))
                 .thenReturn(Optional.of(reflectionMessage));
@@ -403,7 +455,7 @@ class ScheduledRunExecutorTest {
         when(autoModeService.shouldTriggerReflection(GOAL_ID, TASK_ID)).thenReturn(true);
 
         ScheduledRunMessage reflectionMessage = new ScheduledRunMessage(
-                "reflection prompt", AutoRunKind.GOAL_RUN, GOAL_ID, TASK_ID,
+                "reflection prompt", AutoRunKind.GOAL_RUN, null, GOAL_ID, TASK_ID,
                 "Goal", "Task", true, null, false, false);
         when(scheduledRunMessageFactory.buildReflectionMessage(runMessage, schedule.getId()))
                 .thenReturn(Optional.of(reflectionMessage));
@@ -423,7 +475,7 @@ class ScheduledRunExecutorTest {
     void shouldNotTriggerReflectionWhenAlreadyInReflection() {
         ScheduleEntry schedule = buildSchedule(GOAL_ID, ScheduleEntry.ScheduleType.GOAL);
         ScheduledRunMessage runMessage = new ScheduledRunMessage(
-                "prompt", AutoRunKind.GOAL_RUN, GOAL_ID, TASK_ID,
+                "prompt", AutoRunKind.GOAL_RUN, null, GOAL_ID, TASK_ID,
                 "Goal", "Task", true, null, false, false);
         ScheduleDeliveryContext ctx = new ScheduleDeliveryContext("telegram", "sess", "trans");
         when(scheduledRunMessageFactory.buildForSchedule(schedule)).thenReturn(Optional.of(runMessage));
@@ -451,7 +503,7 @@ class ScheduledRunExecutorTest {
 
     private static ScheduledRunMessage goalRunMessage() {
         return new ScheduledRunMessage(
-                "Work on task", AutoRunKind.GOAL_RUN, GOAL_ID, TASK_ID,
+                "Work on task", AutoRunKind.GOAL_RUN, null, GOAL_ID, TASK_ID,
                 "Goal Title", "Task Title", false, null, false, false);
     }
 

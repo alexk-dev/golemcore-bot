@@ -72,6 +72,7 @@ public class SchedulerController {
                 state.autoModeEnabled(),
                 state.goals().stream().map(this::toGoalDto).toList(),
                 state.standaloneTasks().stream().map(this::toTaskDto).toList(),
+                state.scheduledTasks().stream().map(this::toScheduledTaskDto).toList(),
                 state.schedules().stream().map(this::toScheduleDto).toList(),
                 state.reportChannelOptions().stream().map(this::toReportChannelOptionDto).toList());
     }
@@ -86,6 +87,19 @@ public class SchedulerController {
                 goal.completedTasks(),
                 goal.totalTasks(),
                 goal.tasks().stream().map(this::toTaskDto).toList());
+    }
+
+
+    private ScheduledTaskDto toScheduledTaskDto(SchedulerFacade.ScheduledTaskView task) {
+        return new ScheduledTaskDto(
+                task.id(),
+                task.title(),
+                task.description(),
+                task.prompt(),
+                task.reflectionModelTier(),
+                task.reflectionTierPriority(),
+                task.legacySourceType(),
+                task.legacySourceId());
     }
 
     private TaskDto toTaskDto(SchedulerFacade.TaskView task) {
@@ -291,6 +305,7 @@ public class SchedulerController {
             boolean autoModeEnabled,
             List<GoalDto> goals,
             List<TaskDto> standaloneTasks,
+            List<ScheduledTaskDto> scheduledTasks,
             List<ScheduleDto> schedules,
             List<ScheduleReportChannelOptionDto> reportChannelOptions) {
     }
@@ -315,6 +330,17 @@ public class SchedulerController {
             String status,
             int order,
             boolean standalone) {
+    }
+
+    public record ScheduledTaskDto(
+            String id,
+            String title,
+            String description,
+            String prompt,
+            String reflectionModelTier,
+            boolean reflectionTierPriority,
+            String legacySourceType,
+            String legacySourceId) {
     }
 
     public record ScheduleDto(

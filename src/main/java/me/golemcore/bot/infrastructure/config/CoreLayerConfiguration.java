@@ -3,6 +3,7 @@ package me.golemcore.bot.infrastructure.config;
 import java.time.Clock;
 import java.util.List;
 import me.golemcore.bot.application.update.UpdateService;
+import me.golemcore.bot.domain.service.AutoModeMigrationService;
 import me.golemcore.bot.domain.loop.AgentLoop;
 import me.golemcore.bot.domain.service.ContextCompactionPolicy;
 import me.golemcore.bot.domain.service.ContextTokenEstimator;
@@ -51,8 +52,9 @@ public class CoreLayerConfiguration {
     ScheduleService scheduleService(
             SchedulePersistencePort schedulePersistencePort,
             ScheduleCronPort scheduleCronPort,
-            Clock clock) {
-        return new ScheduleService(schedulePersistencePort, scheduleCronPort, clock);
+            Clock clock,
+            AutoModeMigrationService autoModeMigrationService) {
+        return new ScheduleService(schedulePersistencePort, scheduleCronPort, clock, autoModeMigrationService);
     }
 
     @Bean
