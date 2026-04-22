@@ -3,6 +3,7 @@ package me.golemcore.bot.client.mapper;
 import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.AutoModeConfigDto;
 import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.CompactionConfigDto;
 import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.HiveConfigDto;
+import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.RuntimeHiveConfigDto;
 import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.LlmConfigDto;
 import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.LlmProviderConfigDto;
 import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.McpCatalogEntryDto;
@@ -153,12 +154,20 @@ public class RuntimeSettingsWebMapper {
         return copy(source, new RuntimeConfig.McpCatalogEntry());
     }
 
+    public RuntimeHiveConfigDto toRuntimeHiveConfigDto(RuntimeConfig.HiveConfig source) {
+        return copy(source, new RuntimeHiveConfigDto());
+    }
+
+    public RuntimeConfig.HiveConfig toRuntimeHiveConfig(RuntimeHiveConfigDto source) {
+        return copy(source, new RuntimeConfig.HiveConfig());
+    }
+
     public HiveConfigDto toHiveConfigDto(RuntimeConfig.HiveConfig source) {
         return copy(source, new HiveConfigDto());
     }
 
     public RuntimeConfig.HiveConfig toHiveConfig(HiveConfigDto source) {
-        return copy(source, new RuntimeConfig.HiveConfig());
+        return toRuntimeHiveConfig(source);
     }
 
     public PlanConfigDto toPlanConfigDto(RuntimeConfig.PlanConfig source) {

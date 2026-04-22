@@ -263,22 +263,11 @@ public class TurnProgressService {
         if (context == null || update == null) {
             return update;
         }
-        Map<String, Object> metadata = new LinkedHashMap<>(update.metadata());
-        copyHiveMetadata(context, metadata, ContextAttributes.HIVE_CARD_ID);
-        copyHiveMetadata(context, metadata, ContextAttributes.HIVE_THREAD_ID);
-        copyHiveMetadata(context, metadata, ContextAttributes.HIVE_COMMAND_ID);
-        copyHiveMetadata(context, metadata, ContextAttributes.HIVE_RUN_ID);
-        copyHiveMetadata(context, metadata, ContextAttributes.HIVE_GOLEM_ID);
+        Map<String, Object> metadata = new LinkedHashMap<>(update.metadata() != null ? update.metadata() : Map.of());
+        HiveMetadataSupport.copyContextAttributes(context, metadata);
         if (metadata.equals(update.metadata())) {
             return update;
         }
         return new ProgressUpdate(update.type(), update.text(), metadata);
-    }
-
-    private void copyHiveMetadata(AgentContext context, Map<String, Object> target, String key) {
-        Object value = context.getAttribute(key);
-        if (value instanceof String stringValue && !stringValue.isBlank()) {
-            target.put(key, stringValue);
-        }
     }
 }

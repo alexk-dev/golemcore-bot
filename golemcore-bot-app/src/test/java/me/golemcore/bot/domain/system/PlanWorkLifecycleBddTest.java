@@ -14,7 +14,6 @@ import me.golemcore.bot.domain.context.ContextAssembler;
 import me.golemcore.bot.domain.context.ContextLayer;
 import me.golemcore.bot.domain.context.PromptComposer;
 import me.golemcore.bot.domain.context.layer.AutoModeLayer;
-import me.golemcore.bot.domain.context.layer.HiveLayer;
 import me.golemcore.bot.domain.context.layer.IdentityLayer;
 import me.golemcore.bot.domain.context.layer.MemoryLayer;
 import me.golemcore.bot.domain.context.layer.PlanModeLayer;
@@ -251,8 +250,7 @@ class PlanWorkLifecycleBddTest {
                 new ToolLayer(toolCallExecutionService, mcpPort, planService, delayedActionPolicyService),
                 new TierAwarenessLayer(userPreferencesService),
                 new AutoModeLayer(autoModeService),
-                new PlanModeLayer(planService),
-                new HiveLayer());
+                new PlanModeLayer(planService));
 
         ContextAssembler contextAssembler = new ContextAssembler(
                 skillResolver, tierResolver, layers, new PromptComposer());

@@ -18,7 +18,7 @@ import me.golemcore.bot.adapter.inbound.web.projection.SelfEvolvingProjectionSer
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchResult;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchStatus;
 import me.golemcore.bot.domain.selfevolving.tactic.TacticRecordService;
-import me.golemcore.bot.port.outbound.HiveEventPublishPort;
+import me.golemcore.bot.port.outbound.SelfEvolvingProjectionPublishPort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -26,19 +26,19 @@ class SelfEvolvingTacticsControllerHivePublishTest {
 
     private SelfEvolvingProjectionService projectionService;
     private TacticRecordService tacticRecordService;
-    private HiveEventPublishPort hiveEventPublishPort;
+    private SelfEvolvingProjectionPublishPort projectionPublishPort;
     private SelfEvolvingTacticsController controller;
 
     @BeforeEach
     void setUp() {
         projectionService = mock(SelfEvolvingProjectionService.class);
         tacticRecordService = mock(TacticRecordService.class);
-        hiveEventPublishPort = mock(HiveEventPublishPort.class);
+        projectionPublishPort = mock(SelfEvolvingProjectionPublishPort.class);
         controller = new SelfEvolvingTacticsController(
                 projectionService,
                 null,
                 tacticRecordService,
-                hiveEventPublishPort);
+                projectionPublishPort);
     }
 
     @Test
@@ -71,7 +71,7 @@ class SelfEvolvingTacticsControllerHivePublishTest {
 
         controller.searchTactics("planner").block();
 
-        verify(hiveEventPublishPort).publishSelfEvolvingTacticSearchProjection(
+        verify(projectionPublishPort).publishSelfEvolvingTacticSearchProjection(
                 argThat(query -> "planner".equals(query)),
                 argThat(status -> status != null
                         && "hybrid".equals(status.getMode())
@@ -94,7 +94,7 @@ class SelfEvolvingTacticsControllerHivePublishTest {
 
         controller.searchTactics("planner").block();
 
-        verify(hiveEventPublishPort).publishSelfEvolvingTacticSearchProjection(
+        verify(projectionPublishPort).publishSelfEvolvingTacticSearchProjection(
                 argThat(query -> "planner".equals(query)),
                 any(TacticSearchStatus.class),
                 anyList());
@@ -115,7 +115,7 @@ class SelfEvolvingTacticsControllerHivePublishTest {
 
         controller.searchTactics("planner").block();
 
-        verify(hiveEventPublishPort).publishSelfEvolvingTacticSearchProjection(
+        verify(projectionPublishPort).publishSelfEvolvingTacticSearchProjection(
                 argThat(query -> "planner".equals(query)),
                 argThat(status -> status == null),
                 argThat(results -> results != null
@@ -158,7 +158,7 @@ class SelfEvolvingTacticsControllerHivePublishTest {
 
         controller.listTactics().block();
 
-        verify(hiveEventPublishPort).publishSelfEvolvingTacticCatalogProjection(
+        verify(projectionPublishPort).publishSelfEvolvingTacticCatalogProjection(
                 argThat(projections -> projections != null
                         && projections.size() == 1
                         && matchesProjection(projections.getFirst())));
@@ -172,7 +172,7 @@ class SelfEvolvingTacticsControllerHivePublishTest {
                 .results(List.of())
                 .build());
         doThrow(new IllegalStateException("publish failed"))
-                .when(hiveEventPublishPort)
+                .when(projectionPublishPort)
                 .publishSelfEvolvingTacticSearchProjection(any(String.class), any(), anyList());
 
         controller.searchTactics("planner").block();

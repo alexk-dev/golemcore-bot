@@ -3,6 +3,7 @@ package me.golemcore.bot.adapter.inbound.web;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import me.golemcore.bot.domain.model.RuntimeEvent;
 import me.golemcore.bot.domain.model.RuntimeEventType;
+import me.golemcore.bot.domain.model.hive.HiveRuntimeContracts;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.context.ApplicationEventPublisher;
@@ -58,7 +59,7 @@ class WebChannelAdapterRuntimeEventTest {
         verify(session).textMessage(payloadCaptor.capture());
         Map<?, ?> payload = objectMapper.readValue(payloadCaptor.getValue(), Map.class);
         assertEquals("system_event", payload.get("type"));
-        assertEquals("runtime_event", payload.get("eventType"));
+        assertEquals(HiveRuntimeContracts.EVENT_TYPE_RUNTIME_EVENT, payload.get("eventType"));
         assertEquals("RETRY_STARTED", payload.get("runtimeEventType"));
         assertEquals("2026-03-01T00:00:00Z", payload.get("runtimeEventTimestamp"));
         assertEquals("chat-rt", payload.get("sessionId"));

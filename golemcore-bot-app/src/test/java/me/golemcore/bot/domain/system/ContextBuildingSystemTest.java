@@ -11,6 +11,7 @@ import me.golemcore.bot.domain.context.resolution.TierResolver;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.ToolDefinition;
+import me.golemcore.bot.domain.model.ToolNames;
 import me.golemcore.bot.domain.model.UserPreferences;
 import me.golemcore.bot.domain.service.DelayedActionPolicyService;
 import me.golemcore.bot.domain.service.ModelSelectionService;
@@ -19,13 +20,11 @@ import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.ToolCallExecutionService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.port.outbound.McpPort;
-import me.golemcore.bot.tools.HiveLifecycleSignalTool;
 import me.golemcore.bot.tools.PlanGetTool;
 import me.golemcore.bot.tools.PlanSetContentTool;
 import me.golemcore.bot.tools.ScheduleSessionActionTool;
 import org.junit.jupiter.api.Test;
 
-import java.time.Clock;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -80,14 +79,15 @@ class ContextBuildingSystemTest {
         McpPort mcpPort = mock(McpPort.class);
         PlanService planService = mock(PlanService.class);
         DelayedActionPolicyService delayedActionPolicyService = mock(DelayedActionPolicyService.class);
-        RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
-        when(runtimeConfigService.isHiveSdlcLifecycleSignalEnabled()).thenReturn(true);
 
-        HiveLifecycleSignalTool hiveLifecycleSignalTool = new HiveLifecycleSignalTool(
-                mock(me.golemcore.bot.port.outbound.HiveEventPublishPort.class),
-                runtimeConfigService,
-                Clock.systemUTC());
-        when(toolCallExecutionService.listTools()).thenReturn(List.of(hiveLifecycleSignalTool));
+        ToolComponent hiveLifecycleTool = mock(ToolComponent.class);
+        when(hiveLifecycleTool.isEnabled()).thenReturn(true);
+        when(hiveLifecycleTool.getToolName()).thenReturn(ToolNames.HIVE_LIFECYCLE_SIGNAL);
+        when(hiveLifecycleTool.getDefinition()).thenReturn(ToolDefinition.builder()
+                .name(ToolNames.HIVE_LIFECYCLE_SIGNAL)
+                .description("Hive lifecycle")
+                .build());
+        when(toolCallExecutionService.listTools()).thenReturn(List.of(hiveLifecycleTool));
 
         ToolLayer toolLayer = new ToolLayer(toolCallExecutionService, mcpPort, planService, delayedActionPolicyService);
         ContextAssembler assembler = buildAssembler(skillComponent, toolLayer);
@@ -106,7 +106,7 @@ class ContextBuildingSystemTest {
         system.process(webContext);
 
         assertTrue(webContext.getAvailableTools().stream()
-                .noneMatch(t -> HiveLifecycleSignalTool.TOOL_NAME.equals(t.getName())));
+                .noneMatch(t -> ToolNames.HIVE_LIFECYCLE_SIGNAL.equals(t.getName())));
 
         AgentContext hiveContext = AgentContext.builder()
                 .session(AgentSession.builder()
@@ -120,7 +120,7 @@ class ContextBuildingSystemTest {
         system.process(hiveContext);
 
         assertTrue(hiveContext.getAvailableTools().stream()
-                .anyMatch(t -> HiveLifecycleSignalTool.TOOL_NAME.equals(t.getName())));
+                .anyMatch(t -> ToolNames.HIVE_LIFECYCLE_SIGNAL.equals(t.getName())));
     }
 
     @Test

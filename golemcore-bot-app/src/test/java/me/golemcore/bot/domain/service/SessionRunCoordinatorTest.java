@@ -1,6 +1,6 @@
 package me.golemcore.bot.domain.service;
 
-import me.golemcore.bot.port.outbound.HiveEventPublishPort;
+import me.golemcore.bot.port.outbound.RuntimeEventPublishPort;
 import me.golemcore.bot.domain.loop.AgentLoop;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.AgentSession;
@@ -8,6 +8,7 @@ import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.RuntimeEvent;
 import me.golemcore.bot.domain.model.RuntimeEventType;
+import me.golemcore.bot.domain.model.hive.HiveRuntimeContracts;
 import me.golemcore.bot.port.outbound.SessionPort;
 import org.junit.jupiter.api.Test;
 
@@ -112,7 +113,7 @@ class SessionRunCoordinatorTest {
             verify(agentLoop, times(1)).processMessage(a);
             verify(agentLoop, times(1)).processMessage(d);
             verify(runtimeEventService).emitForSession(session, RuntimeEventType.TURN_INTERRUPT_REQUESTED,
-                    Map.of("source", "command.stop"));
+                    Map.of("source", HiveRuntimeContracts.TURN_INTERRUPT_SOURCE_COMMAND_STOP));
         }
     }
 
@@ -138,7 +139,7 @@ class SessionRunCoordinatorTest {
             coordinator.requestStop(CHANNEL_TYPE, CHAT_ID);
 
             verify(runtimeEventService).emitForSession(session, RuntimeEventType.TURN_INTERRUPT_REQUESTED,
-                    Map.of("source", "command.stop"));
+                    Map.of("source", HiveRuntimeContracts.TURN_INTERRUPT_SOURCE_COMMAND_STOP));
         }
     }
 
@@ -194,11 +195,11 @@ class SessionRunCoordinatorTest {
         RuntimeEventService runtimeEventService = new RuntimeEventService(
                 Clock.fixed(Instant.parse("2026-03-18T00:00:00Z"), ZoneOffset.UTC));
         RuntimeConfigService runtimeConfigService = runtimeConfigService(true, "one-at-a-time", "one-at-a-time");
-        HiveEventPublishPort hiveEventPublishPort = mock(HiveEventPublishPort.class);
+        RuntimeEventPublishPort runtimeEventPublishPort = mock(RuntimeEventPublishPort.class);
 
         try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
             SessionRunCoordinator coordinator = new SessionRunCoordinator(sessionPort, agentLoop, executor,
-                    runtimeEventService, runtimeConfigService, null, hiveEventPublishPort);
+                    runtimeEventService, runtimeConfigService, null, runtimeEventPublishPort);
 
             AgentSession session = AgentSession.builder()
                     .id("hive:thread-1")
@@ -224,7 +225,7 @@ class SessionRunCoordinatorTest {
 
             coordinator.requestStop("hive", "thread-1");
 
-            verify(hiveEventPublishPort, timeout(1000)).publishRuntimeEvents(
+            verify(runtimeEventPublishPort, timeout(1000)).publishRuntimeEvents(
                     argThat(SessionRunCoordinatorTest::isUserInterruptFinishEvent),
                     argThat(metadata -> "thread-1".equals(metadata.get(ContextAttributes.HIVE_THREAD_ID))
                             && "card-1".equals(metadata.get(ContextAttributes.HIVE_CARD_ID))
@@ -241,7 +242,7 @@ class SessionRunCoordinatorTest {
         AgentLoop agentLoop = mock(AgentLoop.class);
         RuntimeEventService runtimeEventService = mock(RuntimeEventService.class);
         RuntimeConfigService runtimeConfigService = runtimeConfigService(true, "one-at-a-time", "one-at-a-time");
-        HiveEventPublishPort hiveEventPublishPort = mock(HiveEventPublishPort.class);
+        RuntimeEventPublishPort runtimeEventPublishPort = mock(RuntimeEventPublishPort.class);
 
         RuntimeEvent cancelledEvent = RuntimeEvent.builder()
                 .type(RuntimeEventType.TURN_FINISHED)
@@ -249,12 +250,12 @@ class SessionRunCoordinatorTest {
                 .sessionId("hive:thread-1")
                 .channelType("hive")
                 .chatId("thread-1")
-                .payload(Map.of("reason", "user_interrupt"))
+                .payload(Map.of("reason", HiveRuntimeContracts.USER_INTERRUPT_REASON))
                 .build();
 
         try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
             SessionRunCoordinator coordinator = new SessionRunCoordinator(sessionPort, agentLoop, executor,
-                    runtimeEventService, runtimeConfigService, null, hiveEventPublishPort);
+                    runtimeEventService, runtimeConfigService, null, runtimeEventPublishPort);
 
             AgentSession session = AgentSession.builder()
                     .id("hive:thread-1")
@@ -293,7 +294,7 @@ class SessionRunCoordinatorTest {
 
             verify(agentLoop, times(1)).processMessage(firstInbound);
             verify(agentLoop, never()).processMessage(secondInbound);
-            verify(hiveEventPublishPort, timeout(1000)).publishRuntimeEvents(
+            verify(runtimeEventPublishPort, timeout(1000)).publishRuntimeEvents(
                     argThat(SessionRunCoordinatorTest::isUserInterruptFinishEvent),
                     argThat(metadata -> "thread-1".equals(metadata.get(ContextAttributes.HIVE_THREAD_ID))
                             && "card-1".equals(metadata.get(ContextAttributes.HIVE_CARD_ID))
@@ -309,11 +310,11 @@ class SessionRunCoordinatorTest {
         AgentLoop agentLoop = mock(AgentLoop.class);
         RuntimeEventService runtimeEventService = mock(RuntimeEventService.class);
         RuntimeConfigService runtimeConfigService = runtimeConfigService(true, "one-at-a-time", "one-at-a-time");
-        HiveEventPublishPort hiveEventPublishPort = mock(HiveEventPublishPort.class);
+        RuntimeEventPublishPort runtimeEventPublishPort = mock(RuntimeEventPublishPort.class);
 
         try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
             SessionRunCoordinator coordinator = new SessionRunCoordinator(sessionPort, agentLoop, executor,
-                    runtimeEventService, runtimeConfigService, null, hiveEventPublishPort);
+                    runtimeEventService, runtimeConfigService, null, runtimeEventPublishPort);
 
             AgentSession session = AgentSession.builder()
                     .id("hive:thread-1")
@@ -362,11 +363,11 @@ class SessionRunCoordinatorTest {
         RuntimeEventService runtimeEventService = new RuntimeEventService(
                 Clock.fixed(Instant.parse("2026-03-18T00:00:00Z"), ZoneOffset.UTC));
         RuntimeConfigService runtimeConfigService = runtimeConfigService(true, "one-at-a-time", "one-at-a-time");
-        HiveEventPublishPort hiveEventPublishPort = mock(HiveEventPublishPort.class);
+        RuntimeEventPublishPort runtimeEventPublishPort = mock(RuntimeEventPublishPort.class);
 
         try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
             SessionRunCoordinator coordinator = new SessionRunCoordinator(sessionPort, agentLoop, executor,
-                    runtimeEventService, runtimeConfigService, null, hiveEventPublishPort);
+                    runtimeEventService, runtimeConfigService, null, runtimeEventPublishPort);
 
             AgentSession session = AgentSession.builder()
                     .id("hive:thread-1")
@@ -386,7 +387,7 @@ class SessionRunCoordinatorTest {
                 return null;
             }).when(agentLoop).processMessage(any(Message.class));
             doThrow(new IllegalStateException("Hive session is not available"))
-                    .when(hiveEventPublishPort)
+                    .when(runtimeEventPublishPort)
                     .publishRuntimeEvents(any(List.class), any(Map.class));
 
             CompletableFuture<Void> completion = coordinator.submit(hiveMessage("Inspect the workspace"));
@@ -397,7 +398,7 @@ class SessionRunCoordinatorTest {
             ExecutionException failure = assertThrows(ExecutionException.class, () -> completion.get(2,
                     TimeUnit.SECONDS));
             assertFalse("Hive session is not available".equals(failure.getCause().getMessage()));
-            verify(hiveEventPublishPort, timeout(1000)).publishRuntimeEvents(any(List.class), any(Map.class));
+            verify(runtimeEventPublishPort, timeout(1000)).publishRuntimeEvents(any(List.class), any(Map.class));
         }
     }
 
@@ -1126,7 +1127,7 @@ class SessionRunCoordinatorTest {
 
         try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
             SessionRunCoordinator coordinator = new SessionRunCoordinator(sessionPort, agentLoop, executor,
-                    runtimeEventService, runtimeConfigService, null, mock(HiveEventPublishPort.class));
+                    runtimeEventService, runtimeConfigService, null, mock(RuntimeEventPublishPort.class));
 
             Message a = user("A");
             Message retry = internalRetry("retry");
@@ -1177,7 +1178,7 @@ class SessionRunCoordinatorTest {
 
         try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
             SessionRunCoordinator coordinator = new SessionRunCoordinator(sessionPort, agentLoop, executor,
-                    runtimeEventService, runtimeConfigService, null, mock(HiveEventPublishPort.class));
+                    runtimeEventService, runtimeConfigService, null, mock(RuntimeEventPublishPort.class));
 
             Message a = user("A");
             Message retry = internalRetry("retry");
@@ -1241,7 +1242,7 @@ class SessionRunCoordinatorTest {
             RuntimeEventService runtimeEventService,
             RuntimeConfigService runtimeConfigService) {
         return new SessionRunCoordinator(sessionPort, agentLoop, executor, runtimeEventService,
-                runtimeConfigService, null, mock(HiveEventPublishPort.class));
+                runtimeConfigService, null, mock(RuntimeEventPublishPort.class));
     }
 
     private static Message steering(String content) {
@@ -1348,7 +1349,7 @@ class SessionRunCoordinatorTest {
         return event != null
                 && event.type() == RuntimeEventType.TURN_FINISHED
                 && event.payload() != null
-                && "user_interrupt".equals(event.payload().get("reason"));
+                && HiveRuntimeContracts.USER_INTERRUPT_REASON.equals(event.payload().get("reason"));
     }
 
     private static final class Gate {

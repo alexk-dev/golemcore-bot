@@ -1,6 +1,8 @@
 package me.golemcore.bot.adapter.inbound.web.security;
 
+import java.util.List;
 import me.golemcore.bot.infrastructure.config.BotProperties;
+import me.golemcore.bot.port.outbound.DashboardPublicPathPort;
 import me.golemcore.bot.infrastructure.security.JwtTokenProvider;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -30,12 +32,25 @@ class DashboardSecurityConfigTest {
         jwtTokenProvider = new JwtTokenProvider(properties);
         jwtTokenProvider.init();
 
+        webTestClient = buildClient(List.of());
+    }
+
+    private WebTestClient buildClient(List<DashboardPublicPathPort> dashboardPublicPathPorts) {
+        BotProperties properties = new BotProperties();
+        properties.getDashboard().setEnabled(true);
+        properties.getDashboard().setJwtSecret("test-secret-key-that-is-long-enough-for-hmac-sha256-algorithm");
+        properties.getDashboard().setJwtExpirationMinutes(30);
+        properties.getDashboard().setRefreshExpirationDays(7);
+
         JwtAuthenticationFilter jwtAuthenticationFilter = new JwtAuthenticationFilter(jwtTokenProvider);
-        DashboardSecurityConfig securityConfig = new DashboardSecurityConfig(properties, jwtAuthenticationFilter);
+        DashboardSecurityConfig securityConfig = new DashboardSecurityConfig(
+                properties,
+                jwtAuthenticationFilter,
+                dashboardPublicPathPorts);
         SecurityWebFilterChain securityWebFilterChain = securityConfig
                 .securityWebFilterChain(ServerHttpSecurity.http());
 
-        webTestClient = WebTestClient.bindToController(new SecurityTestEndpointController())
+        return WebTestClient.bindToController(new SecurityTestEndpointController())
                 .webFilter(new WebFilterChainProxy(securityWebFilterChain))
                 .configureClient()
                 .build();
@@ -46,6 +61,18 @@ class DashboardSecurityConfigTest {
         webTestClient.post()
                 .uri("/api/hooks/test")
                 .header(HttpHeaders.AUTHORIZATION, "Bearer webhook-shared-token")
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(String.class).isEqualTo("ok");
+    }
+
+    @Test
+    void contributedPublicApiShouldBypassDashboardJwtRequirement() {
+        DashboardPublicPathPort dashboardPublicPathPort = () -> List.of("/api/public/contributed");
+        WebTestClient contributedClient = buildClient(List.of(dashboardPublicPathPort));
+
+        contributedClient.get()
+                .uri("/api/public/contributed")
                 .exchange()
                 .expectStatus().isOk()
                 .expectBody(String.class).isEqualTo("ok");
@@ -82,6 +109,11 @@ class DashboardSecurityConfigTest {
 
         @GetMapping("/api/secured/test")
         Mono<String> secured() {
+            return Mono.just("ok");
+        }
+
+        @GetMapping("/api/public/contributed")
+        Mono<String> contributed() {
             return Mono.just("ok");
         }
     }

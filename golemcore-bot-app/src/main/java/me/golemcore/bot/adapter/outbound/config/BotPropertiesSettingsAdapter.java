@@ -3,14 +3,17 @@ package me.golemcore.bot.adapter.outbound.config;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.infrastructure.config.BotProperties;
+import me.golemcore.bot.port.outbound.HiveBootstrapSettingsPort;
+import me.golemcore.bot.port.outbound.HiveBootstrapSettingsPort.HiveBootstrapSettings;
+import me.golemcore.bot.port.outbound.HttpSettingsPort;
 import me.golemcore.bot.port.outbound.MemorySettingsPort;
 import me.golemcore.bot.port.outbound.PromptSettingsPort;
 import me.golemcore.bot.port.outbound.SelfEvolvingBootstrapSettingsPort;
 import me.golemcore.bot.port.outbound.SkillSettingsPort;
+import me.golemcore.bot.port.outbound.StorageSettingsPort;
 import me.golemcore.bot.port.outbound.ToolRuntimeSettingsPort;
 import me.golemcore.bot.port.outbound.UpdateSettingsPort;
 import me.golemcore.bot.port.outbound.WorkspaceSettingsPort;
-import me.golemcore.bot.port.outbound.StorageSettingsPort;
 import org.springframework.stereotype.Component;
 
 /**
@@ -20,7 +23,8 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 public class BotPropertiesSettingsAdapter
         implements MemorySettingsPort, SkillSettingsPort, PromptSettingsPort, ToolRuntimeSettingsPort,
-        UpdateSettingsPort, WorkspaceSettingsPort, StorageSettingsPort, SelfEvolvingBootstrapSettingsPort {
+        UpdateSettingsPort, WorkspaceSettingsPort, StorageSettingsPort, SelfEvolvingBootstrapSettingsPort,
+        HiveBootstrapSettingsPort, HttpSettingsPort {
 
     private final BotProperties botProperties;
 
@@ -128,6 +132,29 @@ public class BotPropertiesSettingsAdapter
             return new SelfEvolvingBootstrapSettings(null, null);
         }
         return new SelfEvolvingBootstrapSettings(bootstrap.getEnabled(), tacticsSettings(bootstrap));
+    }
+
+    @Override
+    public HiveBootstrapSettings hiveBootstrapSettings() {
+        BotProperties.HiveProperties properties = botProperties.getHive();
+        if (properties == null) {
+            return HiveBootstrapSettings.empty();
+        }
+        return new HiveBootstrapSettings(
+                properties.getEnabled(),
+                properties.getAutoConnectOnStartup(),
+                properties.getJoinCode(),
+                properties.getDisplayName(),
+                properties.getHostLabel(),
+                properties.getDashboardBaseUrl(),
+                properties.getSsoEnabled());
+    }
+
+    @Override
+    public HttpSettings http() {
+        BotProperties.HttpProperties properties = botProperties.getHttp();
+        long connectTimeoutMillis = properties != null ? properties.getConnectTimeout() : 10000L;
+        return new HttpSettings(connectTimeoutMillis);
     }
 
     private TacticsSettings tacticsSettings(BotProperties.SelfEvolvingBootstrapProperties bootstrap) {

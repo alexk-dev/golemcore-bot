@@ -1,10 +1,10 @@
 package me.golemcore.bot.port.outbound;
 
-import me.golemcore.bot.domain.model.hive.HivePolicyModelCatalog;
+import me.golemcore.bot.domain.model.policy.ManagedModelCatalog;
 
 public interface ModelCatalogAdminPort {
 
-    HivePolicyModelCatalog getCatalogSnapshot();
+    ManagedModelCatalog getCatalogSnapshot();
 
-    void replaceCatalogSnapshot(HivePolicyModelCatalog catalogSnapshot);
+    void replaceCatalogSnapshot(ManagedModelCatalog catalogSnapshot);
 }

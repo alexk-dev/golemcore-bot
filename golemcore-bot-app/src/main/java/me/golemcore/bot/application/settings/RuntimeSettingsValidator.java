@@ -103,12 +103,11 @@ public class RuntimeSettingsValidator {
                 : NOOP_RESPONSE_JSON_SCHEMA_VALIDATOR;
     }
 
-    public void validateRuntimeConfigUpdate(RuntimeConfig current, RuntimeConfig merged,
-            boolean hiveManagedByProperties) {
+    public void validateRuntimeConfigUpdate(RuntimeConfig current, RuntimeConfig merged) {
         if (merged == null) {
             throw new IllegalArgumentException("runtime config is required");
         }
-        rejectManagedHiveMutation(current, merged.getHive(), hiveManagedByProperties);
+        rejectManagedHiveMutation(current, merged.getHive());
         if (merged.getTelegram() == null) {
             merged.setTelegram(new RuntimeConfig.TelegramConfig());
         }
@@ -665,9 +664,8 @@ public class RuntimeSettingsValidator {
         return value.toLowerCase(Locale.ROOT).trim();
     }
 
-    public void rejectManagedHiveMutation(RuntimeConfig current, RuntimeConfig.HiveConfig incomingHiveConfig,
-            boolean hiveManagedByProperties) {
-        if (current == null || !hiveManagedByProperties || incomingHiveConfig == null) {
+    public void rejectManagedHiveMutation(RuntimeConfig current, RuntimeConfig.HiveConfig incomingHiveConfig) {
+        if (current == null || !isHiveManagedByProperties(current) || incomingHiveConfig == null) {
             return;
         }
         RuntimeConfig.HiveConfig currentHiveConfig = current.getHive();
@@ -677,6 +675,14 @@ public class RuntimeSettingsValidator {
         if (!incomingHiveConfig.equals(normalizedCurrentHiveConfig)) {
             throw new IllegalStateException("Hive settings are managed by bot.hive.* and are read-only");
         }
+    }
+
+    private boolean isHiveManagedByProperties(RuntimeConfig runtimeConfig) {
+        if (runtimeConfig == null || runtimeConfig.getHive() == null) {
+            return false;
+        }
+        Boolean managedByProperties = runtimeConfig.getHive().getManagedByProperties();
+        return managedByProperties != null && managedByProperties;
     }
 
     public String normalizeOptionalSelectableTier(String tier, String fieldName) {

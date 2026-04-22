@@ -70,7 +70,10 @@ class WebhookHttpIntegrationTest {
         JwtTokenProvider jwtTokenProvider = new JwtTokenProvider(properties);
         jwtTokenProvider.init();
         JwtAuthenticationFilter jwtAuthenticationFilter = new JwtAuthenticationFilter(jwtTokenProvider);
-        DashboardSecurityConfig securityConfig = new DashboardSecurityConfig(properties, jwtAuthenticationFilter);
+        DashboardSecurityConfig securityConfig = new DashboardSecurityConfig(
+                properties,
+                jwtAuthenticationFilter,
+                List.of());
         SecurityWebFilterChain securityWebFilterChain = securityConfig
                 .securityWebFilterChain(ServerHttpSecurity.http());
 

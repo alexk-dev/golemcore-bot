@@ -1,15 +1,5 @@
 package me.golemcore.bot.adapter.inbound.web.controller;
 
-import me.golemcore.bot.domain.model.AdminCredentials;
-import me.golemcore.bot.domain.model.hive.HiveSsoTokenResponse;
-import me.golemcore.bot.domain.service.DashboardAuthService;
-import me.golemcore.bot.domain.service.HiveSsoService;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-import org.springframework.http.HttpStatus;
-import org.springframework.web.server.ResponseStatusException;
-import reactor.test.StepVerifier;
-
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -18,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import java.util.Map;
 import me.golemcore.bot.client.dto.ChangePasswordRequest;
 import me.golemcore.bot.client.dto.LoginRequest;
 import me.golemcore.bot.client.dto.LoginResponse;
@@ -25,20 +16,23 @@ import me.golemcore.bot.client.dto.MfaDisableRequest;
 import me.golemcore.bot.client.dto.MfaEnableRequest;
 import me.golemcore.bot.client.dto.MfaSetupResponse;
 import me.golemcore.bot.client.dto.MfaStatusResponse;
-
-import java.util.Map;
+import me.golemcore.bot.domain.model.AdminCredentials;
+import me.golemcore.bot.domain.service.DashboardAuthService;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
+import reactor.test.StepVerifier;
 
 class AuthControllerTest {
 
     private DashboardAuthService authService;
-    private HiveSsoService hiveSsoService;
     private AuthController controller;
 
     @BeforeEach
     void setUp() {
         authService = mock(DashboardAuthService.class);
-        hiveSsoService = mock(HiveSsoService.class);
-        controller = new AuthController(authService, hiveSsoService);
+        controller = new AuthController(authService);
     }
 
     @Test
@@ -63,50 +57,6 @@ class AuthControllerTest {
                 .assertNext(response -> {
                     assertEquals(HttpStatus.OK, response.getStatusCode());
                     assertTrue(response.getBody().isMfaRequired());
-                })
-                .verifyComplete();
-    }
-
-    @Test
-    void shouldReturnHiveSsoStatus() {
-        when(hiveSsoService.getStatus()).thenReturn(new HiveSsoService.HiveSsoStatus(
-                true,
-                true,
-                "https://hive.example.com/api/v1/oauth2/authorize",
-                null));
-
-        StepVerifier.create(controller.hiveSsoStatus())
-                .assertNext(response -> {
-                    assertEquals(HttpStatus.OK, response.getStatusCode());
-                    assertNotNull(response.getBody());
-                    assertTrue(response.getBody().isAvailable());
-                })
-                .verifyComplete();
-    }
-
-    @Test
-    void shouldExchangeHiveSsoCode() {
-        HiveSsoTokenResponse tokenResponse = new HiveSsoTokenResponse(
-                "hive-access",
-                "admin",
-                "Hive Admin",
-                java.util.List.of("ADMIN"));
-        DashboardAuthService.TokenPair tokens = DashboardAuthService.TokenPair.builder()
-                .accessToken("local-access")
-                .refreshToken("local-refresh")
-                .build();
-        when(hiveSsoService.exchange("code-1", "verifier-1")).thenReturn(tokenResponse);
-        when(authService.authenticateHiveSso(tokenResponse)).thenReturn(tokens);
-
-        me.golemcore.bot.client.dto.HiveSsoExchangeRequest request = new me.golemcore.bot.client.dto.HiveSsoExchangeRequest();
-        request.setCode("code-1");
-        request.setCodeVerifier("verifier-1");
-
-        StepVerifier.create(controller.exchangeHiveSso(request))
-                .assertNext(response -> {
-                    assertEquals(HttpStatus.OK, response.getStatusCode());
-                    assertNotNull(response.getBody());
-                    assertEquals("local-access", response.getBody().getAccessToken());
                 })
                 .verifyComplete();
     }

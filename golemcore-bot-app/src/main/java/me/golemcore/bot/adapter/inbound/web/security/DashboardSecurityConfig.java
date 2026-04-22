@@ -1,7 +1,12 @@
 package me.golemcore.bot.adapter.inbound.web.security;
 
+import java.util.Arrays;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.infrastructure.config.BotProperties;
+import me.golemcore.bot.port.outbound.DashboardPublicPathPort;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpHeaders;
@@ -15,9 +20,6 @@ import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.reactive.CorsConfigurationSource;
 import org.springframework.web.cors.reactive.UrlBasedCorsConfigurationSource;
 
-import java.util.Arrays;
-import java.util.List;
-
 /**
  * Spring Security configuration for the dashboard (WebFlux reactive). When
  * dashboard is disabled, all requests are permitted (no-op).
@@ -29,6 +31,7 @@ public class DashboardSecurityConfig {
 
     private final BotProperties botProperties;
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
+    private final List<DashboardPublicPathPort> dashboardPublicPathPorts;
 
     @Bean
     public SecurityWebFilterChain securityWebFilterChain(ServerHttpSecurity http) {
@@ -58,9 +61,7 @@ public class DashboardSecurityConfig {
                         }))
                 .addFilterBefore(jwtAuthenticationFilter, SecurityWebFiltersOrder.AUTHENTICATION)
                 .authorizeExchange(exchanges -> exchanges
-                        .pathMatchers("/api/auth/login", "/api/auth/mfa-status", "/api/auth/refresh",
-                                "/api/auth/hive/sso-status", "/api/auth/hive/exchange")
-                        .permitAll()
+                        .pathMatchers(getPublicApiPaths()).permitAll()
                         .pathMatchers("/api/hooks/**").permitAll()
                         .pathMatchers(HttpMethod.POST, "/api/telegram/webhook").permitAll()
                         .pathMatchers("/ws/**").permitAll()
@@ -70,6 +71,24 @@ public class DashboardSecurityConfig {
                         .pathMatchers("/api/**").hasRole("ADMIN")
                         .anyExchange().permitAll())
                 .build();
+    }
+
+    private String[] getPublicApiPaths() {
+        Set<String> publicApiPaths = new LinkedHashSet<>();
+        publicApiPaths.add("/api/auth/login");
+        publicApiPaths.add("/api/auth/mfa-status");
+        publicApiPaths.add("/api/auth/refresh");
+        for (DashboardPublicPathPort dashboardPublicPathPort : dashboardPublicPathPorts) {
+            if (dashboardPublicPathPort == null || dashboardPublicPathPort.getPublicPathPatterns() == null) {
+                continue;
+            }
+            for (String path : dashboardPublicPathPort.getPublicPathPatterns()) {
+                if (path != null && !path.isBlank()) {
+                    publicApiPaths.add(path.trim());
+                }
+            }
+        }
+        return publicApiPaths.toArray(new String[0]);
     }
 
     @SuppressWarnings("java:S5122") // CORS is intentionally configurable via bot.dashboard.cors-allowed-origins

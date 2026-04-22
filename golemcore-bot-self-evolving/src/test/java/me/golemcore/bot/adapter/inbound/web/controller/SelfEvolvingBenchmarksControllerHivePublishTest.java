@@ -11,7 +11,7 @@ import java.util.List;
 import me.golemcore.bot.adapter.inbound.web.projection.SelfEvolvingProjectionService;
 import me.golemcore.bot.domain.model.selfevolving.BenchmarkCampaign;
 import me.golemcore.bot.domain.selfevolving.benchmark.BenchmarkLabService;
-import me.golemcore.bot.port.outbound.HiveEventPublishPort;
+import me.golemcore.bot.port.outbound.SelfEvolvingProjectionPublishPort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
@@ -21,15 +21,16 @@ class SelfEvolvingBenchmarksControllerHivePublishTest {
 
     private SelfEvolvingProjectionService projectionService;
     private BenchmarkLabService benchmarkLabService;
-    private HiveEventPublishPort hiveEventPublishPort;
+    private SelfEvolvingProjectionPublishPort projectionPublishPort;
     private SelfEvolvingBenchmarksController controller;
 
     @BeforeEach
     void setUp() {
         projectionService = mock(SelfEvolvingProjectionService.class);
         benchmarkLabService = mock(BenchmarkLabService.class);
-        hiveEventPublishPort = mock(HiveEventPublishPort.class);
-        controller = new SelfEvolvingBenchmarksController(projectionService, benchmarkLabService, hiveEventPublishPort);
+        projectionPublishPort = mock(SelfEvolvingProjectionPublishPort.class);
+        controller = new SelfEvolvingBenchmarksController(projectionService, benchmarkLabService,
+                projectionPublishPort);
     }
 
     @Test
@@ -50,7 +51,7 @@ class SelfEvolvingBenchmarksControllerHivePublishTest {
                 })
                 .verifyComplete();
 
-        verify(hiveEventPublishPort).publishSelfEvolvingCampaignProjection(null, campaign);
+        verify(projectionPublishPort).publishSelfEvolvingCampaignProjection(null, campaign);
     }
 
     @Test
@@ -63,7 +64,7 @@ class SelfEvolvingBenchmarksControllerHivePublishTest {
                 .build();
         when(benchmarkLabService.createRegressionCampaign("run-2")).thenReturn(campaign);
         doThrow(new IllegalStateException("publish failed"))
-                .when(hiveEventPublishPort)
+                .when(projectionPublishPort)
                 .publishSelfEvolvingCampaignProjection(null, campaign);
 
         StepVerifier.create(controller.createRegressionCampaign("run-2"))

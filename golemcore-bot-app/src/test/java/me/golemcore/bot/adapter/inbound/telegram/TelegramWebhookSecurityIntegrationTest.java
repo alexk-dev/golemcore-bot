@@ -4,6 +4,7 @@ import me.golemcore.bot.adapter.inbound.web.security.DashboardSecurityConfig;
 import me.golemcore.bot.adapter.inbound.web.security.JwtAuthenticationFilter;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.infrastructure.security.JwtTokenProvider;
+import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
@@ -29,7 +30,10 @@ class TelegramWebhookSecurityIntegrationTest {
         JwtTokenProvider jwtTokenProvider = new JwtTokenProvider(properties);
         jwtTokenProvider.init();
         JwtAuthenticationFilter jwtAuthenticationFilter = new JwtAuthenticationFilter(jwtTokenProvider);
-        DashboardSecurityConfig securityConfig = new DashboardSecurityConfig(properties, jwtAuthenticationFilter);
+        DashboardSecurityConfig securityConfig = new DashboardSecurityConfig(
+                properties,
+                jwtAuthenticationFilter,
+                List.of());
         SecurityWebFilterChain securityWebFilterChain = securityConfig
                 .securityWebFilterChain(ServerHttpSecurity.http());
 

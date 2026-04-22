@@ -24,6 +24,7 @@ import me.golemcore.bot.domain.component.ToolComponent;
 import me.golemcore.bot.domain.context.ContextLayer;
 import me.golemcore.bot.domain.context.ContextLayerResult;
 import me.golemcore.bot.domain.model.AgentContext;
+import me.golemcore.bot.domain.model.ChannelTypes;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.MemoryPresetIds;
 import me.golemcore.bot.domain.model.SessionIdentity;
@@ -182,13 +183,7 @@ public class ToolLayer implements ContextLayer {
     }
 
     private boolean isHiveSdlcTool(String toolName) {
-        return ToolNames.HIVE_LIFECYCLE_SIGNAL.equals(toolName)
-                || ToolNames.HIVE_GET_CURRENT_CONTEXT.equals(toolName)
-                || ToolNames.HIVE_GET_CARD.equals(toolName)
-                || ToolNames.HIVE_SEARCH_CARDS.equals(toolName)
-                || ToolNames.HIVE_POST_THREAD_MESSAGE.equals(toolName)
-                || ToolNames.HIVE_REQUEST_REVIEW.equals(toolName)
-                || ToolNames.HIVE_CREATE_FOLLOWUP_CARD.equals(toolName);
+        return ToolNames.HIVE_SDLC_TOOLS.contains(toolName);
     }
 
     private void putToolDefinition(Map<String, ToolDefinition> toolsByName,
@@ -208,6 +203,6 @@ public class ToolLayer implements ContextLayer {
     private boolean isHiveSession(AgentContext context) {
         return context != null
                 && context.getSession() != null
-                && "hive".equalsIgnoreCase(context.getSession().getChannelType());
+                && ChannelTypes.HIVE.equalsIgnoreCase(context.getSession().getChannelType());
     }
 }

@@ -33,6 +33,7 @@ import me.golemcore.bot.domain.model.TurnOutcome;
 import me.golemcore.bot.domain.model.trace.TraceContext;
 import me.golemcore.bot.domain.model.trace.TraceSpanKind;
 import me.golemcore.bot.domain.model.trace.TraceStatusCode;
+import me.golemcore.bot.domain.service.HiveMetadataSupport;
 import me.golemcore.bot.domain.service.MdcSupport;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.SessionIdentitySupport;
@@ -348,22 +349,8 @@ public class ResponseRoutingSystem implements AgentSystem {
         if (outgoing != null && outgoing.getHints() != null && !outgoing.getHints().isEmpty()) {
             hints.putAll(outgoing.getHints());
         }
-        copyHiveHint(context, hints, ContextAttributes.HIVE_CARD_ID);
-        copyHiveHint(context, hints, ContextAttributes.HIVE_THREAD_ID);
-        copyHiveHint(context, hints, ContextAttributes.HIVE_COMMAND_ID);
-        copyHiveHint(context, hints, ContextAttributes.HIVE_RUN_ID);
-        copyHiveHint(context, hints, ContextAttributes.HIVE_GOLEM_ID);
+        HiveMetadataSupport.copyContextAttributes(context, hints);
         return hints;
-    }
-
-    private void copyHiveHint(AgentContext context, Map<String, Object> hints, String key) {
-        if (context == null || hints == null) {
-            return;
-        }
-        Object value = context.getAttribute(key);
-        if (value instanceof String stringValue && !stringValue.isBlank()) {
-            hints.put(key, stringValue);
-        }
     }
 
     private String sendStructuredMessage(ChannelDeliveryPort channel, Message message) {

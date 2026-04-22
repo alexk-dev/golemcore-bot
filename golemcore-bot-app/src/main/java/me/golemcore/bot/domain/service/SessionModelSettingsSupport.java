@@ -19,6 +19,7 @@ package me.golemcore.bot.domain.service;
  */
 
 import me.golemcore.bot.domain.model.AgentSession;
+import me.golemcore.bot.domain.model.ChannelTypes;
 import me.golemcore.bot.domain.model.ContextAttributes;
 
 import java.util.HashMap;
@@ -31,7 +32,10 @@ import java.util.Set;
  */
 public final class SessionModelSettingsSupport {
 
-    private static final Set<String> MODEL_SETTINGS_INHERITANCE_EXCLUDED_CHANNELS = Set.of("judge", "webhook", "hive");
+    private static final Set<String> MODEL_SETTINGS_INHERITANCE_EXCLUDED_CHANNELS = Set.of(
+            ChannelTypes.JUDGE,
+            ChannelTypes.WEBHOOK,
+            ChannelTypes.HIVE);
 
     private SessionModelSettingsSupport() {
     }
@@ -41,6 +45,9 @@ public final class SessionModelSettingsSupport {
             return false;
         }
         String normalizedChannel = channelType.trim().toLowerCase(Locale.ROOT);
+        if (normalizedChannel.startsWith(ChannelTypes.JUDGE_PREFIX)) {
+            return false;
+        }
         return !MODEL_SETTINGS_INHERITANCE_EXCLUDED_CHANNELS.contains(normalizedChannel);
     }
 

@@ -11,6 +11,7 @@ import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.RuntimeEvent;
 import me.golemcore.bot.domain.model.RuntimeEventType;
 import me.golemcore.bot.domain.model.ToolResult;
+import me.golemcore.bot.domain.model.hive.HiveRuntimeContracts;
 import me.golemcore.bot.domain.service.CompactionOrchestrationService;
 import me.golemcore.bot.domain.service.ContextCompactionPolicy;
 import me.golemcore.bot.domain.service.ModelSelectionService;
@@ -304,7 +305,7 @@ class ToolLoopResilienceBddTest {
         List<RuntimeEvent> events = context.getAttribute(ContextAttributes.RUNTIME_EVENTS);
         assertNotNull(events);
         assertTrue(events.stream().anyMatch(event -> RuntimeEventType.TURN_FINISHED.equals(event.type())
-                && "user_interrupt".equals(event.payload().get("reason"))));
+                && HiveRuntimeContracts.USER_INTERRUPT_REASON.equals(event.payload().get("reason"))));
         assertFalse(events.stream().anyMatch(event -> RuntimeEventType.TURN_FAILED.equals(event.type())));
     }
 
@@ -446,7 +447,7 @@ class ToolLoopResilienceBddTest {
         assertNotNull(events);
         assertTrue(events.stream().anyMatch(event -> RuntimeEventType.RETRY_STARTED.equals(event.type())));
         assertTrue(events.stream().anyMatch(event -> RuntimeEventType.TURN_FINISHED.equals(event.type())
-                && "user_interrupt".equals(event.payload().get("reason"))));
+                && HiveRuntimeContracts.USER_INTERRUPT_REASON.equals(event.payload().get("reason"))));
     }
 
     @Test

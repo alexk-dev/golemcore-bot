@@ -37,6 +37,12 @@
         </dependency>
         <dependency>
             <groupId>me.golemcore</groupId>
+            <artifactId>golemcore-bot-hive</artifactId>
+            <version>${project.version}</version>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>me.golemcore</groupId>
             <artifactId>golemcore-bot-client</artifactId>
             <version>${project.version}</version>
         </dependency>

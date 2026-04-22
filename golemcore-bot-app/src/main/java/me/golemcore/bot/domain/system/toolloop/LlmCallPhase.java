@@ -31,6 +31,7 @@ import me.golemcore.bot.domain.model.OutgoingResponse;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.RuntimeEventType;
 import me.golemcore.bot.domain.model.TurnLimitReason;
+import me.golemcore.bot.domain.model.hive.HiveRuntimeContracts;
 import me.golemcore.bot.domain.model.trace.TraceContext;
 import me.golemcore.bot.domain.model.trace.TraceSpanKind;
 import me.golemcore.bot.domain.model.trace.TraceStatusCode;
@@ -143,7 +144,7 @@ class LlmCallPhase {
             clearInterruptFlag(context);
             applyAttachments(context, turnState.getAccumulatedAttachments());
             emitRuntimeEvent(context, RuntimeEventType.TURN_FINISHED,
-                    eventPayload("reason", "user_interrupt", "llmCalls", turnState.getLlmCalls(),
+                    eventPayload("reason", HiveRuntimeContracts.USER_INTERRUPT_REASON, "llmCalls", turnState.getLlmCalls(),
                             "toolExecutions", turnState.getToolExecutions()));
             return new LlmCallOutcome.Interrupted(stopTurn(context,
                     context.getAttribute(ContextAttributes.LLM_RESPONSE), null,
@@ -320,7 +321,8 @@ class LlmCallPhase {
                         clearInterruptFlag(context);
                         applyAttachments(context, turnState.getAccumulatedAttachments());
                         emitRuntimeEvent(context, RuntimeEventType.TURN_FINISHED,
-                                eventPayload("reason", "user_interrupt", "llmCalls", turnState.getLlmCalls(),
+                                eventPayload("reason", HiveRuntimeContracts.USER_INTERRUPT_REASON, "llmCalls",
+                                        turnState.getLlmCalls(),
                                         "toolExecutions", turnState.getToolExecutions()));
                         return new LlmCallOutcome.Interrupted(stopTurn(context,
                                 context.getAttribute(ContextAttributes.LLM_RESPONSE), null,

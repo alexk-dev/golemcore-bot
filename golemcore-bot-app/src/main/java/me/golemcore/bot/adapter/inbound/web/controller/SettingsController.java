@@ -3,8 +3,14 @@ package me.golemcore.bot.adapter.inbound.web.controller;
 import me.golemcore.bot.client.dto.PreferencesUpdateRequest;
 import me.golemcore.bot.client.dto.SettingsResponse;
 import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.AutoModeConfigDto;
+import me.golemcore.bot.client.dto.settings.SettingsWebDtos.AdvancedConfigRequest;
+import me.golemcore.bot.client.dto.settings.SettingsWebDtos.LlmProviderImportRequest;
+import me.golemcore.bot.client.dto.settings.SettingsWebDtos.LlmProviderImportResponse;
+import me.golemcore.bot.client.dto.settings.SettingsWebDtos.LlmProviderTestRequest;
+import me.golemcore.bot.client.dto.settings.SettingsWebDtos.LlmProviderTestResponse;
+import me.golemcore.bot.client.dto.settings.SettingsWebDtos.ModelDto;
 import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.CompactionConfigDto;
-import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.HiveConfigDto;
+import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.RuntimeHiveConfigDto;
 import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.LlmConfigDto;
 import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.LlmProviderConfigDto;
 import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.McpCatalogEntryDto;
@@ -391,9 +397,9 @@ public class SettingsController {
     }
 
     @PutMapping("/runtime/hive")
-    public Mono<ResponseEntity<RuntimeConfigDto>> updateHiveConfig(@RequestBody HiveConfigDto hiveConfig) {
+    public Mono<ResponseEntity<RuntimeConfigDto>> updateHiveConfig(@RequestBody RuntimeHiveConfigDto hiveConfig) {
         return runtimeConfigResponse(() -> runtimeSettingsWebMapper.toRuntimeConfigDto(
-                runtimeSettingsFacade.updateHiveConfig(runtimeSettingsWebMapper.toHiveConfig(hiveConfig))));
+                runtimeSettingsFacade.updateHiveConfig(runtimeSettingsWebMapper.toRuntimeHiveConfig(hiveConfig))));
     }
 
     @PutMapping("/runtime/plan")
@@ -681,32 +687,4 @@ public class SettingsController {
         return value.trim();
     }
 
-    public record ModelDto(String id, String displayName, boolean hasReasoning, List<String> reasoningLevels,
-            boolean supportsVision) {
-    }
-
-    public record LlmProviderImportRequest(RuntimeConfig.LlmProviderConfig config, List<String> selectedModelIds) {
-    }
-
-    public record LlmProviderImportResponse(boolean providerSaved, String providerName, String resolvedEndpoint,
-            List<String> addedModels, List<String> skippedModels, List<String> errors) {
-    }
-
-    public record LlmProviderTestRequest(String mode, String providerName, RuntimeConfig.LlmProviderConfig config) {
-    }
-
-    public record LlmProviderTestResponse(String mode, String providerName, String resolvedEndpoint,
-            List<String> models, boolean success, String error) {
-    }
-
-    public record AdvancedConfigRequest(RateLimitConfigDto rateLimit, SecurityConfigDto security,
-            CompactionConfigDto compaction, ResilienceConfigDto resilience) {
-
-        public AdvancedConfigRequest(RuntimeConfig.RateLimitConfig rateLimit,
-                RuntimeConfig.SecurityConfig security,
-                RuntimeConfig.CompactionConfig compaction,
-                RuntimeConfig.ResilienceConfig resilience) {
-            this(null, null, null, null);
-        }
-    }
 }

@@ -23,8 +23,8 @@ import java.util.concurrent.TimeoutException;
 import me.golemcore.bot.domain.model.LlmRequest;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.catalog.ModelCatalogEntry;
-import me.golemcore.bot.domain.model.hive.HivePolicyBindingState;
-import me.golemcore.bot.domain.service.HiveManagedPolicyService;
+import me.golemcore.bot.domain.model.policy.ManagedPolicyBindingState;
+import me.golemcore.bot.port.outbound.ManagedPolicyQueryPort;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.port.outbound.LlmPort;
 import me.golemcore.bot.port.outbound.ModelConfigAdminPort;
@@ -38,7 +38,7 @@ class ModelManagementFacadeTest {
     private ProviderModelDiscoveryService providerModelDiscoveryService;
     private ModelRegistryService modelRegistryService;
     private LlmPort llmPort;
-    private HiveManagedPolicyService hiveManagedPolicyService;
+    private ManagedPolicyQueryPort managedPolicyQueryPort;
     private ModelManagementFacade facade;
 
     @BeforeEach
@@ -48,15 +48,15 @@ class ModelManagementFacadeTest {
         providerModelDiscoveryService = mock(ProviderModelDiscoveryService.class);
         modelRegistryService = mock(ModelRegistryService.class);
         llmPort = mock(LlmPort.class);
-        hiveManagedPolicyService = mock(HiveManagedPolicyService.class);
+        managedPolicyQueryPort = mock(ManagedPolicyQueryPort.class);
         facade = new ModelManagementFacade(
                 modelConfigAdminPort,
                 modelSelectionService,
                 providerModelDiscoveryService,
                 modelRegistryService,
                 llmPort,
-                hiveManagedPolicyService);
-        when(hiveManagedPolicyService.getBindingState()).thenReturn(Optional.empty());
+                managedPolicyQueryPort);
+        when(managedPolicyQueryPort.findBindingState()).thenReturn(Optional.empty());
     }
 
     @Test
@@ -122,7 +122,7 @@ class ModelManagementFacadeTest {
                 true,
                 128000,
                 null);
-        when(hiveManagedPolicyService.getBindingState()).thenReturn(Optional.of(HivePolicyBindingState.builder()
+        when(managedPolicyQueryPort.findBindingState()).thenReturn(Optional.of(ManagedPolicyBindingState.builder()
                 .policyGroupId("pg-1")
                 .build()));
 
@@ -156,7 +156,7 @@ class ModelManagementFacadeTest {
     void shouldRejectReplacingModelsConfigWhenManagedByHivePolicy() {
         ModelConfigAdminPort.ModelsConfigSnapshot snapshot = new ModelConfigAdminPort.ModelsConfigSnapshot(Map.of(),
                 null);
-        when(hiveManagedPolicyService.getBindingState()).thenReturn(Optional.of(HivePolicyBindingState.builder()
+        when(managedPolicyQueryPort.findBindingState()).thenReturn(Optional.of(ManagedPolicyBindingState.builder()
                 .policyGroupId("pg-1")
                 .build()));
 
@@ -306,7 +306,7 @@ class ModelManagementFacadeTest {
 
     @Test
     void shouldRejectDeletingModelWhenManagedByHivePolicy() {
-        when(hiveManagedPolicyService.getBindingState()).thenReturn(Optional.of(HivePolicyBindingState.builder()
+        when(managedPolicyQueryPort.findBindingState()).thenReturn(Optional.of(ManagedPolicyBindingState.builder()
                 .policyGroupId("pg-1")
                 .build()));
 

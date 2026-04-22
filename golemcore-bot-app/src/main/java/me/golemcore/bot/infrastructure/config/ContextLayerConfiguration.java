@@ -7,7 +7,6 @@ import me.golemcore.bot.domain.context.ContextAssembler;
 import me.golemcore.bot.domain.context.ContextLayer;
 import me.golemcore.bot.domain.context.PromptComposer;
 import me.golemcore.bot.domain.context.layer.AutoModeLayer;
-import me.golemcore.bot.domain.context.layer.HiveLayer;
 import me.golemcore.bot.domain.context.layer.IdentityLayer;
 import me.golemcore.bot.domain.context.layer.MemoryLayer;
 import me.golemcore.bot.domain.context.layer.PlanModeLayer;
@@ -107,11 +106,6 @@ public class ContextLayerConfiguration {
     @Bean
     PlanModeLayer planModeLayer(PlanService planService) {
         return new PlanModeLayer(planService);
-    }
-
-    @Bean
-    HiveLayer hiveLayer() {
-        return new HiveLayer();
     }
 
     @Bean
