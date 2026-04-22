@@ -18,7 +18,7 @@ import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchResult;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchStatus;
 import me.golemcore.bot.domain.selfevolving.tactic.LocalEmbeddingBootstrapService;
 import me.golemcore.bot.domain.selfevolving.tactic.TacticRecordService;
-import me.golemcore.bot.port.outbound.HiveEventPublishPort;
+import me.golemcore.bot.port.outbound.SelfEvolvingProjectionPublishPort;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -46,23 +46,23 @@ public class SelfEvolvingTacticsController {
     private final SelfEvolvingProjectionService projectionService;
     private final LocalEmbeddingBootstrapService localEmbeddingBootstrapService;
     private final TacticRecordService tacticRecordService;
-    private final HiveEventPublishPort hiveEventPublishPort;
+    private final SelfEvolvingProjectionPublishPort projectionPublishPort;
 
     public SelfEvolvingTacticsController(SelfEvolvingProjectionService projectionService,
             LocalEmbeddingBootstrapService localEmbeddingBootstrapService,
             TacticRecordService tacticRecordService,
-            HiveEventPublishPort hiveEventPublishPort) {
+            SelfEvolvingProjectionPublishPort projectionPublishPort) {
         this.projectionService = projectionService;
         this.localEmbeddingBootstrapService = localEmbeddingBootstrapService;
         this.tacticRecordService = tacticRecordService;
-        this.hiveEventPublishPort = hiveEventPublishPort;
+        this.projectionPublishPort = projectionPublishPort;
     }
 
     @GetMapping("/tactics")
     public Mono<ResponseEntity<List<SelfEvolvingTacticDto>>> listTactics() {
         return blocking(() -> {
             List<SelfEvolvingTacticDto> tactics = projectionService.listTactics();
-            publishHiveTacticCatalog(tactics);
+            publishTacticCatalog(tactics);
             return ResponseEntity.ok(tactics);
         });
     }
@@ -96,7 +96,7 @@ public class SelfEvolvingTacticsController {
             @RequestParam(name = "q", required = false) String query) {
         return blocking(() -> {
             SelfEvolvingTacticSearchResponseDto response = projectionService.searchTactics(query);
-            publishHiveTacticSearch(response);
+            publishTacticSearch(response);
             return ResponseEntity.ok(response);
         });
     }
@@ -189,12 +189,12 @@ public class SelfEvolvingTacticsController {
                 .build();
     }
 
-    private void publishHiveTacticCatalog(List<SelfEvolvingTacticDto> tactics) {
-        if (hiveEventPublishPort == null || tactics == null || tactics.isEmpty()) {
+    private void publishTacticCatalog(List<SelfEvolvingTacticDto> tactics) {
+        if (projectionPublishPort == null || tactics == null || tactics.isEmpty()) {
             return;
         }
         try {
-            hiveEventPublishPort.publishSelfEvolvingTacticCatalogProjection(tactics.stream()
+            projectionPublishPort.publishSelfEvolvingTacticCatalogProjection(tactics.stream()
                     .map(this::toDomainTacticSearchResult)
                     .toList());
         } catch (RuntimeException exception) {
@@ -202,12 +202,12 @@ public class SelfEvolvingTacticsController {
         }
     }
 
-    private void publishHiveTacticSearch(SelfEvolvingTacticSearchResponseDto response) {
-        if (hiveEventPublishPort == null || response == null) {
+    private void publishTacticSearch(SelfEvolvingTacticSearchResponseDto response) {
+        if (projectionPublishPort == null || response == null) {
             return;
         }
         try {
-            hiveEventPublishPort.publishSelfEvolvingTacticSearchProjection(
+            projectionPublishPort.publishSelfEvolvingTacticSearchProjection(
                     response.getQuery(),
                     toDomainTacticSearchStatus(response.getStatus()),
                     toDomainTacticSearchResults(response.getResults()));

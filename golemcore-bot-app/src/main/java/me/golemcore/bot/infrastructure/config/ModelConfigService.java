@@ -26,7 +26,7 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import me.golemcore.bot.domain.model.hive.HivePolicyModelCatalog;
+import me.golemcore.bot.domain.model.policy.ManagedModelCatalog;
 import me.golemcore.bot.domain.model.catalog.ModelCatalogEntry;
 import me.golemcore.bot.domain.model.catalog.ModelReasoningLevel;
 import me.golemcore.bot.domain.model.catalog.ModelReasoningProfile;
@@ -193,25 +193,25 @@ public class ModelConfigService implements ModelConfigPort, ModelCatalogAdminPor
     }
 
     @Override
-    public HivePolicyModelCatalog getCatalogSnapshot() {
-        Map<String, HivePolicyModelCatalog.HivePolicyModelConfig> models = new LinkedHashMap<>();
+    public ManagedModelCatalog getCatalogSnapshot() {
+        Map<String, ManagedModelCatalog.ManagedModelConfig> models = new LinkedHashMap<>();
         for (Map.Entry<String, ModelSettings> entry : config.getModels().entrySet()) {
             models.put(entry.getKey(), toPolicyModelConfig(entry.getValue()));
         }
-        HivePolicyModelCatalog.HivePolicyModelConfig defaults = config.getDefaults() != null
+        ManagedModelCatalog.ManagedModelConfig defaults = config.getDefaults() != null
                 ? toPolicyModelConfig(config.getDefaults())
                 : null;
-        return HivePolicyModelCatalog.builder()
+        return ManagedModelCatalog.builder()
                 .models(models)
                 .defaults(defaults)
                 .build();
     }
 
     @Override
-    public void replaceCatalogSnapshot(HivePolicyModelCatalog catalogSnapshot) {
+    public void replaceCatalogSnapshot(ManagedModelCatalog catalogSnapshot) {
         ModelsConfig newConfig = new ModelsConfig();
         if (catalogSnapshot != null && catalogSnapshot.getModels() != null) {
-            for (Map.Entry<String, HivePolicyModelCatalog.HivePolicyModelConfig> entry : catalogSnapshot.getModels()
+            for (Map.Entry<String, ManagedModelCatalog.ManagedModelConfig> entry : catalogSnapshot.getModels()
                     .entrySet()) {
                 newConfig.getModels().put(entry.getKey(), toModelSettings(entry.getValue()));
             }
@@ -478,26 +478,26 @@ public class ModelConfigService implements ModelConfigPort, ModelCatalogAdminPor
         private int maxInputTokens = 128000;
     }
 
-    private HivePolicyModelCatalog.HivePolicyModelConfig toPolicyModelConfig(ModelSettings settings) {
+    private ManagedModelCatalog.ManagedModelConfig toPolicyModelConfig(ModelSettings settings) {
         if (settings == null) {
             return null;
         }
-        HivePolicyModelCatalog.HivePolicyReasoningConfig reasoning = null;
+        ManagedModelCatalog.ManagedReasoningConfig reasoning = null;
         if (settings.getReasoning() != null) {
-            Map<String, HivePolicyModelCatalog.HivePolicyReasoningLevelConfig> levels = new LinkedHashMap<>();
+            Map<String, ManagedModelCatalog.ManagedReasoningLevelConfig> levels = new LinkedHashMap<>();
             if (settings.getReasoning().getLevels() != null) {
                 for (Map.Entry<String, ReasoningLevelConfig> entry : settings.getReasoning().getLevels().entrySet()) {
-                    levels.put(entry.getKey(), HivePolicyModelCatalog.HivePolicyReasoningLevelConfig.builder()
+                    levels.put(entry.getKey(), ManagedModelCatalog.ManagedReasoningLevelConfig.builder()
                             .maxInputTokens(entry.getValue() != null ? entry.getValue().getMaxInputTokens() : null)
                             .build());
                 }
             }
-            reasoning = HivePolicyModelCatalog.HivePolicyReasoningConfig.builder()
+            reasoning = ManagedModelCatalog.ManagedReasoningConfig.builder()
                     .defaultLevel(settings.getReasoning().getDefaultLevel())
                     .levels(levels)
                     .build();
         }
-        return HivePolicyModelCatalog.HivePolicyModelConfig.builder()
+        return ManagedModelCatalog.ManagedModelConfig.builder()
                 .provider(settings.getProvider())
                 .displayName(settings.getDisplayName())
                 .supportsVision(settings.isSupportsVision())
@@ -507,7 +507,7 @@ public class ModelConfigService implements ModelConfigPort, ModelCatalogAdminPor
                 .build();
     }
 
-    private ModelSettings toModelSettings(HivePolicyModelCatalog.HivePolicyModelConfig source) {
+    private ModelSettings toModelSettings(ManagedModelCatalog.ManagedModelConfig source) {
         ModelSettings settings = new ModelSettings();
         if (source == null) {
             return settings;
@@ -521,7 +521,7 @@ public class ModelConfigService implements ModelConfigPort, ModelCatalogAdminPor
             ReasoningConfig reasoning = new ReasoningConfig();
             reasoning.setDefaultLevel(source.getReasoning().getDefaultLevel());
             if (source.getReasoning().getLevels() != null) {
-                for (Map.Entry<String, HivePolicyModelCatalog.HivePolicyReasoningLevelConfig> entry : source
+                for (Map.Entry<String, ManagedModelCatalog.ManagedReasoningLevelConfig> entry : source
                         .getReasoning().getLevels().entrySet()) {
                     Integer maxInputTokens = entry.getValue() != null ? entry.getValue().getMaxInputTokens() : null;
                     reasoning.getLevels().put(entry.getKey(),

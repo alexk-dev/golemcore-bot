@@ -35,7 +35,9 @@ import me.golemcore.bot.domain.model.Secret;
 import me.golemcore.bot.domain.selfevolving.SelfEvolvingBootstrapOverrideService;
 import me.golemcore.bot.port.outbound.EmbeddingProviderIds;
 import me.golemcore.bot.port.outbound.RuntimeConfigQueryPort;
+import me.golemcore.bot.port.outbound.ManagedPolicyRuntimeConfigPort;
 import me.golemcore.bot.port.outbound.SelfEvolvingRuntimeConfigPort;
+import me.golemcore.bot.port.outbound.RuntimeConfigAdminPort;
 import me.golemcore.bot.port.outbound.RuntimeConfigPersistencePort;
 import org.springframework.stereotype.Service;
 
@@ -58,7 +60,9 @@ import org.springframework.stereotype.Service;
  */
 @Service
 @Slf4j
-public class RuntimeConfigService implements RuntimeConfigQueryPort, SelfEvolvingRuntimeConfigPort {
+public class RuntimeConfigService
+        implements RuntimeConfigQueryPort, RuntimeConfigAdminPort, SelfEvolvingRuntimeConfigPort,
+        ManagedPolicyRuntimeConfigPort {
 
     private static final String REASONING_NONE = "none";
     private static final String DEFAULT_BALANCED_MODEL = null;
@@ -333,7 +337,7 @@ public class RuntimeConfigService implements RuntimeConfigQueryPort, SelfEvolvin
         return reloaded;
     }
 
-    public void replaceHiveManagedPolicySections(RuntimeConfig.LlmConfig llmConfig,
+    public void replaceManagedPolicySections(RuntimeConfig.LlmConfig llmConfig,
             RuntimeConfig.ModelRouterConfig modelRouterConfig) {
         RuntimeConfig snapshot = snapshotRuntimeConfig();
         RuntimeConfig llmSnapshot = copyRuntimeConfig(RuntimeConfig.builder()
@@ -350,53 +354,6 @@ public class RuntimeConfigService implements RuntimeConfigQueryPort, SelfEvolvin
 
     public void restoreRuntimeConfigSnapshot(RuntimeConfig snapshot) {
         updateRuntimeConfig(copyRuntimeConfig(snapshot));
-    }
-
-    public RuntimeConfig.HiveConfig getHiveConfig() {
-        RuntimeConfig.HiveConfig hiveConfig = getRuntimeConfig().getHive();
-        return hiveConfig != null ? hiveConfig : RuntimeConfig.HiveConfig.builder().build();
-    }
-
-    public boolean isHiveManagedByProperties() {
-        Boolean managedByProperties = getHiveConfig().getManagedByProperties();
-        return managedByProperties != null && managedByProperties;
-    }
-
-    public boolean isHiveEnabled() {
-        Boolean enabled = getHiveConfig().getEnabled();
-        return enabled != null && enabled;
-    }
-
-    public boolean isHiveSdlcCurrentContextEnabled() {
-        return isHiveSdlcFunctionEnabled(getHiveConfig().getSdlc().getCurrentContextEnabled());
-    }
-
-    public boolean isHiveSdlcCardReadEnabled() {
-        return isHiveSdlcFunctionEnabled(getHiveConfig().getSdlc().getCardReadEnabled());
-    }
-
-    public boolean isHiveSdlcCardSearchEnabled() {
-        return isHiveSdlcFunctionEnabled(getHiveConfig().getSdlc().getCardSearchEnabled());
-    }
-
-    public boolean isHiveSdlcThreadMessageEnabled() {
-        return isHiveSdlcFunctionEnabled(getHiveConfig().getSdlc().getThreadMessageEnabled());
-    }
-
-    public boolean isHiveSdlcReviewRequestEnabled() {
-        return isHiveSdlcFunctionEnabled(getHiveConfig().getSdlc().getReviewRequestEnabled());
-    }
-
-    public boolean isHiveSdlcFollowupCardCreateEnabled() {
-        return isHiveSdlcFunctionEnabled(getHiveConfig().getSdlc().getFollowupCardCreateEnabled());
-    }
-
-    public boolean isHiveSdlcLifecycleSignalEnabled() {
-        return isHiveSdlcFunctionEnabled(getHiveConfig().getSdlc().getLifecycleSignalEnabled());
-    }
-
-    private boolean isHiveSdlcFunctionEnabled(Boolean value) {
-        return isHiveEnabled() && (value != null ? value : DEFAULT_HIVE_SDLC_FUNCTION_ENABLED);
     }
 
     public RuntimeConfig.ResilienceConfig getResilienceConfig() {

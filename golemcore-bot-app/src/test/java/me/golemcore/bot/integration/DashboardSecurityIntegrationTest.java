@@ -40,6 +40,17 @@ class DashboardSecurityIntegrationTest extends GolemCoreBotIntegrationTestBase {
     }
 
     @Test
+    void shouldAllowPublicHiveSsoStatusWithoutJwt() {
+        webTestClient().get()
+                .uri("/api/auth/hive/sso-status")
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody()
+                .jsonPath("$.enabled").exists()
+                .jsonPath("$.available").exists();
+    }
+
+    @Test
     void shouldIssueRefreshCookieAndRefreshAccessToken() {
         WebTestClient.ResponseSpec loginResponse = webTestClient().post()
                 .uri("/api/auth/login")

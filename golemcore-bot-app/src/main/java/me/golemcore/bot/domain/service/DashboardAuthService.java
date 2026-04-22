@@ -14,9 +14,9 @@ import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.AdminCredentials;
-import me.golemcore.bot.domain.model.hive.HiveSsoTokenResponse;
-import me.golemcore.bot.port.outbound.DashboardCredentialsPort;
 import me.golemcore.bot.port.outbound.DashboardAuthSettingsPort;
+import me.golemcore.bot.port.outbound.DashboardCredentialsPort;
+import me.golemcore.bot.port.outbound.DashboardFederatedAuthPort;
 import me.golemcore.bot.port.outbound.DashboardTokenPort;
 import me.golemcore.bot.port.outbound.PasswordHashPort;
 import org.springframework.stereotype.Service;
@@ -28,7 +28,7 @@ import org.springframework.stereotype.Service;
 @Service
 @RequiredArgsConstructor
 @Slf4j
-public class DashboardAuthService {
+public class DashboardAuthService implements DashboardFederatedAuthPort {
 
     private static final String ADMIN_USERNAME = "admin";
     private static final int TEMP_CREDENTIAL_LENGTH = 30;
@@ -52,7 +52,7 @@ public class DashboardAuthService {
         }
         try {
             loadOrCreateCredentials();
-        } catch (IOException e) { // NOSONAR — startup best-effort
+        } catch (IOException e) { // NOSONAR - startup best-effort
             log.error("[Dashboard] Failed to initialize admin credentials", e);
         }
     }
@@ -83,15 +83,24 @@ public class DashboardAuthService {
         return credentials != null && credentials.isMfaEnabled();
     }
 
-    public TokenPair authenticateHiveSso(HiveSsoTokenResponse tokenResponse) {
-        if (credentials == null || tokenResponse == null) {
+    @Override
+    public DashboardSessionTokens issueDashboardTokensForPrincipal(DashboardFederatedPrincipal principal) {
+        TokenPair tokens = authenticateFederatedPrincipal(principal);
+        if (tokens == null) {
             return null;
         }
-        if (tokenResponse.roles() == null
-                || tokenResponse.roles().stream().noneMatch(role -> "ADMIN".equals(role) || "OPERATOR".equals(role))) {
+        return new DashboardSessionTokens(tokens.getAccessToken(), tokens.getRefreshToken());
+    }
+
+    public TokenPair authenticateFederatedPrincipal(DashboardFederatedPrincipal principal) {
+        if (credentials == null || principal == null) {
             return null;
         }
-        log.info("[Dashboard] Hive SSO login accepted for operator {}", tokenResponse.username());
+        if (principal.roles() == null
+                || principal.roles().stream().noneMatch(role -> "ADMIN".equals(role) || "OPERATOR".equals(role))) {
+            return null;
+        }
+        log.info("[Dashboard] Federated login accepted for subject {}", principal.subject());
         return generateTokens(ADMIN_USERNAME);
     }
 
@@ -184,10 +193,10 @@ public class DashboardAuthService {
         persistCredentials();
 
         log.info("\n"
-                + "╔══════════════════════════════════════════════════════════════╗\n"
-                + "║  DASHBOARD TEMPORARY PASSWORD (change after first login!)   ║\n"
-                + "║  Password: {}   ║\n"
-                + "╚══════════════════════════════════════════════════════════════╝",
+                + "+------------------------------------------------------------+\n"
+                + "|  DASHBOARD TEMPORARY PASSWORD (change after first login!)  |\n"
+                + "|  Password: {}  |\n"
+                + "+------------------------------------------------------------+",
                 tempPassword);
     }
 

@@ -1734,16 +1734,17 @@ class RuntimeConfigServiceTest {
                 .build();
         persistedSections.put("hive.json", objectMapper.writeValueAsString(hive));
 
-        assertTrue(service.getHiveConfig().getEnabled());
-        assertEquals("https://hive.example.com", service.getHiveConfig().getServerUrl());
-        assertTrue(service.isHiveManagedByProperties());
-        assertTrue(service.isHiveSdlcCurrentContextEnabled());
-        assertTrue(service.isHiveSdlcCardReadEnabled());
-        assertTrue(service.isHiveSdlcCardSearchEnabled());
-        assertTrue(service.isHiveSdlcThreadMessageEnabled());
-        assertTrue(service.isHiveSdlcReviewRequestEnabled());
-        assertTrue(service.isHiveSdlcFollowupCardCreateEnabled());
-        assertTrue(service.isHiveSdlcLifecycleSignalEnabled());
+        RuntimeConfig loaded = service.getRuntimeConfig();
+        assertTrue(Boolean.TRUE.equals(loaded.getHive().getEnabled()));
+        assertEquals("https://hive.example.com", loaded.getHive().getServerUrl());
+        assertTrue(Boolean.TRUE.equals(loaded.getHive().getManagedByProperties()));
+        assertTrue(Boolean.TRUE.equals(loaded.getHive().getSdlc().getCurrentContextEnabled()));
+        assertTrue(Boolean.TRUE.equals(loaded.getHive().getSdlc().getCardReadEnabled()));
+        assertTrue(Boolean.TRUE.equals(loaded.getHive().getSdlc().getCardSearchEnabled()));
+        assertTrue(Boolean.TRUE.equals(loaded.getHive().getSdlc().getThreadMessageEnabled()));
+        assertTrue(Boolean.TRUE.equals(loaded.getHive().getSdlc().getReviewRequestEnabled()));
+        assertTrue(Boolean.TRUE.equals(loaded.getHive().getSdlc().getFollowupCardCreateEnabled()));
+        assertTrue(Boolean.TRUE.equals(loaded.getHive().getSdlc().getLifecycleSignalEnabled()));
     }
 
     @Test
@@ -1761,13 +1762,15 @@ class RuntimeConfigServiceTest {
                 .build());
         service.updateRuntimeConfig(config);
 
-        assertFalse(service.isHiveSdlcCurrentContextEnabled());
-        assertFalse(service.isHiveSdlcCardReadEnabled());
-        assertFalse(service.isHiveSdlcCardSearchEnabled());
-        assertFalse(service.isHiveSdlcThreadMessageEnabled());
-        assertFalse(service.isHiveSdlcReviewRequestEnabled());
-        assertFalse(service.isHiveSdlcFollowupCardCreateEnabled());
-        assertFalse(service.isHiveSdlcLifecycleSignalEnabled());
+        RuntimeConfig updated = service.getRuntimeConfig();
+        assertFalse(Boolean.TRUE.equals(updated.getHive().getEnabled()));
+        assertTrue(Boolean.TRUE.equals(updated.getHive().getSdlc().getCurrentContextEnabled()));
+        assertTrue(Boolean.TRUE.equals(updated.getHive().getSdlc().getCardReadEnabled()));
+        assertTrue(Boolean.TRUE.equals(updated.getHive().getSdlc().getCardSearchEnabled()));
+        assertTrue(Boolean.TRUE.equals(updated.getHive().getSdlc().getThreadMessageEnabled()));
+        assertTrue(Boolean.TRUE.equals(updated.getHive().getSdlc().getReviewRequestEnabled()));
+        assertTrue(Boolean.TRUE.equals(updated.getHive().getSdlc().getFollowupCardCreateEnabled()));
+        assertTrue(Boolean.TRUE.equals(updated.getHive().getSdlc().getLifecycleSignalEnabled()));
     }
 
     @Test
@@ -1785,13 +1788,15 @@ class RuntimeConfigServiceTest {
                 .build());
         service.updateRuntimeConfig(config);
 
-        assertFalse(service.isHiveSdlcCurrentContextEnabled());
-        assertFalse(service.isHiveSdlcCardReadEnabled());
-        assertFalse(service.isHiveSdlcCardSearchEnabled());
-        assertFalse(service.isHiveSdlcThreadMessageEnabled());
-        assertFalse(service.isHiveSdlcReviewRequestEnabled());
-        assertFalse(service.isHiveSdlcFollowupCardCreateEnabled());
-        assertFalse(service.isHiveSdlcLifecycleSignalEnabled());
+        RuntimeConfig updated = service.getRuntimeConfig();
+        assertTrue(Boolean.TRUE.equals(updated.getHive().getEnabled()));
+        assertFalse(Boolean.TRUE.equals(updated.getHive().getSdlc().getCurrentContextEnabled()));
+        assertFalse(Boolean.TRUE.equals(updated.getHive().getSdlc().getCardReadEnabled()));
+        assertFalse(Boolean.TRUE.equals(updated.getHive().getSdlc().getCardSearchEnabled()));
+        assertFalse(Boolean.TRUE.equals(updated.getHive().getSdlc().getThreadMessageEnabled()));
+        assertFalse(Boolean.TRUE.equals(updated.getHive().getSdlc().getReviewRequestEnabled()));
+        assertFalse(Boolean.TRUE.equals(updated.getHive().getSdlc().getFollowupCardCreateEnabled()));
+        assertFalse(Boolean.TRUE.equals(updated.getHive().getSdlc().getLifecycleSignalEnabled()));
     }
 
     // ==================== Section Validation ====================

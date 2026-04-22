@@ -19,6 +19,7 @@
 package me.golemcore.bot.adapter.inbound.webhook;
 
 import me.golemcore.bot.adapter.inbound.webhook.dto.CallbackPayload;
+import me.golemcore.bot.domain.model.ChannelTypes;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.port.channel.ChannelPort;
 import lombok.RequiredArgsConstructor;
@@ -50,7 +51,7 @@ import java.util.function.Consumer;
 @Slf4j
 public class WebhookChannelAdapter implements ChannelPort {
 
-    private static final String CHANNEL_TYPE = "webhook";
+    private static final String CHANNEL_TYPE = ChannelTypes.WEBHOOK;
 
     private final WebhookCallbackSender callbackSender;
     private final WebhookDeliveryTracker deliveryTracker;

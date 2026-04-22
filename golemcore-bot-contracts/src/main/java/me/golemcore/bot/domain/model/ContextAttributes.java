@@ -1,5 +1,7 @@
 package me.golemcore.bot.domain.model;
 
+import java.util.List;
+
 /*
  * Copyright 2026 Aleksei Kuleshov
  *
@@ -528,6 +530,17 @@ public final class ContextAttributes {
 
     /** String ? Hive golem identifier for the active control-plane session. */
     public static final String HIVE_GOLEM_ID = "hive.golem.id";
+
+    /**
+     * Ordered Hive metadata keys propagated across runtime and control-plane
+     * boundaries.
+     */
+    public static final List<String> HIVE_METADATA_KEYS = List.of(
+            HIVE_CARD_ID,
+            HIVE_THREAD_ID,
+            HIVE_COMMAND_ID,
+            HIVE_RUN_ID,
+            HIVE_GOLEM_ID);
 
     /** String ? SelfEvolving run identifier bound to the current turn. */
     public static final String SELF_EVOLVING_RUN_ID = "selfevolving.run.id";

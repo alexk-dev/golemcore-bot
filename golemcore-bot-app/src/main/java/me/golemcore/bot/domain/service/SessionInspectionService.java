@@ -20,6 +20,7 @@ import me.golemcore.bot.domain.view.SessionTraceSpanView;
 import me.golemcore.bot.domain.view.SessionTraceStorageStatsView;
 import me.golemcore.bot.domain.view.SessionTraceSummaryView;
 import me.golemcore.bot.domain.view.SessionTraceView;
+import me.golemcore.bot.port.outbound.SessionInspectionQueryPort;
 import me.golemcore.bot.port.outbound.SessionPort;
 import org.springframework.stereotype.Service;
 
@@ -38,7 +39,7 @@ import java.util.regex.Pattern;
 @Service
 @RequiredArgsConstructor
 @Slf4j
-public class SessionInspectionService {
+public class SessionInspectionService implements SessionInspectionQueryPort {
 
     private static final int MAX_PAGE_LIMIT = 100;
     private static final int SNAPSHOT_PREVIEW_MAX_CHARS = 4096;
@@ -124,6 +125,15 @@ public class SessionInspectionService {
                 payloadText,
                 resolveSnapshotContentType(snapshot),
                 resolveSnapshotFileExtension(snapshot));
+    }
+
+    public Map<String, Object> getSessionTraceSnapshotPayload(String sessionId, String snapshotId) {
+        SnapshotPayloadExport export = exportSessionTraceSnapshotPayload(sessionId, snapshotId);
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("payloadText", export.payloadText());
+        payload.put("contentType", export.contentType());
+        payload.put("fileExtension", export.fileExtension());
+        return payload;
     }
 
     public void deleteSession(String sessionId) {

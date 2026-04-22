@@ -1,6 +1,6 @@
 package me.golemcore.bot.domain.service;
 
-import me.golemcore.bot.port.outbound.HiveEventPublishPort;
+import me.golemcore.bot.port.outbound.RuntimeEventPublishPort;
 import me.golemcore.bot.domain.loop.AgentLoop;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.AgentSession;
@@ -17,6 +17,7 @@ import me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.outbound.LlmPort;
 import me.golemcore.bot.port.outbound.SessionPort;
+import me.golemcore.bot.domain.model.hive.HiveRuntimeContracts;
 import org.junit.jupiter.api.Test;
 
 import java.time.Clock;
@@ -57,7 +58,7 @@ class SessionRunCoordinatorStopIntegrationTest {
 
         try (ExecutorService executor = java.util.concurrent.Executors.newSingleThreadExecutor()) {
             SessionRunCoordinator coordinator = new SessionRunCoordinator(sessionPort, agentLoop, executor,
-                    runtimeEventService, runtimeConfigService, null, mock(HiveEventPublishPort.class));
+                    runtimeEventService, runtimeConfigService, null, mock(RuntimeEventPublishPort.class));
 
             AgentSession session = AgentSession.builder()
                     .id("s-stop-llm")
@@ -111,7 +112,7 @@ class SessionRunCoordinatorStopIntegrationTest {
             assertTrue(resumeProcessed.await(2, TimeUnit.SECONDS), "Next inbound should resume after stop");
 
             verify(runtimeEventService).emitForSession(session, RuntimeEventType.TURN_INTERRUPT_REQUESTED,
-                    Map.of("source", "command.stop"));
+                    Map.of("source", HiveRuntimeContracts.TURN_INTERRUPT_SOURCE_COMMAND_STOP));
             assertEquals(2, llmCalls.get());
             assertFalse(Boolean.TRUE.equals(session.getMetadata().get(ContextAttributes.TURN_INTERRUPT_REQUESTED)));
             assertTrue(session.getMessages().stream()

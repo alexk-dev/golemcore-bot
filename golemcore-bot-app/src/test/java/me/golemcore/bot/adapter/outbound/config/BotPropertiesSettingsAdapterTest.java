@@ -2,11 +2,13 @@ package me.golemcore.bot.adapter.outbound.config;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.time.Duration;
 import java.util.Map;
 import me.golemcore.bot.infrastructure.config.BotProperties;
+import me.golemcore.bot.port.outbound.HiveBootstrapSettingsPort.HiveBootstrapSettings;
 import me.golemcore.bot.port.outbound.SelfEvolvingBootstrapSettingsPort;
 import me.golemcore.bot.port.outbound.ToolRuntimeSettingsPort;
 import org.junit.jupiter.api.Test;
@@ -69,6 +71,14 @@ class BotPropertiesSettingsAdapterTest {
                 .getSearch()
                 .getNegativeMemory()
                 .setEnabled(false);
+        properties.getHive().setEnabled(true);
+        properties.getHive().setAutoConnectOnStartup(false);
+        properties.getHive().setJoinCode("et_demo.secret:https://hive.example.com");
+        properties.getHive().setDisplayName("Builder");
+        properties.getHive().setHostLabel("lab-a");
+        properties.getHive().setDashboardBaseUrl("https://dashboard.example.com");
+        properties.getHive().setSsoEnabled(true);
+        properties.getHttp().setConnectTimeout(3210L);
 
         BotPropertiesSettingsAdapter settings = new BotPropertiesSettingsAdapter(properties);
 
@@ -125,6 +135,15 @@ class BotPropertiesSettingsAdapterTest {
                 .search()
                 .negativeMemory()
                 .enabled());
+        HiveBootstrapSettings hiveBootstrapSettings = settings.hiveBootstrapSettings();
+        assertTrue(hiveBootstrapSettings.enabled());
+        assertFalse(hiveBootstrapSettings.autoConnectOnStartup());
+        assertEquals("et_demo.secret:https://hive.example.com", hiveBootstrapSettings.joinCode());
+        assertEquals("Builder", hiveBootstrapSettings.displayName());
+        assertEquals("lab-a", hiveBootstrapSettings.hostLabel());
+        assertEquals("https://dashboard.example.com", hiveBootstrapSettings.dashboardBaseUrl());
+        assertTrue(hiveBootstrapSettings.ssoEnabled());
+        assertEquals(3210L, settings.http().connectTimeoutMillis());
     }
 
     @Test
@@ -138,6 +157,8 @@ class BotPropertiesSettingsAdapterTest {
         properties.setUpdate(null);
         properties.setTools(null);
         properties.setSelfEvolving(null);
+        properties.setHive(null);
+        properties.setHttp(null);
 
         BotPropertiesSettingsAdapter settings = new BotPropertiesSettingsAdapter(properties);
 
@@ -157,5 +178,7 @@ class BotPropertiesSettingsAdapterTest {
         assertEquals(
                 new SelfEvolvingBootstrapSettingsPort.SelfEvolvingBootstrapSettings(null, null),
                 settings.selfEvolvingBootstrap());
+        assertEquals(HiveBootstrapSettings.empty(), settings.hiveBootstrapSettings());
+        assertEquals(10000L, settings.http().connectTimeoutMillis());
     }
 }

@@ -5,8 +5,8 @@ import me.golemcore.bot.application.models.ProviderModelImportService;
 import me.golemcore.bot.domain.model.MemoryPreset;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.UserPreferences;
-import me.golemcore.bot.domain.model.hive.HivePolicyBindingState;
-import me.golemcore.bot.domain.service.HiveManagedPolicyService;
+import me.golemcore.bot.domain.model.policy.ManagedPolicyBindingState;
+import me.golemcore.bot.port.outbound.ManagedPolicyQueryPort;
 import me.golemcore.bot.domain.service.MemoryPresetService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
@@ -20,7 +20,7 @@ public class RuntimeSettingsFacade {
     private final RuntimeConfigService runtimeConfigService;
     private final UserPreferencesService preferencesService;
     private final MemoryPresetService memoryPresetService;
-    private final HiveManagedPolicyService hiveManagedPolicyService;
+    private final ManagedPolicyQueryPort managedPolicyQueryPort;
     private final RuntimeSettingsValidator validator;
     private final RuntimeSettingsMergeService mergeService;
     private final ProviderModelImportService providerModelImportService;
@@ -29,7 +29,7 @@ public class RuntimeSettingsFacade {
     public RuntimeSettingsFacade(RuntimeConfigService runtimeConfigService,
             UserPreferencesService preferencesService,
             MemoryPresetService memoryPresetService,
-            HiveManagedPolicyService hiveManagedPolicyService,
+            ManagedPolicyQueryPort managedPolicyQueryPort,
             RuntimeSettingsValidator validator,
             RuntimeSettingsMergeService mergeService,
             ProviderModelImportService providerModelImportService,
@@ -37,7 +37,7 @@ public class RuntimeSettingsFacade {
         this.runtimeConfigService = runtimeConfigService;
         this.preferencesService = preferencesService;
         this.memoryPresetService = memoryPresetService;
-        this.hiveManagedPolicyService = hiveManagedPolicyService;
+        this.managedPolicyQueryPort = managedPolicyQueryPort;
         this.validator = validator;
         this.mergeService = mergeService;
         this.providerModelImportService = providerModelImportService;
@@ -52,15 +52,15 @@ public class RuntimeSettingsFacade {
         RuntimeConfig current = runtimeConfigService.getRuntimeConfig();
         RuntimeConfig merged = mergeService.mergeRuntimeConfigSections(current, config);
         mergeService.mergeRuntimeSecrets(current, merged);
-        rejectManagedHivePolicyMutation(current, merged);
-        validator.validateRuntimeConfigUpdate(current, merged, runtimeConfigService.isHiveManagedByProperties());
+        rejectManagedPolicyMutation(current, merged);
+        validator.validateRuntimeConfigUpdate(current, merged);
         runtimeConfigService.updateRuntimeConfig(merged);
         return runtimeConfigService.getRuntimeConfigForApi();
     }
 
     public RuntimeConfig updateModelRouterConfig(RuntimeConfig.ModelRouterConfig modelRouterConfig) {
         RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
-        rejectManagedHivePolicyModelRouterMutation(config.getModelRouter(), modelRouterConfig);
+        rejectManagedPolicyModelRouterMutation(config.getModelRouter(), modelRouterConfig);
         validator.validateModelRouterConfig(modelRouterConfig, config.getLlm());
         config.setModelRouter(modelRouterConfig);
         runtimeConfigService.updateRuntimeConfig(config);
@@ -69,7 +69,7 @@ public class RuntimeSettingsFacade {
 
     public RuntimeConfig updateLlmConfig(RuntimeConfig.LlmConfig llmConfig) {
         RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
-        rejectManagedHivePolicyLlmMutation(config.getLlm(), llmConfig);
+        rejectManagedPolicyLlmMutation(config.getLlm(), llmConfig);
         mergeService.mergeLlmSecrets(config.getLlm(), llmConfig);
         validator.validateLlmConfig(llmConfig, config.getModelRouter());
         validator.validateModelRouterConfig(config.getModelRouter(), llmConfig);
@@ -82,7 +82,7 @@ public class RuntimeSettingsFacade {
         String normalizedName = validator.normalizeProviderName(name);
         RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
         RuntimeConfig.LlmConfig llmConfig = ensureLlmConfig(config);
-        rejectManagedHivePolicyLlmWrite();
+        rejectManagedPolicyLlmWrite();
         if (llmConfig.getProviders().containsKey(normalizedName)) {
             throw new IllegalArgumentException("Provider '" + normalizedName + "' already exists");
         }
@@ -97,7 +97,7 @@ public class RuntimeSettingsFacade {
         String normalizedName = validator.normalizeProviderName(name);
         RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
         RuntimeConfig.LlmConfig llmConfig = ensureLlmConfig(config);
-        rejectManagedHivePolicyLlmWrite();
+        rejectManagedPolicyLlmWrite();
         if (llmConfig.getProviders().containsKey(normalizedName)) {
             throw new IllegalArgumentException("Provider '" + normalizedName + "' already exists");
         }
@@ -110,7 +110,7 @@ public class RuntimeSettingsFacade {
         String normalizedName = validator.normalizeProviderName(name);
         RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
         RuntimeConfig.LlmConfig llmConfig = ensureLlmConfig(config);
-        rejectManagedHivePolicyLlmWrite();
+        rejectManagedPolicyLlmWrite();
         if (!llmConfig.getProviders().containsKey(normalizedName)) {
             throw new IllegalArgumentException("Provider '" + normalizedName + "' does not exist");
         }
@@ -147,7 +147,7 @@ public class RuntimeSettingsFacade {
     public void removeLlmProvider(String name) {
         String normalizedName = validator.normalizeProviderName(name);
         RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
-        rejectManagedHivePolicyLlmWrite();
+        rejectManagedPolicyLlmWrite();
         validator.validateProviderRemoval(config.getModelRouter(), normalizedName);
         boolean removed = runtimeConfigService.removeLlmProvider(normalizedName);
         if (!removed) {
@@ -360,7 +360,7 @@ public class RuntimeSettingsFacade {
 
     public RuntimeConfig updateHiveConfig(RuntimeConfig.HiveConfig hiveConfig) {
         RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
-        validator.rejectManagedHiveMutation(config, hiveConfig, runtimeConfigService.isHiveManagedByProperties());
+        validator.rejectManagedHiveMutation(config, hiveConfig);
         validator.validateHiveConfig(hiveConfig);
         config.setHive(hiveConfig);
         runtimeConfigService.updateRuntimeConfig(config);
@@ -436,19 +436,19 @@ public class RuntimeSettingsFacade {
         return llmConfig;
     }
 
-    private void rejectManagedHivePolicyMutation(RuntimeConfig current, RuntimeConfig incoming) {
+    private void rejectManagedPolicyMutation(RuntimeConfig current, RuntimeConfig incoming) {
         if (incoming == null) {
             return;
         }
-        rejectManagedHivePolicyLlmMutation(current != null ? current.getLlm() : null, incoming.getLlm());
-        rejectManagedHivePolicyModelRouterMutation(
+        rejectManagedPolicyLlmMutation(current != null ? current.getLlm() : null, incoming.getLlm());
+        rejectManagedPolicyModelRouterMutation(
                 current != null ? current.getModelRouter() : null,
                 incoming.getModelRouter());
     }
 
-    private void rejectManagedHivePolicyLlmMutation(RuntimeConfig.LlmConfig currentLlmConfig,
+    private void rejectManagedPolicyLlmMutation(RuntimeConfig.LlmConfig currentLlmConfig,
             RuntimeConfig.LlmConfig incomingLlmConfig) {
-        HivePolicyBindingState bindingState = hiveManagedPolicyService.getBindingState().orElse(null);
+        ManagedPolicyBindingState bindingState = managedPolicyQueryPort.findBindingState().orElse(null);
         if (bindingState == null || !bindingState.hasActiveBinding() || incomingLlmConfig == null) {
             return;
         }
@@ -458,9 +458,9 @@ public class RuntimeSettingsFacade {
         }
     }
 
-    private void rejectManagedHivePolicyModelRouterMutation(RuntimeConfig.ModelRouterConfig currentModelRouterConfig,
+    private void rejectManagedPolicyModelRouterMutation(RuntimeConfig.ModelRouterConfig currentModelRouterConfig,
             RuntimeConfig.ModelRouterConfig incomingModelRouterConfig) {
-        HivePolicyBindingState bindingState = hiveManagedPolicyService.getBindingState().orElse(null);
+        ManagedPolicyBindingState bindingState = managedPolicyQueryPort.findBindingState().orElse(null);
         if (bindingState == null || !bindingState.hasActiveBinding() || incomingModelRouterConfig == null) {
             return;
         }
@@ -470,8 +470,8 @@ public class RuntimeSettingsFacade {
         }
     }
 
-    private void rejectManagedHivePolicyLlmWrite() {
-        HivePolicyBindingState bindingState = hiveManagedPolicyService.getBindingState().orElse(null);
+    private void rejectManagedPolicyLlmWrite() {
+        ManagedPolicyBindingState bindingState = managedPolicyQueryPort.findBindingState().orElse(null);
         if (bindingState == null || !bindingState.hasActiveBinding()) {
             return;
         }

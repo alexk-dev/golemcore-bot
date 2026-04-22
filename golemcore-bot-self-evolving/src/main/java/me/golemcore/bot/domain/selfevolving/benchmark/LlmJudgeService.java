@@ -20,6 +20,7 @@ package me.golemcore.bot.domain.selfevolving.benchmark;
 
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.AgentSession;
+import me.golemcore.bot.domain.model.ChannelTypes;
 import me.golemcore.bot.domain.model.LlmRequest;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
@@ -114,7 +115,7 @@ public class LlmJudgeService {
             Return only valid JSON matching the RunVerdict schema.
             """;
 
-    private static final String JUDGE_CHANNEL_PREFIX = "judge_";
+    private static final String JUDGE_CHANNEL_PREFIX = ChannelTypes.JUDGE_PREFIX;
     private static final int MAX_JUDGE_RETRIES = 3;
     private static final long INITIAL_BACKOFF_MS = 5_000;
     private static final double BACKOFF_MULTIPLIER = 2.0;

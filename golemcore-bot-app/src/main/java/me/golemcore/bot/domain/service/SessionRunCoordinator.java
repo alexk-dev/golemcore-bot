@@ -18,11 +18,13 @@ package me.golemcore.bot.domain.service;
  * Contact: alex@kuleshov.tech
  */
 
-import me.golemcore.bot.port.outbound.HiveEventPublishPort;
+import me.golemcore.bot.port.outbound.RuntimeEventPublishPort;
+import me.golemcore.bot.port.outbound.SessionRunDispatchPort;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.loop.AgentLoop;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.AgentSession;
+import me.golemcore.bot.domain.model.ChannelTypes;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.FailureEvent;
 import me.golemcore.bot.domain.model.FailureKind;
@@ -30,6 +32,7 @@ import me.golemcore.bot.domain.model.FailureSource;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.RuntimeEvent;
 import me.golemcore.bot.domain.model.RuntimeEventType;
+import me.golemcore.bot.domain.model.hive.HiveRuntimeContracts;
 import me.golemcore.bot.port.outbound.SessionPort;
 import org.springframework.stereotype.Service;
 
@@ -70,7 +73,7 @@ import java.util.concurrent.atomic.AtomicLong;
  */
 @Service
 @Slf4j
-public class SessionRunCoordinator {
+public class SessionRunCoordinator implements SessionRunDispatchPort {
 
     private static final int MAX_QUEUED_MESSAGES_PER_SESSION = 100;
 
@@ -81,7 +84,7 @@ public class SessionRunCoordinator {
     private final RuntimeConfigService runtimeConfigService;
     private final DelayedSessionActionService delayedSessionActionService;
 
-    private final HiveEventPublishPort hiveEventPublishPort;
+    private final RuntimeEventPublishPort runtimeEventPublishPort;
 
     private final Map<SessionKey, SessionRunner> runners = new ConcurrentHashMap<>();
     private final Map<Message, List<CompletableFuture<Void>>> pendingCompletions = Collections
@@ -95,14 +98,14 @@ public class SessionRunCoordinator {
     public SessionRunCoordinator(SessionPort sessionPort, AgentLoop agentLoop, ExecutorService sessionRunExecutor,
             RuntimeEventService runtimeEventService, RuntimeConfigService runtimeConfigService,
             DelayedSessionActionService delayedSessionActionService,
-            HiveEventPublishPort hiveEventPublishPort) {
+            RuntimeEventPublishPort runtimeEventPublishPort) {
         this.sessionPort = sessionPort;
         this.agentLoop = agentLoop;
         this.sessionRunExecutor = sessionRunExecutor;
         this.runtimeEventService = runtimeEventService;
         this.runtimeConfigService = runtimeConfigService;
         this.delayedSessionActionService = delayedSessionActionService;
-        this.hiveEventPublishPort = hiveEventPublishPort;
+        this.runtimeEventPublishPort = runtimeEventPublishPort;
     }
 
     public void enqueue(Message inbound) {
@@ -343,7 +346,8 @@ public class SessionRunCoordinator {
             }
 
             if (cancelledQueuedMessage != null) {
-                rejectPendingCompletion(cancelledQueuedMessage, "Cancelled by Hive control command");
+                rejectPendingCompletion(cancelledQueuedMessage,
+                        HiveRuntimeContracts.CANCELLED_BY_CONTROL_COMMAND_MESSAGE);
                 publishHiveInterruptedFallback(cancelledQueuedMessage);
                 log.info("[Stop] removed queued hive command: channel={}, chatId={}, runId={}, commandId={}",
                         key.channelType(), key.chatId(), expectedRunId, expectedCommandId);
@@ -1104,7 +1108,7 @@ public class SessionRunCoordinator {
             return;
         }
         runtimeEventService.emitForSession(session, RuntimeEventType.TURN_INTERRUPT_REQUESTED,
-                Map.of("source", "command.stop"));
+                Map.of("source", HiveRuntimeContracts.TURN_INTERRUPT_SOURCE_COMMAND_STOP));
     }
 
     private boolean isInterruptRequested(SessionKey key) {
@@ -1118,7 +1122,7 @@ public class SessionRunCoordinator {
 
     private void publishHiveInterruptedFallback(Message inbound) {
         if (inbound == null || inbound.getChannelType() == null
-                || !"hive".equalsIgnoreCase(inbound.getChannelType())) {
+                || !ChannelTypes.HIVE.equalsIgnoreCase(inbound.getChannelType())) {
             return;
         }
 
@@ -1129,9 +1133,9 @@ public class SessionRunCoordinator {
 
         AgentSession session = sessionPort.getOrCreate(inbound.getChannelType(), inbound.getChatId());
         RuntimeEvent runtimeEvent = runtimeEventService.emitForSession(session, RuntimeEventType.TURN_FINISHED,
-                Map.of("reason", "user_interrupt"));
+                Map.of("reason", HiveRuntimeContracts.USER_INTERRUPT_REASON));
         try {
-            hiveEventPublishPort.publishRuntimeEvents(List.of(runtimeEvent), metadata);
+            runtimeEventPublishPort.publishRuntimeEvents(List.of(runtimeEvent), metadata);
         } catch (RuntimeException exception) {
             log.warn("[Hive] Failed to publish interruption fallback: {}", exception.getMessage());
         }
@@ -1140,26 +1144,13 @@ public class SessionRunCoordinator {
     private Map<String, Object> buildHiveMetadata(Message inbound) {
         Map<String, Object> metadata = new LinkedHashMap<>();
         Map<String, Object> inboundMetadata = inbound.getMetadata();
-        putHiveMetadata(metadata, ContextAttributes.HIVE_CARD_ID,
-                readMetadataString(inboundMetadata, ContextAttributes.HIVE_CARD_ID));
-        putHiveMetadata(metadata, ContextAttributes.HIVE_COMMAND_ID,
-                readMetadataString(inboundMetadata, ContextAttributes.HIVE_COMMAND_ID));
-        putHiveMetadata(metadata, ContextAttributes.HIVE_RUN_ID,
-                readMetadataString(inboundMetadata, ContextAttributes.HIVE_RUN_ID));
-        putHiveMetadata(metadata, ContextAttributes.HIVE_GOLEM_ID,
-                readMetadataString(inboundMetadata, ContextAttributes.HIVE_GOLEM_ID));
-        String threadId = readMetadataString(inboundMetadata, ContextAttributes.HIVE_THREAD_ID);
+        HiveMetadataSupport.copyMetadataMap(inboundMetadata, metadata);
+        String threadId = HiveMetadataSupport.readString(metadata, ContextAttributes.HIVE_THREAD_ID);
         if (threadId == null || threadId.isBlank()) {
             threadId = inbound.getChatId();
         }
-        putHiveMetadata(metadata, ContextAttributes.HIVE_THREAD_ID, threadId);
+        HiveMetadataSupport.putIfPresent(metadata, ContextAttributes.HIVE_THREAD_ID, threadId);
         return metadata;
-    }
-
-    private void putHiveMetadata(Map<String, Object> metadata, String key, String value) {
-        if (value != null && !value.isBlank()) {
-            metadata.put(key, value);
-        }
     }
 
     private String readMetadataString(Map<String, Object> metadata, String key) {

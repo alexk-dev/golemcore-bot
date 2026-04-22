@@ -8,6 +8,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import me.golemcore.bot.domain.model.RuntimeConfig;
+import me.golemcore.bot.domain.model.policy.ManagedModelCatalog;
 
 @Data
 @NoArgsConstructor
@@ -27,7 +28,7 @@ public class HivePolicyPackage {
     private RuntimeConfig.ModelRouterConfig modelRouter = RuntimeConfig.ModelRouterConfig.builder().build();
 
     @Builder.Default
-    private HivePolicyModelCatalog modelCatalog = HivePolicyModelCatalog.builder().build();
+    private ManagedModelCatalog modelCatalog = ManagedModelCatalog.builder().build();
 
     public RuntimeConfig.LlmConfig toLlmConfig() {
         return RuntimeConfig.LlmConfig.builder()

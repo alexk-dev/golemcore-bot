@@ -22,7 +22,7 @@ import me.golemcore.bot.application.skills.SkillMarketplaceService;
 import me.golemcore.bot.domain.service.AutoModeService;
 import me.golemcore.bot.domain.service.DelayedActionPolicyService;
 import me.golemcore.bot.domain.service.DelayedSessionActionService;
-import me.golemcore.bot.domain.service.HiveManagedPolicyService;
+import me.golemcore.bot.port.outbound.ManagedPolicyQueryPort;
 import me.golemcore.bot.domain.service.MemoryPresetService;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.PlanService;
@@ -66,7 +66,7 @@ class ApplicationLayerConfigurationTest {
                 mock(RuntimeConfigService.class),
                 mock(UserPreferencesService.class),
                 mock(MemoryPresetService.class),
-                mock(HiveManagedPolicyService.class),
+                mock(ManagedPolicyQueryPort.class),
                 validator,
                 mergeService,
                 mock(ProviderModelImportService.class),
@@ -118,7 +118,7 @@ class ApplicationLayerConfigurationTest {
                 discovery,
                 modelRegistry,
                 mock(LlmPort.class),
-                mock(HiveManagedPolicyService.class));
+                mock(ManagedPolicyQueryPort.class));
         SkillMarketplaceLegacySupport legacySupport = configuration.skillMarketplaceLegacySupport(
                 mock(SkillSettingsPort.class),
                 mock(StoragePort.class),

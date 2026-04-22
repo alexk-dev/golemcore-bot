@@ -18,77 +18,24 @@ package me.golemcore.bot.port.outbound;
  * Contact: alex@kuleshov.tech
  */
 
+import java.util.Map;
 import me.golemcore.bot.domain.model.HiveControlCommandEnvelope;
 import me.golemcore.bot.domain.model.HiveInspectionResponse;
 import me.golemcore.bot.domain.model.ProgressUpdate;
-import me.golemcore.bot.domain.model.RuntimeEvent;
 import me.golemcore.bot.domain.model.hive.HiveLifecycleSignalRequest;
-import me.golemcore.bot.domain.model.selfevolving.BenchmarkCampaign;
-import me.golemcore.bot.domain.model.selfevolving.EvolutionCandidate;
-import me.golemcore.bot.domain.model.selfevolving.RunRecord;
-import me.golemcore.bot.domain.model.selfevolving.RunVerdict;
-import me.golemcore.bot.domain.model.selfevolving.artifact.ArtifactCatalogEntry;
-import me.golemcore.bot.domain.model.selfevolving.artifact.ArtifactCompareEvidenceProjection;
-import me.golemcore.bot.domain.model.selfevolving.artifact.ArtifactLineageProjection;
-import me.golemcore.bot.domain.model.selfevolving.artifact.ArtifactNormalizedRevisionProjection;
-import me.golemcore.bot.domain.model.selfevolving.artifact.ArtifactRevisionDiffProjection;
-import me.golemcore.bot.domain.model.selfevolving.artifact.ArtifactRevisionEvidenceProjection;
-import me.golemcore.bot.domain.model.selfevolving.artifact.ArtifactTransitionDiffProjection;
-import me.golemcore.bot.domain.model.selfevolving.artifact.ArtifactTransitionEvidenceProjection;
-import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchResult;
-import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchStatus;
-
-import java.util.List;
-import java.util.Map;
 
 /**
- * Outbound port for Hive-specific event publishing operations.
+ * Outbound port for Hive-specific runtime event publishing operations.
  */
-public interface HiveEventPublishPort extends SelfEvolvingProjectionPublishPort {
+public interface HiveEventPublishPort extends RuntimeEventPublishPort {
 
     void publishCommandAcknowledged(HiveControlCommandEnvelope envelope);
 
     void publishInspectionResponse(HiveInspectionResponse response);
-
-    void publishRuntimeEvents(List<RuntimeEvent> runtimeEvents, Map<String, Object> metadata);
 
     void publishProgressUpdate(String threadId, ProgressUpdate update);
 
     void publishThreadMessage(String threadId, String content, Map<String, Object> metadata);
 
     void publishLifecycleSignal(HiveLifecycleSignalRequest request, Map<String, Object> metadata);
-
-    void publishSelfEvolvingCampaignProjection(String golemId, BenchmarkCampaign campaign);
-
-    void publishSelfEvolvingTacticCatalogProjection(List<TacticSearchResult> tactics);
-
-    void publishSelfEvolvingTacticSearchProjection(
-            String query,
-            TacticSearchStatus status,
-            List<TacticSearchResult> results);
-
-    void publishSelfEvolvingArtifactProjection(String golemId, ArtifactCatalogEntry artifact);
-
-    void publishSelfEvolvingArtifactNormalizedRevisionProjection(String golemId,
-            ArtifactNormalizedRevisionProjection projection);
-
-    void publishSelfEvolvingArtifactLineageProjection(String golemId, ArtifactLineageProjection projection);
-
-    void publishSelfEvolvingArtifactRevisionDiffProjection(String golemId,
-            ArtifactRevisionDiffProjection projection);
-
-    void publishSelfEvolvingArtifactTransitionDiffProjection(String golemId,
-            ArtifactTransitionDiffProjection projection);
-
-    void publishSelfEvolvingArtifactRevisionEvidenceProjection(String golemId,
-            ArtifactRevisionEvidenceProjection projection);
-
-    void publishSelfEvolvingArtifactTransitionEvidenceProjection(String golemId,
-            ArtifactTransitionEvidenceProjection projection);
-
-    void publishSelfEvolvingArtifactCompareEvidenceProjection(String golemId,
-            ArtifactCompareEvidenceProjection projection);
-
-    @Override
-    void publishSelfEvolvingProjection(RunRecord runRecord, RunVerdict verdict, List<EvolutionCandidate> candidates);
 }

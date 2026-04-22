@@ -55,7 +55,13 @@ public interface RuntimeSettingsWebDtos {
     public static class PlanConfigDto extends RuntimeConfig.PlanConfig {
     }
 
-    public static class HiveConfigDto extends RuntimeConfig.HiveConfig {
+    public static class RuntimeHiveConfigDto extends RuntimeConfig.HiveConfig {
+    }
+
+    /**
+     * Compatibility alias for older code that still refers to HiveConfigDto.
+     */
+    public static class HiveConfigDto extends RuntimeHiveConfigDto {
     }
 
     public static class AutoModeConfigDto extends RuntimeConfig.AutoModeConfig {

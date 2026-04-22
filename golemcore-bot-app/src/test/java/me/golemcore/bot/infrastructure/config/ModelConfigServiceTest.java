@@ -294,10 +294,10 @@ class ModelConfigServiceTest {
         when(storagePort.putTextAtomic(anyString(), anyString(), anyString(), anyBoolean()))
                 .thenReturn(CompletableFuture.failedFuture(new IllegalStateException("disk full")));
 
-        me.golemcore.bot.domain.model.hive.HivePolicyModelCatalog catalogSnapshot = me.golemcore.bot.domain.model.hive.HivePolicyModelCatalog
+        me.golemcore.bot.domain.model.policy.ManagedModelCatalog catalogSnapshot = me.golemcore.bot.domain.model.policy.ManagedModelCatalog
                 .builder()
                 .models(Map.of("managed/gpt-5.1",
-                        me.golemcore.bot.domain.model.hive.HivePolicyModelCatalog.HivePolicyModelConfig.builder()
+                        me.golemcore.bot.domain.model.policy.ManagedModelCatalog.ManagedModelConfig.builder()
                                 .provider("openai")
                                 .displayName("Managed GPT")
                                 .supportsTemperature(true)
@@ -313,7 +313,7 @@ class ModelConfigServiceTest {
 
     @Test
     void shouldCreateCatalogSnapshotFromModelConfig() {
-        me.golemcore.bot.domain.model.hive.HivePolicyModelCatalog snapshot = service.getCatalogSnapshot();
+        me.golemcore.bot.domain.model.policy.ManagedModelCatalog snapshot = service.getCatalogSnapshot();
 
         assertNotNull(snapshot);
         assertTrue(snapshot.getModels().containsKey(MODEL_GPT_5_1));
@@ -332,29 +332,29 @@ class ModelConfigServiceTest {
 
     @Test
     void shouldReplaceCatalogSnapshotUsingExplicitDefaults() {
-        me.golemcore.bot.domain.model.hive.HivePolicyModelCatalog snapshot = me.golemcore.bot.domain.model.hive.HivePolicyModelCatalog
+        me.golemcore.bot.domain.model.policy.ManagedModelCatalog snapshot = me.golemcore.bot.domain.model.policy.ManagedModelCatalog
                 .builder()
                 .models(Map.of(
                         "managed/gpt-5.1",
-                        me.golemcore.bot.domain.model.hive.HivePolicyModelCatalog.HivePolicyModelConfig.builder()
+                        me.golemcore.bot.domain.model.policy.ManagedModelCatalog.ManagedModelConfig.builder()
                                 .provider(PROVIDER_OPENAI)
                                 .displayName("Managed GPT")
                                 .supportsTemperature(false)
                                 .supportsVision(true)
                                 .maxInputTokens(256000)
                                 .reasoning(
-                                        me.golemcore.bot.domain.model.hive.HivePolicyModelCatalog.HivePolicyReasoningConfig
+                                        me.golemcore.bot.domain.model.policy.ManagedModelCatalog.ManagedReasoningConfig
                                                 .builder()
                                                 .defaultLevel("medium")
                                                 .levels(Map.of(
                                                         "medium",
-                                                        me.golemcore.bot.domain.model.hive.HivePolicyModelCatalog.HivePolicyReasoningLevelConfig
+                                                        me.golemcore.bot.domain.model.policy.ManagedModelCatalog.ManagedReasoningLevelConfig
                                                                 .builder()
                                                                 .maxInputTokens(128000)
                                                                 .build()))
                                                 .build())
                                 .build()))
-                .defaults(me.golemcore.bot.domain.model.hive.HivePolicyModelCatalog.HivePolicyModelConfig.builder()
+                .defaults(me.golemcore.bot.domain.model.policy.ManagedModelCatalog.ManagedModelConfig.builder()
                         .provider(PROVIDER_CUSTOM)
                         .displayName("Managed Defaults")
                         .supportsTemperature(false)
@@ -383,19 +383,19 @@ class ModelConfigServiceTest {
 
     @Test
     void shouldReplaceCatalogSnapshotUsingDefaultModelFallbackAndValueDefaults() {
-        me.golemcore.bot.domain.model.hive.HivePolicyModelCatalog snapshot = me.golemcore.bot.domain.model.hive.HivePolicyModelCatalog
+        me.golemcore.bot.domain.model.policy.ManagedModelCatalog snapshot = me.golemcore.bot.domain.model.policy.ManagedModelCatalog
                 .builder()
                 .models(Map.of(
                         "managed/gpt-5.1",
-                        me.golemcore.bot.domain.model.hive.HivePolicyModelCatalog.HivePolicyModelConfig.builder()
+                        me.golemcore.bot.domain.model.policy.ManagedModelCatalog.ManagedModelConfig.builder()
                                 .displayName("Managed GPT")
                                 .reasoning(
-                                        me.golemcore.bot.domain.model.hive.HivePolicyModelCatalog.HivePolicyReasoningConfig
+                                        me.golemcore.bot.domain.model.policy.ManagedModelCatalog.ManagedReasoningConfig
                                                 .builder()
                                                 .defaultLevel("low")
                                                 .levels(Map.of(
                                                         "low",
-                                                        me.golemcore.bot.domain.model.hive.HivePolicyModelCatalog.HivePolicyReasoningLevelConfig
+                                                        me.golemcore.bot.domain.model.policy.ManagedModelCatalog.ManagedReasoningLevelConfig
                                                                 .builder()
                                                                 .build()))
                                                 .build())

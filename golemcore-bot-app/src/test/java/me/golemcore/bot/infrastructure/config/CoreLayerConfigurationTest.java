@@ -140,7 +140,6 @@ class CoreLayerConfigurationTest {
         assertNotNull(contextLayerConfiguration.tierAwarenessLayer(mock(UserPreferencesService.class)));
         assertNotNull(contextLayerConfiguration.autoModeLayer(mock(AutoModeService.class)));
         assertNotNull(contextLayerConfiguration.planModeLayer(mock(PlanService.class)));
-        assertNotNull(contextLayerConfiguration.hiveLayer());
         assertNotNull(contextLayerConfiguration.webhookResponseSchemaLayer());
         assertNotNull(contextLayerConfiguration.contextAssembler(
                 mock(SkillResolver.class),

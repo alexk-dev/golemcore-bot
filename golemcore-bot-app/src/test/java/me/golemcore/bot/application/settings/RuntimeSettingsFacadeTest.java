@@ -6,8 +6,8 @@ import me.golemcore.bot.domain.model.Secret;
 import me.golemcore.bot.domain.model.UserPreferences;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.MemoryPreset;
-import me.golemcore.bot.domain.model.hive.HivePolicyBindingState;
-import me.golemcore.bot.domain.service.HiveManagedPolicyService;
+import me.golemcore.bot.domain.model.policy.ManagedPolicyBindingState;
+import me.golemcore.bot.port.outbound.ManagedPolicyQueryPort;
 import me.golemcore.bot.domain.service.MemoryPresetService;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
@@ -36,7 +36,7 @@ class RuntimeSettingsFacadeTest {
     private RuntimeConfigService runtimeConfigService;
     private UserPreferencesService preferencesService;
     private MemoryPresetService memoryPresetService;
-    private HiveManagedPolicyService hiveManagedPolicyService;
+    private ManagedPolicyQueryPort managedPolicyQueryPort;
     private ProviderModelImportService providerModelImportService;
     private ProviderModelDiscoveryService providerModelDiscoveryService;
     private RuntimeSettingsFacade facade;
@@ -46,7 +46,7 @@ class RuntimeSettingsFacadeTest {
         runtimeConfigService = mock(RuntimeConfigService.class);
         preferencesService = mock(UserPreferencesService.class);
         memoryPresetService = mock(MemoryPresetService.class);
-        hiveManagedPolicyService = mock(HiveManagedPolicyService.class);
+        managedPolicyQueryPort = mock(ManagedPolicyQueryPort.class);
         ModelSelectionService modelSelectionService = mock(ModelSelectionService.class);
         VoiceProviderCatalogPort voiceProviderCatalogPort = mock(VoiceProviderCatalogPort.class);
         providerModelImportService = mock(ProviderModelImportService.class);
@@ -59,7 +59,7 @@ class RuntimeSettingsFacadeTest {
                 runtimeConfigService,
                 preferencesService,
                 memoryPresetService,
-                hiveManagedPolicyService,
+                managedPolicyQueryPort,
                 validator,
                 mergeService,
                 providerModelImportService,
@@ -71,6 +71,7 @@ class RuntimeSettingsFacadeTest {
         RuntimeConfig current = RuntimeConfig.builder()
                 .hive(RuntimeConfig.HiveConfig.builder()
                         .enabled(false)
+                        .managedByProperties(true)
                         .build())
                 .build();
         RuntimeConfig incoming = RuntimeConfig.builder()
@@ -79,7 +80,6 @@ class RuntimeSettingsFacadeTest {
                         .build())
                 .build();
         when(runtimeConfigService.getRuntimeConfig()).thenReturn(current);
-        when(runtimeConfigService.isHiveManagedByProperties()).thenReturn(true);
 
         assertThrows(IllegalStateException.class, () -> facade.updateRuntimeConfig(incoming));
 
@@ -212,7 +212,7 @@ class RuntimeSettingsFacadeTest {
                 .llm(RuntimeConfig.LlmConfig.builder().providers(new java.util.LinkedHashMap<>()).build())
                 .build();
         when(runtimeConfigService.getRuntimeConfig()).thenReturn(current);
-        when(hiveManagedPolicyService.getBindingState()).thenReturn(java.util.Optional.of(HivePolicyBindingState
+        when(managedPolicyQueryPort.findBindingState()).thenReturn(java.util.Optional.of(ManagedPolicyBindingState
                 .builder()
                 .policyGroupId("pg-1")
                 .build()));
@@ -327,7 +327,7 @@ class RuntimeSettingsFacadeTest {
                 .modelRouter(RuntimeConfig.ModelRouterConfig.builder().build())
                 .build();
         when(runtimeConfigService.getRuntimeConfig()).thenReturn(current);
-        when(hiveManagedPolicyService.getBindingState()).thenReturn(java.util.Optional.of(HivePolicyBindingState
+        when(managedPolicyQueryPort.findBindingState()).thenReturn(java.util.Optional.of(ManagedPolicyBindingState
                 .builder()
                 .policyGroupId("pg-1")
                 .build()));

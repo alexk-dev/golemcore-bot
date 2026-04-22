@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.AutoModeConfigDto;
 import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.CompactionConfigDto;
 import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.HiveConfigDto;
+import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.RuntimeHiveConfigDto;
 import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.LlmConfigDto;
 import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.LlmProviderConfigDto;
 import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.McpCatalogEntryDto;
@@ -61,6 +62,8 @@ class RuntimeSettingsWebMapperTest {
         assertNotNull(mapper.toMcpConfig(new McpConfigDto()));
         assertNotNull(mapper.toMcpCatalogEntryDto(new RuntimeConfig.McpCatalogEntry()));
         assertNotNull(mapper.toMcpCatalogEntry(new McpCatalogEntryDto()));
+        assertNotNull(mapper.toRuntimeHiveConfigDto(new RuntimeConfig.HiveConfig()));
+        assertNotNull(mapper.toRuntimeHiveConfig(new RuntimeHiveConfigDto()));
         assertNotNull(mapper.toHiveConfigDto(new RuntimeConfig.HiveConfig()));
         assertNotNull(mapper.toHiveConfig(new HiveConfigDto()));
         assertNotNull(mapper.toPlanConfig(new PlanConfigDto()));

@@ -8,7 +8,7 @@ import me.golemcore.bot.adapter.inbound.web.dto.selfevolving.SelfEvolvingCampaig
 import me.golemcore.bot.adapter.inbound.web.projection.SelfEvolvingProjectionService;
 import me.golemcore.bot.domain.model.selfevolving.BenchmarkCampaign;
 import me.golemcore.bot.domain.selfevolving.benchmark.BenchmarkLabService;
-import me.golemcore.bot.port.outbound.HiveEventPublishPort;
+import me.golemcore.bot.port.outbound.SelfEvolvingProjectionPublishPort;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -27,14 +27,14 @@ public class SelfEvolvingBenchmarksController {
 
     private final SelfEvolvingProjectionService projectionService;
     private final BenchmarkLabService benchmarkLabService;
-    private final HiveEventPublishPort hiveEventPublishPort;
+    private final SelfEvolvingProjectionPublishPort projectionPublishPort;
 
     public SelfEvolvingBenchmarksController(SelfEvolvingProjectionService projectionService,
             BenchmarkLabService benchmarkLabService,
-            HiveEventPublishPort hiveEventPublishPort) {
+            SelfEvolvingProjectionPublishPort projectionPublishPort) {
         this.projectionService = projectionService;
         this.benchmarkLabService = benchmarkLabService;
-        this.hiveEventPublishPort = hiveEventPublishPort;
+        this.projectionPublishPort = projectionPublishPort;
     }
 
     @GetMapping("/benchmarks/campaigns")
@@ -46,7 +46,7 @@ public class SelfEvolvingBenchmarksController {
     public Mono<ResponseEntity<SelfEvolvingCampaignDto>> createRegressionCampaign(@PathVariable String runId) {
         return blocking(() -> {
             BenchmarkCampaign campaign = benchmarkLabService.createRegressionCampaign(runId);
-            publishHiveCampaignProjection(campaign);
+            publishCampaignProjection(campaign);
             return ResponseEntity.ok(toCampaignDto(campaign));
         });
     }
@@ -64,12 +64,12 @@ public class SelfEvolvingBenchmarksController {
                 .build();
     }
 
-    private void publishHiveCampaignProjection(BenchmarkCampaign campaign) {
-        if (hiveEventPublishPort == null || campaign == null) {
+    private void publishCampaignProjection(BenchmarkCampaign campaign) {
+        if (projectionPublishPort == null || campaign == null) {
             return;
         }
         try {
-            hiveEventPublishPort.publishSelfEvolvingCampaignProjection(null, campaign);
+            projectionPublishPort.publishSelfEvolvingCampaignProjection(null, campaign);
         } catch (RuntimeException exception) {
             log.debug("[Hive] Skipping SelfEvolving campaign projection publish: {}", exception.getMessage());
         }

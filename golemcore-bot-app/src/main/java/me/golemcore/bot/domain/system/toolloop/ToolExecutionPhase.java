@@ -27,6 +27,8 @@ import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.RuntimeEventType;
 import me.golemcore.bot.domain.model.ToolFailureKind;
 import me.golemcore.bot.domain.model.ToolNames;
+import me.golemcore.bot.domain.model.ToolResult;
+import me.golemcore.bot.domain.model.hive.HiveRuntimeContracts;
 import me.golemcore.bot.domain.model.trace.TraceContext;
 import me.golemcore.bot.domain.model.trace.TraceSpanKind;
 import me.golemcore.bot.domain.model.trace.TraceStatusCode;
@@ -176,7 +178,7 @@ class ToolExecutionPhase {
                 llmCallPhase.clearInterruptFlag(context);
                 llmCallPhase.applyAttachments(context, turnState.getAccumulatedAttachments());
                 llmCallPhase.emitRuntimeEvent(context, RuntimeEventType.TURN_FINISHED,
-                        llmCallPhase.eventPayload("reason", "user_interrupt",
+                        llmCallPhase.eventPayload("reason", HiveRuntimeContracts.USER_INTERRUPT_REASON,
                                 "llmCalls", turnState.getLlmCalls(),
                                 "toolExecutions", turnState.getToolExecutions()));
                 return new ToolBatchOutcome.Interrupted(llmCallPhase.stopTurn(context,

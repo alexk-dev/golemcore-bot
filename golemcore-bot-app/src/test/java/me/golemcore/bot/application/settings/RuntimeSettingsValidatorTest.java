@@ -51,7 +51,7 @@ class RuntimeSettingsValidatorTest {
     @Test
     void shouldRejectNullRuntimeConfigDuringFullUpdateValidation() {
         assertThrows(IllegalArgumentException.class,
-                () -> validator.validateRuntimeConfigUpdate(RuntimeConfig.builder().build(), null, false));
+                () -> validator.validateRuntimeConfigUpdate(RuntimeConfig.builder().build(), null));
     }
 
     @Test
@@ -59,10 +59,10 @@ class RuntimeSettingsValidatorTest {
         RuntimeConfig config = RuntimeConfig.builder()
                 .telegram(RuntimeConfig.TelegramConfig.builder().build())
                 .llm(RuntimeConfig.LlmConfig.builder().providers(new java.util.LinkedHashMap<>()).build())
-                .hive(RuntimeConfig.HiveConfig.builder().enabled(false).build())
+                .hive(RuntimeConfig.HiveConfig.builder().enabled(false).managedByProperties(true).build())
                 .build();
 
-        validator.validateRuntimeConfigUpdate(RuntimeConfig.builder().build(), config, false);
+        validator.validateRuntimeConfigUpdate(RuntimeConfig.builder().build(), config);
 
         assertEquals(List.of(), config.getTelegram().getAllowedUsers());
     }
@@ -71,10 +71,10 @@ class RuntimeSettingsValidatorTest {
     void shouldCreateMissingTelegramConfigDuringFullValidation() {
         RuntimeConfig config = RuntimeConfig.builder()
                 .llm(RuntimeConfig.LlmConfig.builder().providers(new java.util.LinkedHashMap<>()).build())
-                .hive(RuntimeConfig.HiveConfig.builder().enabled(false).build())
+                .hive(RuntimeConfig.HiveConfig.builder().enabled(false).managedByProperties(true).build())
                 .build();
 
-        validator.validateRuntimeConfigUpdate(RuntimeConfig.builder().build(), config, false);
+        validator.validateRuntimeConfigUpdate(RuntimeConfig.builder().build(), config);
 
         assertEquals(List.of(), config.getTelegram().getAllowedUsers());
     }
@@ -280,13 +280,13 @@ class RuntimeSettingsValidatorTest {
     @Test
     void shouldRejectManagedHiveMutation() {
         RuntimeConfig current = RuntimeConfig.builder()
-                .hive(RuntimeConfig.HiveConfig.builder().enabled(false).build())
+                .hive(RuntimeConfig.HiveConfig.builder().enabled(false).managedByProperties(true).build())
                 .build();
         RuntimeConfig.HiveConfig incoming = RuntimeConfig.HiveConfig.builder()
                 .enabled(true)
                 .build();
 
-        assertThrows(IllegalStateException.class, () -> validator.rejectManagedHiveMutation(current, incoming, true));
+        assertThrows(IllegalStateException.class, () -> validator.rejectManagedHiveMutation(current, incoming));
     }
 
     @Test
@@ -684,19 +684,19 @@ class RuntimeSettingsValidatorTest {
                 .build();
 
         assertThrows(IllegalArgumentException.class,
-                () -> validator.validateRuntimeConfigUpdate(RuntimeConfig.builder().build(), config, false));
+                () -> validator.validateRuntimeConfigUpdate(RuntimeConfig.builder().build(), config));
 
         config.getSelfEvolving().getTactics().getSearch().getEmbeddings().getLocal().setStartupTimeoutMs(5000);
         config.getSelfEvolving().getTactics().getSearch().getEmbeddings().getLocal()
                 .setMinimumRuntimeVersion("bad version");
 
         assertThrows(IllegalArgumentException.class,
-                () -> validator.validateRuntimeConfigUpdate(RuntimeConfig.builder().build(), config, false));
+                () -> validator.validateRuntimeConfigUpdate(RuntimeConfig.builder().build(), config));
 
         config.getSelfEvolving().getTactics().getSearch().getEmbeddings().getLocal()
                 .setMinimumRuntimeVersion("0.19.0");
 
-        validator.validateRuntimeConfigUpdate(RuntimeConfig.builder().build(), config, false);
+        validator.validateRuntimeConfigUpdate(RuntimeConfig.builder().build(), config);
 
         RuntimeConfig.SelfEvolvingTacticEmbeddingsLocalConfig localConfig = config.getSelfEvolving()
                 .getTactics()
