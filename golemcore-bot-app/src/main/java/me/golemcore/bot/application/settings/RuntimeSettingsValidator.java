@@ -415,6 +415,8 @@ public class RuntimeSettingsValidator {
         validateNullableInteger(tracingConfig.getMaxSnapshotSizeKb(), 1, 10240, "tracing.maxSnapshotSizeKb");
         validateNullableInteger(tracingConfig.getMaxSnapshotsPerSpan(), 1, 1000, "tracing.maxSnapshotsPerSpan");
         validateNullableInteger(tracingConfig.getMaxTracesPerSession(), 1, 10000, "tracing.maxTracesPerSession");
+        validateNullableDouble(tracingConfig.getResiliencePayloadSampleRate(), 0.0, 1.0,
+                "tracing.resiliencePayloadSampleRate");
     }
 
     public void validateHiveConfig(RuntimeConfig.HiveConfig hiveConfig) {

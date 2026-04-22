@@ -4,6 +4,8 @@ import org.slf4j.MDC;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.function.Supplier;
 
 /**
  * Utility helpers for scoped MDC propagation across scheduler and agent loop
@@ -36,6 +38,25 @@ public final class MdcSupport {
         try (Scope ignored = withContext(context)) {
             runnable.run();
         }
+    }
+
+    /**
+     * Submits {@code supplier} to the default async pool while propagating the
+     * caller's MDC into the worker thread. The captured MDC is restored around the
+     * supplier invocation so log events emitted from inside carry the same
+     * trace/span fields the caller had.
+     */
+    public static <T> CompletableFuture<T> supplyAsyncWithMdc(Supplier<T> supplier) {
+        Map<String, String> captured = capture();
+        return CompletableFuture.supplyAsync(() -> {
+            Map<String, String> previous = capture();
+            try {
+                restore(captured);
+                return supplier.get();
+            } finally {
+                restore(previous);
+            }
+        });
     }
 
     public static void restore(Map<String, String> context) {

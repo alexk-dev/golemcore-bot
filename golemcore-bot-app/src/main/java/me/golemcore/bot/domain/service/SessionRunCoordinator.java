@@ -53,6 +53,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Coordinates execution of {@link AgentLoop} per session.
@@ -92,6 +93,7 @@ public class SessionRunCoordinator implements SessionRunDispatchPort {
             .synchronizedMap(new IdentityHashMap<>());
     private final Map<Message, List<Runnable>> pendingStartCallbacks = Collections
             .synchronizedMap(new IdentityHashMap<>());
+    private final AtomicLong realUserActivitySequence = new AtomicLong();
 
     public SessionRunCoordinator(SessionPort sessionPort, AgentLoop agentLoop, ExecutorService sessionRunExecutor,
             RuntimeEventService runtimeEventService, RuntimeConfigService runtimeConfigService,
@@ -108,9 +110,10 @@ public class SessionRunCoordinator implements SessionRunDispatchPort {
 
     public void enqueue(Message inbound) {
         Objects.requireNonNull(inbound, "inbound");
-        if (delayedSessionActionService != null
-                && !inbound.isInternalMessage()
-                && !AutoRunContextSupport.isAutoMessage(inbound)) {
+        Long activitySequence = isRealUserActivity(inbound)
+                ? Long.valueOf(realUserActivitySequence.incrementAndGet())
+                : null;
+        if (delayedSessionActionService != null && activitySequence != null) {
             try {
                 delayedSessionActionService.cancelOnUserActivity(inbound);
             } catch (RuntimeException e) { // NOSONAR - inbound delivery must remain available
@@ -120,7 +123,17 @@ public class SessionRunCoordinator implements SessionRunDispatchPort {
         }
         SessionKey key = new SessionKey(inbound.getChannelType(), inbound.getChatId());
         SessionRunner runner = runners.computeIfAbsent(key, SessionRunner::new);
-        runner.enqueue(inbound);
+        runner.enqueue(inbound, activitySequence);
+    }
+
+    public boolean enqueueInternalContinuationIfNoNewerRealUserActivity(
+            Message inbound,
+            long baselineRealUserActivitySequence) {
+        Objects.requireNonNull(inbound, "inbound");
+        SessionKey key = new SessionKey(inbound.getChannelType(), inbound.getChatId());
+        SessionRunner runner = runners.computeIfAbsent(key, SessionRunner::new);
+        return runner.enqueueInternalContinuationIfNoNewerRealUserActivity(
+                inbound, baselineRealUserActivitySequence);
     }
 
     /**
@@ -208,7 +221,9 @@ public class SessionRunCoordinator implements SessionRunDispatchPort {
         private final Object lock = new Object();
         private final Deque<Message> queuedSteeringMessages = new ArrayDeque<>();
         private final Deque<Message> queuedFollowUpMessages = new ArrayDeque<>();
+        private final Deque<Message> queuedInternalContinuationMessages = new ArrayDeque<>();
 
+        private long latestRealUserActivitySequence = 0L;
         private boolean pausedAfterStop = false;
         private Optional<Future<?>> runningTask = Optional.empty();
         private Message runningInbound;
@@ -217,12 +232,28 @@ public class SessionRunCoordinator implements SessionRunDispatchPort {
             this.key = key;
         }
 
-        void enqueue(Message inbound) {
+        void enqueue(Message inbound, Long activitySequence) {
             Objects.requireNonNull(inbound, "inbound");
 
             String queueKind = resolveQueueKind(inbound);
             synchronized (lock) {
+                if (activitySequence != null) {
+                    recordRealUserActivityLocked(inbound, activitySequence.longValue());
+                }
+                if (shouldDropStaleInternalContinuationLocked(inbound, queueKind)) {
+                    return;
+                }
                 if (pausedAfterStop) {
+                    if (inbound.isInternalMessage()) {
+                        // Internal traffic (resilience retries, follow-through nudges, delayed
+                        // wake-ups) must not override a user-issued /stop. Drop silently and
+                        // keep the pause intact.
+                        rejectPendingCompletion(inbound, "Dropped internal inbound after stop");
+                        log.debug(
+                                "[SessionRunCoordinator] dropped internal inbound during paused-after-stop: channel={}, chatId={}",
+                                key.channelType(), key.chatId());
+                        return;
+                    }
                     resumeWithInbound(inbound);
                     return;
                 }
@@ -239,6 +270,54 @@ public class SessionRunCoordinator implements SessionRunDispatchPort {
 
             markQueueKind(inbound, queueKind);
             startRun(inbound, new ArrayDeque<>());
+        }
+
+        boolean enqueueInternalContinuationIfNoNewerRealUserActivity(
+                Message inbound,
+                long baselineRealUserActivitySequence) {
+            Objects.requireNonNull(inbound, "inbound");
+
+            long normalizedBaseline = Math.max(0L, baselineRealUserActivitySequence);
+            synchronized (lock) {
+                if (latestRealUserActivitySequence > normalizedBaseline) {
+                    log.debug(
+                            "[SessionRunCoordinator] dropped internal continuation due to newer user activity: channel={}, chatId={}",
+                            key.channelType(), key.chatId());
+                    emitInternalContinuationMetric(inbound,
+                            "follow_through.nudge.canceled_user_activity",
+                            Map.of(
+                                    "reason", "newer_real_user_activity",
+                                    "baseline_sequence", normalizedBaseline,
+                                    "latest_sequence", latestRealUserActivitySequence));
+                    return false;
+                }
+                attachRealUserActivitySequence(inbound,
+                        normalizedBaseline > 0L ? normalizedBaseline : latestRealUserActivitySequence);
+                if (pausedAfterStop) {
+                    rejectPendingCompletion(inbound, "Dropped internal inbound after stop");
+                    log.debug(
+                            "[SessionRunCoordinator] dropped internal continuation during paused-after-stop: channel={}, chatId={}",
+                            key.channelType(), key.chatId());
+                    emitInternalContinuationMetric(inbound,
+                            "follow_through.nudge.canceled_user_activity",
+                            Map.of(
+                                    "reason", "paused_after_stop",
+                                    "baseline_sequence", normalizedBaseline,
+                                    "latest_sequence", latestRealUserActivitySequence));
+                    return false;
+                }
+                if (isRunning()
+                        || !queuedSteeringMessages.isEmpty()
+                        || !queuedFollowUpMessages.isEmpty()
+                        || !queuedInternalContinuationMessages.isEmpty()) {
+                    enqueueInternalContinuation(inbound);
+                    return true;
+                }
+            }
+
+            markQueueKind(inbound, resolveQueueKind(inbound));
+            startRun(inbound, new ArrayDeque<>());
+            return true;
         }
 
         void requestStop(String expectedRunId, String expectedCommandId) {
@@ -258,7 +337,10 @@ public class SessionRunCoordinator implements SessionRunDispatchPort {
                     }
                 }
                 shouldPause = !targetedHiveStop
-                        && (isRunning() || !queuedSteeringMessages.isEmpty() || !queuedFollowUpMessages.isEmpty());
+                        && (isRunning()
+                                || !queuedSteeringMessages.isEmpty()
+                                || !queuedFollowUpMessages.isEmpty()
+                                || !queuedInternalContinuationMessages.isEmpty());
                 pausedAfterStop = shouldPause;
                 taskToCancel = runningTask.orElse(null);
             }
@@ -317,6 +399,10 @@ public class SessionRunCoordinator implements SessionRunDispatchPort {
                 markQueueKind(steering, ContextAttributes.TURN_QUEUE_KIND_STEERING);
                 queued.add(steering);
             }
+            while (!queuedInternalContinuationMessages.isEmpty()) {
+                Message internalContinuation = queuedInternalContinuationMessages.removeFirst();
+                rejectPendingCompletion(internalContinuation, "Skipped after stop request");
+            }
 
             queued.sort(Comparator.comparing(this::resolveTimestamp));
             return new ArrayDeque<>(queued);
@@ -335,6 +421,7 @@ public class SessionRunCoordinator implements SessionRunDispatchPort {
                 return isRunning()
                         || !queuedSteeringMessages.isEmpty()
                         || !queuedFollowUpMessages.isEmpty()
+                        || !queuedInternalContinuationMessages.isEmpty()
                         || pausedAfterStop;
             }
         }
@@ -426,7 +513,7 @@ public class SessionRunCoordinator implements SessionRunDispatchPort {
             }
             Message internalRetry = dequeueInternalRetryLocked();
             if (internalRetry != null) {
-                markQueueKind(internalRetry, ContextAttributes.TURN_QUEUE_KIND_INTERNAL_RETRY);
+                markQueueKind(internalRetry, resolveQueueKind(internalRetry));
                 return internalRetry;
             }
             if (!queuedFollowUpMessages.isEmpty()) {
@@ -439,7 +526,48 @@ public class SessionRunCoordinator implements SessionRunDispatchPort {
                 markQueueKind(nextFollowUp, resolveQueueKind(nextFollowUp));
                 return nextFollowUp;
             }
+            if (!queuedInternalContinuationMessages.isEmpty()) {
+                Message nextInternalContinuation = queuedInternalContinuationMessages.removeFirst();
+                markQueueKind(nextInternalContinuation, resolveQueueKind(nextInternalContinuation));
+                return nextInternalContinuation;
+            }
             return null;
+        }
+
+        private boolean shouldDropStaleInternalContinuationLocked(Message inbound, String queueKind) {
+            if (!isInternalContinuationKind(queueKind)) {
+                return false;
+            }
+            long baselineRealUserActivitySequence = resolveRealUserActivitySequence(inbound);
+            if (latestRealUserActivitySequence > baselineRealUserActivitySequence) {
+                rejectPendingCompletion(inbound,
+                        "Dropped stale internal continuation after newer real user activity");
+                log.debug(
+                        "[SessionRunCoordinator] dropped stale internal continuation: channel={}, chatId={}",
+                        key.channelType(), key.chatId());
+                emitInternalContinuationMetric(inbound,
+                        "follow_through.nudge.canceled_user_activity",
+                        Map.of(
+                                "reason", "stale_internal_continuation",
+                                "baseline_sequence", baselineRealUserActivitySequence,
+                                "latest_sequence", latestRealUserActivitySequence));
+                return true;
+            }
+            attachRealUserActivitySequence(inbound, baselineRealUserActivitySequence > 0L
+                    ? baselineRealUserActivitySequence
+                    : latestRealUserActivitySequence);
+            return false;
+        }
+
+        private long resolveRealUserActivitySequence(Message message) {
+            if (message == null || message.getMetadata() == null) {
+                return 0L;
+            }
+            Object raw = message.getMetadata().get(ContextAttributes.MESSAGE_REAL_USER_ACTIVITY_SEQUENCE);
+            if (raw instanceof Number number) {
+                return Math.max(0L, number.longValue());
+            }
+            return 0L;
         }
 
         private void enqueueSteering(Message inbound) {
@@ -458,11 +586,11 @@ public class SessionRunCoordinator implements SessionRunDispatchPort {
 
         private void enqueueFollowUp(Message inbound) {
             String queueKind = resolveQueueKind(inbound);
-            if (ContextAttributes.TURN_QUEUE_KIND_INTERNAL_RETRY.equals(queueKind)) {
+            if (isInternalRetryKind(queueKind)) {
                 java.util.Iterator<Message> iterator = queuedFollowUpMessages.iterator();
                 while (iterator.hasNext()) {
                     Message queued = iterator.next();
-                    if (!ContextAttributes.TURN_QUEUE_KIND_INTERNAL_RETRY.equals(resolveQueueKind(queued))) {
+                    if (!isInternalRetryKind(resolveQueueKind(queued))) {
                         continue;
                     }
                     iterator.remove();
@@ -471,7 +599,11 @@ public class SessionRunCoordinator implements SessionRunDispatchPort {
                 enqueueWithBound(queuedFollowUpMessages, inbound, "internal-retry");
                 return;
             }
-            if (ContextAttributes.TURN_QUEUE_KIND_DELAYED_ACTION.equals(queueKind)) {
+            if (isInternalContinuationKind(queueKind)) {
+                enqueueInternalContinuation(inbound);
+                return;
+            }
+            if (isDelayedActionQueueKind(queueKind)) {
                 enqueueFollowUpWithBound(inbound, "delayed-action");
                 return;
             }
@@ -488,6 +620,59 @@ public class SessionRunCoordinator implements SessionRunDispatchPort {
                         "[SessionRunCoordinator] follow-up queue mode one-at-a-time: replaced pending follow-up message");
             }
             enqueueFollowUpWithBound(inbound, "follow-up");
+        }
+
+        private void enqueueInternalContinuation(Message inbound) {
+            while (!queuedInternalContinuationMessages.isEmpty()) {
+                Message replaced = queuedInternalContinuationMessages.removeFirst();
+                rejectPendingCompletion(replaced, "Replaced by a newer internal continuation message");
+            }
+            queuedInternalContinuationMessages.addLast(inbound);
+        }
+
+        private void recordRealUserActivityLocked(Message inbound, long activitySequence) {
+            latestRealUserActivitySequence = Math.max(latestRealUserActivitySequence, activitySequence);
+            attachRealUserActivitySequence(inbound, latestRealUserActivitySequence);
+            dropQueuedInternalContinuationsLocked("Cancelled by newer real user activity");
+        }
+
+        private void dropQueuedInternalContinuationsLocked(String reason) {
+            while (!queuedInternalContinuationMessages.isEmpty()) {
+                Message queued = queuedInternalContinuationMessages.removeFirst();
+                rejectPendingCompletion(queued, reason);
+                emitInternalContinuationMetric(queued,
+                        "follow_through.nudge.canceled_user_activity",
+                        Map.of(
+                                "reason", "queued_internal_continuation_cleared",
+                                "latest_sequence", latestRealUserActivitySequence));
+            }
+        }
+
+        private void emitInternalContinuationMetric(Message inbound, String metricName,
+                Map<String, Object> attributes) {
+            if (metricName == null || metricName.isBlank() || inbound == null) {
+                return;
+            }
+            Map<String, Object> metricAttributes = new LinkedHashMap<>();
+            if (attributes != null) {
+                metricAttributes.putAll(attributes);
+            }
+            String queueKind = resolveQueueKind(inbound);
+            metricAttributes.put("queue_kind", queueKind);
+            metricAttributes.put("internal_kind",
+                    readMetadataString(inbound.getMetadata(), ContextAttributes.MESSAGE_INTERNAL_KIND));
+            ResilienceObservabilitySupport.emitMessageMetric(log, metricName, inbound, metricAttributes);
+        }
+
+        private void attachRealUserActivitySequence(Message message, long activitySequence) {
+            if (message == null) {
+                return;
+            }
+            Map<String, Object> metadata = message.getMetadata() != null
+                    ? new LinkedHashMap<>(message.getMetadata())
+                    : new LinkedHashMap<>();
+            metadata.put(ContextAttributes.MESSAGE_REAL_USER_ACTIVITY_SEQUENCE, activitySequence);
+            message.setMetadata(metadata);
         }
 
         private void enqueueFollowUpWithBound(Message inbound, String queueLabel) {
@@ -513,10 +698,11 @@ public class SessionRunCoordinator implements SessionRunDispatchPort {
             java.util.Iterator<Message> iterator = queuedFollowUpMessages.iterator();
             while (iterator.hasNext()) {
                 Message queued = iterator.next();
-                if (ContextAttributes.TURN_QUEUE_KIND_INTERNAL_RETRY.equals(resolveQueueKind(queued))) {
+                String queueKind = resolveQueueKind(queued);
+                if (isInternalRetryKind(queueKind)) {
                     continue;
                 }
-                if (ContextAttributes.TURN_QUEUE_KIND_DELAYED_ACTION.equals(resolveQueueKind(queued))) {
+                if (isDelayedActionQueueKind(queueKind)) {
                     continue;
                 }
                 iterator.remove();
@@ -543,7 +729,7 @@ public class SessionRunCoordinator implements SessionRunDispatchPort {
         private Message dequeueInternalRetryLocked() {
             Message internalRetry = null;
             for (Message queuedMessage : queuedFollowUpMessages) {
-                if (ContextAttributes.TURN_QUEUE_KIND_INTERNAL_RETRY.equals(resolveQueueKind(queuedMessage))) {
+                if (isInternalRetryKind(resolveQueueKind(queuedMessage))) {
                     internalRetry = queuedMessage;
                     break;
                 }
@@ -557,8 +743,8 @@ public class SessionRunCoordinator implements SessionRunDispatchPort {
         private Message mergeQueuedFollowUpMessagesLocked() {
             Message first = queuedFollowUpMessages.removeFirst();
             String firstQueueKind = resolveQueueKind(first);
-            if (ContextAttributes.TURN_QUEUE_KIND_DELAYED_ACTION.equals(firstQueueKind)) {
-                markQueueKind(first, ContextAttributes.TURN_QUEUE_KIND_DELAYED_ACTION);
+            if (isDelayedActionQueueKind(firstQueueKind)) {
+                markQueueKind(first, firstQueueKind);
                 return first;
             }
             StringBuilder builder = new StringBuilder();
@@ -580,8 +766,7 @@ public class SessionRunCoordinator implements SessionRunDispatchPort {
                     break;
                 }
                 String nextQueueKind = resolveQueueKind(next);
-                if (ContextAttributes.TURN_QUEUE_KIND_INTERNAL_RETRY.equals(nextQueueKind)
-                        || ContextAttributes.TURN_QUEUE_KIND_DELAYED_ACTION.equals(nextQueueKind)) {
+                if (isInternalRetryKind(nextQueueKind) || isDelayedActionQueueKind(nextQueueKind)) {
                     break;
                 }
                 next = queuedFollowUpMessages.removeFirst();
@@ -656,7 +841,9 @@ public class SessionRunCoordinator implements SessionRunDispatchPort {
         private boolean isEvictable() {
             synchronized (lock) {
                 return !pausedAfterStop && !isRunning() && queuedSteeringMessages.isEmpty()
-                        && queuedFollowUpMessages.isEmpty() && runningInbound == null;
+                        && queuedFollowUpMessages.isEmpty()
+                        && queuedInternalContinuationMessages.isEmpty()
+                        && runningInbound == null;
             }
         }
 
@@ -707,6 +894,12 @@ public class SessionRunCoordinator implements SessionRunDispatchPort {
             log.info("[SessionRunCoordinator] flushed {} queued messages ({} -> {})",
                     prefix.size(), before, session.getMessages().size());
         }
+    }
+
+    private boolean isRealUserActivity(Message inbound) {
+        return inbound != null
+                && !inbound.isInternalMessage()
+                && !AutoRunContextSupport.isAutoMessage(inbound);
     }
 
     private void registerPendingCompletion(Message message, CompletableFuture<Void> completion) {
@@ -832,11 +1025,26 @@ public class SessionRunCoordinator implements SessionRunDispatchPort {
             if (ContextAttributes.TURN_QUEUE_KIND_STEERING.equals(normalized)) {
                 return ContextAttributes.TURN_QUEUE_KIND_STEERING;
             }
+            if (ContextAttributes.TURN_QUEUE_KIND_INTERNAL_MODEL_RETRY.equals(normalized)) {
+                return ContextAttributes.TURN_QUEUE_KIND_INTERNAL_MODEL_RETRY;
+            }
             if (ContextAttributes.TURN_QUEUE_KIND_INTERNAL_RETRY.equals(normalized)) {
                 return ContextAttributes.TURN_QUEUE_KIND_INTERNAL_RETRY;
             }
+            if (ContextAttributes.TURN_QUEUE_KIND_INTERNAL_DELAYED_ACTION.equals(normalized)) {
+                return ContextAttributes.TURN_QUEUE_KIND_INTERNAL_DELAYED_ACTION;
+            }
             if (ContextAttributes.TURN_QUEUE_KIND_DELAYED_ACTION.equals(normalized)) {
                 return ContextAttributes.TURN_QUEUE_KIND_DELAYED_ACTION;
+            }
+            if (ContextAttributes.TURN_QUEUE_KIND_INTERNAL_FOLLOW_THROUGH.equals(normalized)) {
+                return ContextAttributes.TURN_QUEUE_KIND_INTERNAL_FOLLOW_THROUGH;
+            }
+            if (ContextAttributes.TURN_QUEUE_KIND_INTERNAL_AUTO_PROCEED.equals(normalized)) {
+                return ContextAttributes.TURN_QUEUE_KIND_INTERNAL_AUTO_PROCEED;
+            }
+            if (ContextAttributes.TURN_QUEUE_KIND_INTERNAL_CONTINUATION.equals(normalized)) {
+                return ContextAttributes.TURN_QUEUE_KIND_INTERNAL_CONTINUATION;
             }
             if (ContextAttributes.TURN_QUEUE_KIND_FOLLOW_UP.equals(normalized)) {
                 return ContextAttributes.TURN_QUEUE_KIND_FOLLOW_UP;
@@ -847,6 +1055,22 @@ public class SessionRunCoordinator implements SessionRunDispatchPort {
             return ContextAttributes.TURN_QUEUE_KIND_FOLLOW_UP;
         }
         return ContextAttributes.TURN_QUEUE_KIND_FOLLOW_UP;
+    }
+
+    private boolean isInternalRetryKind(String queueKind) {
+        return ContextAttributes.TURN_QUEUE_KIND_INTERNAL_MODEL_RETRY.equals(queueKind)
+                || ContextAttributes.TURN_QUEUE_KIND_INTERNAL_RETRY.equals(queueKind);
+    }
+
+    private boolean isDelayedActionQueueKind(String queueKind) {
+        return ContextAttributes.TURN_QUEUE_KIND_INTERNAL_DELAYED_ACTION.equals(queueKind)
+                || ContextAttributes.TURN_QUEUE_KIND_DELAYED_ACTION.equals(queueKind);
+    }
+
+    private boolean isInternalContinuationKind(String queueKind) {
+        return ContextAttributes.TURN_QUEUE_KIND_INTERNAL_FOLLOW_THROUGH.equals(queueKind)
+                || ContextAttributes.TURN_QUEUE_KIND_INTERNAL_AUTO_PROCEED.equals(queueKind)
+                || ContextAttributes.TURN_QUEUE_KIND_INTERNAL_CONTINUATION.equals(queueKind);
     }
 
     private void markInterruptRequested(SessionKey key) {

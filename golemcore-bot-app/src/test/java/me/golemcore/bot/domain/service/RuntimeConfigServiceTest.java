@@ -554,6 +554,7 @@ class RuntimeConfigServiceTest {
         assertFalse(service.isTraceOutboundPayloadCaptureEnabled());
         assertFalse(service.isTraceToolPayloadCaptureEnabled());
         assertFalse(service.isTraceLlmPayloadCaptureEnabled());
+        assertEquals(0.0d, service.getTraceResiliencePayloadSampleRate());
     }
 
     @Test
@@ -570,6 +571,7 @@ class RuntimeConfigServiceTest {
         tracing.setCaptureOutboundPayloads(null);
         tracing.setCaptureToolPayloads(null);
         tracing.setCaptureLlmPayloads(null);
+        tracing.setResiliencePayloadSampleRate(null);
         config.setTracing(tracing);
         setCachedConfig(config);
 
@@ -583,6 +585,7 @@ class RuntimeConfigServiceTest {
         assertFalse(service.isTraceOutboundPayloadCaptureEnabled());
         assertFalse(service.isTraceToolPayloadCaptureEnabled());
         assertFalse(service.isTraceLlmPayloadCaptureEnabled());
+        assertEquals(0.0d, service.getTraceResiliencePayloadSampleRate());
     }
 
     @Test
@@ -599,6 +602,7 @@ class RuntimeConfigServiceTest {
         tracing.setCaptureOutboundPayloads(true);
         tracing.setCaptureToolPayloads(true);
         tracing.setCaptureLlmPayloads(true);
+        tracing.setResiliencePayloadSampleRate(0.25d);
         config.setTracing(tracing);
         setCachedConfig(config);
 
@@ -612,6 +616,18 @@ class RuntimeConfigServiceTest {
         assertTrue(service.isTraceOutboundPayloadCaptureEnabled());
         assertTrue(service.isTraceToolPayloadCaptureEnabled());
         assertTrue(service.isTraceLlmPayloadCaptureEnabled());
+        assertEquals(0.25d, service.getTraceResiliencePayloadSampleRate());
+    }
+
+    @Test
+    void shouldClampInvalidResiliencePayloadSampleRateToDefault() throws Exception {
+        RuntimeConfig config = service.getRuntimeConfig();
+        RuntimeConfig.TracingConfig tracing = RuntimeConfig.TracingConfig.builder().build();
+        tracing.setResiliencePayloadSampleRate(2.5d);
+        config.setTracing(tracing);
+        service.updateRuntimeConfig(config);
+
+        assertEquals(0.0d, service.getTraceResiliencePayloadSampleRate());
     }
 
     @Test
@@ -2066,6 +2082,26 @@ class RuntimeConfigServiceTest {
 
         assertFalse(service.isResilienceEnabled());
         assertFalse(service.getResilienceConfig().getEnabled());
+    }
+
+    @Test
+    void shouldDisableFollowThroughWhenMasterResilienceFlagIsOffEvenIfFollowThroughEnabled() {
+        RuntimeConfig config = service.snapshotRuntimeConfig();
+        config.getResilience().setEnabled(false);
+        RuntimeConfig.FollowThroughConfig followThrough = RuntimeConfig.FollowThroughConfig.builder()
+                .enabled(true)
+                .modelTier("routing")
+                .timeoutSeconds(5)
+                .maxChainDepth(1)
+                .build();
+        config.getResilience().setFollowThrough(followThrough);
+        service.updateRuntimeConfig(config);
+
+        assertFalse(service.isResilienceEnabled());
+        assertTrue(service.getFollowThroughConfig().getEnabled(),
+                "sub-flag stays true — fix must be on the computed aggregate, not the raw field");
+        assertFalse(service.isFollowThroughEnabled(),
+                "master resilience.enabled=false must short-circuit follow-through regardless of its own flag");
     }
 
     @Test

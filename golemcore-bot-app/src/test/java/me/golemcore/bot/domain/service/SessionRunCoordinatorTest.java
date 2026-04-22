@@ -1,6 +1,7 @@
 package me.golemcore.bot.domain.service;
 
 import me.golemcore.bot.port.outbound.RuntimeEventPublishPort;
+import me.golemcore.bot.port.outbound.HiveEventPublishPort;
 import me.golemcore.bot.domain.loop.AgentLoop;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.AgentSession;
@@ -1119,6 +1120,173 @@ class SessionRunCoordinatorTest {
     }
 
     @Test
+    void shouldAllowDirectInternalContinuationSubmissionWithoutNewerRealUserActivity() throws Exception {
+        SessionPort sessionPort = mock(SessionPort.class);
+        AgentLoop agentLoop = mock(AgentLoop.class);
+        RuntimeEventService runtimeEventService = mock(RuntimeEventService.class);
+        RuntimeConfigService runtimeConfigService = runtimeConfigService(false, "one-at-a-time", "one-at-a-time");
+
+        try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
+            SessionRunCoordinator coordinator = new SessionRunCoordinator(sessionPort, agentLoop, executor,
+                    runtimeEventService, runtimeConfigService, null, mock(HiveEventPublishPort.class));
+
+            Message continuation = internalContinuation("continue-now", 0L);
+            CountDownLatch processed = new CountDownLatch(1);
+            org.mockito.Mockito.doAnswer(invocation -> {
+                processed.countDown();
+                return null;
+            }).when(agentLoop).processMessage(argThat(message -> "continue-now".equals(message.getContent())));
+
+            assertTrue(coordinator.enqueueInternalContinuationIfNoNewerRealUserActivity(continuation, 0L));
+            assertEquals(0L, ((Number) continuation.getMetadata()
+                    .get(ContextAttributes.MESSAGE_REAL_USER_ACTIVITY_SEQUENCE)).longValue());
+            assertTrue(processed.await(2, TimeUnit.SECONDS));
+        }
+    }
+
+    @Test
+    void shouldRejectInternalContinuationImmediatelyWhenNewerRealUserActivityAlreadyExists() throws Exception {
+        SessionPort sessionPort = mock(SessionPort.class);
+        AgentLoop agentLoop = mock(AgentLoop.class);
+        RuntimeEventService runtimeEventService = mock(RuntimeEventService.class);
+        RuntimeConfigService runtimeConfigService = runtimeConfigService(false, "one-at-a-time", "one-at-a-time");
+
+        try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
+            SessionRunCoordinator coordinator = new SessionRunCoordinator(sessionPort, agentLoop, executor,
+                    runtimeEventService, runtimeConfigService, null, mock(HiveEventPublishPort.class));
+
+            Gate gate = new Gate();
+            org.mockito.Mockito.doAnswer(invocation -> {
+                Message inbound = invocation.getArgument(0);
+                if ("real-user".equals(inbound.getContent())) {
+                    gate.await();
+                }
+                return null;
+            }).when(agentLoop).processMessage(any(Message.class));
+
+            Message realUser = user("real-user");
+            coordinator.enqueue(realUser);
+            gate.awaitStarted();
+
+            Message continuation = autoProceedContinuation("continue-stale", 0L);
+            assertFalse(coordinator.enqueueInternalContinuationIfNoNewerRealUserActivity(continuation, 0L));
+            verify(agentLoop, never())
+                    .processMessage(argThat(message -> "continue-stale".equals(message.getContent())));
+
+            gate.release();
+            assertTrue(waitForRunnerCount(coordinator, 0, 2, TimeUnit.SECONDS));
+        }
+    }
+
+    @Test
+    void shouldCancelQueuedInternalContinuationWhenRealUserFollowUpArrives() throws Exception {
+        SessionPort sessionPort = mock(SessionPort.class);
+        AgentLoop agentLoop = mock(AgentLoop.class);
+        RuntimeEventService runtimeEventService = mock(RuntimeEventService.class);
+        RuntimeConfigService runtimeConfigService = runtimeConfigService(false, "one-at-a-time", "one-at-a-time");
+
+        try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
+            SessionRunCoordinator coordinator = new SessionRunCoordinator(sessionPort, agentLoop, executor,
+                    runtimeEventService, runtimeConfigService, null, mock(HiveEventPublishPort.class));
+
+            Message a = user("A");
+            Message followUp = user("follow-up");
+            Message continuation = internalContinuation("continue-old-plan", 1L);
+
+            Gate gateA = new Gate();
+            List<String> processedAfterA = new ArrayList<>();
+            CountDownLatch queuedProcessed = new CountDownLatch(1);
+
+            org.mockito.Mockito.doAnswer(invocation -> {
+                Message inbound = invocation.getArgument(0);
+                if ("A".equals(inbound.getContent())) {
+                    gateA.await();
+                } else {
+                    synchronized (processedAfterA) {
+                        processedAfterA.add(inbound.getContent());
+                    }
+                    queuedProcessed.countDown();
+                }
+                return null;
+            }).when(agentLoop).processMessage(any(Message.class));
+
+            coordinator.enqueue(a);
+            gateA.awaitStarted();
+
+            Number baseline = (Number) a.getMetadata().get(ContextAttributes.MESSAGE_REAL_USER_ACTIVITY_SEQUENCE);
+            assertEquals(1L, baseline.longValue());
+            coordinator.enqueue(continuation);
+            assertEquals(1L, ((Number) continuation.getMetadata()
+                    .get(ContextAttributes.MESSAGE_REAL_USER_ACTIVITY_SEQUENCE)).longValue());
+
+            coordinator.enqueue(followUp);
+            gateA.release();
+
+            assertTrue(queuedProcessed.await(2, TimeUnit.SECONDS));
+            assertTrue(waitForRunnerCount(coordinator, 0, 2, TimeUnit.SECONDS));
+
+            List<String> processedSnapshot;
+            synchronized (processedAfterA) {
+                processedSnapshot = new ArrayList<>(processedAfterA);
+            }
+            assertEquals(List.of("follow-up"), processedSnapshot);
+        }
+    }
+
+    @Test
+    void shouldSkipInternalContinuationWhenNewerRealUserActivityAlreadyQueued() throws Exception {
+        SessionPort sessionPort = mock(SessionPort.class);
+        AgentLoop agentLoop = mock(AgentLoop.class);
+        RuntimeEventService runtimeEventService = mock(RuntimeEventService.class);
+        RuntimeConfigService runtimeConfigService = runtimeConfigService(false, "one-at-a-time", "one-at-a-time");
+
+        try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
+            SessionRunCoordinator coordinator = new SessionRunCoordinator(sessionPort, agentLoop, executor,
+                    runtimeEventService, runtimeConfigService, null, mock(HiveEventPublishPort.class));
+
+            Message a = user("A");
+            Message followUp = user("follow-up");
+            Message continuation = autoProceedContinuation("continue-old-plan", 1L);
+
+            Gate gateA = new Gate();
+            List<String> processedAfterA = new ArrayList<>();
+            CountDownLatch queuedProcessed = new CountDownLatch(1);
+
+            org.mockito.Mockito.doAnswer(invocation -> {
+                Message inbound = invocation.getArgument(0);
+                if ("A".equals(inbound.getContent())) {
+                    gateA.await();
+                } else {
+                    synchronized (processedAfterA) {
+                        processedAfterA.add(inbound.getContent());
+                    }
+                    queuedProcessed.countDown();
+                }
+                return null;
+            }).when(agentLoop).processMessage(any(Message.class));
+
+            coordinator.enqueue(a);
+            gateA.awaitStarted();
+            Number baseline = (Number) a.getMetadata().get(ContextAttributes.MESSAGE_REAL_USER_ACTIVITY_SEQUENCE);
+            assertEquals(1L, baseline.longValue());
+
+            coordinator.enqueue(followUp);
+            coordinator.enqueue(continuation);
+
+            gateA.release();
+
+            assertTrue(queuedProcessed.await(2, TimeUnit.SECONDS));
+            assertTrue(waitForRunnerCount(coordinator, 0, 2, TimeUnit.SECONDS));
+
+            List<String> processedSnapshot;
+            synchronized (processedAfterA) {
+                processedSnapshot = new ArrayList<>(processedAfterA);
+            }
+            assertEquals(List.of("follow-up"), processedSnapshot);
+        }
+    }
+
+    @Test
     void shouldPreserveInternalRetryWhenLatestFollowUpReplacesOlderFollowUp() throws Exception {
         SessionPort sessionPort = mock(SessionPort.class);
         AgentLoop agentLoop = mock(AgentLoop.class);
@@ -1282,7 +1450,43 @@ class SessionRunCoordinatorTest {
         Map<String, Object> metadata = new LinkedHashMap<>();
         metadata.put(ContextAttributes.MESSAGE_INTERNAL, true);
         metadata.put(ContextAttributes.MESSAGE_INTERNAL_KIND, ContextAttributes.MESSAGE_INTERNAL_KIND_AUTO_CONTINUE);
-        metadata.put(ContextAttributes.TURN_QUEUE_KIND, ContextAttributes.TURN_QUEUE_KIND_INTERNAL_RETRY);
+        metadata.put(ContextAttributes.TURN_QUEUE_KIND, ContextAttributes.TURN_QUEUE_KIND_INTERNAL_MODEL_RETRY);
+        return Message.builder()
+                .role("user")
+                .content(content)
+                .channelType(CHANNEL_TYPE)
+                .chatId(CHAT_ID)
+                .senderId("internal")
+                .timestamp(Instant.EPOCH)
+                .metadata(metadata)
+                .build();
+    }
+
+    private static Message internalContinuation(String content, long baselineRealUserActivitySequence) {
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put(ContextAttributes.MESSAGE_INTERNAL, true);
+        metadata.put(ContextAttributes.MESSAGE_INTERNAL_KIND,
+                ContextAttributes.MESSAGE_INTERNAL_KIND_FOLLOW_THROUGH_NUDGE);
+        metadata.put(ContextAttributes.TURN_QUEUE_KIND, ContextAttributes.TURN_QUEUE_KIND_INTERNAL_FOLLOW_THROUGH);
+        metadata.put(ContextAttributes.MESSAGE_REAL_USER_ACTIVITY_SEQUENCE, baselineRealUserActivitySequence);
+        return Message.builder()
+                .role("user")
+                .content(content)
+                .channelType(CHANNEL_TYPE)
+                .chatId(CHAT_ID)
+                .senderId("internal")
+                .timestamp(Instant.EPOCH)
+                .metadata(metadata)
+                .build();
+    }
+
+    private static Message autoProceedContinuation(String content, long baselineRealUserActivitySequence) {
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put(ContextAttributes.MESSAGE_INTERNAL, true);
+        metadata.put(ContextAttributes.MESSAGE_INTERNAL_KIND,
+                ContextAttributes.MESSAGE_INTERNAL_KIND_AUTO_PROCEED);
+        metadata.put(ContextAttributes.TURN_QUEUE_KIND, ContextAttributes.TURN_QUEUE_KIND_INTERNAL_AUTO_PROCEED);
+        metadata.put(ContextAttributes.MESSAGE_REAL_USER_ACTIVITY_SEQUENCE, baselineRealUserActivitySequence);
         return Message.builder()
                 .role("user")
                 .content(content)
