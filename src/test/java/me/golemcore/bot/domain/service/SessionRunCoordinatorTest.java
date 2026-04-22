@@ -1154,14 +1154,26 @@ class SessionRunCoordinatorTest {
             SessionRunCoordinator coordinator = new SessionRunCoordinator(sessionPort, agentLoop, executor,
                     runtimeEventService, runtimeConfigService, null, mock(HiveEventPublishPort.class));
 
-            coordinator.enqueue(user("real-user"));
-            Message continuation = autoProceedContinuation("continue-stale", 0L);
+            Gate gate = new Gate();
+            org.mockito.Mockito.doAnswer(invocation -> {
+                Message inbound = invocation.getArgument(0);
+                if ("real-user".equals(inbound.getContent())) {
+                    gate.await();
+                }
+                return null;
+            }).when(agentLoop).processMessage(any(Message.class));
 
+            Message realUser = user("real-user");
+            coordinator.enqueue(realUser);
+            gate.awaitStarted();
+
+            Message continuation = autoProceedContinuation("continue-stale", 0L);
             assertFalse(coordinator.enqueueInternalContinuationIfNoNewerRealUserActivity(continuation, 0L));
-            verify(agentLoop, timeout(1000))
-                    .processMessage(argThat(message -> "real-user".equals(message.getContent())));
             verify(agentLoop, never())
                     .processMessage(argThat(message -> "continue-stale".equals(message.getContent())));
+
+            gate.release();
+            assertTrue(waitForRunnerCount(coordinator, 0, 2, TimeUnit.SECONDS));
         }
     }
 
