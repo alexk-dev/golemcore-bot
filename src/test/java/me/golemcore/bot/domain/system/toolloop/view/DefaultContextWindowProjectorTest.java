@@ -15,6 +15,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class DefaultContextWindowProjectorTest {
@@ -235,6 +236,25 @@ class DefaultContextWindowProjectorTest {
         Map<String, Object> report = context.getAttribute(ContextAttributes.CONTEXT_HYGIENE_REPORT);
         assertTrue((Integer) report.get("compressed") > 0);
         assertTrue((Integer) report.get("projectedTokens") <= budget.conversationTokens());
+    }
+
+    @Test
+    void shouldFailBeforeProviderCallWhenMinimalPinnedContextCannotFitBudget() {
+        Message latestUser = user(repeated("latest request", 1_000));
+        Message assistantWithToolCall = assistantToolCall("call-current", "browser");
+        Message hugeToolResult = toolResult("call-current", "browser", largeHtml());
+        List<Message> rawMessages = new ArrayList<>(List.of(latestUser, assistantWithToolCall, hugeToolResult));
+        AgentContext context = AgentContext.builder()
+                .messages(rawMessages)
+                .systemPrompt("system")
+                .build();
+        ContextBudget impossibleBudget = new ContextBudget(32, 8, 1, 1);
+
+        assertThrows(ContextWindowBudgetExceededException.class,
+                () -> projector.project(context, ConversationView.ofMessages(rawMessages), impossibleBudget));
+        assertEquals(largeHtml(), rawMessages.get(2).getContent(),
+                "raw session history must not be mutated even when projection fails");
+        assertFalse(context.getAttributes().containsKey(ContextAttributes.CONTEXT_HYGIENE_REPORT));
     }
 
     @Test

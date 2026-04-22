@@ -186,14 +186,18 @@ class AgentLoopContextWindowExternalE2ETest {
         String systemPrompt = request.path("systemPrompt").asText();
         int systemPromptTokens = TokenEstimator.estimate(systemPrompt);
         int expectedBudget = expectedSystemPromptBudget(maxInputTokens);
-        int estimatedRequestTokens = estimateRequestTokens(request);
+        int providerPayloadTokens = estimateProviderPayloadTokens(request);
+        int traceSnapshotTokens = estimateTraceSnapshotTokens(request);
         int expectedInputBudget = expectedFullRequestBudget(maxInputTokens);
 
         assertFalse(systemPrompt.isBlank());
         assertTrue(systemPromptTokens <= expectedBudget + 100,
                 () -> "systemPrompt estimate " + systemPromptTokens + " exceeded budget " + expectedBudget);
-        assertTrue(estimatedRequestTokens <= expectedInputBudget + REQUEST_ESTIMATE_TOLERANCE_TOKENS,
-                () -> "request estimate " + estimatedRequestTokens + " exceeded input budget " + expectedInputBudget);
+        assertTrue(providerPayloadTokens <= expectedInputBudget + REQUEST_ESTIMATE_TOLERANCE_TOKENS,
+                () -> "provider payload estimate " + providerPayloadTokens
+                        + " exceeded input budget " + expectedInputBudget);
+        assertTrue(traceSnapshotTokens >= providerPayloadTokens,
+                "trace snapshot estimate should include provider payload plus internal-only fields");
         assertFalse(systemPrompt.contains(LOW_PRIORITY_TAIL_MARKER),
                 "low-priority workspace instruction tail should be dropped by layer/global budgeting");
         assertBoundedTools(request.path("tools"), systemPrompt);
@@ -396,11 +400,16 @@ class AgentLoopContextWindowExternalE2ETest {
         return Math.min(ratioThreshold, modelSafeThreshold);
     }
 
-    private int estimateRequestTokens(JsonNode request) {
+    private int estimateProviderPayloadTokens(JsonNode request) {
         int tokens = REQUEST_BASE_OVERHEAD_TOKENS;
         tokens += TokenEstimator.estimate(request.path("systemPrompt").asText());
         tokens += TokenEstimator.estimate(request.path("messages").toString());
         tokens += TokenEstimator.estimate(request.path("tools").toString());
+        return tokens;
+    }
+
+    private int estimateTraceSnapshotTokens(JsonNode request) {
+        int tokens = estimateProviderPayloadTokens(request);
         tokens += TokenEstimator.estimate(request.path("toolResults").toString());
         return tokens;
     }

@@ -3,12 +3,10 @@ package me.golemcore.bot.domain.system.toolloop.view;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.ToolDefinition;
-import me.golemcore.bot.domain.model.ToolResult;
 import me.golemcore.bot.domain.service.ContextCompactionPolicy;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
-import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -65,12 +63,11 @@ class ContextBudgetResolverAndGarbagePolicyTest {
     }
 
     @Test
-    void shouldReserveBudgetForToolSchemasAndDetachedToolResults() {
+    void shouldReserveBudgetForProviderSerializedToolSchemas() {
         ContextCompactionPolicy policy = mock(ContextCompactionPolicy.class);
         AgentContext context = AgentContext.builder()
                 .systemPrompt("")
                 .availableTools(List.of(ToolDefinition.simple("browser", repeated("Search the web", 20_000))))
-                .toolResults(Map.of("call-1", ToolResult.success(repeated("raw result", 20_000))))
                 .build();
         when(policy.resolveFullRequestThreshold(context)).thenReturn(6_000);
         when(policy.resolveSystemPromptThreshold(context)).thenReturn(1_000);

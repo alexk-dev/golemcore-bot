@@ -22,23 +22,15 @@ public class DefaultContextBudgetResolver implements ContextBudgetResolver {
 
     private final ContextCompactionPolicy compactionPolicy;
     private final ContextTokenEstimator tokenEstimator;
-    private final DetachedToolResultTokenEstimator toolResultTokenEstimator;
 
     public DefaultContextBudgetResolver(ContextCompactionPolicy compactionPolicy) {
-        this(compactionPolicy, new ContextTokenEstimator(), new DetachedToolResultTokenEstimator());
+        this(compactionPolicy, new ContextTokenEstimator());
     }
 
     public DefaultContextBudgetResolver(ContextCompactionPolicy compactionPolicy,
             ContextTokenEstimator tokenEstimator) {
-        this(compactionPolicy, tokenEstimator, new DetachedToolResultTokenEstimator());
-    }
-
-    DefaultContextBudgetResolver(ContextCompactionPolicy compactionPolicy,
-            ContextTokenEstimator tokenEstimator,
-            DetachedToolResultTokenEstimator toolResultTokenEstimator) {
         this.compactionPolicy = Objects.requireNonNull(compactionPolicy, "compactionPolicy");
         this.tokenEstimator = Objects.requireNonNull(tokenEstimator, "tokenEstimator");
-        this.toolResultTokenEstimator = Objects.requireNonNull(toolResultTokenEstimator, "toolResultTokenEstimator");
     }
 
     @Override
@@ -50,15 +42,14 @@ public class DefaultContextBudgetResolver implements ContextBudgetResolver {
         int systemPromptBudget = compactionPolicy.resolveSystemPromptThreshold(context);
         int actualSystemPromptTokens = TokenEstimator.estimate(context != null ? context.getSystemPrompt() : null);
         int toolSchemaTokens = tokenEstimator.estimateTools(context != null ? context.getAvailableTools() : null);
-        int detachedToolResultTokens = toolResultTokenEstimator.estimate(
-                context != null ? context.getToolResults() : null);
         int providerOverheadTokens = tokenEstimator.requestBaseOverheadTokens();
         int safetySlackTokens = Math.max(MIN_SAFETY_SLACK_TOKENS,
                 (int) Math.floor(inputBudget * SAFETY_SLACK_RATIO));
+        // Detached toolResults are internal loop state, not provider-serialized
+        // payload. Keep this aligned with ContextTokenEstimator.estimateRequest.
         int availableForConversation = inputBudget
                 - actualSystemPromptTokens
                 - toolSchemaTokens
-                - detachedToolResultTokens
                 - providerOverheadTokens
                 - safetySlackTokens;
 

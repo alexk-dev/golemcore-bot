@@ -54,7 +54,12 @@ final class PinnedContextCompressor {
         if (estimate(minimal) <= limit) {
             return minimal;
         }
-        return selectMostRecentThatFit(minimal, limit, report);
+        List<ProjectedItem> mostRecent = selectMostRecentThatFit(minimal, limit, report);
+        int projectedTokens = estimate(mostRecent);
+        if (projectedTokens <= limit) {
+            return mostRecent;
+        }
+        throw new ContextWindowBudgetExceededException(limit, projectedTokens);
     }
 
     private List<ProjectedItem> compressPinned(List<ProjectedItem> items,
