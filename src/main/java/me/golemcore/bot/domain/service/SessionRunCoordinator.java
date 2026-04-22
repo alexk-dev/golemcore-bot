@@ -300,7 +300,7 @@ public class SessionRunCoordinator {
                 }
             }
 
-            markQueueKind(inbound, ContextAttributes.TURN_QUEUE_KIND_INTERNAL_CONTINUATION);
+            markQueueKind(inbound, resolveQueueKind(inbound));
             startRun(inbound, new ArrayDeque<>());
             return true;
         }
@@ -497,7 +497,7 @@ public class SessionRunCoordinator {
             }
             Message internalRetry = dequeueInternalRetryLocked();
             if (internalRetry != null) {
-                markQueueKind(internalRetry, ContextAttributes.TURN_QUEUE_KIND_INTERNAL_RETRY);
+                markQueueKind(internalRetry, resolveQueueKind(internalRetry));
                 return internalRetry;
             }
             if (!queuedFollowUpMessages.isEmpty()) {
@@ -512,14 +512,14 @@ public class SessionRunCoordinator {
             }
             if (!queuedInternalContinuationMessages.isEmpty()) {
                 Message nextInternalContinuation = queuedInternalContinuationMessages.removeFirst();
-                markQueueKind(nextInternalContinuation, ContextAttributes.TURN_QUEUE_KIND_INTERNAL_CONTINUATION);
+                markQueueKind(nextInternalContinuation, resolveQueueKind(nextInternalContinuation));
                 return nextInternalContinuation;
             }
             return null;
         }
 
         private boolean shouldDropStaleInternalContinuationLocked(Message inbound, String queueKind) {
-            if (!ContextAttributes.TURN_QUEUE_KIND_INTERNAL_CONTINUATION.equals(queueKind)) {
+            if (!isInternalContinuationKind(queueKind)) {
                 return false;
             }
             long baselineRealUserActivitySequence = resolveRealUserActivitySequence(inbound);
@@ -564,11 +564,11 @@ public class SessionRunCoordinator {
 
         private void enqueueFollowUp(Message inbound) {
             String queueKind = resolveQueueKind(inbound);
-            if (ContextAttributes.TURN_QUEUE_KIND_INTERNAL_RETRY.equals(queueKind)) {
+            if (isInternalRetryKind(queueKind)) {
                 java.util.Iterator<Message> iterator = queuedFollowUpMessages.iterator();
                 while (iterator.hasNext()) {
                     Message queued = iterator.next();
-                    if (!ContextAttributes.TURN_QUEUE_KIND_INTERNAL_RETRY.equals(resolveQueueKind(queued))) {
+                    if (!isInternalRetryKind(resolveQueueKind(queued))) {
                         continue;
                     }
                     iterator.remove();
@@ -577,11 +577,11 @@ public class SessionRunCoordinator {
                 enqueueWithBound(queuedFollowUpMessages, inbound, "internal-retry");
                 return;
             }
-            if (ContextAttributes.TURN_QUEUE_KIND_INTERNAL_CONTINUATION.equals(queueKind)) {
+            if (isInternalContinuationKind(queueKind)) {
                 enqueueInternalContinuation(inbound);
                 return;
             }
-            if (ContextAttributes.TURN_QUEUE_KIND_DELAYED_ACTION.equals(queueKind)) {
+            if (isDelayedActionQueueKind(queueKind)) {
                 enqueueFollowUpWithBound(inbound, "delayed-action");
                 return;
             }
@@ -655,10 +655,11 @@ public class SessionRunCoordinator {
             java.util.Iterator<Message> iterator = queuedFollowUpMessages.iterator();
             while (iterator.hasNext()) {
                 Message queued = iterator.next();
-                if (ContextAttributes.TURN_QUEUE_KIND_INTERNAL_RETRY.equals(resolveQueueKind(queued))) {
+                String queueKind = resolveQueueKind(queued);
+                if (isInternalRetryKind(queueKind)) {
                     continue;
                 }
-                if (ContextAttributes.TURN_QUEUE_KIND_DELAYED_ACTION.equals(resolveQueueKind(queued))) {
+                if (isDelayedActionQueueKind(queueKind)) {
                     continue;
                 }
                 iterator.remove();
@@ -685,7 +686,7 @@ public class SessionRunCoordinator {
         private Message dequeueInternalRetryLocked() {
             Message internalRetry = null;
             for (Message queuedMessage : queuedFollowUpMessages) {
-                if (ContextAttributes.TURN_QUEUE_KIND_INTERNAL_RETRY.equals(resolveQueueKind(queuedMessage))) {
+                if (isInternalRetryKind(resolveQueueKind(queuedMessage))) {
                     internalRetry = queuedMessage;
                     break;
                 }
@@ -699,8 +700,8 @@ public class SessionRunCoordinator {
         private Message mergeQueuedFollowUpMessagesLocked() {
             Message first = queuedFollowUpMessages.removeFirst();
             String firstQueueKind = resolveQueueKind(first);
-            if (ContextAttributes.TURN_QUEUE_KIND_DELAYED_ACTION.equals(firstQueueKind)) {
-                markQueueKind(first, ContextAttributes.TURN_QUEUE_KIND_DELAYED_ACTION);
+            if (isDelayedActionQueueKind(firstQueueKind)) {
+                markQueueKind(first, firstQueueKind);
                 return first;
             }
             StringBuilder builder = new StringBuilder();
@@ -722,8 +723,7 @@ public class SessionRunCoordinator {
                     break;
                 }
                 String nextQueueKind = resolveQueueKind(next);
-                if (ContextAttributes.TURN_QUEUE_KIND_INTERNAL_RETRY.equals(nextQueueKind)
-                        || ContextAttributes.TURN_QUEUE_KIND_DELAYED_ACTION.equals(nextQueueKind)) {
+                if (isInternalRetryKind(nextQueueKind) || isDelayedActionQueueKind(nextQueueKind)) {
                     break;
                 }
                 next = queuedFollowUpMessages.removeFirst();
@@ -982,11 +982,23 @@ public class SessionRunCoordinator {
             if (ContextAttributes.TURN_QUEUE_KIND_STEERING.equals(normalized)) {
                 return ContextAttributes.TURN_QUEUE_KIND_STEERING;
             }
+            if (ContextAttributes.TURN_QUEUE_KIND_INTERNAL_MODEL_RETRY.equals(normalized)) {
+                return ContextAttributes.TURN_QUEUE_KIND_INTERNAL_MODEL_RETRY;
+            }
             if (ContextAttributes.TURN_QUEUE_KIND_INTERNAL_RETRY.equals(normalized)) {
                 return ContextAttributes.TURN_QUEUE_KIND_INTERNAL_RETRY;
             }
+            if (ContextAttributes.TURN_QUEUE_KIND_INTERNAL_DELAYED_ACTION.equals(normalized)) {
+                return ContextAttributes.TURN_QUEUE_KIND_INTERNAL_DELAYED_ACTION;
+            }
             if (ContextAttributes.TURN_QUEUE_KIND_DELAYED_ACTION.equals(normalized)) {
                 return ContextAttributes.TURN_QUEUE_KIND_DELAYED_ACTION;
+            }
+            if (ContextAttributes.TURN_QUEUE_KIND_INTERNAL_FOLLOW_THROUGH.equals(normalized)) {
+                return ContextAttributes.TURN_QUEUE_KIND_INTERNAL_FOLLOW_THROUGH;
+            }
+            if (ContextAttributes.TURN_QUEUE_KIND_INTERNAL_AUTO_PROCEED.equals(normalized)) {
+                return ContextAttributes.TURN_QUEUE_KIND_INTERNAL_AUTO_PROCEED;
             }
             if (ContextAttributes.TURN_QUEUE_KIND_INTERNAL_CONTINUATION.equals(normalized)) {
                 return ContextAttributes.TURN_QUEUE_KIND_INTERNAL_CONTINUATION;
@@ -1000,6 +1012,22 @@ public class SessionRunCoordinator {
             return ContextAttributes.TURN_QUEUE_KIND_FOLLOW_UP;
         }
         return ContextAttributes.TURN_QUEUE_KIND_FOLLOW_UP;
+    }
+
+    private boolean isInternalRetryKind(String queueKind) {
+        return ContextAttributes.TURN_QUEUE_KIND_INTERNAL_MODEL_RETRY.equals(queueKind)
+                || ContextAttributes.TURN_QUEUE_KIND_INTERNAL_RETRY.equals(queueKind);
+    }
+
+    private boolean isDelayedActionQueueKind(String queueKind) {
+        return ContextAttributes.TURN_QUEUE_KIND_INTERNAL_DELAYED_ACTION.equals(queueKind)
+                || ContextAttributes.TURN_QUEUE_KIND_DELAYED_ACTION.equals(queueKind);
+    }
+
+    private boolean isInternalContinuationKind(String queueKind) {
+        return ContextAttributes.TURN_QUEUE_KIND_INTERNAL_FOLLOW_THROUGH.equals(queueKind)
+                || ContextAttributes.TURN_QUEUE_KIND_INTERNAL_AUTO_PROCEED.equals(queueKind)
+                || ContextAttributes.TURN_QUEUE_KIND_INTERNAL_CONTINUATION.equals(queueKind);
     }
 
     private void markInterruptRequested(SessionKey key) {

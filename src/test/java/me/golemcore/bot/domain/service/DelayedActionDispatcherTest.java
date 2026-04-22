@@ -500,7 +500,7 @@ class DelayedActionDispatcherTest {
         assertEquals(true, message.getMetadata().get(ContextAttributes.MESSAGE_INTERNAL));
         assertEquals(ContextAttributes.MESSAGE_INTERNAL_KIND_DELAYED_ACTION,
                 message.getMetadata().get(ContextAttributes.MESSAGE_INTERNAL_KIND));
-        assertEquals(ContextAttributes.TURN_QUEUE_KIND_DELAYED_ACTION,
+        assertEquals(ContextAttributes.TURN_QUEUE_KIND_INTERNAL_DELAYED_ACTION,
                 message.getMetadata().get(ContextAttributes.TURN_QUEUE_KIND));
         assertEquals("delay-1", message.getMetadata().get(ContextAttributes.DELAYED_ACTION_ID));
     }

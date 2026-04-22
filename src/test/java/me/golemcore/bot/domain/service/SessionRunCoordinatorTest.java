@@ -1185,7 +1185,7 @@ class SessionRunCoordinatorTest {
 
             Message a = user("A");
             Message followUp = user("follow-up");
-            Message continuation = internalContinuation("continue-old-plan", 1L);
+            Message continuation = autoProceedContinuation("continue-old-plan", 1L);
 
             Gate gateA = new Gate();
             List<String> processedAfterA = new ArrayList<>();
@@ -1389,7 +1389,7 @@ class SessionRunCoordinatorTest {
         Map<String, Object> metadata = new LinkedHashMap<>();
         metadata.put(ContextAttributes.MESSAGE_INTERNAL, true);
         metadata.put(ContextAttributes.MESSAGE_INTERNAL_KIND, ContextAttributes.MESSAGE_INTERNAL_KIND_AUTO_CONTINUE);
-        metadata.put(ContextAttributes.TURN_QUEUE_KIND, ContextAttributes.TURN_QUEUE_KIND_INTERNAL_RETRY);
+        metadata.put(ContextAttributes.TURN_QUEUE_KIND, ContextAttributes.TURN_QUEUE_KIND_INTERNAL_MODEL_RETRY);
         return Message.builder()
                 .role("user")
                 .content(content)
@@ -1406,7 +1406,25 @@ class SessionRunCoordinatorTest {
         metadata.put(ContextAttributes.MESSAGE_INTERNAL, true);
         metadata.put(ContextAttributes.MESSAGE_INTERNAL_KIND,
                 ContextAttributes.MESSAGE_INTERNAL_KIND_FOLLOW_THROUGH_NUDGE);
-        metadata.put(ContextAttributes.TURN_QUEUE_KIND, ContextAttributes.TURN_QUEUE_KIND_INTERNAL_CONTINUATION);
+        metadata.put(ContextAttributes.TURN_QUEUE_KIND, ContextAttributes.TURN_QUEUE_KIND_INTERNAL_FOLLOW_THROUGH);
+        metadata.put(ContextAttributes.MESSAGE_REAL_USER_ACTIVITY_SEQUENCE, baselineRealUserActivitySequence);
+        return Message.builder()
+                .role("user")
+                .content(content)
+                .channelType(CHANNEL_TYPE)
+                .chatId(CHAT_ID)
+                .senderId("internal")
+                .timestamp(Instant.EPOCH)
+                .metadata(metadata)
+                .build();
+    }
+
+    private static Message autoProceedContinuation(String content, long baselineRealUserActivitySequence) {
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put(ContextAttributes.MESSAGE_INTERNAL, true);
+        metadata.put(ContextAttributes.MESSAGE_INTERNAL_KIND,
+                ContextAttributes.MESSAGE_INTERNAL_KIND_AUTO_PROCEED);
+        metadata.put(ContextAttributes.TURN_QUEUE_KIND, ContextAttributes.TURN_QUEUE_KIND_INTERNAL_AUTO_PROCEED);
         metadata.put(ContextAttributes.MESSAGE_REAL_USER_ACTIVITY_SEQUENCE, baselineRealUserActivitySequence);
         return Message.builder()
                 .role("user")

@@ -133,7 +133,7 @@ class FollowThroughIntegrationTest {
         assertEquals(Boolean.TRUE, metadata.get(ContextAttributes.MESSAGE_INTERNAL));
         assertEquals(ContextAttributes.MESSAGE_INTERNAL_KIND_FOLLOW_THROUGH_NUDGE,
                 metadata.get(ContextAttributes.MESSAGE_INTERNAL_KIND));
-        assertEquals(ContextAttributes.TURN_QUEUE_KIND_INTERNAL_CONTINUATION,
+        assertEquals(ContextAttributes.TURN_QUEUE_KIND_INTERNAL_FOLLOW_THROUGH,
                 metadata.get(ContextAttributes.TURN_QUEUE_KIND));
         assertEquals(1, metadata.get(ContextAttributes.RESILIENCE_FOLLOW_THROUGH_CHAIN_DEPTH));
         assertEquals(0L, metadata.get(ContextAttributes.MESSAGE_REAL_USER_ACTIVITY_SEQUENCE));

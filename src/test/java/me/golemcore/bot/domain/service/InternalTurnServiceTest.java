@@ -64,7 +64,7 @@ class InternalTurnServiceTest {
         assertEquals(true, message.getMetadata().get(ContextAttributes.MESSAGE_INTERNAL));
         assertEquals(ContextAttributes.MESSAGE_INTERNAL_KIND_AUTO_CONTINUE,
                 message.getMetadata().get(ContextAttributes.MESSAGE_INTERNAL_KIND));
-        assertEquals(ContextAttributes.TURN_QUEUE_KIND_INTERNAL_RETRY,
+        assertEquals(ContextAttributes.TURN_QUEUE_KIND_INTERNAL_MODEL_RETRY,
                 message.getMetadata().get(ContextAttributes.TURN_QUEUE_KIND));
         assertEquals("transport-1", message.getMetadata().get(ContextAttributes.TRANSPORT_CHAT_ID));
         assertEquals("conversation-1", message.getMetadata().get(ContextAttributes.CONVERSATION_KEY));
@@ -144,7 +144,7 @@ class InternalTurnServiceTest {
         assertEquals(true, message.getMetadata().get(ContextAttributes.MESSAGE_INTERNAL));
         assertEquals(ContextAttributes.MESSAGE_INTERNAL_KIND_FOLLOW_THROUGH_NUDGE,
                 message.getMetadata().get(ContextAttributes.MESSAGE_INTERNAL_KIND));
-        assertEquals(ContextAttributes.TURN_QUEUE_KIND_INTERNAL_CONTINUATION,
+        assertEquals(ContextAttributes.TURN_QUEUE_KIND_INTERNAL_FOLLOW_THROUGH,
                 message.getMetadata().get(ContextAttributes.TURN_QUEUE_KIND));
         assertEquals(1, message.getMetadata().get(ContextAttributes.RESILIENCE_FOLLOW_THROUGH_CHAIN_DEPTH));
         assertEquals(7L, message.getMetadata().get(ContextAttributes.MESSAGE_REAL_USER_ACTIVITY_SEQUENCE));
@@ -236,7 +236,7 @@ class InternalTurnServiceTest {
         assertEquals(true, message.getMetadata().get(ContextAttributes.MESSAGE_INTERNAL));
         assertEquals(ContextAttributes.MESSAGE_INTERNAL_KIND_AUTO_PROCEED,
                 message.getMetadata().get(ContextAttributes.MESSAGE_INTERNAL_KIND));
-        assertEquals(ContextAttributes.TURN_QUEUE_KIND_INTERNAL_CONTINUATION,
+        assertEquals(ContextAttributes.TURN_QUEUE_KIND_INTERNAL_AUTO_PROCEED,
                 message.getMetadata().get(ContextAttributes.TURN_QUEUE_KIND));
         assertEquals(1, message.getMetadata().get(ContextAttributes.RESILIENCE_AUTO_PROCEED_CHAIN_DEPTH));
         assertEquals(9L, message.getMetadata().get(ContextAttributes.MESSAGE_REAL_USER_ACTIVITY_SEQUENCE));

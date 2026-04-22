@@ -232,10 +232,10 @@ public final class ContextAttributes {
     public static final String TURN_QUEUE_KIND = "turn.queue.kind";
 
     /**
-     * String value for {@link #TURN_QUEUE_KIND}: internal retry after model
+     * String value for {@link #TURN_QUEUE_KIND}: internal model retry after model
      * failure.
      */
-    public static final String TURN_QUEUE_KIND_INTERNAL_RETRY = "internal_retry";
+    public static final String TURN_QUEUE_KIND_INTERNAL_MODEL_RETRY = "internal_model_retry";
 
     /** String value for {@link #TURN_QUEUE_KIND}: prioritize as steering input. */
     public static final String TURN_QUEUE_KIND_STEERING = "steering";
@@ -244,11 +244,32 @@ public final class ContextAttributes {
     public static final String TURN_QUEUE_KIND_FOLLOW_UP = "follow_up";
 
     /** String value for {@link #TURN_QUEUE_KIND}: delayed internal wake-up. */
+    public static final String TURN_QUEUE_KIND_INTERNAL_DELAYED_ACTION = "internal_delayed_action";
+
+    /**
+     * String value for {@link #TURN_QUEUE_KIND}: follow-through continuation that
+     * must yield to real user follow-up.
+     */
+    public static final String TURN_QUEUE_KIND_INTERNAL_FOLLOW_THROUGH = "internal_follow_through";
+
+    /**
+     * String value for {@link #TURN_QUEUE_KIND}: Auto-Proceed continuation that
+     * must yield to real user follow-up.
+     */
+    public static final String TURN_QUEUE_KIND_INTERNAL_AUTO_PROCEED = "internal_auto_proceed";
+
+    /**
+     * Legacy string value for {@link #TURN_QUEUE_KIND}: internal retry after model
+     * failure.
+     */
+    public static final String TURN_QUEUE_KIND_INTERNAL_RETRY = "internal_retry";
+
+    /** String legacy value for {@link #TURN_QUEUE_KIND}: delayed internal wake-up. */
     public static final String TURN_QUEUE_KIND_DELAYED_ACTION = "delayed_action";
 
     /**
-     * String value for {@link #TURN_QUEUE_KIND}: low-priority internal continuation
-     * that must yield to real user follow-up.
+     * Legacy string value for {@link #TURN_QUEUE_KIND}: low-priority internal
+     * continuation.
      */
     public static final String TURN_QUEUE_KIND_INTERNAL_CONTINUATION = "internal_continuation";
 

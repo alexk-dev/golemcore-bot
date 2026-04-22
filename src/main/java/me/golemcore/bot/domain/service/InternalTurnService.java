@@ -52,7 +52,7 @@ public class InternalTurnService {
         Map<String, Object> metadata = new LinkedHashMap<>();
         metadata.put(ContextAttributes.MESSAGE_INTERNAL, true);
         metadata.put(ContextAttributes.MESSAGE_INTERNAL_KIND, ContextAttributes.MESSAGE_INTERNAL_KIND_AUTO_CONTINUE);
-        metadata.put(ContextAttributes.TURN_QUEUE_KIND, ContextAttributes.TURN_QUEUE_KIND_INTERNAL_RETRY);
+        metadata.put(ContextAttributes.TURN_QUEUE_KIND, ContextAttributes.TURN_QUEUE_KIND_INTERNAL_MODEL_RETRY);
         copyStringAttribute(context, metadata, ContextAttributes.TRANSPORT_CHAT_ID);
         copyStringAttribute(context, metadata, ContextAttributes.CONVERSATION_KEY);
         copyStringAttribute(context, metadata, ContextAttributes.WEB_CLIENT_INSTANCE_ID);
@@ -103,7 +103,7 @@ public class InternalTurnService {
         metadata.put(ContextAttributes.MESSAGE_INTERNAL, true);
         metadata.put(ContextAttributes.MESSAGE_INTERNAL_KIND,
                 ContextAttributes.MESSAGE_INTERNAL_KIND_FOLLOW_THROUGH_NUDGE);
-        metadata.put(ContextAttributes.TURN_QUEUE_KIND, ContextAttributes.TURN_QUEUE_KIND_INTERNAL_CONTINUATION);
+        metadata.put(ContextAttributes.TURN_QUEUE_KIND, ContextAttributes.TURN_QUEUE_KIND_INTERNAL_FOLLOW_THROUGH);
         metadata.put(ContextAttributes.RESILIENCE_FOLLOW_THROUGH_CHAIN_DEPTH, nextChainDepth);
         metadata.put(ContextAttributes.MESSAGE_REAL_USER_ACTIVITY_SEQUENCE, baselineRealUserActivitySequence);
         copyStringAttribute(context, metadata, ContextAttributes.TRANSPORT_CHAT_ID);
@@ -156,7 +156,7 @@ public class InternalTurnService {
         metadata.put(ContextAttributes.MESSAGE_INTERNAL, true);
         metadata.put(ContextAttributes.MESSAGE_INTERNAL_KIND,
                 ContextAttributes.MESSAGE_INTERNAL_KIND_AUTO_PROCEED);
-        metadata.put(ContextAttributes.TURN_QUEUE_KIND, ContextAttributes.TURN_QUEUE_KIND_INTERNAL_CONTINUATION);
+        metadata.put(ContextAttributes.TURN_QUEUE_KIND, ContextAttributes.TURN_QUEUE_KIND_INTERNAL_AUTO_PROCEED);
         metadata.put(ContextAttributes.RESILIENCE_AUTO_PROCEED_CHAIN_DEPTH, nextChainDepth);
         metadata.put(ContextAttributes.MESSAGE_REAL_USER_ACTIVITY_SEQUENCE, baselineRealUserActivitySequence);
         copyStringAttribute(context, metadata, ContextAttributes.TRANSPORT_CHAT_ID);
