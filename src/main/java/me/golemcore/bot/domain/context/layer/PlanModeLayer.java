@@ -18,9 +18,7 @@ package me.golemcore.bot.domain.context.layer;
  * Contact: alex@kuleshov.tech
  */
 
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import me.golemcore.bot.domain.context.ContextLayer;
 import me.golemcore.bot.domain.context.ContextLayerLifecycle;
 import me.golemcore.bot.domain.context.ContextLayerResult;
 import me.golemcore.bot.domain.model.AgentContext;
@@ -39,35 +37,14 @@ import java.util.Optional;
  * plan context (current plan content, instructions) and may apply a
  * plan-specified model tier override.
  */
-@RequiredArgsConstructor
 @Slf4j
-public class PlanModeLayer implements ContextLayer {
+public class PlanModeLayer extends AbstractContextLayer {
 
     private final PlanService planService;
 
-    @Override
-    public String getName() {
-        return "plan_mode";
-    }
-
-    @Override
-    public int getOrder() {
-        return 72;
-    }
-
-    @Override
-    public int getPriority() {
-        return 95;
-    }
-
-    @Override
-    public ContextLayerLifecycle getLifecycle() {
-        return ContextLayerLifecycle.TURN;
-    }
-
-    @Override
-    public boolean isRequired() {
-        return true;
+    public PlanModeLayer(PlanService planService) {
+        super("plan_mode", 72, 95, ContextLayerLifecycle.TURN, true);
+        this.planService = planService;
     }
 
     @Override
@@ -99,13 +76,9 @@ public class PlanModeLayer implements ContextLayer {
         });
 
         if (planContext == null || planContext.isBlank()) {
-            return ContextLayerResult.empty(getName());
+            return empty();
         }
 
-        return ContextLayerResult.builder()
-                .layerName(getName())
-                .content(planContext)
-                .estimatedTokens(TokenEstimator.estimate(planContext))
-                .build();
+        return result(planContext);
     }
 }

@@ -18,10 +18,8 @@ package me.golemcore.bot.domain.context.layer;
  * Contact: alex@kuleshov.tech
  */
 
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.component.SkillComponent;
-import me.golemcore.bot.domain.context.ContextLayer;
 import me.golemcore.bot.domain.context.ContextLayerLifecycle;
 import me.golemcore.bot.domain.context.ContextLayerResult;
 import me.golemcore.bot.domain.model.AgentContext;
@@ -44,36 +42,16 @@ import java.util.Map;
  * lightweight skill descriptions by default, and only gets full instructions
  * when a skill is explicitly activated.
  */
-@RequiredArgsConstructor
 @Slf4j
-public class SkillLayer implements ContextLayer {
+public class SkillLayer extends AbstractContextLayer {
 
     private final SkillComponent skillComponent;
     private final SkillTemplateEngine templateEngine;
 
-    @Override
-    public String getName() {
-        return "skill";
-    }
-
-    @Override
-    public int getOrder() {
-        return 40;
-    }
-
-    @Override
-    public int getPriority() {
-        return 80;
-    }
-
-    @Override
-    public ContextLayerLifecycle getLifecycle() {
-        return ContextLayerLifecycle.SESSION;
-    }
-
-    @Override
-    public int getTokenBudget() {
-        return 6_000;
+    public SkillLayer(SkillComponent skillComponent, SkillTemplateEngine templateEngine) {
+        super("skill", 40, 80, ContextLayerLifecycle.SESSION, 6_000);
+        this.skillComponent = skillComponent;
+        this.templateEngine = templateEngine;
     }
 
     @Override
@@ -118,11 +96,7 @@ public class SkillLayer implements ContextLayer {
         }
 
         String content = sb.toString();
-        return ContextLayerResult.builder()
-                .layerName(getName())
-                .content(content)
-                .estimatedTokens(TokenEstimator.estimate(content))
-                .build();
+        return result(content);
     }
 
     private ContextLayerResult assembleSkillsSummary(AgentContext context) {
@@ -130,7 +104,7 @@ public class SkillLayer implements ContextLayer {
         context.setSkillsSummary(summary);
 
         if (summary == null || summary.isBlank()) {
-            return ContextLayerResult.empty(getName());
+            return empty();
         }
 
         String content = "# Available Skills\n" + summary
@@ -138,10 +112,6 @@ public class SkillLayer implements ContextLayer {
                 + "call the skill_transition tool before doing the work.\n"
                 + "Stay in the base prompt only when no listed skill is a better fit.\n";
 
-        return ContextLayerResult.builder()
-                .layerName(getName())
-                .content(content)
-                .estimatedTokens(TokenEstimator.estimate(content))
-                .build();
+        return result(content);
     }
 }

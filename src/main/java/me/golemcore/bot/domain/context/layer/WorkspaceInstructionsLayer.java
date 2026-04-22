@@ -18,9 +18,7 @@ package me.golemcore.bot.domain.context.layer;
  * Contact: alex@kuleshov.tech
  */
 
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import me.golemcore.bot.domain.context.ContextLayer;
 import me.golemcore.bot.domain.context.ContextLayerLifecycle;
 import me.golemcore.bot.domain.context.ContextLayerResult;
 import me.golemcore.bot.domain.model.AgentContext;
@@ -34,35 +32,14 @@ import me.golemcore.bot.domain.service.WorkspaceInstructionService;
  * directory depth (broader first, more local later), and renders them as a
  * single section with a precedence note.
  */
-@RequiredArgsConstructor
 @Slf4j
-public class WorkspaceInstructionsLayer implements ContextLayer {
+public class WorkspaceInstructionsLayer extends AbstractContextLayer {
 
     private final WorkspaceInstructionService workspaceInstructionService;
 
-    @Override
-    public String getName() {
-        return "workspace_instructions";
-    }
-
-    @Override
-    public int getOrder() {
-        return 20;
-    }
-
-    @Override
-    public int getPriority() {
-        return 90;
-    }
-
-    @Override
-    public ContextLayerLifecycle getLifecycle() {
-        return ContextLayerLifecycle.SESSION;
-    }
-
-    @Override
-    public int getTokenBudget() {
-        return 4_000;
+    public WorkspaceInstructionsLayer(WorkspaceInstructionService workspaceInstructionService) {
+        super("workspace_instructions", 20, 90, ContextLayerLifecycle.SESSION, 4_000);
+        this.workspaceInstructionService = workspaceInstructionService;
     }
 
     @Override
@@ -74,7 +51,7 @@ public class WorkspaceInstructionsLayer implements ContextLayer {
     public ContextLayerResult assemble(AgentContext context) {
         String instructions = workspaceInstructionService.getWorkspaceInstructionsContext();
         if (instructions == null || instructions.isBlank()) {
-            return ContextLayerResult.empty(getName());
+            return empty();
         }
 
         String content = "# Workspace Instructions\n"
@@ -82,10 +59,6 @@ public class WorkspaceInstructionsLayer implements ContextLayer {
                 + "If instructions conflict, prefer more local files listed later.\n\n"
                 + instructions;
 
-        return ContextLayerResult.builder()
-                .layerName(getName())
-                .content(content)
-                .estimatedTokens(TokenEstimator.estimate(content))
-                .build();
+        return result(content);
     }
 }

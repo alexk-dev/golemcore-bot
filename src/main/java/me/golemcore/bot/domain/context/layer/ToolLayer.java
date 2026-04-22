@@ -18,10 +18,8 @@ package me.golemcore.bot.domain.context.layer;
  * Contact: alex@kuleshov.tech
  */
 
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.component.ToolComponent;
-import me.golemcore.bot.domain.context.ContextLayer;
 import me.golemcore.bot.domain.context.ContextLayerLifecycle;
 import me.golemcore.bot.domain.context.ContextLayerResult;
 import me.golemcore.bot.domain.model.AgentContext;
@@ -56,9 +54,8 @@ import java.util.Map;
  * context</li>
  * </ul>
  */
-@RequiredArgsConstructor
 @Slf4j
-public class ToolLayer implements ContextLayer {
+public class ToolLayer extends AbstractContextLayer {
 
     private static final String TOOL_PLAN_SET_CONTENT = "plan_set_content";
     private static final String TOOL_PLAN_GET = "plan_get";
@@ -74,29 +71,15 @@ public class ToolLayer implements ContextLayer {
     private final PlanService planService;
     private final DelayedActionPolicyService delayedActionPolicyService;
 
-    @Override
-    public String getName() {
-        return "tool";
-    }
-
-    @Override
-    public int getOrder() {
-        return 50;
-    }
-
-    @Override
-    public int getPriority() {
-        return 65;
-    }
-
-    @Override
-    public ContextLayerLifecycle getLifecycle() {
-        return ContextLayerLifecycle.TURN;
-    }
-
-    @Override
-    public int getTokenBudget() {
-        return 3_000;
+    public ToolLayer(ToolCallExecutionService toolCallExecutionService,
+            McpPort mcpPort,
+            PlanService planService,
+            DelayedActionPolicyService delayedActionPolicyService) {
+        super("tool", 50, 65, ContextLayerLifecycle.TURN, 3_000);
+        this.toolCallExecutionService = toolCallExecutionService;
+        this.mcpPort = mcpPort;
+        this.planService = planService;
+        this.delayedActionPolicyService = delayedActionPolicyService;
     }
 
     @Override
@@ -151,7 +134,7 @@ public class ToolLayer implements ContextLayer {
         context.setAvailableTools(tools);
 
         if (tools.isEmpty()) {
-            return ContextLayerResult.empty(getName());
+            return empty();
         }
 
         StringBuilder sb = new StringBuilder("# Available Tools\nYou have access to the following tools:\n");
@@ -164,11 +147,7 @@ public class ToolLayer implements ContextLayer {
         }
 
         String content = sb.toString();
-        return ContextLayerResult.builder()
-                .layerName(getName())
-                .content(content)
-                .estimatedTokens(TokenEstimator.estimate(content))
-                .build();
+        return result(content);
     }
 
     private boolean isToolAdvertised(ToolComponent tool, AgentContext context,

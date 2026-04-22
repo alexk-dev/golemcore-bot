@@ -18,9 +18,7 @@ package me.golemcore.bot.domain.context.layer;
  * Contact: alex@kuleshov.tech
  */
 
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import me.golemcore.bot.domain.context.ContextLayer;
 import me.golemcore.bot.domain.context.ContextLayerLifecycle;
 import me.golemcore.bot.domain.context.ContextLayerResult;
 import me.golemcore.bot.domain.model.AgentContext;
@@ -43,33 +41,19 @@ import java.util.Map;
  * If no sections are configured or loaded, falls back to a minimal "You are a
  * helpful AI assistant." identity.
  */
-@RequiredArgsConstructor
 @Slf4j
-public class IdentityLayer implements ContextLayer {
+public class IdentityLayer extends AbstractContextLayer {
 
     private static final String FALLBACK = "You are a helpful AI assistant.";
 
     private final PromptSectionService promptSectionService;
     private final UserPreferencesService userPreferencesService;
 
-    @Override
-    public String getName() {
-        return "identity";
-    }
-
-    @Override
-    public int getOrder() {
-        return 10;
-    }
-
-    @Override
-    public int getPriority() {
-        return REQUIRED_PRIORITY;
-    }
-
-    @Override
-    public ContextLayerLifecycle getLifecycle() {
-        return ContextLayerLifecycle.STATIC;
+    public IdentityLayer(PromptSectionService promptSectionService,
+            UserPreferencesService userPreferencesService) {
+        super("identity", 10, REQUIRED_PRIORITY, ContextLayerLifecycle.STATIC);
+        this.promptSectionService = promptSectionService;
+        this.userPreferencesService = userPreferencesService;
     }
 
     @Override
@@ -97,10 +81,6 @@ public class IdentityLayer implements ContextLayer {
         }
 
         String content = sb.toString().trim();
-        return ContextLayerResult.builder()
-                .layerName(getName())
-                .content(content)
-                .estimatedTokens(TokenEstimator.estimate(content))
-                .build();
+        return result(content);
     }
 }

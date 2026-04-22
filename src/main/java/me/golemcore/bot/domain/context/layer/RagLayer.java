@@ -18,9 +18,7 @@ package me.golemcore.bot.domain.context.layer;
  * Contact: alex@kuleshov.tech
  */
 
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import me.golemcore.bot.domain.context.ContextLayer;
 import me.golemcore.bot.domain.context.ContextLayerLifecycle;
 import me.golemcore.bot.domain.context.ContextLayerResult;
 import me.golemcore.bot.domain.model.AgentContext;
@@ -37,35 +35,14 @@ import me.golemcore.bot.port.outbound.RagPort;
  * user message text and stores the result both in context attributes and in the
  * prompt.
  */
-@RequiredArgsConstructor
 @Slf4j
-public class RagLayer implements ContextLayer {
+public class RagLayer extends AbstractContextLayer {
 
     private final RagPort ragPort;
 
-    @Override
-    public String getName() {
-        return "rag";
-    }
-
-    @Override
-    public int getOrder() {
-        return 35;
-    }
-
-    @Override
-    public int getPriority() {
-        return 60;
-    }
-
-    @Override
-    public ContextLayerLifecycle getLifecycle() {
-        return ContextLayerLifecycle.ON_DEMAND;
-    }
-
-    @Override
-    public int getTokenBudget() {
-        return 2_500;
+    public RagLayer(RagPort ragPort) {
+        super("rag", 35, 60, ContextLayerLifecycle.ON_DEMAND, 2_500);
+        this.ragPort = ragPort;
     }
 
     @Override
@@ -77,26 +54,22 @@ public class RagLayer implements ContextLayer {
     public ContextLayerResult assemble(AgentContext context) {
         String userQuery = getLastUserMessageText(context);
         if (userQuery == null || userQuery.isBlank()) {
-            return ContextLayerResult.empty(getName());
+            return empty();
         }
 
         try {
             String ragContext = ragPort.query(userQuery).join();
             if (ragContext == null || ragContext.isBlank()) {
-                return ContextLayerResult.empty(getName());
+                return empty();
             }
 
             context.setAttribute(ContextAttributes.RAG_CONTEXT, ragContext);
 
             String content = "# Relevant Memory\n" + ragContext;
-            return ContextLayerResult.builder()
-                    .layerName(getName())
-                    .content(content)
-                    .estimatedTokens(TokenEstimator.estimate(content))
-                    .build();
+            return result(content);
         } catch (Exception e) { // NOSONAR — best-effort RAG retrieval
             log.warn("[RagLayer] RAG query failed: {}", e.getMessage());
-            return ContextLayerResult.empty(getName());
+            return empty();
         }
     }
 
