@@ -280,6 +280,12 @@ public class SessionRunCoordinator {
                     log.debug(
                             "[SessionRunCoordinator] dropped internal continuation due to newer user activity: channel={}, chatId={}",
                             key.channelType(), key.chatId());
+                    emitInternalContinuationMetric(inbound,
+                            "follow_through.nudge.canceled_user_activity",
+                            Map.of(
+                                    "reason", "newer_real_user_activity",
+                                    "baseline_sequence", normalizedBaseline,
+                                    "latest_sequence", latestRealUserActivitySequence));
                     return false;
                 }
                 attachRealUserActivitySequence(inbound,
@@ -289,6 +295,12 @@ public class SessionRunCoordinator {
                     log.debug(
                             "[SessionRunCoordinator] dropped internal continuation during paused-after-stop: channel={}, chatId={}",
                             key.channelType(), key.chatId());
+                    emitInternalContinuationMetric(inbound,
+                            "follow_through.nudge.canceled_user_activity",
+                            Map.of(
+                                    "reason", "paused_after_stop",
+                                    "baseline_sequence", normalizedBaseline,
+                                    "latest_sequence", latestRealUserActivitySequence));
                     return false;
                 }
                 if (isRunning()
@@ -529,6 +541,12 @@ public class SessionRunCoordinator {
                 log.debug(
                         "[SessionRunCoordinator] dropped stale internal continuation: channel={}, chatId={}",
                         key.channelType(), key.chatId());
+                emitInternalContinuationMetric(inbound,
+                        "follow_through.nudge.canceled_user_activity",
+                        Map.of(
+                                "reason", "stale_internal_continuation",
+                                "baseline_sequence", baselineRealUserActivitySequence,
+                                "latest_sequence", latestRealUserActivitySequence));
                 return true;
             }
             attachRealUserActivitySequence(inbound, baselineRealUserActivitySequence > 0L
@@ -618,7 +636,27 @@ public class SessionRunCoordinator {
             while (!queuedInternalContinuationMessages.isEmpty()) {
                 Message queued = queuedInternalContinuationMessages.removeFirst();
                 rejectPendingCompletion(queued, reason);
+                emitInternalContinuationMetric(queued,
+                        "follow_through.nudge.canceled_user_activity",
+                        Map.of(
+                                "reason", "queued_internal_continuation_cleared",
+                                "latest_sequence", latestRealUserActivitySequence));
             }
+        }
+
+        private void emitInternalContinuationMetric(Message inbound, String metricName, Map<String, Object> attributes) {
+            if (metricName == null || metricName.isBlank() || inbound == null) {
+                return;
+            }
+            Map<String, Object> metricAttributes = new LinkedHashMap<>();
+            if (attributes != null) {
+                metricAttributes.putAll(attributes);
+            }
+            String queueKind = resolveQueueKind(inbound);
+            metricAttributes.put("queue_kind", queueKind);
+            metricAttributes.put("internal_kind",
+                    readMetadataString(inbound.getMetadata(), ContextAttributes.MESSAGE_INTERNAL_KIND));
+            ResilienceObservabilitySupport.emitMessageMetric(log, metricName, inbound, metricAttributes);
         }
 
         private void attachRealUserActivitySequence(Message message, long activitySequence) {

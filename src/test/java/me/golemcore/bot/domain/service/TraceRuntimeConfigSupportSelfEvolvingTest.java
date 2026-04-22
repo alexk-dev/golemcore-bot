@@ -3,6 +3,7 @@ package me.golemcore.bot.domain.service;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import org.junit.jupiter.api.Test;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
@@ -23,6 +24,7 @@ class TraceRuntimeConfigSupportSelfEvolvingTest {
         when(runtimeConfigService.isTraceOutboundPayloadCaptureEnabled()).thenReturn(false);
         when(runtimeConfigService.isTraceToolPayloadCaptureEnabled()).thenReturn(false);
         when(runtimeConfigService.isTraceLlmPayloadCaptureEnabled()).thenReturn(false);
+        when(runtimeConfigService.getTraceResiliencePayloadSampleRate()).thenReturn(0.15d);
         when(runtimeConfigService.isSelfEvolvingEnabled()).thenReturn(true);
         when(runtimeConfigService.isSelfEvolvingTracePayloadOverrideEnabled()).thenReturn(true);
 
@@ -33,6 +35,7 @@ class TraceRuntimeConfigSupportSelfEvolvingTest {
         assertTrue(tracingConfig.getCaptureOutboundPayloads());
         assertTrue(tracingConfig.getCaptureToolPayloads());
         assertTrue(tracingConfig.getCaptureLlmPayloads());
+        assertEquals(0.15d, tracingConfig.getResiliencePayloadSampleRate());
     }
 
     @Test
@@ -48,6 +51,7 @@ class TraceRuntimeConfigSupportSelfEvolvingTest {
         when(runtimeConfigService.isTraceOutboundPayloadCaptureEnabled()).thenReturn(false);
         when(runtimeConfigService.isTraceToolPayloadCaptureEnabled()).thenReturn(false);
         when(runtimeConfigService.isTraceLlmPayloadCaptureEnabled()).thenReturn(false);
+        when(runtimeConfigService.getTraceResiliencePayloadSampleRate()).thenReturn(0.0d);
         when(runtimeConfigService.isSelfEvolvingEnabled()).thenReturn(false);
         when(runtimeConfigService.isSelfEvolvingTracePayloadOverrideEnabled()).thenReturn(true);
 
@@ -58,6 +62,7 @@ class TraceRuntimeConfigSupportSelfEvolvingTest {
         assertFalse(tracingConfig.getCaptureOutboundPayloads());
         assertFalse(tracingConfig.getCaptureToolPayloads());
         assertFalse(tracingConfig.getCaptureLlmPayloads());
+        assertEquals(0.0d, tracingConfig.getResiliencePayloadSampleRate());
     }
 
     @Test
@@ -73,6 +78,7 @@ class TraceRuntimeConfigSupportSelfEvolvingTest {
         when(runtimeConfigService.isTraceOutboundPayloadCaptureEnabled()).thenReturn(false);
         when(runtimeConfigService.isTraceToolPayloadCaptureEnabled()).thenReturn(false);
         when(runtimeConfigService.isTraceLlmPayloadCaptureEnabled()).thenReturn(false);
+        when(runtimeConfigService.getTraceResiliencePayloadSampleRate()).thenReturn(0.5d);
         when(runtimeConfigService.isSelfEvolvingEnabled()).thenReturn(true);
         when(runtimeConfigService.isSelfEvolvingTracePayloadOverrideEnabled()).thenReturn(false);
 
@@ -83,6 +89,7 @@ class TraceRuntimeConfigSupportSelfEvolvingTest {
         assertFalse(tracingConfig.getCaptureOutboundPayloads());
         assertFalse(tracingConfig.getCaptureToolPayloads());
         assertFalse(tracingConfig.getCaptureLlmPayloads());
+        assertEquals(0.5d, tracingConfig.getResiliencePayloadSampleRate());
     }
 
     @Test

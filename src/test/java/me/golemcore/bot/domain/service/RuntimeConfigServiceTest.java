@@ -554,6 +554,7 @@ class RuntimeConfigServiceTest {
         assertFalse(service.isTraceOutboundPayloadCaptureEnabled());
         assertFalse(service.isTraceToolPayloadCaptureEnabled());
         assertFalse(service.isTraceLlmPayloadCaptureEnabled());
+        assertEquals(0.0d, service.getTraceResiliencePayloadSampleRate());
     }
 
     @Test
@@ -570,6 +571,7 @@ class RuntimeConfigServiceTest {
         tracing.setCaptureOutboundPayloads(null);
         tracing.setCaptureToolPayloads(null);
         tracing.setCaptureLlmPayloads(null);
+        tracing.setResiliencePayloadSampleRate(null);
         config.setTracing(tracing);
         setCachedConfig(config);
 
@@ -583,6 +585,7 @@ class RuntimeConfigServiceTest {
         assertFalse(service.isTraceOutboundPayloadCaptureEnabled());
         assertFalse(service.isTraceToolPayloadCaptureEnabled());
         assertFalse(service.isTraceLlmPayloadCaptureEnabled());
+        assertEquals(0.0d, service.getTraceResiliencePayloadSampleRate());
     }
 
     @Test
@@ -599,6 +602,7 @@ class RuntimeConfigServiceTest {
         tracing.setCaptureOutboundPayloads(true);
         tracing.setCaptureToolPayloads(true);
         tracing.setCaptureLlmPayloads(true);
+        tracing.setResiliencePayloadSampleRate(0.25d);
         config.setTracing(tracing);
         setCachedConfig(config);
 
@@ -612,6 +616,18 @@ class RuntimeConfigServiceTest {
         assertTrue(service.isTraceOutboundPayloadCaptureEnabled());
         assertTrue(service.isTraceToolPayloadCaptureEnabled());
         assertTrue(service.isTraceLlmPayloadCaptureEnabled());
+        assertEquals(0.25d, service.getTraceResiliencePayloadSampleRate());
+    }
+
+    @Test
+    void shouldClampInvalidResiliencePayloadSampleRateToDefault() throws Exception {
+        RuntimeConfig config = service.getRuntimeConfig();
+        RuntimeConfig.TracingConfig tracing = RuntimeConfig.TracingConfig.builder().build();
+        tracing.setResiliencePayloadSampleRate(2.5d);
+        config.setTracing(tracing);
+        service.updateRuntimeConfig(config);
+
+        assertEquals(0.0d, service.getTraceResiliencePayloadSampleRate());
     }
 
     @Test

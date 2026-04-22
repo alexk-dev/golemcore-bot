@@ -104,6 +104,7 @@ public class RuntimeConfigService {
     private static final boolean DEFAULT_TRACING_CAPTURE_OUTBOUND_PAYLOADS = false;
     private static final boolean DEFAULT_TRACING_CAPTURE_TOOL_PAYLOADS = false;
     private static final boolean DEFAULT_TRACING_CAPTURE_LLM_PAYLOADS = false;
+    private static final double DEFAULT_TRACING_RESILIENCE_PAYLOAD_SAMPLE_RATE = 0.0d;
     private static final int DEFAULT_AUTO_COMPACT_MAX_TOKENS = 50000;
     private static final int DEFAULT_AUTO_COMPACT_KEEP_LAST = 20;
     private static final String DEFAULT_COMPACTION_TRIGGER_MODE = "model_ratio";
@@ -1226,6 +1227,18 @@ public class RuntimeConfigService {
         return value != null ? value : DEFAULT_TRACING_CAPTURE_LLM_PAYLOADS;
     }
 
+    public double getTraceResiliencePayloadSampleRate() {
+        RuntimeConfig.TracingConfig tracingConfig = getRuntimeConfig().getTracing();
+        if (tracingConfig == null || tracingConfig.getResiliencePayloadSampleRate() == null) {
+            return DEFAULT_TRACING_RESILIENCE_PAYLOAD_SAMPLE_RATE;
+        }
+        Double value = tracingConfig.getResiliencePayloadSampleRate();
+        if (value.isNaN()) {
+            return DEFAULT_TRACING_RESILIENCE_PAYLOAD_SAMPLE_RATE;
+        }
+        return Math.max(0.0d, Math.min(1.0d, value.doubleValue()));
+    }
+
     // ==================== Rate Limit ====================
 
     public boolean isRateLimitEnabled() {
@@ -1906,6 +1919,11 @@ public class RuntimeConfigService {
         }
         if (cfg.getTracing().getCaptureLlmPayloads() == null) {
             cfg.getTracing().setCaptureLlmPayloads(DEFAULT_TRACING_CAPTURE_LLM_PAYLOADS);
+        }
+        Double resiliencePayloadSampleRate = cfg.getTracing().getResiliencePayloadSampleRate();
+        if (resiliencePayloadSampleRate == null || resiliencePayloadSampleRate.isNaN()
+                || resiliencePayloadSampleRate < 0.0d || resiliencePayloadSampleRate > 1.0d) {
+            cfg.getTracing().setResiliencePayloadSampleRate(DEFAULT_TRACING_RESILIENCE_PAYLOAD_SAMPLE_RATE);
         }
         cfg.getTools().setShellEnvironmentVariables(
                 normalizeShellEnvironmentVariables(cfg.getTools().getShellEnvironmentVariables()));

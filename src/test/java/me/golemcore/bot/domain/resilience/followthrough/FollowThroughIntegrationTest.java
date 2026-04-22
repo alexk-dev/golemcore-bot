@@ -16,6 +16,9 @@ import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.service.InternalTurnService;
+import me.golemcore.bot.domain.service.TraceBudgetService;
+import me.golemcore.bot.domain.service.TraceService;
+import me.golemcore.bot.domain.service.TraceSnapshotCompressionService;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.system.FollowThroughSystem;
@@ -74,6 +77,7 @@ class FollowThroughIntegrationTest {
     private LlmPort llmPort;
     private ModelSelectionService modelSelectionService;
     private RuntimeConfigService runtimeConfigService;
+    private TraceService traceService;
     private InboundMessageDispatchPort inboundMessageDispatchPort;
     private FollowThroughSystem system;
 
@@ -84,6 +88,7 @@ class FollowThroughIntegrationTest {
         modelSelectionService = mock(ModelSelectionService.class);
         runtimeConfigService = mock(RuntimeConfigService.class);
         inboundMessageDispatchPort = mock(InboundMessageDispatchPort.class);
+        traceService = new TraceService(new TraceSnapshotCompressionService(), new TraceBudgetService());
 
         when(modelSelectionService.resolveExplicitTier(MODEL_TIER))
                 .thenReturn(new ModelSelectionService.ModelSelection(MODEL_ID, null));
@@ -102,7 +107,8 @@ class FollowThroughIntegrationTest {
         FollowThroughClassifier classifier = new FollowThroughClassifier(
                 llmPort, modelSelectionService, promptBuilder, verdictParser);
         InternalTurnService internalTurnService = new InternalTurnService(inboundMessageDispatchPort, clock);
-        system = new FollowThroughSystem(classifier, internalTurnService, runtimeConfigService);
+        system = new FollowThroughSystem(classifier, internalTurnService, runtimeConfigService, traceService,
+                new JacksonTraceSnapshotCodecAdapter(new ObjectMapper().findAndRegisterModules()), clock);
     }
 
     @Test

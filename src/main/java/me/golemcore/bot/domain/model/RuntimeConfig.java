@@ -706,6 +706,8 @@ public class RuntimeConfig {
         private Boolean captureToolPayloads = true;
         @Builder.Default
         private Boolean captureLlmPayloads = true;
+        @Builder.Default
+        private Double resiliencePayloadSampleRate = 0.0d;
     }
 
     @Data

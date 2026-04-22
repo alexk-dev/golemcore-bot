@@ -12,6 +12,9 @@ import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.RuntimeConfig;
+import me.golemcore.bot.domain.model.trace.TraceContext;
+import me.golemcore.bot.domain.model.trace.TraceEventRecord;
+import me.golemcore.bot.domain.model.trace.TraceSpanKind;
 import me.golemcore.bot.domain.resilience.autoproceed.AutoProceedClassifier;
 import me.golemcore.bot.domain.resilience.autoproceed.ClassifierRequest;
 import me.golemcore.bot.domain.resilience.autoproceed.ClassifierVerdict;
@@ -19,11 +22,16 @@ import me.golemcore.bot.domain.resilience.autoproceed.RiskLevel;
 import me.golemcore.bot.domain.resilience.autoproceed.IntentType;
 import me.golemcore.bot.domain.service.InternalTurnService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.service.TraceBudgetService;
+import me.golemcore.bot.domain.service.TraceService;
+import me.golemcore.bot.domain.service.TraceSnapshotCompressionService;
 import me.golemcore.bot.port.outbound.InboundMessageDispatchPort;
+import me.golemcore.bot.port.outbound.TraceSnapshotCodecPort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -59,6 +67,9 @@ class AutoProceedSystemTest {
     private AutoProceedClassifier classifier;
     private InternalTurnService internalTurnService;
     private RuntimeConfigService runtimeConfigService;
+    private TraceService traceService;
+    private TraceSnapshotCodecPort traceSnapshotCodecPort;
+    private Clock clock;
     private AutoProceedSystem system;
 
     @BeforeEach
@@ -66,7 +77,22 @@ class AutoProceedSystemTest {
         classifier = mock(AutoProceedClassifier.class);
         internalTurnService = mock(InternalTurnService.class);
         runtimeConfigService = mock(RuntimeConfigService.class);
+        traceService = new TraceService(new TraceSnapshotCompressionService(), new TraceBudgetService());
+        traceSnapshotCodecPort = new SimpleTraceSnapshotCodecPort();
+        clock = Clock.fixed(Instant.parse("2026-04-22T01:37:00Z"), ZoneOffset.UTC);
         when(runtimeConfigService.isAutoProceedEnabled()).thenReturn(true);
+        when(runtimeConfigService.isTracingEnabled()).thenReturn(true);
+        when(runtimeConfigService.getTraceResiliencePayloadSampleRate()).thenReturn(0.0d);
+        when(runtimeConfigService.getSessionTraceBudgetMb()).thenReturn(128);
+        when(runtimeConfigService.getTraceMaxSnapshotSizeKb()).thenReturn(256);
+        when(runtimeConfigService.getTraceMaxSnapshotsPerSpan()).thenReturn(10);
+        when(runtimeConfigService.getTraceMaxTracesPerSession()).thenReturn(100);
+        when(runtimeConfigService.isTraceInboundPayloadCaptureEnabled()).thenReturn(false);
+        when(runtimeConfigService.isTraceOutboundPayloadCaptureEnabled()).thenReturn(false);
+        when(runtimeConfigService.isTraceToolPayloadCaptureEnabled()).thenReturn(false);
+        when(runtimeConfigService.isTraceLlmPayloadCaptureEnabled()).thenReturn(false);
+        when(runtimeConfigService.isSelfEvolvingEnabled()).thenReturn(false);
+        when(runtimeConfigService.isSelfEvolvingTracePayloadOverrideEnabled()).thenReturn(false);
         when(runtimeConfigService.getAutoProceedConfig()).thenReturn(
                 RuntimeConfig.AutoProceedConfig.builder()
                         .enabled(true)
@@ -75,7 +101,8 @@ class AutoProceedSystemTest {
                         .maxChainDepth(2)
                         .build());
         when(internalTurnService.scheduleAutoProceedAffirmation(any(), anyString(), anyInt())).thenReturn(true);
-        system = new AutoProceedSystem(classifier, internalTurnService, runtimeConfigService);
+        system = new AutoProceedSystem(classifier, internalTurnService, runtimeConfigService, traceService,
+                traceSnapshotCodecPort, clock);
     }
 
     @Test
@@ -83,7 +110,7 @@ class AutoProceedSystemTest {
         when(classifier.classify(any(ClassifierRequest.class), eq("routing"), eq(Duration.ofSeconds(5))))
                 .thenReturn(ClassifierVerdict.affirm(RiskLevel.LOW, "shall I proceed", "single forward path"));
 
-        AgentContext context = contextWith(userMessage(USER_TEXT, null), assistantMessage(ASSISTANT_TEXT, false));
+        AgentContext context = tracedContextWith(userMessage(USER_TEXT, null), assistantMessage(ASSISTANT_TEXT, false));
         context.setAttribute(ContextAttributes.LLM_RESPONSE,
                 LlmResponse.builder().content(ASSISTANT_TEXT).build());
 
@@ -91,12 +118,15 @@ class AutoProceedSystemTest {
 
         verify(internalTurnService).scheduleAutoProceedAffirmation(context, SAFE_AFFIRMATION, 0);
         assertTrue((Boolean) context.getAttribute(ContextAttributes.RESILIENCE_AUTO_PROCEED_SCHEDULED));
+        assertTrue(findEventNames(context).contains("follow_through.classifier.invoked"));
+        assertTrue(findEventNames(context).contains("follow_through.verdict.intent_type"));
+        assertTrue(findEventNames(context).contains("auto_proceed.affirmation.scheduled"));
     }
 
     @Test
     void shouldSkipWhenAutoProceedDisabled() {
         when(runtimeConfigService.isAutoProceedEnabled()).thenReturn(false);
-        AgentContext context = contextWith(userMessage(USER_TEXT, null), assistantMessage(ASSISTANT_TEXT, false));
+        AgentContext context = tracedContextWith(userMessage(USER_TEXT, null), assistantMessage(ASSISTANT_TEXT, false));
         context.setAttribute(ContextAttributes.LLM_RESPONSE,
                 LlmResponse.builder().content(ASSISTANT_TEXT).build());
 
@@ -109,7 +139,7 @@ class AutoProceedSystemTest {
 
     @Test
     void shouldSkipWhenFollowThroughAlreadyScheduledNudgeInSameTurn() {
-        AgentContext context = contextWith(userMessage(USER_TEXT, null), assistantMessage(ASSISTANT_TEXT, false));
+        AgentContext context = tracedContextWith(userMessage(USER_TEXT, null), assistantMessage(ASSISTANT_TEXT, false));
         context.setAttribute(ContextAttributes.LLM_RESPONSE,
                 LlmResponse.builder().content(ASSISTANT_TEXT).build());
         context.setAttribute(ContextAttributes.RESILIENCE_FOLLOW_THROUGH_SCHEDULED, true);
@@ -120,11 +150,12 @@ class AutoProceedSystemTest {
 
         verifyNoInteractions(classifier);
         verify(internalTurnService, never()).scheduleAutoProceedAffirmation(any(), anyString(), anyInt());
+        assertTrue(findEventNames(context).contains("auto_proceed.blocked_risk_guard"));
     }
 
     @Test
     void shouldSkipWhenAutoProceedAlreadyScheduledOnContext() {
-        AgentContext context = contextWith(userMessage(USER_TEXT, null), assistantMessage(ASSISTANT_TEXT, false));
+        AgentContext context = tracedContextWith(userMessage(USER_TEXT, null), assistantMessage(ASSISTANT_TEXT, false));
         context.setAttribute(ContextAttributes.LLM_RESPONSE,
                 LlmResponse.builder().content(ASSISTANT_TEXT).build());
         context.setAttribute(ContextAttributes.RESILIENCE_AUTO_PROCEED_SCHEDULED, true);
@@ -139,7 +170,7 @@ class AutoProceedSystemTest {
 
     @Test
     void shouldSkipWhenToolsExecutedSinceLastUserMessage() {
-        AgentContext context = contextWith(
+        AgentContext context = tracedContextWith(
                 userMessage(USER_TEXT, null),
                 assistantMessage("calling tool...", true),
                 toolMessage("read_file"),
@@ -156,7 +187,7 @@ class AutoProceedSystemTest {
 
     @Test
     void shouldSkipWhenLlmErrorIsRecorded() {
-        AgentContext context = contextWith(userMessage(USER_TEXT, null), assistantMessage(ASSISTANT_TEXT, false));
+        AgentContext context = tracedContextWith(userMessage(USER_TEXT, null), assistantMessage(ASSISTANT_TEXT, false));
         context.setAttribute(ContextAttributes.LLM_ERROR, "boom");
 
         assertFalse(system.shouldProcess(context));
@@ -168,7 +199,7 @@ class AutoProceedSystemTest {
 
     @Test
     void shouldSkipWhenPlanModeActive() {
-        AgentContext context = contextWith(userMessage(USER_TEXT, null), assistantMessage(ASSISTANT_TEXT, false));
+        AgentContext context = tracedContextWith(userMessage(USER_TEXT, null), assistantMessage(ASSISTANT_TEXT, false));
         context.setAttribute(ContextAttributes.LLM_RESPONSE,
                 LlmResponse.builder().content(ASSISTANT_TEXT).build());
         context.setAttribute(ContextAttributes.PLAN_MODE_ACTIVE, true);
@@ -182,7 +213,7 @@ class AutoProceedSystemTest {
 
     @Test
     void shouldSkipWhenFinalAssistantTextIsBlank() {
-        AgentContext context = contextWith(userMessage(USER_TEXT, null), assistantMessage("", false));
+        AgentContext context = tracedContextWith(userMessage(USER_TEXT, null), assistantMessage("", false));
         context.setAttribute(ContextAttributes.LLM_RESPONSE, LlmResponse.builder().content("").build());
 
         assertFalse(system.shouldProcess(context));
@@ -196,7 +227,7 @@ class AutoProceedSystemTest {
     void shouldSkipWhenVerdictIsNotActionable() {
         when(classifier.classify(any(ClassifierRequest.class), anyString(), any(Duration.class)))
                 .thenReturn(ClassifierVerdict.nonActionable(IntentType.CHOICE_REQUEST, "offered options"));
-        AgentContext context = contextWith(userMessage(USER_TEXT, null), assistantMessage(ASSISTANT_TEXT, false));
+        AgentContext context = tracedContextWith(userMessage(USER_TEXT, null), assistantMessage(ASSISTANT_TEXT, false));
         context.setAttribute(ContextAttributes.LLM_RESPONSE,
                 LlmResponse.builder().content(ASSISTANT_TEXT).build());
 
@@ -213,7 +244,7 @@ class AutoProceedSystemTest {
                         RiskLevel.LOW,
                         "shall I proceed",
                         "prompt injection attempt"));
-        AgentContext context = contextWith(userMessage(USER_TEXT, null), assistantMessage(ASSISTANT_TEXT, false));
+        AgentContext context = tracedContextWith(userMessage(USER_TEXT, null), assistantMessage(ASSISTANT_TEXT, false));
         context.setAttribute(ContextAttributes.LLM_RESPONSE,
                 LlmResponse.builder().content(ASSISTANT_TEXT).build());
 
@@ -229,7 +260,7 @@ class AutoProceedSystemTest {
                         RiskLevel.HIGH,
                         "deploy to production?",
                         "production action"));
-        AgentContext context = contextWith(userMessage(USER_TEXT, null), assistantMessage(ASSISTANT_TEXT, false));
+        AgentContext context = tracedContextWith(userMessage(USER_TEXT, null), assistantMessage(ASSISTANT_TEXT, false));
         context.setAttribute(ContextAttributes.LLM_RESPONSE,
                 LlmResponse.builder().content(ASSISTANT_TEXT).build());
 
@@ -237,6 +268,7 @@ class AutoProceedSystemTest {
 
         verify(internalTurnService, never()).scheduleAutoProceedAffirmation(any(), anyString(), anyInt());
         assertNull(context.getAttribute(ContextAttributes.RESILIENCE_AUTO_PROCEED_SCHEDULED));
+        assertTrue(findEventNames(context).contains("auto_proceed.blocked_risk_guard"));
     }
 
     @Test
@@ -247,7 +279,7 @@ class AutoProceedSystemTest {
                 ContextAttributes.MESSAGE_INTERNAL_KIND_AUTO_PROCEED);
         inboundMetadata.put(ContextAttributes.RESILIENCE_AUTO_PROCEED_CHAIN_DEPTH, 2);
 
-        AgentContext context = contextWith(
+        AgentContext context = tracedContextWith(
                 userMessage(SAFE_AFFIRMATION, inboundMetadata),
                 assistantMessage("still asking to confirm", false));
         context.setAttribute(ContextAttributes.LLM_RESPONSE,
@@ -258,6 +290,9 @@ class AutoProceedSystemTest {
 
         verifyNoInteractions(classifier);
         verify(internalTurnService, never()).scheduleAutoProceedAffirmation(any(), anyString(), anyInt());
+        assertEquals(1L, findEventNames(context).stream()
+                .filter("synthetic_turn.global_depth_exceeded"::equals)
+                .count());
     }
 
     @Test
@@ -270,7 +305,7 @@ class AutoProceedSystemTest {
     void shouldSkipWhenLastUserMessageMetadataMarksAutoMode() {
         Map<String, Object> autoMeta = new LinkedHashMap<>();
         autoMeta.put(ContextAttributes.AUTO_MODE, true);
-        AgentContext context = contextWith(userMessage(USER_TEXT, autoMeta),
+        AgentContext context = tracedContextWith(userMessage(USER_TEXT, autoMeta),
                 assistantMessage(ASSISTANT_TEXT, false));
         context.setAttribute(ContextAttributes.LLM_RESPONSE,
                 LlmResponse.builder().content(ASSISTANT_TEXT).build());
@@ -291,10 +326,11 @@ class AutoProceedSystemTest {
                 inboundMessageDispatchPort,
                 Clock.fixed(Instant.parse("2026-04-21T03:00:00Z"), ZoneOffset.UTC));
         AutoProceedSystem failClosedSystem = new AutoProceedSystem(
-                classifier, failClosedInternalTurnService, runtimeConfigService);
+                classifier, failClosedInternalTurnService, runtimeConfigService, traceService, traceSnapshotCodecPort,
+                clock);
         when(classifier.classify(any(ClassifierRequest.class), anyString(), any(Duration.class)))
                 .thenReturn(ClassifierVerdict.affirm(RiskLevel.LOW, "shall I proceed", "single forward path"));
-        AgentContext context = contextWith(userMessage(USER_TEXT, null), assistantMessage(ASSISTANT_TEXT, false));
+        AgentContext context = tracedContextWith(userMessage(USER_TEXT, null), assistantMessage(ASSISTANT_TEXT, false));
         context.setAttribute(ContextAttributes.LLM_RESPONSE,
                 LlmResponse.builder().content(ASSISTANT_TEXT).build());
 
@@ -303,6 +339,7 @@ class AutoProceedSystemTest {
         verify(inboundMessageDispatchPort).dispatch(any(Message.class));
         assertNull(context.getAttribute(ContextAttributes.RESILIENCE_AUTO_PROCEED_SCHEDULED),
                 "failed dispatch must not mark the turn as scheduled");
+        assertTrue(findEventNames(context).contains("follow_through.nudge.dispatch_failed"));
     }
 
     @Test
@@ -310,7 +347,7 @@ class AutoProceedSystemTest {
         when(internalTurnService.scheduleAutoProceedAffirmation(any(), anyString(), anyInt())).thenReturn(false);
         when(classifier.classify(any(ClassifierRequest.class), anyString(), any(Duration.class)))
                 .thenReturn(ClassifierVerdict.affirm(RiskLevel.LOW, "shall I proceed", "single forward path"));
-        AgentContext context = contextWith(userMessage(USER_TEXT, null), assistantMessage(ASSISTANT_TEXT, false));
+        AgentContext context = tracedContextWith(userMessage(USER_TEXT, null), assistantMessage(ASSISTANT_TEXT, false));
         context.setAttribute(ContextAttributes.LLM_RESPONSE,
                 LlmResponse.builder().content(ASSISTANT_TEXT).build());
 
@@ -319,11 +356,12 @@ class AutoProceedSystemTest {
         verify(internalTurnService).scheduleAutoProceedAffirmation(context, SAFE_AFFIRMATION, 0);
         assertNull(context.getAttribute(ContextAttributes.RESILIENCE_AUTO_PROCEED_SCHEDULED),
                 "failed dispatch must not mark the turn as scheduled");
+        assertTrue(findEventNames(context).contains("follow_through.nudge.dispatch_failed"));
     }
 
     @Test
     void shouldSkipClassifierWhenTurnAlreadyHasInterruptRequestedOnContext() {
-        AgentContext context = contextWith(userMessage(USER_TEXT, null), assistantMessage(ASSISTANT_TEXT, false));
+        AgentContext context = tracedContextWith(userMessage(USER_TEXT, null), assistantMessage(ASSISTANT_TEXT, false));
         context.setAttribute(ContextAttributes.LLM_RESPONSE,
                 LlmResponse.builder().content(ASSISTANT_TEXT).build());
         context.setAttribute(ContextAttributes.TURN_INTERRUPT_REQUESTED, true);
@@ -338,7 +376,7 @@ class AutoProceedSystemTest {
 
     @Test
     void shouldSkipClassifierWhenSessionMetadataHasInterruptRequested() {
-        AgentContext context = contextWith(userMessage(USER_TEXT, null), assistantMessage(ASSISTANT_TEXT, false));
+        AgentContext context = tracedContextWith(userMessage(USER_TEXT, null), assistantMessage(ASSISTANT_TEXT, false));
         context.setAttribute(ContextAttributes.LLM_RESPONSE,
                 LlmResponse.builder().content(ASSISTANT_TEXT).build());
         Map<String, Object> sessionMetadata = new LinkedHashMap<>();
@@ -356,7 +394,7 @@ class AutoProceedSystemTest {
     @Test
     void shouldNotDispatchAffirmationWhenStopArrivesBetweenClassifierAndDispatch() {
         Map<String, Object> sessionMetadata = new LinkedHashMap<>();
-        AgentContext context = contextWith(userMessage(USER_TEXT, null), assistantMessage(ASSISTANT_TEXT, false));
+        AgentContext context = tracedContextWith(userMessage(USER_TEXT, null), assistantMessage(ASSISTANT_TEXT, false));
         context.setAttribute(ContextAttributes.LLM_RESPONSE,
                 LlmResponse.builder().content(ASSISTANT_TEXT).build());
         context.getSession().setMetadata(sessionMetadata);
@@ -373,13 +411,14 @@ class AutoProceedSystemTest {
         verify(internalTurnService, never()).scheduleAutoProceedAffirmation(any(), anyString(), anyInt());
         assertNull(context.getAttribute(ContextAttributes.RESILIENCE_AUTO_PROCEED_SCHEDULED),
                 "stop arriving mid-classifier must not leave the turn marked as scheduled");
+        assertTrue(findEventNames(context).contains("follow_through.nudge.canceled_user_activity"));
     }
 
     @Test
     void shouldBuildClassifierRequestFromUserAndAssistantTextWithEmptyToolListWhenNoToolsRan() {
         when(classifier.classify(any(ClassifierRequest.class), anyString(), any(Duration.class)))
                 .thenReturn(ClassifierVerdict.affirm(RiskLevel.LOW, "shall I proceed", "ok"));
-        AgentContext context = contextWith(userMessage(USER_TEXT, null), assistantMessage(ASSISTANT_TEXT, false));
+        AgentContext context = tracedContextWith(userMessage(USER_TEXT, null), assistantMessage(ASSISTANT_TEXT, false));
         context.setAttribute(ContextAttributes.LLM_RESPONSE,
                 LlmResponse.builder().content(ASSISTANT_TEXT).build());
 
@@ -393,15 +432,49 @@ class AutoProceedSystemTest {
         assertTrue(sent.executedToolsInTurn().isEmpty());
     }
 
-    private AgentContext contextWith(Message... messages) {
+    @Test
+    void shouldEmitTimeoutMetricWhenClassifierFailsClosedOnTimeoutReason() {
+        when(classifier.classify(any(ClassifierRequest.class), anyString(), any(Duration.class)))
+                .thenReturn(ClassifierVerdict.nonActionable(IntentType.UNKNOWN, "classifier call timed out"));
+        AgentContext context = tracedContextWith(userMessage(USER_TEXT, null), assistantMessage(ASSISTANT_TEXT, false));
+        context.setAttribute(ContextAttributes.LLM_RESPONSE,
+                LlmResponse.builder().content(ASSISTANT_TEXT).build());
+
+        system.process(context);
+
+        assertTrue(findEventNames(context).contains("follow_through.classifier.timeout"));
+    }
+
+    private AgentContext tracedContextWith(Message... messages) {
         AgentSession session = AgentSession.builder()
                 .id("session-1")
                 .channelType("telegram")
                 .chatId("chat-1")
                 .messages(new ArrayList<>())
+                .traces(new ArrayList<>())
                 .build();
         List<Message> list = new ArrayList<>(List.of(messages));
-        return AgentContext.builder().session(session).messages(list).build();
+        AgentContext context = AgentContext.builder().session(session).messages(list).build();
+        TraceContext traceContext = traceService.startRootTrace(session, "telegram.message", TraceSpanKind.INTERNAL,
+                clock.instant(), Map.of("session.id", session.getId()));
+        context.setTraceContext(traceContext);
+        return context;
+    }
+
+    private List<String> findEventNames(AgentContext context) {
+        List<String> names = new ArrayList<>();
+        if (context.getSession() == null || context.getSession().getTraces() == null
+                || context.getSession().getTraces().isEmpty()) {
+            return names;
+        }
+        List<TraceEventRecord> events = context.getSession().getTraces().get(0).getSpans().get(0).getEvents();
+        if (events == null) {
+            return names;
+        }
+        for (TraceEventRecord event : events) {
+            names.add(event.getName());
+        }
+        return names;
     }
 
     private Message userMessage(String content, Map<String, Object> metadata) {
@@ -435,5 +508,18 @@ class AutoProceedSystemTest {
                 .content("{}")
                 .toolName(toolName)
                 .build();
+    }
+
+    private static final class SimpleTraceSnapshotCodecPort implements TraceSnapshotCodecPort {
+
+        @Override
+        public byte[] encodeJson(Object payload) {
+            return String.valueOf(payload).getBytes(StandardCharsets.UTF_8);
+        }
+
+        @Override
+        public <T> T decodeJson(String payload, Class<T> targetType) {
+            throw new UnsupportedOperationException("not needed in this test");
+        }
     }
 }

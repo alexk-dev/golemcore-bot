@@ -17,11 +17,16 @@ import me.golemcore.bot.domain.resilience.followthrough.ClassifierRequest;
 import me.golemcore.bot.domain.resilience.followthrough.ClassifierVerdict;
 import me.golemcore.bot.domain.resilience.followthrough.FollowThroughClassifier;
 import me.golemcore.bot.domain.service.InternalTurnService;
+import me.golemcore.bot.domain.service.ResilienceObservabilitySupport;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.service.TraceService;
+import me.golemcore.bot.port.outbound.TraceSnapshotCodecPort;
 import org.springframework.stereotype.Component;
 
+import java.time.Clock;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -48,10 +53,14 @@ import java.util.Map;
 public class FollowThroughSystem implements AgentSystem {
 
     static final String SAFE_CONTINUATION_PROMPT = "Continue with the concrete next action you just promised, using only the latest user request and visible conversation context. Do not broaden scope. If the action is destructive, asks for credentials, sends external messages, modifies production, or is ambiguous, ask the real user for confirmation.";
+    static final String OBSERVED_DEPTH_EXCEEDED = "observability.follow_through.depth_exceeded";
 
     private final FollowThroughClassifier classifier;
     private final InternalTurnService internalTurnService;
     private final RuntimeConfigService runtimeConfigService;
+    private final TraceService traceService;
+    private final TraceSnapshotCodecPort traceSnapshotCodecPort;
+    private final Clock clock;
 
     @Override
     public String getName() {
@@ -102,7 +111,18 @@ public class FollowThroughSystem implements AgentSystem {
         }
         int incomingDepth = readIncomingChainDepth(context);
         int maxChainDepth = resolveMaxChainDepth();
-        return incomingDepth < maxChainDepth;
+        if (incomingDepth >= maxChainDepth) {
+            if (ResilienceObservabilitySupport.markObservedOnce(context, OBSERVED_DEPTH_EXCEEDED)) {
+                ResilienceObservabilitySupport.emitContextMetric(log, traceService, runtimeConfigService, clock,
+                        context, "synthetic_turn.global_depth_exceeded",
+                        Map.of(
+                                "driver", "follow_through",
+                                "incoming_depth", incomingDepth,
+                                "max_depth", maxChainDepth));
+            }
+            return false;
+        }
+        return true;
     }
 
     @Override
@@ -119,7 +139,31 @@ public class FollowThroughSystem implements AgentSystem {
                 extractLastUserText(context),
                 extractAssistantText(context),
                 executedToolsSinceLastUserMessage(context));
+        ResilienceObservabilitySupport.emitContextMetric(log, traceService, runtimeConfigService, clock, context,
+                "follow_through.classifier.invoked",
+                Map.of(
+                        "incoming_depth", incomingDepth,
+                        "model_tier", modelTier));
+        ResilienceObservabilitySupport.captureSampledPayload(log, traceService, traceSnapshotCodecPort,
+                runtimeConfigService, clock, context, "follow_through.classifier",
+                "follow_through.classifier.request", buildTracePayload(request, modelTier, timeout, incomingDepth));
+
         ClassifierVerdict verdict = classifier.classify(request, modelTier, timeout);
+        ResilienceObservabilitySupport.emitContextMetric(log, traceService, runtimeConfigService, clock, context,
+                "follow_through.verdict.intent_type",
+                Map.of(
+                        "intent_type", verdict.intentType(),
+                        "has_unfulfilled_commitment", verdict.hasUnfulfilledCommitment(),
+                        "risk_level", verdict.riskLevel()));
+        ResilienceObservabilitySupport.captureSampledPayload(log, traceService, traceSnapshotCodecPort,
+                runtimeConfigService, clock, context, "follow_through.classifier",
+                "follow_through.classifier.verdict", buildVerdictTracePayload(verdict));
+
+        if (isTimeoutVerdict(verdict)) {
+            ResilienceObservabilitySupport.emitContextMetric(log, traceService, runtimeConfigService, clock, context,
+                    "follow_through.classifier.timeout",
+                    Map.of("model_tier", modelTier));
+        }
 
         if (!verdict.hasUnfulfilledCommitment()) {
             log.debug("[FollowThrough] classifier declined to nudge (intent={}, reason={})",
@@ -133,6 +177,9 @@ public class FollowThroughSystem implements AgentSystem {
         }
         if (isInterruptRequested(context)) {
             log.debug("[FollowThrough] skipping nudge dispatch: interrupt requested mid-classifier");
+            ResilienceObservabilitySupport.emitContextMetric(log, traceService, runtimeConfigService, clock, context,
+                    "follow_through.nudge.canceled_user_activity",
+                    Map.of("cancel_reason", "interrupt_requested"));
             return context;
         }
 
@@ -140,11 +187,49 @@ public class FollowThroughSystem implements AgentSystem {
                 context, SAFE_CONTINUATION_PROMPT, incomingDepth);
         if (scheduled) {
             context.setAttribute(ContextAttributes.RESILIENCE_FOLLOW_THROUGH_SCHEDULED, true);
+            ResilienceObservabilitySupport.emitContextMetric(log, traceService, runtimeConfigService, clock, context,
+                    "follow_through.nudge.scheduled",
+                    Map.of("next_depth", incomingDepth + 1));
             log.info("[FollowThrough] nudge scheduled (sessionId={}, nextDepth={})",
                     context.getSession() != null ? context.getSession().getId() : "?",
                     incomingDepth + 1);
+        } else {
+            ResilienceObservabilitySupport.emitContextMetric(log, traceService, runtimeConfigService, clock, context,
+                    "follow_through.nudge.dispatch_failed",
+                    Map.of("incoming_depth", incomingDepth));
         }
         return context;
+    }
+
+    private Map<String, Object> buildTracePayload(ClassifierRequest request, String modelTier, Duration timeout,
+            int incomingDepth) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("driver", "follow_through");
+        payload.put("model_tier", modelTier);
+        payload.put("timeout_ms", timeout != null ? timeout.toMillis() : null);
+        payload.put("incoming_depth", incomingDepth);
+        payload.put("user_message", request.userMessage());
+        payload.put("assistant_reply", request.assistantReply());
+        payload.put("executed_tools_in_turn", request.executedToolsInTurn());
+        return payload;
+    }
+
+    private Map<String, Object> buildVerdictTracePayload(ClassifierVerdict verdict) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("driver", "follow_through");
+        payload.put("intent_type", verdict.intentType());
+        payload.put("has_unfulfilled_commitment", verdict.hasUnfulfilledCommitment());
+        payload.put("commitment_category", verdict.commitmentCategory());
+        payload.put("risk_level", verdict.riskLevel());
+        payload.put("commitment_text", verdict.commitmentText());
+        payload.put("reason", verdict.reason());
+        return payload;
+    }
+
+    private boolean isTimeoutVerdict(ClassifierVerdict verdict) {
+        return verdict != null
+                && verdict.reason() != null
+                && verdict.reason().toLowerCase(java.util.Locale.ROOT).contains("timed out");
     }
 
     private boolean toolsExecutedSinceLastUserMessage(AgentContext context) {
