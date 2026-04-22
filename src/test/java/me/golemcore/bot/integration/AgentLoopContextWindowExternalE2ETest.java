@@ -336,9 +336,11 @@ class AgentLoopContextWindowExternalE2ETest {
         StringBuilder sb = new StringBuilder(targetChars + 128);
         int index = 0;
         while (sb.length() < targetChars) {
+            String formattedIndex = String.format(Locale.ROOT, "%04d", index);
             sb.append(prefix)
-                    .append(String.format(Locale.ROOT, "%04d", index++))
+                    .append(formattedIndex)
                     .append(" repeatable irrelevant data for context-window preflight.\n");
+            index++;
         }
         return sb.toString();
     }
