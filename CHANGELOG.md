@@ -6,6 +6,12 @@ All notable changes to this project will be documented in this file. See [conven
 - (**auto**) add configurable session retention cleanup for persisted chat sessions
 
 - - -
+## v0.69.0 - 2026-04-22
+#### Features
+- (**resilience**) follow-through nudge for stranded LLM commitments (#308) - (a5d8f88) - Alex Kuleshov, *Claude Opus 4.7*, *AI Assistant*
+
+- - -
+
 ## v0.12.0 - 2026-02-25
 #### Features
 - (**browser**) fetch Playwright driver bundle from Maven at runtime (#117) - (2121f20) - Alex Kuleshov
