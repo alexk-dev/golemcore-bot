@@ -235,6 +235,50 @@ class DelayedSessionActionServiceTest {
     }
 
     @Test
+    void shouldClearAllDelayedActionKindsForSessionIncludingResilienceRetries() {
+        DelayedSessionAction remind = service.schedule(DelayedSessionAction.builder()
+                .channelType("telegram")
+                .conversationKey("conv-1")
+                .transportChatId("chat-1")
+                .kind(DelayedActionKind.REMIND_LATER)
+                .deliveryMode(DelayedActionDeliveryMode.DIRECT_MESSAGE)
+                .runAt(NOW.plusSeconds(30))
+                .cancelOnUserActivity(true)
+                .payload(Map.of("message", "Reminder"))
+                .build());
+        DelayedSessionAction runLater = service.schedule(DelayedSessionAction.builder()
+                .channelType("telegram")
+                .conversationKey("conv-1")
+                .transportChatId("chat-1")
+                .kind(DelayedActionKind.RUN_LATER)
+                .deliveryMode(DelayedActionDeliveryMode.INTERNAL_TURN)
+                .runAt(NOW.plusSeconds(30))
+                .cancelOnUserActivity(false)
+                .payload(Map.of("instruction", "Run"))
+                .build());
+        DelayedSessionAction resilienceRetry = service.schedule(DelayedSessionAction.builder()
+                .channelType("telegram")
+                .conversationKey("conv-1")
+                .transportChatId("chat-1")
+                .kind(DelayedActionKind.RETRY_LLM_TURN)
+                .deliveryMode(DelayedActionDeliveryMode.INTERNAL_TURN)
+                .runAt(NOW.plusSeconds(30))
+                .cancelOnUserActivity(true)
+                .payload(Map.of("errorCode", "overloaded_error"))
+                .build());
+
+        int cleared = service.clearActiveActions("telegram", "conv-1");
+
+        assertEquals(3, cleared);
+        assertTrue(service.get(remind.getId()).isEmpty());
+        assertTrue(service.get(runLater.getId()).isEmpty(),
+                "Actions with cancelOnUserActivity=false must still be cleared by /stop");
+        assertTrue(service.get(resilienceRetry.getId()).isEmpty(),
+                "Resilience RETRY_LLM_TURN must be cleared by /stop to fully reset resilience state");
+        assertTrue(service.listActions("telegram", "conv-1").isEmpty());
+    }
+
+    @Test
     void shouldCancelFutureReminderOnUserActivity() {
         DelayedSessionAction created = service.schedule(DelayedSessionAction.builder()
                 .channelType("telegram")

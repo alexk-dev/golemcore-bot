@@ -6,5 +6,6 @@ me/golemcore/bot/domain/model/RuntimeConfig.java
 me/golemcore/bot/adapter/outbound/hive/HiveEventBatchPublisher.java
 me/golemcore/bot/domain/loop/AgentLoop.java
 me/golemcore/bot/domain/service/AutoModeService.java
+me/golemcore/bot/domain/service/SessionRunCoordinator.java
 me/golemcore/bot/domain/system/toolloop/LlmCallPhase.java
 me/golemcore/bot/application/settings/RuntimeSettingsValidator.java

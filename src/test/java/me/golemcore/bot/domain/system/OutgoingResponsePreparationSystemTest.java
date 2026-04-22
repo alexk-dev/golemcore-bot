@@ -247,6 +247,25 @@ class OutgoingResponsePreparationSystemTest {
     }
 
     @Test
+    void shouldFallBackToGenericErrorWhenInternalRetrySchedulingFailsClosed() {
+        AgentContext context = buildContext();
+        context.setAttribute(ContextAttributes.LLM_ERROR,
+                LlmErrorClassifier.withCode(LlmErrorClassifier.LANGCHAIN4J_RATE_LIMIT, "rate limited"));
+        when(internalTurnService.scheduleAutoContinueRetry(context, LlmErrorClassifier.LANGCHAIN4J_RATE_LIMIT))
+                .thenReturn(false);
+        when(preferencesService.getMessage("system.error.llm")).thenReturn(ERROR_MESSAGE);
+
+        AgentContext result = system.process(context);
+
+        OutgoingResponse outgoing = result.getAttribute(ContextAttributes.OUTGOING_RESPONSE);
+        assertNotNull(outgoing);
+        assertEquals(ERROR_MESSAGE, outgoing.getText());
+        assertNull(result.getAttribute(ContextAttributes.TURN_INTERNAL_RETRY_SCHEDULED),
+                "failed internal retry scheduling must not mark the turn as scheduled");
+        verify(internalTurnService).scheduleAutoContinueRetry(context, LlmErrorClassifier.LANGCHAIN4J_RATE_LIMIT);
+    }
+
+    @Test
     void shouldNotScheduleInternalRetryForAutoMode() {
         AgentContext context = buildContext();
         context.setAttribute(ContextAttributes.LLM_ERROR,

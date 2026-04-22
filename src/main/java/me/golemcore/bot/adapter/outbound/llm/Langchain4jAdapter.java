@@ -27,6 +27,7 @@ import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.catalog.ModelCatalogEntry;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.Secret;
+import me.golemcore.bot.domain.service.MdcSupport;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.system.LlmErrorClassifier;
 import me.golemcore.bot.domain.system.LlmErrorPatterns;
@@ -385,7 +386,7 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
 
     @Override
     public CompletableFuture<LlmResponse> chat(LlmRequest request) {
-        return CompletableFuture.supplyAsync(() -> {
+        return MdcSupport.supplyAsyncWithMdc(() -> {
             ensureInitialized();
 
             boolean useResponsesApi = isResponsesApiRequest(request);
@@ -459,9 +460,11 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
                     }
                     if (isRateLimitError(e)) {
                         lastRateLimitError = e;
+                        String callerTag = request.getCallerTag() != null ? request.getCallerTag() : "toolloop";
+                        String loggedModel = effectiveModelId != null ? effectiveModelId : request.getModel();
                         if (attempt >= MAX_RETRIES) {
-                            log.warn("[LLM] Rate limit retries exhausted for {} after {} retry attempt(s)",
-                                    request.getModel(), MAX_RETRIES);
+                            log.warn("[LLM] Rate limit retries exhausted for {} after {} retry attempt(s) (caller={})",
+                                    loggedModel, MAX_RETRIES, callerTag);
                             break;
                         }
                         long exponentialBackoffMs = (long) (INITIAL_BACKOFF_MS * Math.pow(BACKOFF_MULTIPLIER, attempt));
@@ -469,8 +472,8 @@ public class Langchain4jAdapter implements LlmProviderAdapter, LlmComponent {
                         long backoffMs = resetSeconds > 0
                                 ? Math.max(resetSeconds * 1000 + 1000, exponentialBackoffMs)
                                 : exponentialBackoffMs;
-                        log.warn("[LLM] Rate limit hit for {} (attempt {}/{}), retrying in {}ms{}...",
-                                request.getModel(), attempt + 1, MAX_RETRIES, backoffMs,
+                        log.warn("[LLM] Rate limit hit for {} (attempt {}/{}, caller={}), retrying in {}ms{}...",
+                                loggedModel, attempt + 1, MAX_RETRIES, callerTag, backoffMs,
                                 resetSeconds > 0 ? " (server requested " + resetSeconds + "s)" : "");
                         try {
                             sleepBeforeRetry(backoffMs);

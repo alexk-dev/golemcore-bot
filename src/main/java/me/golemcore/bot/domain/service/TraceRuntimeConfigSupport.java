@@ -29,6 +29,7 @@ public final class TraceRuntimeConfigSupport {
                 runtimeConfigService.isTraceToolPayloadCaptureEnabled() || forcePayloadCapture);
         tracingConfig.setCaptureLlmPayloads(
                 runtimeConfigService.isTraceLlmPayloadCaptureEnabled() || forcePayloadCapture);
+        tracingConfig.setResiliencePayloadSampleRate(runtimeConfigService.getTraceResiliencePayloadSampleRate());
         return tracingConfig;
     }
 }
