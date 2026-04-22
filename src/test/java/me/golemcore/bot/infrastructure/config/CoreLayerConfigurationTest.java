@@ -146,7 +146,8 @@ class CoreLayerConfigurationTest {
                 mock(SkillResolver.class),
                 mock(TierResolver.class),
                 List.of(mock(ContextLayer.class)),
-                mock(PromptComposer.class)));
+                mock(PromptComposer.class),
+                mock(ContextCompactionPolicy.class)));
     }
 
 }

@@ -21,6 +21,7 @@ package me.golemcore.bot.domain.context.layer;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.context.ContextLayer;
+import me.golemcore.bot.domain.context.ContextLayerLifecycle;
 import me.golemcore.bot.domain.context.ContextLayerResult;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.ContextAttributes;
@@ -53,6 +54,21 @@ public class AutoModeLayer implements ContextLayer {
     }
 
     @Override
+    public int getPriority() {
+        return 95;
+    }
+
+    @Override
+    public ContextLayerLifecycle getLifecycle() {
+        return ContextLayerLifecycle.TURN;
+    }
+
+    @Override
+    public boolean isRequired() {
+        return true;
+    }
+
+    @Override
     public boolean appliesTo(AgentContext context) {
         return isAutoModeMessage(context);
     }
@@ -73,7 +89,9 @@ public class AutoModeLayer implements ContextLayer {
             sb.append("and propose a concrete alternative strategy for the next run.\n\n");
         }
 
-        String autoContext = autoModeService.buildAutoContext();
+        String autoContext = autoModeService.buildAutoContext(
+                context.getAttribute(ContextAttributes.AUTO_GOAL_ID),
+                context.getAttribute(ContextAttributes.AUTO_TASK_ID));
         if (autoContext != null && !autoContext.isBlank()) {
             sb.append(autoContext);
         }

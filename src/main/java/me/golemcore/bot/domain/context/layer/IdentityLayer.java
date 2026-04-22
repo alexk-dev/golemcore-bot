@@ -21,6 +21,7 @@ package me.golemcore.bot.domain.context.layer;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.context.ContextLayer;
+import me.golemcore.bot.domain.context.ContextLayerLifecycle;
 import me.golemcore.bot.domain.context.ContextLayerResult;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.PromptSection;
@@ -59,6 +60,16 @@ public class IdentityLayer implements ContextLayer {
     @Override
     public int getOrder() {
         return 10;
+    }
+
+    @Override
+    public int getPriority() {
+        return REQUIRED_PRIORITY;
+    }
+
+    @Override
+    public ContextLayerLifecycle getLifecycle() {
+        return ContextLayerLifecycle.STATIC;
     }
 
     @Override

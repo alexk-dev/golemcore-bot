@@ -22,6 +22,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.component.MemoryComponent;
 import me.golemcore.bot.domain.context.ContextLayer;
+import me.golemcore.bot.domain.context.ContextLayerLifecycle;
 import me.golemcore.bot.domain.context.ContextLayerResult;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.ContextAttributes;
@@ -63,6 +64,16 @@ public class MemoryLayer implements ContextLayer {
     @Override
     public int getOrder() {
         return 30;
+    }
+
+    @Override
+    public int getPriority() {
+        return 45;
+    }
+
+    @Override
+    public ContextLayerLifecycle getLifecycle() {
+        return ContextLayerLifecycle.ON_DEMAND;
     }
 
     @Override

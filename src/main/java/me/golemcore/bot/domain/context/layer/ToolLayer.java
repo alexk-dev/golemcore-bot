@@ -22,6 +22,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.component.ToolComponent;
 import me.golemcore.bot.domain.context.ContextLayer;
+import me.golemcore.bot.domain.context.ContextLayerLifecycle;
 import me.golemcore.bot.domain.context.ContextLayerResult;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.ContextAttributes;
@@ -81,6 +82,21 @@ public class ToolLayer implements ContextLayer {
     @Override
     public int getOrder() {
         return 50;
+    }
+
+    @Override
+    public int getPriority() {
+        return 65;
+    }
+
+    @Override
+    public ContextLayerLifecycle getLifecycle() {
+        return ContextLayerLifecycle.TURN;
+    }
+
+    @Override
+    public int getTokenBudget() {
+        return 3_000;
     }
 
     @Override

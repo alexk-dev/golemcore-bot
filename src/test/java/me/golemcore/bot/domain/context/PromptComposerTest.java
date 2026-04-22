@@ -65,4 +65,83 @@ class PromptComposerTest {
         String result = composer.compose(blueprint);
         assertEquals("content", result);
     }
+
+    @Test
+    void shouldKeepRequiredAndHigherPriorityOptionalLayersWithinBudget() {
+        ContextBlueprint blueprint = ContextBlueprint.create();
+        blueprint.add(ContextLayerResult.builder()
+                .layerName("identity")
+                .content("# Identity")
+                .estimatedTokens(200)
+                .required(true)
+                .priority(100)
+                .build());
+        blueprint.add(ContextLayerResult.builder()
+                .layerName("memory")
+                .content("# Memory")
+                .estimatedTokens(500)
+                .priority(40)
+                .build());
+        blueprint.add(ContextLayerResult.builder()
+                .layerName("tool")
+                .content("# Tools")
+                .estimatedTokens(300)
+                .priority(70)
+                .build());
+
+        String result = composer.compose(blueprint, 500);
+
+        assertTrue(result.contains("# Identity"));
+        assertTrue(result.contains("# Tools"));
+        assertEquals(-1, result.indexOf("# Memory"));
+        assertTrue(result.indexOf("# Identity") < result.indexOf("# Tools"),
+                "selected layers must keep blueprint order");
+    }
+
+    @Test
+    void shouldDropOptionalLayerThatExceedsItsOwnBudget() {
+        ContextBlueprint blueprint = ContextBlueprint.create();
+        blueprint.add(ContextLayerResult.builder()
+                .layerName("identity")
+                .content("# Identity")
+                .estimatedTokens(100)
+                .required(true)
+                .priority(100)
+                .build());
+        blueprint.add(ContextLayerResult.builder()
+                .layerName("rag")
+                .content("# Relevant Memory")
+                .estimatedTokens(600)
+                .priority(90)
+                .tokenBudget(300)
+                .build());
+
+        String result = composer.compose(blueprint, 1_000);
+
+        assertTrue(result.contains("# Identity"));
+        assertEquals(-1, result.indexOf("# Relevant Memory"));
+    }
+
+    @Test
+    void shouldKeepRequiredLayerEvenWhenItExceedsGlobalBudget() {
+        ContextBlueprint blueprint = ContextBlueprint.create();
+        blueprint.add(ContextLayerResult.builder()
+                .layerName("identity")
+                .content("# Identity")
+                .estimatedTokens(2_000)
+                .required(true)
+                .priority(100)
+                .build());
+        blueprint.add(ContextLayerResult.builder()
+                .layerName("memory")
+                .content("# Memory")
+                .estimatedTokens(10)
+                .priority(40)
+                .build());
+
+        String result = composer.compose(blueprint, 100);
+
+        assertTrue(result.contains("# Identity"));
+        assertEquals(-1, result.indexOf("# Memory"));
+    }
 }

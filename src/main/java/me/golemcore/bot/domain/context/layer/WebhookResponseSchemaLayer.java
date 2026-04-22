@@ -19,6 +19,7 @@
 package me.golemcore.bot.domain.context.layer;
 
 import me.golemcore.bot.domain.context.ContextLayer;
+import me.golemcore.bot.domain.context.ContextLayerLifecycle;
 import me.golemcore.bot.domain.context.ContextLayerResult;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.ContextAttributes;
@@ -47,6 +48,16 @@ public class WebhookResponseSchemaLayer implements ContextLayer {
     @Override
     public int getOrder() {
         return 76;
+    }
+
+    @Override
+    public int getPriority() {
+        return REQUIRED_PRIORITY;
+    }
+
+    @Override
+    public ContextLayerLifecycle getLifecycle() {
+        return ContextLayerLifecycle.TURN;
     }
 
     @Override

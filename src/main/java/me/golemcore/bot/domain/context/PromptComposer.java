@@ -20,7 +20,12 @@ package me.golemcore.bot.domain.context;
 
 import lombok.extern.slf4j.Slf4j;
 
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Set;
 
 /**
  * Composes a {@link ContextBlueprint} into the final system prompt string.
@@ -61,6 +66,24 @@ public class PromptComposer {
      * @return the composed system prompt, never {@code null} or blank
      */
     public String compose(ContextBlueprint blueprint) {
+        return compose(blueprint, Integer.MAX_VALUE);
+    }
+
+    /**
+     * Composes the final system prompt while enforcing a global token budget.
+     *
+     * <p>
+     * Required layers are always included. Optional layers are selected by priority
+     * and per-layer budget first, then rendered back in blueprint order so prompt
+     * structure remains stable.
+     *
+     * @param blueprint
+     *            the assembled context blueprint
+     * @param maxPromptTokens
+     *            global system-prompt token cap; non-positive values mean unlimited
+     * @return the composed system prompt, never {@code null} or blank
+     */
+    public String compose(ContextBlueprint blueprint, int maxPromptTokens) {
         if (blueprint == null) {
             return FALLBACK_PROMPT;
         }
@@ -71,8 +94,9 @@ public class PromptComposer {
             return FALLBACK_PROMPT;
         }
 
+        List<ContextLayerResult> selectedResults = selectResults(contentResults, maxPromptTokens);
         StringBuilder sb = new StringBuilder();
-        for (ContextLayerResult result : contentResults) {
+        for (ContextLayerResult result : selectedResults) {
             if (sb.length() > 0) {
                 sb.append(SECTION_SEPARATOR);
             }
@@ -80,8 +104,81 @@ public class PromptComposer {
         }
 
         String prompt = sb.toString().trim();
-        log.debug("[PromptComposer] Composed prompt from {} layers, {} chars",
-                contentResults.size(), prompt.length());
+        log.debug("[PromptComposer] Composed prompt from {} of {} layers, {} chars",
+                selectedResults.size(), contentResults.size(), prompt.length());
         return prompt;
+    }
+
+    private List<ContextLayerResult> selectResults(List<ContextLayerResult> contentResults, int maxPromptTokens) {
+        if (maxPromptTokens <= 0 || maxPromptTokens == Integer.MAX_VALUE) {
+            return contentResults;
+        }
+
+        Set<ContextLayerResult> selected = Collections.newSetFromMap(new IdentityHashMap<>());
+        int usedTokens = 0;
+        for (ContextLayerResult result : contentResults) {
+            if (result.isRequired()) {
+                selected.add(result);
+                usedTokens += positiveTokens(result);
+            }
+        }
+
+        int remainingTokens = maxPromptTokens - usedTokens;
+        List<ContextLayerResult> optionalResults = new ArrayList<>();
+        for (ContextLayerResult result : contentResults) {
+            if (!result.isRequired()) {
+                optionalResults.add(result);
+            }
+        }
+        optionalResults.sort(Comparator
+                .comparingInt(ContextLayerResult::getPriority)
+                .reversed());
+
+        for (ContextLayerResult result : optionalResults) {
+            int tokens = positiveTokens(result);
+            if (tokens > normalizeLayerBudget(result.getTokenBudget())) {
+                log.debug("[PromptComposer] Dropping layer '{}' because ~{} tokens exceed its {} token layer budget",
+                        result.getLayerName(), tokens, result.getTokenBudget());
+                continue;
+            }
+            if (tokens <= remainingTokens) {
+                selected.add(result);
+                remainingTokens -= tokens;
+            } else {
+                log.debug(
+                        "[PromptComposer] Dropping layer '{}' because ~{} tokens do not fit remaining {} token budget",
+                        result.getLayerName(), tokens, Math.max(0, remainingTokens));
+            }
+        }
+
+        if (usedTokens > maxPromptTokens) {
+            log.warn("[PromptComposer] Required context layers exceed system prompt budget: used={} budget={}",
+                    usedTokens, maxPromptTokens);
+        }
+
+        List<ContextLayerResult> orderedSelected = new ArrayList<>();
+        for (ContextLayerResult result : contentResults) {
+            if (selected.contains(result)) {
+                orderedSelected.add(result);
+            }
+        }
+        if (orderedSelected.isEmpty()) {
+            ContextLayerResult fallback = optionalResults.isEmpty() ? contentResults.get(0) : optionalResults.get(0);
+            log.warn("[PromptComposer] System prompt budget selected no layers; keeping highest-priority layer '{}'",
+                    fallback.getLayerName());
+            return List.of(fallback);
+        }
+        return orderedSelected;
+    }
+
+    private int positiveTokens(ContextLayerResult result) {
+        return Math.max(0, result.getEstimatedTokens());
+    }
+
+    private int normalizeLayerBudget(int tokenBudget) {
+        if (tokenBudget <= 0) {
+            return ContextLayer.UNLIMITED_TOKEN_BUDGET;
+        }
+        return tokenBudget;
     }
 }

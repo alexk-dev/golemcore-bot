@@ -21,6 +21,7 @@ package me.golemcore.bot.domain.context.layer;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.context.ContextLayer;
+import me.golemcore.bot.domain.context.ContextLayerLifecycle;
 import me.golemcore.bot.domain.context.ContextLayerResult;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.service.WorkspaceInstructionService;
@@ -47,6 +48,21 @@ public class WorkspaceInstructionsLayer implements ContextLayer {
     @Override
     public int getOrder() {
         return 20;
+    }
+
+    @Override
+    public int getPriority() {
+        return 90;
+    }
+
+    @Override
+    public ContextLayerLifecycle getLifecycle() {
+        return ContextLayerLifecycle.SESSION;
+    }
+
+    @Override
+    public int getTokenBudget() {
+        return 4_000;
     }
 
     @Override

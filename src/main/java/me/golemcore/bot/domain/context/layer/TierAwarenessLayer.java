@@ -21,6 +21,7 @@ package me.golemcore.bot.domain.context.layer;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.context.ContextLayer;
+import me.golemcore.bot.domain.context.ContextLayerLifecycle;
 import me.golemcore.bot.domain.context.ContextLayerResult;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.service.SessionModelSettingsSupport;
@@ -48,6 +49,16 @@ public class TierAwarenessLayer implements ContextLayer {
     @Override
     public int getOrder() {
         return 60;
+    }
+
+    @Override
+    public int getPriority() {
+        return 70;
+    }
+
+    @Override
+    public ContextLayerLifecycle getLifecycle() {
+        return ContextLayerLifecycle.TURN;
     }
 
     @Override

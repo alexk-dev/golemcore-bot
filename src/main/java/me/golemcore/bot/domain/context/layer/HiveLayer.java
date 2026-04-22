@@ -20,6 +20,7 @@ package me.golemcore.bot.domain.context.layer;
 
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.context.ContextLayer;
+import me.golemcore.bot.domain.context.ContextLayerLifecycle;
 import me.golemcore.bot.domain.context.ContextLayerResult;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.ToolNames;
@@ -44,6 +45,21 @@ public class HiveLayer implements ContextLayer {
     @Override
     public int getOrder() {
         return 75;
+    }
+
+    @Override
+    public int getPriority() {
+        return 90;
+    }
+
+    @Override
+    public ContextLayerLifecycle getLifecycle() {
+        return ContextLayerLifecycle.TURN;
+    }
+
+    @Override
+    public boolean isRequired() {
+        return true;
     }
 
     @Override

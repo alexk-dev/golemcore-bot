@@ -116,6 +116,27 @@ class ContextCompactionPolicyTest {
     }
 
     @Test
+    void shouldResolveSystemPromptBudgetAsShareOfFullRequestBudget() {
+        when(runtimeConfigService.getCompactionTriggerMode()).thenReturn("model_ratio");
+        when(runtimeConfigService.getCompactionModelThresholdRatio()).thenReturn(0.95d);
+        when(modelSelectionService.resolveMaxInputTokensForContext(any())).thenReturn(10_000);
+
+        int threshold = policy.resolveSystemPromptThreshold(AgentContext.builder().build());
+
+        assertEquals(3_141, threshold);
+    }
+
+    @Test
+    void shouldUseSystemPromptFallbackBudgetWhenFullRequestBudgetIsBypassed() {
+        when(modelSelectionService.resolveMaxInputTokensForContext(any())).thenReturn(0);
+        when(runtimeConfigService.getCompactionMaxContextTokens()).thenReturn(0);
+
+        int threshold = policy.resolveSystemPromptThreshold(AgentContext.builder().build());
+
+        assertEquals(12_000, threshold);
+    }
+
+    @Test
     void shouldFallBackToConfiguredThresholdWhenModelLookupFails() {
         when(modelSelectionService.resolveMaxInputTokensForContext(any()))
                 .thenThrow(new IllegalStateException("missing model"));

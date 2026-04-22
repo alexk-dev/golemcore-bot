@@ -68,6 +68,11 @@ public class AutoModeService {
     private static final String INBOX_GOAL_TITLE = "Inbox";
     private static final String INBOX_GOAL_DESCRIPTION = "System container for standalone tasks";
     private static final int MAX_TASKS_PER_GOAL = 20;
+    private static final int AUTO_CONTEXT_MAX_OTHER_GOALS = 3;
+    private static final int AUTO_CONTEXT_DIARY_LOOKBACK = 20;
+    private static final int AUTO_CONTEXT_MAX_DIARY_ENTRIES = 4;
+    private static final int AUTO_CONTEXT_FIELD_MAX_CHARS = 1_200;
+    private static final int AUTO_CONTEXT_DIARY_MAX_CHARS = 320;
     private static final TypeReference<List<Goal>> GOAL_LIST_TYPE_REF = new TypeReference<>() {
     };
 
@@ -725,77 +730,28 @@ public class AutoModeService {
     // ==================== Context building ====================
 
     public String buildAutoContext() {
+        return buildAutoContext(null, null);
+    }
+
+    public String buildAutoContext(String requestedGoalId, String requestedTaskId) {
         List<Goal> activeGoals = getActiveGoals();
         if (activeGoals.isEmpty()) {
             return null;
         }
 
+        Optional<AutoTask> currentTask = resolveCurrentTask(requestedTaskId);
+        Optional<Goal> currentGoal = resolveCurrentGoal(activeGoals, requestedGoalId, currentTask);
+
         StringBuilder sb = new StringBuilder();
         sb.append("# Auto Mode\n\n");
 
-        sb.append("## Active Goals\n");
-        for (int i = 0; i < activeGoals.size(); i++) {
-            Goal goal = activeGoals.get(i);
-            long completed = goal.getCompletedTaskCount();
-            int total = goal.getTasks().size();
-            sb.append(String.format("%d. **%s** [%s] (%d/%d tasks done)%n",
-                    i + 1, goal.getTitle(), goal.getStatus(),
-                    completed, total));
-            if (goal.getDescription() != null && !goal.getDescription().isBlank()) {
-                sb.append("   Description: ").append(goal.getDescription()).append("\n");
-            }
-            if (goal.getPrompt() != null && !goal.getPrompt().isBlank()) {
-                sb.append("   Prompt: ").append(goal.getPrompt()).append("\n");
-            }
-            if (goal.getReflectionModelTier() != null && !goal.getReflectionModelTier().isBlank()) {
-                sb.append("   Reflection tier: ").append(goal.getReflectionModelTier())
-                        .append(goal.isReflectionTierPriority() ? " (priority)" : " (default)")
-                        .append("\n");
-            }
-        }
+        currentGoal.ifPresent(goal -> appendCurrentGoal(sb, goal));
+        appendOtherActiveGoals(sb, activeGoals, currentGoal.map(Goal::getId).orElse(null));
 
-        Optional<AutoTask> nextTask = getNextPendingTask();
-        if (nextTask.isPresent()) {
-            AutoTask task = nextTask.get();
-            sb.append("\n## Current Task\n");
-            String goalTitle = activeGoals.stream()
-                    .filter(g -> g.getId().equals(task.getGoalId()))
-                    .map(Goal::getTitle)
-                    .findFirst()
-                    .orElse("unknown");
-            sb.append(String.format("**%s** (goal: %s)%n", task.getTitle(), goalTitle));
-            sb.append("Status: ").append(task.getStatus()).append("\n");
-            if (task.getDescription() != null && !task.getDescription().isBlank()) {
-                sb.append("Details: ").append(task.getDescription()).append("\n");
-            }
-            if (task.getPrompt() != null && !task.getPrompt().isBlank()) {
-                sb.append("Prompt: ").append(task.getPrompt()).append("\n");
-            }
-            if (task.getReflectionModelTier() != null && !task.getReflectionModelTier().isBlank()) {
-                sb.append("Reflection tier: ").append(task.getReflectionModelTier())
-                        .append(task.isReflectionTierPriority() ? " (priority)" : " (default)")
-                        .append("\n");
-            }
-            if (task.getReflectionStrategy() != null && !task.getReflectionStrategy().isBlank()) {
-                sb.append("Recovery strategy: ").append(task.getReflectionStrategy()).append("\n");
-            }
-            if (task.isReflectionRequired()) {
-                sb.append("Reflection required after repeated failures.\n");
-            }
-        }
-
-        int maxEntries = 10;
-        List<DiaryEntry> recentDiary = getRecentDiary(maxEntries);
-        if (!recentDiary.isEmpty()) {
-            sb.append("\n## Recent Diary (last ").append(recentDiary.size()).append(")\n");
-            DateTimeFormatter timeFormat = DateTimeFormatter.ofPattern("HH:mm")
-                    .withZone(ZoneOffset.UTC);
-            for (DiaryEntry entry : recentDiary) {
-                sb.append("- [").append(timeFormat.format(entry.getTimestamp())).append("] ");
-                sb.append(entry.getType()).append(": ");
-                sb.append(entry.getContent()).append("\n");
-            }
-        }
+        currentTask.ifPresent(task -> appendCurrentTask(sb, task, currentGoal.map(Goal::getTitle).orElse("unknown")));
+        appendRelevantDiary(sb, selectRelevantDiary(
+                currentGoal.map(Goal::getId).orElse(requestedGoalId),
+                currentTask.map(AutoTask::getId).orElse(requestedTaskId)));
 
         sb.append("\n## Instructions\n");
         sb.append("You are in autonomous work mode.\n");
@@ -807,6 +763,136 @@ public class AutoModeService {
         sb.append("6. Be concise and focused — record key findings in diary\n");
 
         return sb.toString();
+    }
+
+    private Optional<AutoTask> resolveCurrentTask(String requestedTaskId) {
+        if (requestedTaskId != null && !requestedTaskId.isBlank()) {
+            return getTask(requestedTaskId);
+        }
+        return getNextPendingTask();
+    }
+
+    private Optional<Goal> resolveCurrentGoal(List<Goal> activeGoals, String requestedGoalId,
+            Optional<AutoTask> currentTask) {
+        if (requestedGoalId != null && !requestedGoalId.isBlank()) {
+            return activeGoals.stream()
+                    .filter(goal -> requestedGoalId.equals(goal.getId()))
+                    .findFirst();
+        }
+        if (currentTask.isPresent()) {
+            String taskGoalId = currentTask.get().getGoalId();
+            return activeGoals.stream()
+                    .filter(goal -> goal.getId().equals(taskGoalId))
+                    .findFirst();
+        }
+        return activeGoals.stream()
+                .sorted(Comparator.comparing(Goal::getCreatedAt))
+                .findFirst();
+    }
+
+    private void appendCurrentGoal(StringBuilder sb, Goal goal) {
+        long completed = goal.getCompletedTaskCount();
+        int total = goal.getTasks().size();
+        sb.append("## Current Goal\n");
+        sb.append(String.format("**%s** [%s] (%d/%d tasks done)%n",
+                goal.getTitle(), goal.getStatus(), completed, total));
+        appendField(sb, "Description", goal.getDescription(), AUTO_CONTEXT_FIELD_MAX_CHARS);
+        appendField(sb, "Prompt", goal.getPrompt(), AUTO_CONTEXT_FIELD_MAX_CHARS);
+        appendReflectionTier(sb, goal.getReflectionModelTier(), goal.isReflectionTierPriority());
+        appendField(sb, "Recovery strategy", goal.getReflectionStrategy(), AUTO_CONTEXT_FIELD_MAX_CHARS);
+    }
+
+    private void appendOtherActiveGoals(StringBuilder sb, List<Goal> activeGoals, String currentGoalId) {
+        List<Goal> otherGoals = activeGoals.stream()
+                .filter(goal -> currentGoalId == null || !currentGoalId.equals(goal.getId()))
+                .limit(AUTO_CONTEXT_MAX_OTHER_GOALS)
+                .toList();
+        if (otherGoals.isEmpty()) {
+            return;
+        }
+        sb.append("\n## Other Active Goals (summary)\n");
+        for (Goal goal : otherGoals) {
+            sb.append("- ").append(goal.getTitle()).append(" [").append(goal.getStatus()).append("] (")
+                    .append(goal.getCompletedTaskCount()).append("/").append(goal.getTasks().size())
+                    .append(" tasks done)\n");
+        }
+        long omitted = activeGoals.stream()
+                .filter(goal -> currentGoalId == null || !currentGoalId.equals(goal.getId()))
+                .count() - otherGoals.size();
+        if (omitted > 0) {
+            sb.append("- ... ").append(omitted).append(" more active goals omitted from prompt\n");
+        }
+    }
+
+    private void appendCurrentTask(StringBuilder sb, AutoTask task, String goalTitle) {
+        sb.append("\n## Current Task\n");
+        sb.append(String.format("**%s** (goal: %s)%n", task.getTitle(), goalTitle));
+        sb.append("Status: ").append(task.getStatus()).append("\n");
+        appendField(sb, "Details", task.getDescription(), AUTO_CONTEXT_FIELD_MAX_CHARS);
+        appendField(sb, "Prompt", task.getPrompt(), AUTO_CONTEXT_FIELD_MAX_CHARS);
+        appendReflectionTier(sb, task.getReflectionModelTier(), task.isReflectionTierPriority());
+        appendField(sb, "Recovery strategy", task.getReflectionStrategy(), AUTO_CONTEXT_FIELD_MAX_CHARS);
+        if (task.isReflectionRequired()) {
+            sb.append("Reflection required after repeated failures.\n");
+        }
+    }
+
+    private List<DiaryEntry> selectRelevantDiary(String goalId, String taskId) {
+        List<DiaryEntry> recentDiary = getRecentDiary(AUTO_CONTEXT_DIARY_LOOKBACK);
+        List<DiaryEntry> matched = recentDiary.stream()
+                .filter(entry -> matchesDiaryScope(entry, goalId, taskId))
+                .toList();
+        List<DiaryEntry> selected = matched.isEmpty() ? recentDiary : matched;
+        int fromIndex = Math.max(0, selected.size() - AUTO_CONTEXT_MAX_DIARY_ENTRIES);
+        return selected.subList(fromIndex, selected.size());
+    }
+
+    private boolean matchesDiaryScope(DiaryEntry entry, String goalId, String taskId) {
+        if (entry == null) {
+            return false;
+        }
+        if (taskId != null && !taskId.isBlank() && taskId.equals(entry.getTaskId())) {
+            return true;
+        }
+        return goalId != null && !goalId.isBlank() && goalId.equals(entry.getGoalId());
+    }
+
+    private void appendRelevantDiary(StringBuilder sb, List<DiaryEntry> diaryEntries) {
+        if (diaryEntries.isEmpty()) {
+            return;
+        }
+        sb.append("\n## Relevant Diary (").append(diaryEntries.size()).append(" entries)\n");
+        DateTimeFormatter timeFormat = DateTimeFormatter.ofPattern("HH:mm")
+                .withZone(ZoneOffset.UTC);
+        for (DiaryEntry entry : diaryEntries) {
+            sb.append("- [").append(timeFormat.format(entry.getTimestamp())).append("] ");
+            sb.append(entry.getType()).append(": ");
+            sb.append(truncate(entry.getContent(), AUTO_CONTEXT_DIARY_MAX_CHARS)).append("\n");
+        }
+        sb.append("Older or unrelated diary entries are intentionally omitted from the system prompt.\n");
+    }
+
+    private void appendReflectionTier(StringBuilder sb, String reflectionModelTier, boolean reflectionTierPriority) {
+        if (reflectionModelTier == null || reflectionModelTier.isBlank()) {
+            return;
+        }
+        sb.append("Reflection tier: ").append(reflectionModelTier)
+                .append(reflectionTierPriority ? " (priority)" : " (default)")
+                .append("\n");
+    }
+
+    private void appendField(StringBuilder sb, String label, String value, int maxChars) {
+        if (value == null || value.isBlank()) {
+            return;
+        }
+        sb.append(label).append(": ").append(truncate(value, maxChars)).append("\n");
+    }
+
+    private String truncate(String value, int maxChars) {
+        if (value == null || value.length() <= maxChars) {
+            return value;
+        }
+        return value.substring(0, Math.max(0, maxChars - 18)).stripTrailing() + " ... [truncated]";
     }
 
     // ==================== Persistence ====================
