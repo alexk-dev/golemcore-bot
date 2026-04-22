@@ -12,9 +12,11 @@ import java.nio.file.Path;
 import java.time.Instant;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.NoSuchElementException;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
@@ -27,6 +29,8 @@ import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.MemoryPresetIds;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.RuntimeConfig;
+import me.golemcore.bot.domain.model.RuntimeEvent;
+import me.golemcore.bot.domain.model.RuntimeEventType;
 import me.golemcore.bot.domain.model.Secret;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.SessionInspectionService;
@@ -56,7 +60,22 @@ class AgentLoopContextWindowExternalE2ETest {
     private static final int DEFAULT_MAX_INPUT_TOKENS = 16_000;
     private static final int DEFAULT_PAYLOAD_KB = 16;
     private static final int DEFAULT_TIMEOUT_SECONDS = 180;
+    private static final int REQUEST_ESTIMATE_TOLERANCE_TOKENS = 1_024;
+    private static final int REQUEST_BASE_OVERHEAD_TOKENS = 256;
+    private static final int MAX_PROMPT_CATALOG_TOOLS = 24;
     private static final String LOW_PRIORITY_TAIL_MARKER = "WORKSPACE_NOISE_LINE_0499";
+    private static final Set<String> DISABLED_TOOL_NAMES = Set.of(
+            "filesystem",
+            "shell",
+            "skill_management",
+            "skill_transition",
+            "set_tier",
+            "goal_management",
+            "memory",
+            "discover_mcp_server",
+            "send_voice",
+            "plan_get",
+            "plan_set_content");
 
     @TempDir
     static Path tempDir;
@@ -154,6 +173,7 @@ class AgentLoopContextWindowExternalE2ETest {
         assertNotNull(hygieneReport, "request-time context hygiene report should be recorded");
         assertTrue(numberValue(hygieneReport, "projectedTokens") <= numberValue(hygieneReport, "rawTokens"),
                 () -> "projected context should not exceed raw context: " + hygieneReport);
+        assertContextHygieneEventEmitted(context, hygieneReport);
 
         String response = responseFuture.get(intEnv("AGENTLOOP_E2E_TIMEOUT_SECONDS", DEFAULT_TIMEOUT_SECONDS),
                 TimeUnit.SECONDS);
@@ -166,14 +186,17 @@ class AgentLoopContextWindowExternalE2ETest {
         String systemPrompt = request.path("systemPrompt").asText();
         int systemPromptTokens = TokenEstimator.estimate(systemPrompt);
         int expectedBudget = expectedSystemPromptBudget(maxInputTokens);
+        int estimatedRequestTokens = estimateRequestTokens(request);
+        int expectedInputBudget = expectedFullRequestBudget(maxInputTokens);
 
         assertFalse(systemPrompt.isBlank());
         assertTrue(systemPromptTokens <= expectedBudget + 100,
                 () -> "systemPrompt estimate " + systemPromptTokens + " exceeded budget " + expectedBudget);
+        assertTrue(estimatedRequestTokens <= expectedInputBudget + REQUEST_ESTIMATE_TOLERANCE_TOKENS,
+                () -> "request estimate " + estimatedRequestTokens + " exceeded input budget " + expectedInputBudget);
         assertFalse(systemPrompt.contains(LOW_PRIORITY_TAIL_MARKER),
                 "low-priority workspace instruction tail should be dropped by layer/global budgeting");
-        assertTrue(request.path("tools").isArray());
-        assertTrue(request.path("tools").isEmpty(), "tools must stay disabled in the isolated AgentLoop E2E");
+        assertBoundedTools(request.path("tools"), systemPrompt);
         assertTrue(request.path("messages").isArray());
         assertTrue(request.toString().contains(marker));
     }
@@ -359,14 +382,79 @@ class AgentLoopContextWindowExternalE2ETest {
     }
 
     private int expectedSystemPromptBudget(int modelMax) {
+        int fullRequestThreshold = expectedFullRequestBudget(modelMax);
+        return Math.min(12_000, Math.max(1_500, (int) Math.floor(fullRequestThreshold * 0.35d)));
+    }
+
+    private int expectedFullRequestBudget(int modelMax) {
         int proportionalReserve = Math.max(1024, (int) Math.floor(modelMax * 0.05d));
         int cappedReserve = Math.min(32_768, proportionalReserve);
         int maximumReserve = Math.max(1, modelMax / 4);
         int outputReserve = Math.min(cappedReserve, maximumReserve);
         int modelSafeThreshold = Math.max(1, modelMax - outputReserve);
         int ratioThreshold = Math.max(1, (int) Math.floor(modelMax * 0.95d));
-        int fullRequestThreshold = Math.min(ratioThreshold, modelSafeThreshold);
-        return Math.min(12_000, Math.max(1_500, (int) Math.floor(fullRequestThreshold * 0.35d)));
+        return Math.min(ratioThreshold, modelSafeThreshold);
+    }
+
+    private int estimateRequestTokens(JsonNode request) {
+        int tokens = REQUEST_BASE_OVERHEAD_TOKENS;
+        tokens += TokenEstimator.estimate(request.path("systemPrompt").asText());
+        tokens += TokenEstimator.estimate(request.path("messages").toString());
+        tokens += TokenEstimator.estimate(request.path("tools").toString());
+        tokens += TokenEstimator.estimate(request.path("toolResults").toString());
+        return tokens;
+    }
+
+    private void assertBoundedTools(JsonNode tools, String systemPrompt) {
+        assertTrue(tools.isArray());
+        assertTrue(tools.size() <= MAX_PROMPT_CATALOG_TOOLS,
+                () -> "tool schemas should stay bounded in isolated AgentLoop E2E: " + tools.size());
+        if (tools.size() > 0) {
+            assertTrue(systemPrompt.contains("# Tool Use Policy"),
+                    "tool schemas require the compact tool-use policy in the system prompt");
+        }
+        for (String disabledToolName : DISABLED_TOOL_NAMES) {
+            assertFalse(containsToolName(tools, disabledToolName),
+                    () -> "disabled tool should not be advertised: " + disabledToolName);
+        }
+    }
+
+    private boolean containsToolName(JsonNode tools, String name) {
+        for (JsonNode tool : tools) {
+            String toolName = toolName(tool);
+            if (name.equals(toolName)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private String toolName(JsonNode tool) {
+        String directName = tool.path("name").asText("");
+        if (!directName.isBlank()) {
+            return directName;
+        }
+        return tool.path("function").path("name").asText("");
+    }
+
+    private void assertContextHygieneEventEmitted(AgentContext context, Map<String, Object> hygieneReport) {
+        List<RuntimeEvent> runtimeEvents = context.getAttribute(ContextAttributes.RUNTIME_EVENTS);
+        assertNotNull(runtimeEvents, "runtime events should be recorded");
+        assertTrue(runtimeEvents.stream().anyMatch(event -> isMatchingContextHygieneEvent(event, hygieneReport)),
+                () -> "CONTEXT_HYGIENE runtime event should include report: " + hygieneReport);
+    }
+
+    private boolean isMatchingContextHygieneEvent(RuntimeEvent event, Map<String, Object> hygieneReport) {
+        if (event == null || event.type() != RuntimeEventType.CONTEXT_HYGIENE || event.payload() == null) {
+            return false;
+        }
+        Object report = event.payload().get("contextHygiene");
+        if (!(report instanceof Map<?, ?> eventReport)) {
+            return false;
+        }
+        Object projectedTokens = eventReport.get("projectedTokens");
+        return projectedTokens instanceof Number projected
+                && projected.intValue() == numberValue(hygieneReport, "projectedTokens");
     }
 
     private String requiredEnv(String name) {
