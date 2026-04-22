@@ -149,6 +149,18 @@ public class DelayedSessionActionService {
         }
     }
 
+    public boolean hasPendingActions(String channelType, String conversationKey) {
+        ensureLoaded();
+        String normalizedChannel = normalizeChannelType(channelType);
+        String normalizedConversation = normalizeConversationKey(conversationKey);
+        synchronized (lock) {
+            pruneRetainedTerminalLocked(clock.instant());
+            return actions.values().stream()
+                    .filter(action -> !action.isTerminal())
+                    .anyMatch(action -> matchesSession(action, normalizedChannel, normalizedConversation));
+        }
+    }
+
     public boolean cancelAction(String actionId, String channelType, String conversationKey) {
         ensureLoaded();
         synchronized (lock) {

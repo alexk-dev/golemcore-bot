@@ -11,6 +11,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -117,6 +118,57 @@ class SessionRunCoordinatorDelayedActionsTest {
             assertTrue(processed.await(2, TimeUnit.SECONDS));
             verify(agentLoop).processMessage(regular);
             verify(delayedActionService).cancelOnUserActivity(regular);
+        }
+    }
+
+    @Test
+    void shouldDropInternalInboundArrivingWhilePausedAfterStopWithoutResuming() throws Exception {
+        SessionPort sessionPort = mock(SessionPort.class);
+        AgentLoop agentLoop = mock(AgentLoop.class);
+        RuntimeEventService runtimeEventService = mock(RuntimeEventService.class);
+        RuntimeConfigService runtimeConfigService = runtimeConfigService("one-at-a-time");
+
+        try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
+            SessionRunCoordinator coordinator = new SessionRunCoordinator(sessionPort, agentLoop, executor,
+                    runtimeEventService, runtimeConfigService, null, null);
+
+            Gate gate = new Gate();
+            CountDownLatch resumeProcessed = new CountDownLatch(1);
+
+            org.mockito.Mockito.doAnswer(invocation -> {
+                Message inbound = invocation.getArgument(0);
+                if ("A".equals(inbound.getContent())) {
+                    try {
+                        gate.await();
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                    }
+                } else if ("RESUME".equals(inbound.getContent())) {
+                    resumeProcessed.countDown();
+                }
+                return null;
+            }).when(agentLoop).processMessage(any(Message.class));
+
+            CompletableFuture<Void> initialRun = coordinator.submit(user("A"));
+            gate.awaitStarted();
+
+            coordinator.requestStop(CHANNEL_TYPE, CHAT_ID);
+            gate.release();
+            try {
+                initialRun.get(2, TimeUnit.SECONDS);
+            } catch (Exception ignored) { // NOSONAR - run may complete exceptionally
+                // initial run may complete exceptionally due to cancellation; that is fine for
+                // this test
+            }
+
+            Message internalRetry = internalRetry();
+            coordinator.enqueue(internalRetry);
+
+            coordinator.enqueue(user("RESUME"));
+            assertTrue(resumeProcessed.await(2, TimeUnit.SECONDS),
+                    "A regular user message must still be able to resume after /stop");
+
+            verify(agentLoop, never()).processMessage(internalRetry);
         }
     }
 
@@ -240,11 +292,26 @@ class SessionRunCoordinatorDelayedActionsTest {
                 .build();
     }
 
+    private static Message internalRetry() {
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put(ContextAttributes.MESSAGE_INTERNAL, true);
+        metadata.put(ContextAttributes.TURN_QUEUE_KIND, ContextAttributes.TURN_QUEUE_KIND_INTERNAL_MODEL_RETRY);
+        return Message.builder()
+                .role("user")
+                .content("retry-llm-turn")
+                .channelType(CHANNEL_TYPE)
+                .chatId(CHAT_ID)
+                .senderId("internal")
+                .timestamp(Instant.EPOCH)
+                .metadata(metadata)
+                .build();
+    }
+
     private static Message delayed(String content) {
         Map<String, Object> metadata = new LinkedHashMap<>();
         metadata.put(ContextAttributes.MESSAGE_INTERNAL, true);
         metadata.put(ContextAttributes.MESSAGE_INTERNAL_KIND, ContextAttributes.MESSAGE_INTERNAL_KIND_DELAYED_ACTION);
-        metadata.put(ContextAttributes.TURN_QUEUE_KIND, ContextAttributes.TURN_QUEUE_KIND_DELAYED_ACTION);
+        metadata.put(ContextAttributes.TURN_QUEUE_KIND, ContextAttributes.TURN_QUEUE_KIND_INTERNAL_DELAYED_ACTION);
         return Message.builder()
                 .role("user")
                 .content(content)

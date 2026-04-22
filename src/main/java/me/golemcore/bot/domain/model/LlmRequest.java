@@ -68,6 +68,14 @@ public class LlmRequest {
     private String modelTier;
 
     /**
+     * Identifier of the domain caller that issued this LLM request — used by the
+     * adapter to tag log events so rate-limit retries and failures can be
+     * attributed to the right subsystem (e.g. {@code toolloop},
+     * {@code follow_through}, {@code auto_proceed}, {@code memory}).
+     */
+    private String callerTag;
+
+    /**
      * Reasoning effort for OpenAI o-series models (o1, o3, gpt-5.1, etc.) Values:
      * "low", "medium", "high", or null to disable.
      */

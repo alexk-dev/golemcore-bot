@@ -126,6 +126,7 @@ public class RuntimeSettingsValidator {
             validateMemoryConfig(merged.getMemory());
         }
         validateCompactionConfig(merged.getCompaction());
+        validateSessionRetentionConfig(merged.getSessionRetention());
         validateVoiceConfig(merged.getVoice());
         validateAndNormalizeModelRegistryConfig(merged.getModelRegistry());
         validateHiveConfig(merged.getHive());
@@ -340,6 +341,20 @@ public class RuntimeSettingsValidator {
         }
     }
 
+    public void validateSessionRetentionConfig(RuntimeConfig.SessionRetentionConfig sessionRetentionConfig) {
+        if (sessionRetentionConfig == null) {
+            return;
+        }
+        validateNullableDuration(sessionRetentionConfig.getMaxAge(),
+                Duration.ofDays(1),
+                Duration.ofDays(3650),
+                "sessionRetention.maxAge");
+        validateNullableDuration(sessionRetentionConfig.getCleanupInterval(),
+                Duration.ofMinutes(5),
+                Duration.ofDays(30),
+                "sessionRetention.cleanupInterval");
+    }
+
     public void validateVoiceConfig(RuntimeConfig.VoiceConfig voiceConfig) {
         if (voiceConfig == null) {
             return;
@@ -401,6 +416,8 @@ public class RuntimeSettingsValidator {
         validateNullableInteger(tracingConfig.getMaxSnapshotSizeKb(), 1, 10240, "tracing.maxSnapshotSizeKb");
         validateNullableInteger(tracingConfig.getMaxSnapshotsPerSpan(), 1, 1000, "tracing.maxSnapshotsPerSpan");
         validateNullableInteger(tracingConfig.getMaxTracesPerSession(), 1, 10000, "tracing.maxTracesPerSession");
+        validateNullableDouble(tracingConfig.getResiliencePayloadSampleRate(), 0.0, 1.0,
+                "tracing.resiliencePayloadSampleRate");
     }
 
     public void validateHiveConfig(RuntimeConfig.HiveConfig hiveConfig) {
@@ -856,6 +873,20 @@ public class RuntimeSettingsValidator {
         }
         if (value < min || value > max) {
             throw new IllegalArgumentException(fieldName + " must be between " + min + " and " + max);
+        }
+    }
+
+    private void validateNullableDuration(String value, Duration min, Duration max, String fieldName) {
+        if (value == null || value.isBlank()) {
+            return;
+        }
+        try {
+            Duration parsed = Duration.parse(value.trim());
+            if (parsed.compareTo(min) < 0 || parsed.compareTo(max) > 0) {
+                throw new IllegalArgumentException(fieldName + " must be between " + min + " and " + max);
+            }
+        } catch (DateTimeParseException exception) {
+            throw new IllegalArgumentException(fieldName + " must be a valid ISO-8601 duration");
         }
     }
 

@@ -270,6 +270,15 @@ public class PlanService {
         return plan;
     }
 
+    public boolean hasActivePlans(SessionIdentity sessionIdentity) {
+        SessionIdentity normalized = normalizeSessionIdentityOrNull(sessionIdentity);
+        if (normalized == null) {
+            return false;
+        }
+        return getPlans(normalized).stream()
+                .anyMatch(this::isActivePlanStatus);
+    }
+
     public void deletePlan(String planId) {
         List<Plan> plans = getPlans();
         boolean removed = plans.removeIf(p -> p.getId().equals(planId));

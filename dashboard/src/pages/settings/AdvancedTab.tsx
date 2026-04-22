@@ -4,8 +4,14 @@ import toast from 'react-hot-toast';
 import HelpTip from '../../components/common/HelpTip';
 import SettingsCardTitle from '../../components/common/SettingsCardTitle';
 import { useUpdateAdvanced } from '../../hooks/useSettings';
-import type { CompactionConfig, RateLimitConfig, ResilienceConfig, SecurityConfig } from '../../api/settingsTypes';
+import type {
+  CompactionConfig,
+  RateLimitConfig,
+  ResilienceConfig,
+  SecurityConfig,
+} from '../../api/settingsTypes';
 import { SaveStateHint, SettingsSaveBar } from '../../components/common/SettingsSaveBar';
+import { ResilienceCard } from './ResilienceCard';
 
 export type AdvancedMode = 'all' | 'rateLimit' | 'security' | 'compaction' | 'resilience';
 
@@ -136,38 +142,6 @@ function CompactionCard({ comp, setComp }: CompactionCardProps): ReactElement {
   );
 }
 
-
-interface ResilienceCardProps {
-  resilience: ResilienceConfig;
-  setResilience: (value: ResilienceConfig) => void;
-}
-
-function ResilienceCard({ resilience, setResilience }: ResilienceCardProps): ReactElement {
-  return (
-    <Card className="settings-card h-100">
-      <Card.Body>
-        <SettingsCardTitle
-          title="Resilience"
-          tip="Fallback routing, retries, degradation, and delayed recovery behavior"
-        />
-        <Form.Check type="switch" label="Enable" checked={resilience.enabled ?? true}
-          onChange={(e) => setResilience({ ...resilience, enabled: e.target.checked })} className="mb-3" />
-        <Form.Group>
-          <Form.Label className="small fw-medium">
-            L2 Provider Fallback Max Attempts <HelpTip text="Maximum number of L2 reroutes within one turn, regardless of strategy. Sequential still stops earlier if the fallback chain is shorter." />
-          </Form.Label>
-          <Form.Control
-            size="sm"
-            type="number"
-            min={1}
-            value={resilience.l2ProviderFallbackMaxAttempts ?? 5}
-            onChange={(e) => setResilience({ ...resilience, l2ProviderFallbackMaxAttempts: toNullableInt(e.target.value) })}
-          />
-        </Form.Group>
-      </Card.Body>
-    </Card>
-  );
-}
 
 interface SecurityCardProps {
   sec: SecurityConfig;

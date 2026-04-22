@@ -312,6 +312,9 @@ Notes:
 
 - Web sessions are scoped by `clientInstanceId` and conversation key.
 - The server maintains an active-session pointer and repairs stale pointers when possible.
+- Automatic pruning of old persisted sessions is configured in `Settings -> Usage & Retention`.
+- Default retention is 30 days, scanned once per day.
+- Cleanup skips sessions that are currently active, tied to plan mode work, or referenced by pending delayed actions.
 
 ## Plan Mode Panel
 
