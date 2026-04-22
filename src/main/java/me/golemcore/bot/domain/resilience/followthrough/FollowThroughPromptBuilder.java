@@ -6,9 +6,10 @@ package me.golemcore.bot.domain.resilience.followthrough;
  * Contact: alex@kuleshov.tech
  */
 
+import me.golemcore.bot.domain.resilience.ClassifierPromptBuilder;
+import me.golemcore.bot.domain.resilience.ClassifierPromptSupport;
+import me.golemcore.bot.domain.resilience.ClassifierRequest;
 import org.springframework.stereotype.Component;
-
-import java.util.List;
 
 /**
  * Builds the classifier LLM prompts (system + user) used by
@@ -22,7 +23,7 @@ import java.util.List;
  * continuation message from a fixed safe template.
  */
 @Component
-public class FollowThroughPromptBuilder {
+public class FollowThroughPromptBuilder implements ClassifierPromptBuilder {
 
     private static final int MAX_ASSISTANT_REPLY_CHARS = 4000;
     private static final int MAX_USER_MESSAGE_CHARS = 2000;
@@ -100,36 +101,13 @@ public class FollowThroughPromptBuilder {
             Output valid JSON only.
             """;
 
+    @Override
     public String systemPrompt() {
         return SYSTEM_PROMPT;
     }
 
+    @Override
     public String userPrompt(ClassifierRequest request) {
-        StringBuilder builder = new StringBuilder();
-        builder.append("User message:\n");
-        builder.append(renderText(request.userMessage(), MAX_USER_MESSAGE_CHARS));
-        builder.append("\n\nAssistant reply:\n");
-        builder.append(renderText(request.assistantReply(), MAX_ASSISTANT_REPLY_CHARS));
-        builder.append("\n\nExecuted tools in this turn: ");
-        builder.append(renderToolList(request.executedToolsInTurn()));
-        builder.append("\n\nRespond with the JSON verdict only.");
-        return builder.toString();
-    }
-
-    private String renderText(String text, int maxChars) {
-        if (text == null || text.isBlank()) {
-            return "(empty)";
-        }
-        if (text.length() <= maxChars) {
-            return text;
-        }
-        return text.substring(0, maxChars) + "… (truncated)";
-    }
-
-    private String renderToolList(List<String> tools) {
-        if (tools == null || tools.isEmpty()) {
-            return "(none)";
-        }
-        return String.join(", ", tools);
+        return ClassifierPromptSupport.buildUserPrompt(request, MAX_USER_MESSAGE_CHARS, MAX_ASSISTANT_REPLY_CHARS);
     }
 }

@@ -56,8 +56,6 @@ public final class ResilienceObservabilitySupport {
             "(?i)(authorization\\s*[:=]\\s*['\"]?bearer\\s+)[A-Za-z0-9\\-._~+/]+=*");
     private static final Pattern BEARER_PATTERN = Pattern.compile(
             "(?i)Bearer\\s+[A-Za-z0-9\\-._~+/]+=*");
-    private static final Pattern EMAIL_PATTERN = Pattern.compile(
-            "\\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}\\b");
 
     private ResilienceObservabilitySupport() {
     }
@@ -230,7 +228,11 @@ public final class ResilienceObservabilitySupport {
             if (entry.getKey() == null || entry.getKey().isBlank() || entry.getValue() == null) {
                 continue;
             }
-            normalized.put(entry.getKey(), sanitizePayload(entry.getValue()));
+            if (isSensitiveKey(entry.getKey())) {
+                normalized.put(entry.getKey(), REDACTED);
+            } else {
+                normalized.put(entry.getKey(), sanitizePayload(entry.getValue()));
+            }
         }
         return normalized;
     }
@@ -259,11 +261,67 @@ public final class ResilienceObservabilitySupport {
         redacted = TOKEN_PATTERN.matcher(redacted).replaceAll("$1" + REDACTED);
         redacted = AUTHORIZATION_BEARER_PATTERN.matcher(redacted).replaceAll("$1" + REDACTED);
         redacted = BEARER_PATTERN.matcher(redacted).replaceAll("Bearer " + REDACTED);
-        redacted = EMAIL_PATTERN.matcher(redacted).replaceAll(REDACTED);
+        redacted = redactEmails(redacted);
         if (redacted.length() > MAX_TEXT_LENGTH) {
             return redacted.substring(0, MAX_TEXT_LENGTH - 3) + "...";
         }
         return redacted;
+    }
+
+    private static String redactEmails(String value) {
+        StringBuilder builder = new StringBuilder(value);
+        int cursor = 0;
+        while (cursor < builder.length()) {
+            int atIndex = builder.indexOf("@", cursor);
+            if (atIndex < 0) {
+                break;
+            }
+            int start = atIndex;
+            while (start > 0 && isEmailLocalPartChar(builder.charAt(start - 1))) {
+                start--;
+            }
+            int end = atIndex + 1;
+            while (end < builder.length() && isEmailDomainChar(builder.charAt(end))) {
+                end++;
+            }
+            if (isEmailCandidate(builder, start, atIndex, end)) {
+                builder.replace(start, end, REDACTED);
+                cursor = start + REDACTED.length();
+            } else {
+                cursor = atIndex + 1;
+            }
+        }
+        return builder.toString();
+    }
+
+    private static boolean isEmailCandidate(CharSequence value, int start, int atIndex, int end) {
+        if (start >= atIndex || atIndex + 1 >= end) {
+            return false;
+        }
+        String domain = value.subSequence(atIndex + 1, end).toString();
+        int lastDot = domain.lastIndexOf('.');
+        if (lastDot <= 0 || lastDot == domain.length() - 1) {
+            return false;
+        }
+        for (int index = lastDot + 1; index < domain.length(); index++) {
+            if (!Character.isLetter(domain.charAt(index))) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static boolean isEmailLocalPartChar(char value) {
+        return Character.isLetterOrDigit(value)
+                || value == '.'
+                || value == '_'
+                || value == '%'
+                || value == '+'
+                || value == '-';
+    }
+
+    private static boolean isEmailDomainChar(char value) {
+        return Character.isLetterOrDigit(value) || value == '.' || value == '-';
     }
 
     private static String sessionId(AgentContext context) {

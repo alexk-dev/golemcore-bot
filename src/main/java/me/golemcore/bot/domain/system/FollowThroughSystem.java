@@ -13,7 +13,7 @@ import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.RuntimeConfig;
-import me.golemcore.bot.domain.resilience.followthrough.ClassifierRequest;
+import me.golemcore.bot.domain.resilience.ClassifierRequest;
 import me.golemcore.bot.domain.resilience.followthrough.ClassifierVerdict;
 import me.golemcore.bot.domain.resilience.followthrough.FollowThroughClassifier;
 import me.golemcore.bot.domain.service.InternalTurnService;

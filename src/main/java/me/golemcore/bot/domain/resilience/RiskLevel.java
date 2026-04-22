@@ -1,4 +1,4 @@
-package me.golemcore.bot.domain.resilience.followthrough;
+package me.golemcore.bot.domain.resilience;
 
 /*
  * Copyright 2026 Aleksei Kuleshov
@@ -7,7 +7,7 @@ package me.golemcore.bot.domain.resilience.followthrough;
  */
 
 /**
- * Risk level emitted by the classifier.
+ * Conservative risk level assigned by resilience classifiers.
  */
 public enum RiskLevel {
     LOW, MEDIUM, HIGH;

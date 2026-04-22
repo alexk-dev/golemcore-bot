@@ -1,4 +1,4 @@
-package me.golemcore.bot.domain.resilience.followthrough;
+package me.golemcore.bot.domain.resilience;
 
 /*
  * Copyright 2026 Aleksei Kuleshov
@@ -15,7 +15,7 @@ import java.nio.charset.StandardCharsets;
  * Jackson-backed fake codec — isolated to tests so domain code stays
  * Jackson-free.
  */
-final class FakeCodec implements TraceSnapshotCodecPort {
+public final class FakeCodec implements TraceSnapshotCodecPort {
 
     private final ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
 

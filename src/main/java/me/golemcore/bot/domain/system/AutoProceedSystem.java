@@ -14,7 +14,7 @@ import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.resilience.autoproceed.AutoProceedClassifier;
-import me.golemcore.bot.domain.resilience.autoproceed.ClassifierRequest;
+import me.golemcore.bot.domain.resilience.ClassifierRequest;
 import me.golemcore.bot.domain.resilience.autoproceed.ClassifierVerdict;
 import me.golemcore.bot.domain.service.InternalTurnService;
 import me.golemcore.bot.domain.service.ResilienceObservabilitySupport;

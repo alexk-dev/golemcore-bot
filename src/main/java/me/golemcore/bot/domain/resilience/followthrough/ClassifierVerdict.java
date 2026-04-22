@@ -1,5 +1,6 @@
 package me.golemcore.bot.domain.resilience.followthrough;
 
+import me.golemcore.bot.domain.resilience.RiskLevel;
 /*
  * Copyright 2026 Aleksei Kuleshov SPDX-License-Identifier: Apache-2.0 Contact:
  * alex@kuleshov.tech
