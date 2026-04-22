@@ -208,6 +208,36 @@ class DefaultContextWindowProjectorTest {
     }
 
     @Test
+    void shouldCompressHugeCurrentTurnToolResultWithinConversationBudget() {
+        Message latestUser = user("inspect this page");
+        Message assistantWithToolCall = assistantToolCall("call-current", "browser");
+        Message hugeToolResult = toolResult("call-current", "browser", largeHtml());
+        List<Message> rawMessages = new ArrayList<>(List.of(latestUser, assistantWithToolCall, hugeToolResult));
+        AgentContext context = AgentContext.builder()
+                .messages(rawMessages)
+                .systemPrompt("system")
+                .build();
+        ContextBudget budget = new ContextBudget(1_000, 200, 220, 100);
+
+        ConversationView projected = projector.project(context, ConversationView.ofMessages(rawMessages), budget);
+
+        assertTrue(new ContextTokenEstimator().estimateMessages(projected.messages()) <= budget.conversationTokens());
+        assertTrue(projected.messages().stream().anyMatch(Message::hasToolCalls),
+                "assistant tool-call envelope must remain in the request view");
+        assertTrue(projected.messages().stream()
+                .anyMatch(message -> message.isToolMessage()
+                        && "call-current".equals(message.getToolCallId())
+                        && message.getContent().contains("Tool result summarized")));
+        assertEquals(largeHtml(), rawMessages.get(2).getContent(),
+                "raw session history must not be mutated by projection");
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> report = context.getAttribute(ContextAttributes.CONTEXT_HYGIENE_REPORT);
+        assertTrue((Integer) report.get("compressed") > 0);
+        assertTrue((Integer) report.get("projectedTokens") <= budget.conversationTokens());
+    }
+
+    @Test
     void shouldKeepUnchangedViewInstanceWhenProjectionDoesNotChangeMessages() {
         List<Message> rawMessages = List.of(user("latest"));
         AgentContext context = AgentContext.builder()

@@ -20,6 +20,7 @@ package me.golemcore.bot.domain.context.layer;
 
 import me.golemcore.bot.domain.context.ContextLayerLifecycle;
 import me.golemcore.bot.domain.context.ContextLayerResult;
+import me.golemcore.bot.domain.context.LayerCriticality;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.Message;
@@ -46,6 +47,11 @@ public class WebhookResponseSchemaLayer extends AbstractContextLayer {
     @Override
     public boolean appliesTo(AgentContext context) {
         return readSchemaText(context) != null;
+    }
+
+    @Override
+    public LayerCriticality getCriticality() {
+        return LayerCriticality.PINNED_UNTRIMMABLE;
     }
 
     /**

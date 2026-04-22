@@ -22,6 +22,7 @@ import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.component.ToolComponent;
 import me.golemcore.bot.domain.context.ContextLayerLifecycle;
 import me.golemcore.bot.domain.context.ContextLayerResult;
+import me.golemcore.bot.domain.context.LayerCriticality;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.MemoryPresetIds;
@@ -59,6 +60,17 @@ public class ToolLayer extends AbstractContextLayer {
 
     private static final String TOOL_PLAN_SET_CONTENT = "plan_set_content";
     private static final String TOOL_PLAN_GET = "plan_get";
+    private static final int MAX_CATALOG_TOOLS = 24;
+    private static final int MAX_DESCRIPTION_CHARS = 180;
+    private static final String TOOL_USE_POLICY = """
+            # Tool Use Policy
+            - Use tools only when they are needed for the current task.
+            - Use tool schemas as the source of truth for arguments.
+            - If a tool fails, adjust once instead of repeating the same call.
+            - Respect shell, file, and network safety constraints.
+
+            ## Available Tools Catalog
+            """;
     private static final String SHELL_TOOL_POLICY = """
 
             ## Shell Tool Policy
@@ -75,7 +87,7 @@ public class ToolLayer extends AbstractContextLayer {
             McpPort mcpPort,
             PlanService planService,
             DelayedActionPolicyService delayedActionPolicyService) {
-        super("tool", 50, 65, ContextLayerLifecycle.TURN, 3_000);
+        super("tool", 50, 65, ContextLayerLifecycle.TURN, 3_000, true);
         this.toolCallExecutionService = toolCallExecutionService;
         this.mcpPort = mcpPort;
         this.planService = planService;
@@ -85,6 +97,11 @@ public class ToolLayer extends AbstractContextLayer {
     @Override
     public boolean appliesTo(AgentContext context) {
         return true;
+    }
+
+    @Override
+    public LayerCriticality getCriticality() {
+        return LayerCriticality.REQUIRED_COMPRESSIBLE;
     }
 
     @Override
@@ -137,10 +154,19 @@ public class ToolLayer extends AbstractContextLayer {
             return empty();
         }
 
-        StringBuilder sb = new StringBuilder("# Available Tools\nYou have access to the following tools:\n");
+        StringBuilder sb = new StringBuilder(TOOL_USE_POLICY);
+        int renderedTools = 0;
         for (ToolDefinition tool : tools) {
+            if (renderedTools >= MAX_CATALOG_TOOLS) {
+                break;
+            }
             sb.append("- **").append(tool.getName()).append("**: ");
-            sb.append(tool.getDescription()).append("\n");
+            sb.append(compactDescription(tool.getDescription())).append("\n");
+            renderedTools++;
+        }
+        if (tools.size() > renderedTools) {
+            sb.append("- ").append(tools.size() - renderedTools)
+                    .append(" additional tools are available through schemas.\n");
         }
         if (toolsByName.containsKey(ToolNames.SHELL)) {
             sb.append(SHELL_TOOL_POLICY);
@@ -148,6 +174,17 @@ public class ToolLayer extends AbstractContextLayer {
 
         String content = sb.toString();
         return result(content);
+    }
+
+    private String compactDescription(String description) {
+        if (description == null || description.isBlank()) {
+            return "No description provided.";
+        }
+        String normalized = description.replaceAll("\\s+", " ").trim();
+        if (normalized.length() <= MAX_DESCRIPTION_CHARS) {
+            return normalized;
+        }
+        return normalized.substring(0, MAX_DESCRIPTION_CHARS) + "...";
     }
 
     private boolean isToolAdvertised(ToolComponent tool, AgentContext context,

@@ -25,10 +25,12 @@ public class DefaultContextWindowProjector implements ContextWindowProjector {
 
     private final ContextTokenEstimator tokenEstimator;
     private final ContextGarbagePolicy garbagePolicy;
+    private final PinnedContextCompressor pinnedCompressor;
 
     public DefaultContextWindowProjector(ContextTokenEstimator tokenEstimator, ContextGarbagePolicy garbagePolicy) {
         this.tokenEstimator = Objects.requireNonNull(tokenEstimator, "tokenEstimator");
         this.garbagePolicy = Objects.requireNonNull(garbagePolicy, "garbagePolicy");
+        this.pinnedCompressor = new PinnedContextCompressor(tokenEstimator, garbagePolicy);
     }
 
     @Override
@@ -292,6 +294,9 @@ public class DefaultContextWindowProjector implements ContextWindowProjector {
             }
             selected.add(item);
             usedTokens += item.estimatedTokens();
+        }
+        if (usedTokens > limit) {
+            return pinnedCompressor.compressWithinBudget(preparedItems, limit, report);
         }
 
         List<ProjectedItem> candidates = preparedItems.stream()

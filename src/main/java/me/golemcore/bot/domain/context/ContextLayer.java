@@ -127,6 +127,15 @@ public interface ContextLayer {
     }
 
     /**
+     * Returns how prompt budgeting may treat this layer after rendering.
+     *
+     * @return layer hard-budget criticality
+     */
+    default LayerCriticality getCriticality() {
+        return isRequired() ? LayerCriticality.REQUIRED_COMPRESSIBLE : LayerCriticality.OPTIONAL;
+    }
+
+    /**
      * Fast guard to determine if this layer should be included in the current
      * turn's context. Implementations should be lightweight (no I/O, no heavy
      * computation).

@@ -74,6 +74,10 @@ public class ContextLayerResult {
     @Builder.Default
     private final boolean required = false;
 
+    /** Hard-budget behavior for this rendered layer. */
+    @Builder.Default
+    private final LayerCriticality criticality = LayerCriticality.OPTIONAL;
+
     /**
      * Arbitrary metadata produced by the layer (diagnostics, resolved values,
      * etc.).

@@ -2,6 +2,7 @@ package me.golemcore.bot.domain.context.layer;
 
 import me.golemcore.bot.domain.component.ToolComponent;
 import me.golemcore.bot.domain.context.ContextLayerResult;
+import me.golemcore.bot.domain.context.LayerCriticality;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.Skill;
@@ -62,6 +63,9 @@ class ToolLayerTest {
         ContextLayerResult result = layer.assemble(context);
 
         assertTrue(result.hasContent());
+        assertTrue(result.isRequired());
+        assertEquals(LayerCriticality.REQUIRED_COMPRESSIBLE, result.getCriticality());
+        assertTrue(result.getContent().contains("# Tool Use Policy"));
         assertTrue(result.getContent().contains("# Available Tools"));
         assertTrue(result.getContent().contains("**shell**"));
         assertEquals(1, context.getAvailableTools().size());

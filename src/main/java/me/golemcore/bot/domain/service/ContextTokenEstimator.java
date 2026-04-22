@@ -107,6 +107,34 @@ public class ContextTokenEstimator {
         return saturatingToInt(tokens);
     }
 
+    /**
+     * Estimate serialized tool schema overhead for request budget reservation.
+     */
+    public int estimateTools(List<ToolDefinition> tools) {
+        if (tools == null || tools.isEmpty()) {
+            return 0;
+        }
+        long tokens = 0;
+        Set<Object> visited = newVisitedSet();
+        for (ToolDefinition tool : tools) {
+            if (tool == null) {
+                continue;
+            }
+            tokens += TOOL_DEFINITION_OVERHEAD_TOKENS;
+            tokens += estimateText(tool.getName());
+            tokens += estimateText(tool.getDescription());
+            tokens += estimateObjectMap(tool.getInputSchema(), visited, 0);
+        }
+        return saturatingToInt(tokens);
+    }
+
+    /**
+     * Request envelope overhead reserved independently of messages.
+     */
+    public int requestBaseOverheadTokens() {
+        return REQUEST_BASE_OVERHEAD_TOKENS;
+    }
+
     private int estimateMessage(Message message) {
         if (message == null) {
             return 0;
@@ -134,24 +162,6 @@ public class ContextTokenEstimator {
             tokens += estimateText(toolCall.getId());
             tokens += estimateText(toolCall.getName());
             tokens += estimateObjectMap(toolCall.getArguments(), visited, 0);
-        }
-        return saturatingToInt(tokens);
-    }
-
-    private int estimateTools(List<ToolDefinition> tools) {
-        if (tools == null || tools.isEmpty()) {
-            return 0;
-        }
-        long tokens = 0;
-        Set<Object> visited = newVisitedSet();
-        for (ToolDefinition tool : tools) {
-            if (tool == null) {
-                continue;
-            }
-            tokens += TOOL_DEFINITION_OVERHEAD_TOKENS;
-            tokens += estimateText(tool.getName());
-            tokens += estimateText(tool.getDescription());
-            tokens += estimateObjectMap(tool.getInputSchema(), visited, 0);
         }
         return saturatingToInt(tokens);
     }

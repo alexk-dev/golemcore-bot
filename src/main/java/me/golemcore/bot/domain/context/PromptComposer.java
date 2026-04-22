@@ -112,7 +112,7 @@ public class PromptComposer {
         Set<ContextLayerResult> selected = Collections.newSetFromMap(new IdentityHashMap<>());
         int usedTokens = 0;
         for (ContextLayerResult result : contentResults) {
-            if (result.isRequired()) {
+            if (mustSelect(result)) {
                 selected.add(result);
                 usedTokens += positiveTokens(result);
             }
@@ -121,7 +121,7 @@ public class PromptComposer {
         int remainingTokens = maxPromptTokens - usedTokens;
         List<ContextLayerResult> optionalResults = new ArrayList<>();
         for (ContextLayerResult result : contentResults) {
-            if (!result.isRequired()) {
+            if (!mustSelect(result)) {
                 optionalResults.add(result);
             }
         }
@@ -183,6 +183,9 @@ public class PromptComposer {
             int usedTokens = TokenEstimator.estimate(sb.toString());
             int remainingTokens = maxPromptTokens - usedTokens - separatorTokens;
             if (remainingTokens <= 0) {
+                if (isUntrimmable(result)) {
+                    throw promptBudgetExceeded(result, maxPromptTokens, 0);
+                }
                 log.debug("[PromptComposer] Dropping layer '{}' because the hard prompt budget is exhausted",
                         result.getLayerName());
                 continue;
@@ -193,6 +196,9 @@ public class PromptComposer {
                 continue;
             }
 
+            if (isUntrimmable(result)) {
+                throw promptBudgetExceeded(result, maxPromptTokens, remainingTokens);
+            }
             String trimmed = trimToTokenBudget(content, remainingTokens, result.getLayerName());
             if (trimmed.isBlank()) {
                 log.debug("[PromptComposer] Dropping layer '{}' because it cannot fit the remaining hard budget",
@@ -209,6 +215,10 @@ public class PromptComposer {
             return fallbackWithinBudget(maxPromptTokens);
         }
         if (TokenEstimator.estimate(prompt) > maxPromptTokens) {
+            if (selectedResults.stream().anyMatch(this::isUntrimmable)) {
+                throw new IllegalStateException("Pinned untrimmable prompt layers exceed system prompt budget "
+                        + maxPromptTokens);
+            }
             return trimToTokenBudget(prompt, maxPromptTokens, "prompt");
         }
         return prompt;
@@ -266,6 +276,22 @@ public class PromptComposer {
 
     private int positiveTokens(ContextLayerResult result) {
         return Math.max(0, result.getEstimatedTokens());
+    }
+
+    private boolean mustSelect(ContextLayerResult result) {
+        return result != null
+                && (result.isRequired() || result.getCriticality() != LayerCriticality.OPTIONAL);
+    }
+
+    private boolean isUntrimmable(ContextLayerResult result) {
+        return result != null && result.getCriticality() == LayerCriticality.PINNED_UNTRIMMABLE;
+    }
+
+    private IllegalStateException promptBudgetExceeded(ContextLayerResult result,
+            int maxPromptTokens, int remainingTokens) {
+        return new IllegalStateException("Pinned untrimmable context layer '" + safeLayerName(result.getLayerName())
+                + "' exceeds system prompt budget " + maxPromptTokens
+                + " with remaining budget " + Math.max(0, remainingTokens));
     }
 
     private int normalizeLayerBudget(int tokenBudget) {

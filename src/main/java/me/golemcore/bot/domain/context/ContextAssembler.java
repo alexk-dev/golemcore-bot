@@ -162,6 +162,7 @@ public class ContextAssembler {
                 .lifecycle(layer.getLifecycle())
                 .tokenBudget(layer.getTokenBudget())
                 .required(layer.isRequired())
+                .criticality(layer.getCriticality())
                 .build();
     }
 

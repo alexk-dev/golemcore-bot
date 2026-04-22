@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 import me.golemcore.bot.domain.context.layer.TokenEstimator;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class PromptComposerTest {
@@ -162,6 +163,24 @@ class PromptComposerTest {
 
         assertTrue(TokenEstimator.estimate(result) <= 120);
         assertTrue(result.contains("Layer truncated by system prompt budget"));
+    }
+
+    @Test
+    void shouldFailFastWhenPinnedUntrimmableLayerExceedsHardBudget() {
+        ContextBlueprint blueprint = ContextBlueprint.create();
+        blueprint.add(ContextLayerResult.builder()
+                .layerName("identity")
+                .content("# Identity\n" + "invariant ".repeat(2_000))
+                .estimatedTokens(2_000)
+                .required(true)
+                .priority(100)
+                .criticality(LayerCriticality.PINNED_UNTRIMMABLE)
+                .build());
+
+        IllegalStateException error = assertThrows(IllegalStateException.class,
+                () -> composer.compose(blueprint, 120));
+
+        assertTrue(error.getMessage().contains("Pinned untrimmable context layer 'identity'"));
     }
 
     @Test

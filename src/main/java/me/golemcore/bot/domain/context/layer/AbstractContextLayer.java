@@ -97,6 +97,11 @@ public abstract class AbstractContextLayer implements ContextLayer {
                 .layerName(name)
                 .content(content)
                 .estimatedTokens(TokenEstimator.estimate(content))
+                .priority(getPriority())
+                .lifecycle(getLifecycle())
+                .tokenBudget(getTokenBudget())
+                .required(isRequired())
+                .criticality(getCriticality())
                 .build();
     }
 }

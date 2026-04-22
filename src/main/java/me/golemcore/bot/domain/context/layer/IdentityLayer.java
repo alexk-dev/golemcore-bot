@@ -21,6 +21,7 @@ package me.golemcore.bot.domain.context.layer;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.context.ContextLayerLifecycle;
 import me.golemcore.bot.domain.context.ContextLayerResult;
+import me.golemcore.bot.domain.context.LayerCriticality;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.PromptSection;
 import me.golemcore.bot.domain.service.PromptSectionService;
@@ -59,6 +60,11 @@ public class IdentityLayer extends AbstractContextLayer {
     @Override
     public boolean appliesTo(AgentContext context) {
         return true;
+    }
+
+    @Override
+    public LayerCriticality getCriticality() {
+        return LayerCriticality.PINNED_UNTRIMMABLE;
     }
 
     @Override

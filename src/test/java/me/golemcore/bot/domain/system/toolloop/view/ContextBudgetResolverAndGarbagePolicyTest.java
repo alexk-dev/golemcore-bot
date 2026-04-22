@@ -2,8 +2,13 @@ package me.golemcore.bot.domain.system.toolloop.view;
 
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.Message;
+import me.golemcore.bot.domain.model.ToolDefinition;
+import me.golemcore.bot.domain.model.ToolResult;
 import me.golemcore.bot.domain.service.ContextCompactionPolicy;
 import org.junit.jupiter.api.Test;
+
+import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -45,7 +50,7 @@ class ContextBudgetResolverAndGarbagePolicyTest {
     }
 
     @Test
-    void shouldUseMinimumBudgetsForSmallInputWindow() {
+    void shouldNotForceMinimumConversationBudgetWhenRequestOverheadConsumesWindow() {
         ContextCompactionPolicy policy = mock(ContextCompactionPolicy.class);
         AgentContext context = AgentContext.builder()
                 .systemPrompt("")
@@ -55,8 +60,26 @@ class ContextBudgetResolverAndGarbagePolicyTest {
 
         ContextBudget budget = new DefaultContextBudgetResolver(policy).resolve(context, "model");
 
-        assertEquals(512, budget.conversationTokens());
+        assertEquals(280, budget.conversationTokens());
         assertEquals(256, budget.toolResultTokens());
+    }
+
+    @Test
+    void shouldReserveBudgetForToolSchemasAndDetachedToolResults() {
+        ContextCompactionPolicy policy = mock(ContextCompactionPolicy.class);
+        AgentContext context = AgentContext.builder()
+                .systemPrompt("")
+                .availableTools(List.of(ToolDefinition.simple("browser", repeated("Search the web", 20_000))))
+                .toolResults(Map.of("call-1", ToolResult.success(repeated("raw result", 20_000))))
+                .build();
+        when(policy.resolveFullRequestThreshold(context)).thenReturn(6_000);
+        when(policy.resolveSystemPromptThreshold(context)).thenReturn(1_000);
+
+        ContextBudget budget = new DefaultContextBudgetResolver(policy).resolve(context, "model");
+
+        assertTrue(budget.conversationTokens() < 512,
+                "degraded mode should not hide request overhead behind the old minimum");
+        assertTrue(budget.conversationTokens() >= 1);
     }
 
     @Test
