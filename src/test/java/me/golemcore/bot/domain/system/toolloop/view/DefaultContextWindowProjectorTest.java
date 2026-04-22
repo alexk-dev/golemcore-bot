@@ -14,12 +14,30 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class DefaultContextWindowProjectorTest {
 
     private final DefaultContextWindowProjector projector = new DefaultContextWindowProjector(
             new ContextTokenEstimator(), new ContextGarbagePolicy());
+
+    @Test
+    void shouldReturnBaseViewForEmptyUnlimitedProjection() {
+        AgentContext context = AgentContext.builder()
+                .systemPrompt(null)
+                .build();
+
+        ConversationView projected = projector.project(context, null, null);
+
+        assertTrue(projected.messages().isEmpty());
+        assertTrue(projected.diagnostics().isEmpty());
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> report = context.getAttribute(ContextAttributes.CONTEXT_HYGIENE_REPORT);
+        assertEquals(0, report.get("rawTokens"));
+        assertEquals(0, report.get("projectedTokens"));
+    }
 
     @Test
     void shouldCompressOldNoisyToolResultWithoutMutatingRawHistory() {
@@ -56,6 +74,76 @@ class DefaultContextWindowProjectorTest {
     }
 
     @Test
+    void shouldSummarizeOldOrphanToolResultAndLargeAssistantMessage() {
+        String originalToolBlob = repeated("{\"rows\":[1,2,3]}", 3_000);
+        Message orphanToolResult = toolResult("orphan-call", "rag", originalToolBlob);
+        Message largeAssistant = assistant(repeated("very long assistant note", 5_000));
+        List<Message> rawMessages = new ArrayList<>(List.of(
+                user("old request"), orphanToolResult, largeAssistant,
+                user("later 1"), assistant("later response 1"),
+                user("later 2"), assistant("later response 2"),
+                user("latest request")));
+
+        AgentContext context = AgentContext.builder()
+                .messages(rawMessages)
+                .systemPrompt("system")
+                .build();
+
+        ConversationView projected = projector.project(context, ConversationView.ofMessages(rawMessages),
+                new ContextBudget(8_000, 1_000, 4_000, 500));
+
+        assertTrue(projected.messages().stream()
+                .anyMatch(message -> message.getContent() != null
+                        && message.getContent().contains("Previous tool result summarized")));
+        assertTrue(projected.messages().stream()
+                .anyMatch(message -> message.getContent() != null
+                        && message.getContent().contains("...[truncated]")));
+        assertFalse(projected.messages().stream()
+                .anyMatch(message -> originalToolBlob.equals(message.getContent())));
+        assertEquals("tool", rawMessages.get(1).getRole(), "raw orphan tool result must remain unchanged");
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> report = context.getAttribute(ContextAttributes.CONTEXT_HYGIENE_REPORT);
+        assertEquals(2, report.get("compressed"));
+    }
+
+    @Test
+    void shouldSummarizeOldNoisyMultiToolInteraction() {
+        Message assistantWithTwoToolCalls = assistantToolCalls(List.of(
+                Message.ToolCall.builder()
+                        .id("call-1")
+                        .name("browser")
+                        .arguments(Map.of("query", "one"))
+                        .build(),
+                Message.ToolCall.builder()
+                        .id("call-2")
+                        .name("browser")
+                        .arguments(Map.of("query", "two"))
+                        .build()));
+        List<Message> rawMessages = new ArrayList<>(List.of(
+                user("old request"), assistantWithTwoToolCalls,
+                toolResult("call-1", "browser", largeHtml()),
+                toolResult("call-2", "browser", repeated("[1,2,3]", 3_000)),
+                user("later 1"), assistant("later response 1"),
+                user("later 2"), assistant("later response 2"),
+                user("latest request")));
+
+        AgentContext context = AgentContext.builder()
+                .messages(rawMessages)
+                .systemPrompt("system")
+                .build();
+
+        ConversationView projected = projector.project(context, ConversationView.ofMessages(rawMessages),
+                new ContextBudget(8_000, 1_000, 4_000, 500));
+
+        assertTrue(projected.messages().stream()
+                .anyMatch(message -> message.getContent() != null
+                        && message.getContent().contains("Previous tool interaction summarized")
+                        && message.getContent().contains("[1,2,3]")));
+        assertFalse(projected.messages().stream().anyMatch(Message::isToolMessage));
+    }
+
+    @Test
     void shouldDropOldLowPriorityItemsWhenConversationBudgetIsExceeded() {
         List<Message> rawMessages = new ArrayList<>();
         for (int index = 0; index < 20; index++) {
@@ -79,6 +167,21 @@ class DefaultContextWindowProjectorTest {
         assertFalse(projected.messages().stream()
                 .anyMatch(message -> message.getContent() != null && message.getContent().contains("old user 0")));
         assertTrue(projected.diagnostics().stream().anyMatch(line -> line.contains("BUDGET_EXCEEDED")));
+    }
+
+    @Test
+    void shouldKeepUnchangedViewInstanceWhenProjectionDoesNotChangeMessages() {
+        List<Message> rawMessages = List.of(user("latest"));
+        AgentContext context = AgentContext.builder()
+                .messages(rawMessages)
+                .systemPrompt("system")
+                .build();
+        ConversationView rawView = ConversationView.ofMessages(rawMessages);
+
+        ConversationView projected = projector.project(context, rawView,
+                new ContextBudget(8_000, 1_000, 4_000, 500));
+
+        assertSame(rawView, projected);
     }
 
     private Message user(String content) {
@@ -106,6 +209,15 @@ class DefaultContextWindowProjectorTest {
                         .name(name)
                         .arguments(Map.of("query", "value"))
                         .build()))
+                .timestamp(Instant.parse("2026-01-01T00:00:01Z"))
+                .build();
+    }
+
+    private Message assistantToolCalls(List<Message.ToolCall> toolCalls) {
+        return Message.builder()
+                .role("assistant")
+                .content("calling multiple tools")
+                .toolCalls(toolCalls)
                 .timestamp(Instant.parse("2026-01-01T00:00:01Z"))
                 .build();
     }
