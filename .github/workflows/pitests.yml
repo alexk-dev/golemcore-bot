@@ -8,12 +8,12 @@ on:
 
 env:
   PLUGIN_API_REPO_REF: 67cd0d10a997f494dcaf4686438e5c6bcfc8ac65
-  # Full-product mutation gate. Keep this aligned with the required quality bar.
+  # App-module mutation gate. Keep this aligned with the required quality bar.
   PITEST_MUTATION_THRESHOLD: 85
 
 jobs:
   pitests:
-    name: Domain Mutation Tests
+    name: App Mutation Tests
     runs-on: ubuntu-latest
     timeout-minutes: 90
 
@@ -50,6 +50,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: pit-reports
+          name: app-pit-reports
           path: golemcore-bot-app/target/pit-reports
           if-no-files-found: ignore

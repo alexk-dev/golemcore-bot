@@ -1,11 +1,9 @@
 package me.golemcore.bot.infrastructure.config;
 
 import java.util.List;
-import me.golemcore.bot.adapter.inbound.web.controller.HiveSsoAuthController;
 import me.golemcore.bot.domain.context.layer.HiveLayer;
 import me.golemcore.bot.domain.service.HiveSessionStateStore;
 import me.golemcore.bot.domain.service.HiveSsoService;
-import me.golemcore.bot.port.outbound.DashboardFederatedAuthPort;
 import me.golemcore.bot.port.outbound.DashboardPublicPathPort;
 import me.golemcore.bot.port.outbound.HiveGatewayPort;
 import me.golemcore.bot.port.outbound.RuntimeConfigQueryPort;
@@ -31,12 +29,5 @@ public class HiveLayerConfiguration {
     @Bean
     DashboardPublicPathPort hiveSsoDashboardPublicPathPort() {
         return () -> List.of("/api/auth/hive/sso-status", "/api/auth/hive/exchange");
-    }
-
-    @Bean
-    HiveSsoAuthController hiveSsoAuthController(
-            HiveSsoService hiveSsoService,
-            DashboardFederatedAuthPort dashboardFederatedAuthPort) {
-        return new HiveSsoAuthController(hiveSsoService, dashboardFederatedAuthPort);
     }
 }
