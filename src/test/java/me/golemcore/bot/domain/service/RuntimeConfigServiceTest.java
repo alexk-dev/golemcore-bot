@@ -867,9 +867,34 @@ class RuntimeConfigServiceTest {
 
     @Test
     void shouldReturnDefaultTurnBudget() {
+        assertEquals(3, service.getTurnMaxSkillTransitions());
         assertEquals(200, service.getTurnMaxLlmCalls());
         assertEquals(500, service.getTurnMaxToolExecutions());
+        assertEquals(20, service.getToolLoopMaxLlmCalls());
+        assertEquals(80, service.getToolLoopMaxToolExecutions());
         assertEquals(java.time.Duration.ofHours(1), service.getTurnDeadline());
+    }
+
+    @Test
+    void shouldReturnConfiguredToolLoopBudgetSeparatelyFromTurnBudget() throws Exception {
+        RuntimeConfig config = RuntimeConfig.builder()
+                .turn(RuntimeConfig.TurnConfig.builder()
+                        .maxSkillTransitions(4)
+                        .maxLlmCalls(200)
+                        .maxToolExecutions(500)
+                        .build())
+                .toolLoop(RuntimeConfig.ToolLoopConfig.builder()
+                        .maxLlmCalls(12)
+                        .maxToolExecutions(34)
+                        .build())
+                .build();
+        setCachedConfig(config);
+
+        assertEquals(4, service.getTurnMaxSkillTransitions());
+        assertEquals(200, service.getTurnMaxLlmCalls());
+        assertEquals(500, service.getTurnMaxToolExecutions());
+        assertEquals(12, service.getToolLoopMaxLlmCalls());
+        assertEquals(34, service.getToolLoopMaxToolExecutions());
     }
 
     @Test

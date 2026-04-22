@@ -39,6 +39,8 @@ class BotPropertiesSettingsAdapterTest {
         properties.getTurn().setMaxLlmCalls(12);
         properties.getTurn().setMaxToolExecutions(34);
         properties.getTurn().setDeadline(Duration.ofMinutes(5));
+        properties.getToolLoop().setMaxLlmCalls(56);
+        properties.getToolLoop().setMaxToolExecutions(78);
         properties.getToolLoop().setStopOnToolFailure(true);
         properties.getToolLoop().setStopOnConfirmationDenied(false);
         properties.getToolLoop().setStopOnToolPolicyDenied(true);
@@ -93,6 +95,8 @@ class BotPropertiesSettingsAdapterTest {
         assertEquals(12, settings.turn().maxLlmCalls());
         assertEquals(34, settings.turn().maxToolExecutions());
         assertEquals(Duration.ofMinutes(5), settings.turn().deadline());
+        assertEquals(56, settings.toolLoop().maxLlmCalls());
+        assertEquals(78, settings.toolLoop().maxToolExecutions());
         assertTrue(settings.toolLoop().stopOnToolFailure());
         assertFalse(settings.toolLoop().stopOnConfirmationDenied());
         assertTrue(settings.toolLoop().stopOnToolPolicyDenied());

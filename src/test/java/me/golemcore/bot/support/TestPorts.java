@@ -35,6 +35,8 @@ public final class TestPorts {
             return ToolRuntimeSettingsPort.defaultToolLoopSettings();
         }
         return new ToolRuntimeSettingsPort.ToolLoopSettings(
+                properties.getMaxLlmCalls(),
+                properties.getMaxToolExecutions(),
                 properties.isStopOnToolFailure(),
                 properties.isStopOnConfirmationDenied(),
                 properties.isStopOnToolPolicyDenied());

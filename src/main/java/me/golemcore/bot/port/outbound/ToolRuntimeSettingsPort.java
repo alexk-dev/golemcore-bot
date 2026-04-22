@@ -18,7 +18,7 @@ public interface ToolRuntimeSettingsPort {
     }
 
     static ToolLoopSettings defaultToolLoopSettings() {
-        return new ToolLoopSettings(false, true, false);
+        return new ToolLoopSettings(20, 80, false, true, false);
     }
 
     record ToolExecutionSettings(int maxToolResultChars) {
@@ -31,8 +31,15 @@ public interface ToolRuntimeSettingsPort {
     }
 
     record ToolLoopSettings(
+            int maxLlmCalls,
+            int maxToolExecutions,
             boolean stopOnToolFailure,
             boolean stopOnConfirmationDenied,
             boolean stopOnToolPolicyDenied) {
+
+        public ToolLoopSettings(boolean stopOnToolFailure, boolean stopOnConfirmationDenied,
+                boolean stopOnToolPolicyDenied) {
+            this(20, 80, stopOnToolFailure, stopOnConfirmationDenied, stopOnToolPolicyDenied);
+        }
     }
 }

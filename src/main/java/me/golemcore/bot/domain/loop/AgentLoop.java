@@ -179,7 +179,7 @@ public class AgentLoop {
             AgentContext context = AgentContext.builder()
                     .session(session)
                     .messages(buildContextMessages(session, message))
-                    .maxIterations(runtimeConfigService.getTurnMaxLlmCalls())
+                    .maxIterations(resolveMaxSkillTransitions())
                     .currentIteration(0)
                     .build();
             context.setTraceContext(rootTraceContext);
@@ -1140,6 +1140,14 @@ public class AgentLoop {
             return null;
         }
         return summary.trim().replaceAll("\\s+", " ").toLowerCase(Locale.ROOT);
+    }
+
+    private int resolveMaxSkillTransitions() {
+        int maxSkillTransitions = runtimeConfigService.getTurnMaxSkillTransitions();
+        if (maxSkillTransitions > 0) {
+            return maxSkillTransitions;
+        }
+        return runtimeConfigService.getTurnMaxLlmCalls();
     }
 
     private List<AgentSystem> getSortedSystems() {

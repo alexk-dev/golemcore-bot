@@ -21,6 +21,7 @@ import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.
 import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.SkillsConfigDto;
 import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.TelemetryConfigDto;
 import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.ToolsConfigDto;
+import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.ToolLoopConfigDto;
 import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.TurnConfigDto;
 import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.TracingConfigDto;
 import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.UsageConfigDto;
@@ -308,6 +309,13 @@ public class SettingsController {
                 runtimeSettingsFacade.updateTurnConfig(runtimeSettingsWebMapper.toTurnConfig(turnConfig))));
     }
 
+    @PutMapping("/runtime/tool-loop")
+    public Mono<ResponseEntity<RuntimeConfigDto>> updateToolLoopConfig(
+            @RequestBody ToolLoopConfigDto toolLoopConfig) {
+        return runtimeConfigResponse(() -> runtimeSettingsWebMapper.toRuntimeConfigDto(
+                runtimeSettingsFacade.updateToolLoopConfig(runtimeSettingsWebMapper.toToolLoopConfig(toolLoopConfig))));
+    }
+
     @PutMapping("/runtime/memory")
     public Mono<ResponseEntity<RuntimeConfigDto>> updateMemoryConfig(
             @RequestBody MemoryConfigDto memoryConfig) {
@@ -474,6 +482,11 @@ public class SettingsController {
     public Mono<ResponseEntity<RuntimeConfigDto>> updateTurnConfig(RuntimeConfig.TurnConfig turnConfig) {
         return runtimeConfigResponse(() -> runtimeSettingsWebMapper
                 .toRuntimeConfigDto(runtimeSettingsFacade.updateTurnConfig(turnConfig)));
+    }
+
+    public Mono<ResponseEntity<RuntimeConfigDto>> updateToolLoopConfig(RuntimeConfig.ToolLoopConfig toolLoopConfig) {
+        return runtimeConfigResponse(() -> runtimeSettingsWebMapper
+                .toRuntimeConfigDto(runtimeSettingsFacade.updateToolLoopConfig(toolLoopConfig)));
     }
 
     public Mono<ResponseEntity<RuntimeConfigDto>> updateMemoryConfig(RuntimeConfig.MemoryConfig memoryConfig) {

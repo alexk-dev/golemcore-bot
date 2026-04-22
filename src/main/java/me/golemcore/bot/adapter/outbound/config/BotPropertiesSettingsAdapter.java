@@ -106,6 +106,8 @@ public class BotPropertiesSettingsAdapter
             return ToolRuntimeSettingsPort.defaultToolLoopSettings();
         }
         return new ToolLoopSettings(
+                properties.getMaxLlmCalls(),
+                properties.getMaxToolExecutions(),
                 properties.isStopOnToolFailure(),
                 properties.isStopOnConfirmationDenied(),
                 properties.isStopOnToolPolicyDenied());

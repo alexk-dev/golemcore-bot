@@ -150,6 +150,10 @@ class AgentLoopContextWindowExternalE2ETest {
         assertNotNull(context);
         assertNull(context.getAttribute(ContextAttributes.LLM_ERROR));
         assertTrue(Boolean.TRUE.equals(context.getAttribute(ContextAttributes.FINAL_ANSWER_READY)));
+        Map<String, Object> hygieneReport = context.getAttribute(ContextAttributes.CONTEXT_HYGIENE_REPORT);
+        assertNotNull(hygieneReport, "request-time context hygiene report should be recorded");
+        assertTrue(numberValue(hygieneReport, "projectedTokens") <= numberValue(hygieneReport, "rawTokens"),
+                () -> "projected context should not exceed raw context: " + hygieneReport);
 
         String response = responseFuture.get(intEnv("AGENTLOOP_E2E_TIMEOUT_SECONDS", DEFAULT_TIMEOUT_SECONDS),
                 TimeUnit.SECONDS);
@@ -394,5 +398,11 @@ class AgentLoopContextWindowExternalE2ETest {
 
     private String blankToNull(String value) {
         return value == null || value.isBlank() ? null : value.trim();
+    }
+
+    private int numberValue(Map<String, Object> values, String key) {
+        Object value = values.get(key);
+        assertTrue(value instanceof Number, "Expected numeric hygiene report value for " + key);
+        return ((Number) value).intValue();
     }
 }
