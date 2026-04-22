@@ -19,6 +19,7 @@ package me.golemcore.bot.domain.context;
  */
 
 import lombok.extern.slf4j.Slf4j;
+import me.golemcore.bot.domain.context.layer.TokenEstimator;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -52,6 +53,8 @@ public class PromptComposer {
 
     private static final String FALLBACK_PROMPT = "You are a helpful AI assistant.";
     private static final String SECTION_SEPARATOR = "\n\n";
+    private static final String TRUNCATION_NOTICE_PREFIX = "\n\n[Layer truncated by system prompt budget: ";
+    private static final String TRUNCATION_NOTICE_SUFFIX = "]";
 
     /**
      * Composes the final system prompt from the given blueprint.
@@ -85,25 +88,17 @@ public class PromptComposer {
      */
     public String compose(ContextBlueprint blueprint, int maxPromptTokens) {
         if (blueprint == null) {
-            return FALLBACK_PROMPT;
+            return fallbackWithinBudget(maxPromptTokens);
         }
 
         List<ContextLayerResult> contentResults = blueprint.getContentResults();
         if (contentResults.isEmpty()) {
             log.warn("[PromptComposer] No layers contributed content, using fallback prompt");
-            return FALLBACK_PROMPT;
+            return fallbackWithinBudget(maxPromptTokens);
         }
 
         List<ContextLayerResult> selectedResults = selectResults(contentResults, maxPromptTokens);
-        StringBuilder sb = new StringBuilder();
-        for (ContextLayerResult result : selectedResults) {
-            if (sb.length() > 0) {
-                sb.append(SECTION_SEPARATOR);
-            }
-            sb.append(result.getContent());
-        }
-
-        String prompt = sb.toString().trim();
+        String prompt = renderWithinBudget(selectedResults, maxPromptTokens);
         log.debug("[PromptComposer] Composed prompt from {} of {} layers, {} chars",
                 selectedResults.size(), contentResults.size(), prompt.length());
         return prompt;
@@ -169,6 +164,104 @@ public class PromptComposer {
             return List.of(fallback);
         }
         return orderedSelected;
+    }
+
+    private String renderWithinBudget(List<ContextLayerResult> selectedResults, int maxPromptTokens) {
+        if (maxPromptTokens <= 0 || maxPromptTokens == Integer.MAX_VALUE) {
+            return render(selectedResults);
+        }
+
+        StringBuilder sb = new StringBuilder();
+        for (ContextLayerResult result : selectedResults) {
+            String content = result.getContent();
+            if (content == null || content.isBlank()) {
+                continue;
+            }
+
+            String separator = sb.length() > 0 ? SECTION_SEPARATOR : "";
+            int separatorTokens = TokenEstimator.estimate(separator);
+            int usedTokens = TokenEstimator.estimate(sb.toString());
+            int remainingTokens = maxPromptTokens - usedTokens - separatorTokens;
+            if (remainingTokens <= 0) {
+                log.debug("[PromptComposer] Dropping layer '{}' because the hard prompt budget is exhausted",
+                        result.getLayerName());
+                continue;
+            }
+
+            if (TokenEstimator.estimate(content) <= remainingTokens) {
+                sb.append(separator).append(content);
+                continue;
+            }
+
+            String trimmed = trimToTokenBudget(content, remainingTokens, result.getLayerName());
+            if (trimmed.isBlank()) {
+                log.debug("[PromptComposer] Dropping layer '{}' because it cannot fit the remaining hard budget",
+                        result.getLayerName());
+                continue;
+            }
+            sb.append(separator).append(trimmed);
+            log.debug("[PromptComposer] Truncated layer '{}' to fit remaining {} token hard budget",
+                    result.getLayerName(), remainingTokens);
+        }
+
+        String prompt = sb.toString().trim();
+        if (prompt.isBlank()) {
+            return fallbackWithinBudget(maxPromptTokens);
+        }
+        if (TokenEstimator.estimate(prompt) > maxPromptTokens) {
+            return trimToTokenBudget(prompt, maxPromptTokens, "prompt");
+        }
+        return prompt;
+    }
+
+    private String render(List<ContextLayerResult> selectedResults) {
+        StringBuilder sb = new StringBuilder();
+        for (ContextLayerResult result : selectedResults) {
+            if (sb.length() > 0) {
+                sb.append(SECTION_SEPARATOR);
+            }
+            sb.append(result.getContent());
+        }
+        return sb.toString().trim();
+    }
+
+    private String trimToTokenBudget(String content, int maxTokens, String layerName) {
+        if (content == null || content.isBlank() || maxTokens <= 0) {
+            return "";
+        }
+        String notice = TRUNCATION_NOTICE_PREFIX + safeLayerName(layerName) + TRUNCATION_NOTICE_SUFFIX;
+        String candidate = content;
+        if (TokenEstimator.estimate(candidate) <= maxTokens) {
+            return candidate;
+        }
+
+        int noticeTokens = TokenEstimator.estimate(notice);
+        int maxChars = Math.max(0, (int) Math.floor(maxTokens * 3.5d));
+        if (noticeTokens < maxTokens) {
+            maxChars = Math.max(0, (int) Math.floor((maxTokens - noticeTokens) * 3.5d));
+            candidate = content.substring(0, Math.min(content.length(), maxChars)) + notice;
+        } else {
+            candidate = content.substring(0, Math.min(content.length(), maxChars));
+        }
+
+        while (TokenEstimator.estimate(candidate) > maxTokens && !candidate.isEmpty()) {
+            int nextLength = Math.max(0, candidate.length() - Math.max(1, candidate.length() / 10));
+            candidate = candidate.substring(0, nextLength);
+        }
+        return candidate.trim();
+    }
+
+    private String safeLayerName(String layerName) {
+        return layerName == null || layerName.isBlank() ? "unknown" : layerName;
+    }
+
+    private String fallbackWithinBudget(int maxPromptTokens) {
+        if (maxPromptTokens <= 0 || maxPromptTokens == Integer.MAX_VALUE
+                || TokenEstimator.estimate(FALLBACK_PROMPT) <= maxPromptTokens) {
+            return FALLBACK_PROMPT;
+        }
+        String fallback = trimToTokenBudget(FALLBACK_PROMPT, maxPromptTokens, "fallback");
+        return fallback.isBlank() ? "AI" : fallback;
     }
 
     private int positiveTokens(ContextLayerResult result) {

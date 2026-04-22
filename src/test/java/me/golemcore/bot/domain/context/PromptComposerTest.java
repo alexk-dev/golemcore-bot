@@ -2,6 +2,8 @@ package me.golemcore.bot.domain.context;
 
 import org.junit.jupiter.api.Test;
 
+import me.golemcore.bot.domain.context.layer.TokenEstimator;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -143,5 +145,29 @@ class PromptComposerTest {
 
         assertTrue(result.contains("# Identity"));
         assertEquals(-1, result.indexOf("# Memory"));
+    }
+
+    @Test
+    void shouldTruncateRequiredLayerToEnforceHardBudget() {
+        ContextBlueprint blueprint = ContextBlueprint.create();
+        blueprint.add(ContextLayerResult.builder()
+                .layerName("identity")
+                .content("# Identity\n" + "required ".repeat(2_000))
+                .estimatedTokens(2_000)
+                .required(true)
+                .priority(100)
+                .build());
+
+        String result = composer.compose(blueprint, 120);
+
+        assertTrue(TokenEstimator.estimate(result) <= 120);
+        assertTrue(result.contains("Layer truncated by system prompt budget"));
+    }
+
+    @Test
+    void shouldKeepFallbackWithinHardBudget() {
+        String result = composer.compose(null, 1);
+
+        assertTrue(TokenEstimator.estimate(result) <= 1);
     }
 }

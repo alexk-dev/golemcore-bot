@@ -10,6 +10,7 @@ import me.golemcore.bot.domain.model.OutgoingResponse;
 import me.golemcore.bot.domain.model.RuntimeEvent;
 import me.golemcore.bot.domain.model.RuntimeEventType;
 import me.golemcore.bot.domain.model.ToolResult;
+import me.golemcore.bot.domain.system.toolloop.view.ConversationView;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -116,6 +117,33 @@ class DefaultToolLoopSystemToolExecutionTest extends DefaultToolLoopSystemFixtur
                 .orElseThrow();
         assertNull(toolFinished.payload().get("toolCallId"));
         assertNull(toolFinished.payload().get("tool"));
+    }
+
+    @Test
+    void shouldEmitContextHygieneRuntimeEventForLlmCall() {
+        DefaultToolLoopSystem runtimeEventSystem = buildSystemWithRuntimeEvents();
+        AgentContext context = buildContext();
+        Map<String, Object> hygieneReport = Map.of(
+                "rawTokens", 1_000,
+                "projectedTokens", 300,
+                "systemPromptTokens", 100);
+        when(viewBuilder.buildView(any(), any())).thenAnswer(invocation -> {
+            AgentContext invocationContext = invocation.getArgument(0);
+            invocationContext.setAttribute(ContextAttributes.CONTEXT_HYGIENE_REPORT, hygieneReport);
+            return ConversationView.ofMessages(invocationContext.getMessages());
+        });
+        when(llmPort.chat(any())).thenReturn(CompletableFuture.completedFuture(finalResponse(CONTENT_DONE)));
+
+        ToolLoopTurnResult result = runtimeEventSystem.processTurn(context);
+
+        assertTrue(result.finalAnswerReady());
+        List<RuntimeEvent> events = context.getAttribute(ContextAttributes.RUNTIME_EVENTS);
+        RuntimeEvent hygieneEvent = events.stream()
+                .filter(event -> event.type() == RuntimeEventType.CONTEXT_HYGIENE)
+                .findFirst()
+                .orElseThrow();
+        assertEquals(hygieneReport, hygieneEvent.payload().get("contextHygiene"));
+        assertEquals(MODEL_BALANCED, hygieneEvent.payload().get("model"));
     }
 
     @Test

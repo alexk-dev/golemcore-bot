@@ -16,6 +16,7 @@ import me.golemcore.bot.domain.context.resolution.TierResolver;
 import me.golemcore.bot.domain.loop.AgentLoop;
 import me.golemcore.bot.domain.service.AutoModeService;
 import me.golemcore.bot.domain.service.ContextCompactionPolicy;
+import me.golemcore.bot.domain.service.ContextHygieneService;
 import me.golemcore.bot.domain.service.ContextTokenEstimator;
 import me.golemcore.bot.domain.service.DelayedActionPolicyService;
 import me.golemcore.bot.domain.service.MemoryPresetService;
@@ -86,7 +87,8 @@ class CoreLayerConfigurationTest {
                 mock(UserPreferencesService.class),
                 mock(LlmPort.class),
                 Clock.systemUTC(),
-                mock(TraceService.class));
+                mock(TraceService.class),
+                mock(ContextHygieneService.class));
         PlanFinalizationSystem planFinalizationSystem = configuration.planFinalizationSystem(
                 mock(PlanService.class),
                 mock(PlanReadyNotificationPort.class));

@@ -36,10 +36,12 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -746,12 +748,14 @@ public class AutoModeService {
         sb.append("# Auto Mode\n\n");
 
         currentGoal.ifPresent(goal -> appendCurrentGoal(sb, goal));
-        appendOtherActiveGoals(sb, activeGoals, currentGoal.map(Goal::getId).orElse(null));
+        String relevanceText = buildAutoRelevanceText(currentGoal.orElse(null), currentTask.orElse(null));
+        appendOtherActiveGoals(sb, activeGoals, currentGoal.map(Goal::getId).orElse(null), relevanceText);
 
         currentTask.ifPresent(task -> appendCurrentTask(sb, task, currentGoal.map(Goal::getTitle).orElse("unknown")));
         appendRelevantDiary(sb, selectRelevantDiary(
                 currentGoal.map(Goal::getId).orElse(requestedGoalId),
-                currentTask.map(AutoTask::getId).orElse(requestedTaskId)));
+                currentTask.map(AutoTask::getId).orElse(requestedTaskId),
+                relevanceText));
 
         sb.append("\n## Instructions\n");
         sb.append("You are in autonomous work mode.\n");
@@ -802,9 +806,14 @@ public class AutoModeService {
         appendField(sb, "Recovery strategy", goal.getReflectionStrategy(), AUTO_CONTEXT_FIELD_MAX_CHARS);
     }
 
-    private void appendOtherActiveGoals(StringBuilder sb, List<Goal> activeGoals, String currentGoalId) {
+    private void appendOtherActiveGoals(StringBuilder sb, List<Goal> activeGoals, String currentGoalId,
+            String relevanceText) {
         List<Goal> otherGoals = activeGoals.stream()
                 .filter(goal -> currentGoalId == null || !currentGoalId.equals(goal.getId()))
+                .sorted(Comparator.comparingInt((Goal goal) -> scoreText(goalSearchText(goal), relevanceText))
+                        .reversed()
+                        .thenComparing(Goal::getUpdatedAt, Comparator.nullsLast(Comparator.reverseOrder()))
+                        .thenComparing(Goal::getCreatedAt, Comparator.nullsLast(Comparator.reverseOrder())))
                 .limit(AUTO_CONTEXT_MAX_OTHER_GOALS)
                 .toList();
         if (otherGoals.isEmpty()) {
@@ -837,24 +846,27 @@ public class AutoModeService {
         }
     }
 
-    private List<DiaryEntry> selectRelevantDiary(String goalId, String taskId) {
+    private List<DiaryEntry> selectRelevantDiary(String goalId, String taskId, String relevanceText) {
         List<DiaryEntry> recentDiary = getRecentDiary(AUTO_CONTEXT_DIARY_LOOKBACK);
-        List<DiaryEntry> matched = recentDiary.stream()
-                .filter(entry -> matchesDiaryScope(entry, goalId, taskId))
+        List<ScoredDiaryEntry> scored = new ArrayList<>();
+        for (int index = 0; index < recentDiary.size(); index++) {
+            DiaryEntry entry = recentDiary.get(index);
+            int score = scoreDiary(entry, goalId, taskId, relevanceText) + index;
+            if (score > 0) {
+                scored.add(new ScoredDiaryEntry(entry, index, score));
+            }
+        }
+        List<ScoredDiaryEntry> selected = scored.stream()
+                .sorted(Comparator.comparingInt(ScoredDiaryEntry::score).reversed()
+                        .thenComparing(ScoredDiaryEntry::index, Comparator.reverseOrder()))
+                .limit(AUTO_CONTEXT_MAX_DIARY_ENTRIES)
+                .sorted(Comparator.comparingInt(ScoredDiaryEntry::index))
                 .toList();
-        List<DiaryEntry> selected = matched.isEmpty() ? recentDiary : matched;
-        int fromIndex = Math.max(0, selected.size() - AUTO_CONTEXT_MAX_DIARY_ENTRIES);
-        return selected.subList(fromIndex, selected.size());
-    }
-
-    private boolean matchesDiaryScope(DiaryEntry entry, String goalId, String taskId) {
-        if (entry == null) {
-            return false;
+        if (!selected.isEmpty()) {
+            return selected.stream().map(ScoredDiaryEntry::entry).toList();
         }
-        if (taskId != null && !taskId.isBlank() && taskId.equals(entry.getTaskId())) {
-            return true;
-        }
-        return goalId != null && !goalId.isBlank() && goalId.equals(entry.getGoalId());
+        int fromIndex = Math.max(0, recentDiary.size() - AUTO_CONTEXT_MAX_DIARY_ENTRIES);
+        return recentDiary.subList(fromIndex, recentDiary.size());
     }
 
     private void appendRelevantDiary(StringBuilder sb, List<DiaryEntry> diaryEntries) {
@@ -870,6 +882,87 @@ public class AutoModeService {
             sb.append(truncate(entry.getContent(), AUTO_CONTEXT_DIARY_MAX_CHARS)).append("\n");
         }
         sb.append("Older or unrelated diary entries are intentionally omitted from the system prompt.\n");
+    }
+
+    private int scoreDiary(DiaryEntry entry, String goalId, String taskId, String relevanceText) {
+        if (entry == null) {
+            return 0;
+        }
+        int score = 0;
+        if (taskId != null && !taskId.isBlank() && taskId.equals(entry.getTaskId())) {
+            score += 100;
+        }
+        if (goalId != null && !goalId.isBlank() && goalId.equals(entry.getGoalId())) {
+            score += 60;
+        }
+        score += scoreText(entry.getContent(), relevanceText);
+        return score;
+    }
+
+    private String buildAutoRelevanceText(Goal goal, AutoTask task) {
+        StringBuilder sb = new StringBuilder();
+        if (goal != null) {
+            sb.append(goalSearchText(goal)).append(' ');
+        }
+        if (task != null) {
+            appendSearchText(sb, task.getTitle());
+            appendSearchText(sb, task.getDescription());
+            appendSearchText(sb, task.getPrompt());
+            appendSearchText(sb, task.getReflectionStrategy());
+        }
+        return sb.toString();
+    }
+
+    private String goalSearchText(Goal goal) {
+        if (goal == null) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder();
+        appendSearchText(sb, goal.getTitle());
+        appendSearchText(sb, goal.getDescription());
+        appendSearchText(sb, goal.getPrompt());
+        appendSearchText(sb, goal.getReflectionStrategy());
+        return sb.toString();
+    }
+
+    private int scoreText(String text, String relevanceText) {
+        if (StringValueSupport.isBlank(text) || StringValueSupport.isBlank(relevanceText)) {
+            return 0;
+        }
+        Set<String> terms = tokenize(relevanceText);
+        if (terms.isEmpty()) {
+            return 0;
+        }
+        Set<String> textTerms = tokenize(text);
+        int score = 0;
+        for (String term : terms) {
+            if (textTerms.contains(term)) {
+                score += 6;
+            }
+        }
+        return score;
+    }
+
+    private Set<String> tokenize(String value) {
+        if (StringValueSupport.isBlank(value)) {
+            return Set.of();
+        }
+        Set<String> terms = new LinkedHashSet<>();
+        for (String token : value.toLowerCase(Locale.ROOT).split("[^\\p{L}\\p{N}_-]+")) {
+            if (token.length() >= 3) {
+                terms.add(token);
+            }
+        }
+        return terms;
+    }
+
+    private void appendSearchText(StringBuilder sb, String value) {
+        if (!StringValueSupport.isBlank(value)) {
+            sb.append(value).append(' ');
+        }
+    }
+
+    private record ScoredDiaryEntry(DiaryEntry entry, int index, int score) {
     }
 
     private void appendReflectionTier(StringBuilder sb, String reflectionModelTier, boolean reflectionTierPriority) {

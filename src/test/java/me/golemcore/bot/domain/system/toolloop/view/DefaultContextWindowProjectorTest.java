@@ -108,6 +108,44 @@ class DefaultContextWindowProjectorTest {
     }
 
     @Test
+    void shouldKeepArtifactReferencesWhenSummarizingToolResults() {
+        Message oldToolResult = Message.builder()
+                .role("tool")
+                .toolCallId("call-artifact")
+                .toolName("browser")
+                .content(largeHtml())
+                .metadata(Map.of("toolAttachments", List.of(Map.of(
+                        "name", "page.html",
+                        "internalFilePath", "artifacts/sess/browser/page.html",
+                        "url", "/api/tool-artifacts/page.html"))))
+                .timestamp(Instant.parse("2026-01-01T00:00:02Z"))
+                .build();
+        List<Message> rawMessages = new ArrayList<>(List.of(
+                user("old request"), oldToolResult,
+                user("later 1"), assistant("later response 1"),
+                user("later 2"), assistant("later response 2"),
+                user("latest request")));
+
+        AgentContext context = AgentContext.builder()
+                .messages(rawMessages)
+                .systemPrompt("system")
+                .memoryContext("memory facts")
+                .build();
+
+        ConversationView projected = projector.project(context, ConversationView.ofMessages(rawMessages),
+                new ContextBudget(8_000, 1_000, 4_000, 500));
+
+        assertTrue(projected.messages().stream()
+                .anyMatch(message -> message.getContent() != null
+                        && message.getContent().contains("Artifact: page.html")
+                        && message.getContent().contains("artifacts/sess/browser/page.html")));
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> report = context.getAttribute(ContextAttributes.CONTEXT_HYGIENE_REPORT);
+        assertTrue((Integer) report.get("memoryTokens") > 0);
+    }
+
+    @Test
     void shouldSummarizeOldNoisyMultiToolInteraction() {
         Message assistantWithTwoToolCalls = assistantToolCalls(List.of(
                 Message.ToolCall.builder()

@@ -39,6 +39,7 @@ public class DefaultContextWindowProjector implements ContextWindowProjector {
         ContextHygieneReport report = new ContextHygieneReport();
         report.setRawTokens(tokenEstimator.estimateMessages(messages));
         report.setSystemPromptTokens(TokenEstimator.estimate(context != null ? context.getSystemPrompt() : null));
+        report.setMemoryTokens(TokenEstimator.estimate(context != null ? context.getMemoryContext() : null));
 
         List<ContextItem> items = buildItems(messages);
         int lastUserIndex = findLastUserItemIndex(items);
@@ -202,6 +203,7 @@ public class DefaultContextWindowProjector implements ContextWindowProjector {
                 if (result != null) {
                     content.append("\nResult summary: ")
                             .append(truncate(result.getContent(), TOOL_RESULT_SUMMARY_CHARS));
+                    ToolArtifactReferenceFormatter.appendArtifactRefs(content, result);
                 } else {
                     content.append("\nResult summary: <missing>");
                 }
@@ -230,11 +232,13 @@ public class DefaultContextWindowProjector implements ContextWindowProjector {
 
     private Message summarizeOrphanToolResult(Message message) {
         String toolName = message.getToolName() != null ? message.getToolName() : "unknown";
+        StringBuilder content = new StringBuilder("[Previous tool result summarized]\nTool: " + toolName
+                + "\nResult summary: " + truncate(message.getContent(), TOOL_RESULT_SUMMARY_CHARS));
+        ToolArtifactReferenceFormatter.appendArtifactRefs(content, message);
         return Message.builder()
                 .id(message.getId())
                 .role("assistant")
-                .content("[Previous tool result summarized]\nTool: " + toolName
-                        + "\nResult summary: " + truncate(message.getContent(), TOOL_RESULT_SUMMARY_CHARS))
+                .content(content.toString())
                 .timestamp(message.getTimestamp())
                 .metadata(message.getMetadata())
                 .build();
