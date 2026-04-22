@@ -4,7 +4,6 @@ import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.outbound.HiveBootstrapSettingsPort;
-import me.golemcore.bot.port.outbound.HiveBootstrapSettingsPort.HiveBootstrapSettings;
 import me.golemcore.bot.port.outbound.HttpSettingsPort;
 import me.golemcore.bot.port.outbound.MemorySettingsPort;
 import me.golemcore.bot.port.outbound.PromptSettingsPort;
