@@ -123,6 +123,21 @@ class AutoProceedSystemTest {
     }
 
     @Test
+    void shouldSkipWhenAutoProceedAlreadyScheduledOnContext() {
+        AgentContext context = contextWith(userMessage(USER_TEXT, null), assistantMessage(ASSISTANT_TEXT, false));
+        context.setAttribute(ContextAttributes.LLM_RESPONSE,
+                LlmResponse.builder().content(ASSISTANT_TEXT).build());
+        context.setAttribute(ContextAttributes.RESILIENCE_AUTO_PROCEED_SCHEDULED, true);
+
+        assertFalse(system.shouldProcess(context),
+                "auto-proceed must not reschedule an affirmation when the same context already marked it scheduled");
+        system.process(context);
+
+        verifyNoInteractions(classifier);
+        verify(internalTurnService, never()).scheduleAutoProceedAffirmation(any(), anyString(), anyInt());
+    }
+
+    @Test
     void shouldSkipWhenToolsExecutedSinceLastUserMessage() {
         AgentContext context = contextWith(
                 userMessage(USER_TEXT, null),

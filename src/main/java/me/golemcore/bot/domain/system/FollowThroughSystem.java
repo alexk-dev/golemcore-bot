@@ -86,6 +86,9 @@ public class FollowThroughSystem implements AgentSystem {
         if (isAutoModeContext(context)) {
             return false;
         }
+        if (Boolean.TRUE.equals(context.getAttribute(ContextAttributes.RESILIENCE_FOLLOW_THROUGH_SCHEDULED))) {
+            return false;
+        }
         if (toolsExecutedSinceLastUserMessage(context)) {
             return false;
         }

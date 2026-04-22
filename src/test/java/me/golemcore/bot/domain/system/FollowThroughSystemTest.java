@@ -154,6 +154,21 @@ class FollowThroughSystemTest {
     }
 
     @Test
+    void shouldSkipWhenFollowThroughAlreadyScheduledOnContext() {
+        AgentContext context = contextWith(userMessage(USER_TEXT, null), assistantMessage(ASSISTANT_TEXT, false));
+        context.setAttribute(ContextAttributes.LLM_RESPONSE,
+                LlmResponse.builder().content(ASSISTANT_TEXT).build());
+        context.setAttribute(ContextAttributes.RESILIENCE_FOLLOW_THROUGH_SCHEDULED, true);
+
+        assertFalse(system.shouldProcess(context),
+                "follow-through must not reschedule a nudge when the same context already marked it scheduled");
+        system.process(context);
+
+        verifyNoInteractions(classifier);
+        verify(internalTurnService, never()).scheduleFollowThroughNudge(any(), anyString(), anyInt());
+    }
+
+    @Test
     void shouldSkipWhenFinalAssistantTextIsBlank() {
         AgentContext context = contextWith(userMessage(USER_TEXT, null), assistantMessage("", false));
         context.setAttribute(ContextAttributes.LLM_RESPONSE, LlmResponse.builder().content("").build());

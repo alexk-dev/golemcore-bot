@@ -92,6 +92,9 @@ public class AutoProceedSystem implements AgentSystem {
         if (Boolean.TRUE.equals(context.getAttribute(ContextAttributes.RESILIENCE_FOLLOW_THROUGH_SCHEDULED))) {
             return false;
         }
+        if (Boolean.TRUE.equals(context.getAttribute(ContextAttributes.RESILIENCE_AUTO_PROCEED_SCHEDULED))) {
+            return false;
+        }
         if (toolsExecutedSinceLastUserMessage(context)) {
             return false;
         }
