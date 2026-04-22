@@ -183,7 +183,7 @@ public class ToolLayer implements ContextLayer {
     }
 
     private boolean isHiveSdlcTool(String toolName) {
-        return ToolNames.HIVE_SDLC_TOOLS.contains(toolName);
+        return toolName != null && ToolNames.HIVE_SDLC_TOOLS.contains(toolName);
     }
 
     private void putToolDefinition(Map<String, ToolDefinition> toolsByName,

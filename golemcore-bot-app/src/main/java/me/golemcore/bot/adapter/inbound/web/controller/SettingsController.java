@@ -9,7 +9,6 @@ import me.golemcore.bot.client.dto.settings.SettingsWebDtos.LlmProviderImportRes
 import me.golemcore.bot.client.dto.settings.SettingsWebDtos.LlmProviderTestRequest;
 import me.golemcore.bot.client.dto.settings.SettingsWebDtos.LlmProviderTestResponse;
 import me.golemcore.bot.client.dto.settings.SettingsWebDtos.ModelDto;
-import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.CompactionConfigDto;
 import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.RuntimeHiveConfigDto;
 import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.LlmConfigDto;
 import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.LlmProviderConfigDto;
@@ -18,10 +17,7 @@ import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.McpConfigDto;
 import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.MemoryConfigDto;
 import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.ModelRouterConfigDto;
 import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.PlanConfigDto;
-import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.RateLimitConfigDto;
-import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.ResilienceConfigDto;
 import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.RuntimeConfigDto;
-import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.SecurityConfigDto;
 import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.SessionRetentionConfigDto;
 import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.ShellEnvironmentVariableDto;
 import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.SkillsConfigDto;
