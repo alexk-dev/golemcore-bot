@@ -644,7 +644,8 @@ public class SessionRunCoordinator {
             }
         }
 
-        private void emitInternalContinuationMetric(Message inbound, String metricName, Map<String, Object> attributes) {
+        private void emitInternalContinuationMetric(Message inbound, String metricName,
+                Map<String, Object> attributes) {
             if (metricName == null || metricName.isBlank() || inbound == null) {
                 return;
             }

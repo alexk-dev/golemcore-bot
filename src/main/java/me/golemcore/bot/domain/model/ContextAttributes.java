@@ -264,7 +264,9 @@ public final class ContextAttributes {
      */
     public static final String TURN_QUEUE_KIND_INTERNAL_RETRY = "internal_retry";
 
-    /** String legacy value for {@link #TURN_QUEUE_KIND}: delayed internal wake-up. */
+    /**
+     * String legacy value for {@link #TURN_QUEUE_KIND}: delayed internal wake-up.
+     */
     public static final String TURN_QUEUE_KIND_DELAYED_ACTION = "delayed_action";
 
     /**

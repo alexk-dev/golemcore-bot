@@ -141,7 +141,8 @@ public final class ResilienceObservabilitySupport {
     private static void appendTraceEvent(TraceService traceService, RuntimeConfigService runtimeConfigService,
             Clock clock, AgentContext context, String metricName, Map<String, Object> attributes, Logger log) {
         if (traceService == null || runtimeConfigService == null || !runtimeConfigService.isTracingEnabled()
-                || clock == null || context == null || context.getSession() == null || context.getTraceContext() == null) {
+                || clock == null || context == null || context.getSession() == null
+                || context.getTraceContext() == null) {
             return;
         }
         try {

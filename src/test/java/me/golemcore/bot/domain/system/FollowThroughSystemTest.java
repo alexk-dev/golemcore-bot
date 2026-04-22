@@ -526,7 +526,8 @@ class FollowThroughSystemTest {
 
     private String decompressSnapshot(TraceSnapshot snapshot) {
         TraceSnapshotCompressionService compressionService = new TraceSnapshotCompressionService();
-        return new String(compressionService.decompress(snapshot.getEncoding(), snapshot.getCompressedPayload()), StandardCharsets.UTF_8);
+        return new String(compressionService.decompress(snapshot.getEncoding(), snapshot.getCompressedPayload()),
+                StandardCharsets.UTF_8);
     }
 
     private Message userMessage(String content, Map<String, Object> metadata) {
