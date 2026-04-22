@@ -263,6 +263,8 @@ class DelayedActionDispatcherTest {
         assertTrue(metadata.get("trace.span.id") instanceof String);
         assertEquals("INTERNAL", metadata.get("trace.root.kind"));
         assertEquals("delayed.action", metadata.get("trace.name"));
+        assertEquals(ContextAttributes.TURN_QUEUE_KIND_INTERNAL_DELAYED_ACTION,
+                metadata.get(ContextAttributes.TURN_QUEUE_KIND));
     }
 
     @Test

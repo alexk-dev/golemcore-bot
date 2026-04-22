@@ -27,6 +27,7 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
@@ -152,6 +153,57 @@ class ResilienceObservabilitySupportTest {
         assertEquals(Boolean.TRUE, details.get("safe"));
         verify(traceService).captureSnapshot(eq(context.getSession()), eq(context.getTraceContext()), any(),
                 eq("classifier.request"), eq("application/json"), any(byte[].class));
+    }
+
+    @Test
+    void shouldSkipPayloadCaptureWhenSamplingBucketMissesRequestedRate() {
+        stubTracingConfig(0.3d);
+        CapturingCodec codec = new CapturingCodec();
+
+        ResilienceObservabilitySupport.captureSampledPayload(log, traceService, codec, runtimeConfigService, clock,
+                context, "sample-key", "classifier.request", Map.of("token", "abc123"));
+
+        verify(traceService, never()).captureSnapshot(any(), any(), any(), any(), any(), any());
+        assertNull(codec.capturedPayload);
+    }
+
+    @Test
+    void shouldCapturePayloadWhenSamplingRateIsFull() {
+        stubTracingConfig(1.0d);
+        CapturingCodec codec = new CapturingCodec();
+
+        ResilienceObservabilitySupport.captureSampledPayload(log, traceService, codec, runtimeConfigService, clock,
+                context, "sample-key", "classifier.request", Map.of("safe", "value"));
+
+        assertNotNull(codec.capturedPayload);
+    }
+
+    @Test
+    void shouldReturnFalseWhenObservationKeyIsBlank() {
+        assertFalse(ResilienceObservabilitySupport.markObservedOnce(context, " "));
+    }
+
+    @Test
+    void shouldSanitizeUnknownObjectTypesAndLongPayloads() {
+        stubTracingConfig(1.0d);
+        CapturingCodec codec = new CapturingCodec();
+        String longValue = "x".repeat(2205);
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("custom", new Object() {
+            @Override
+            public String toString() {
+                return "person@example.com " + longValue;
+            }
+        });
+
+        ResilienceObservabilitySupport.captureSampledPayload(log, traceService, codec, runtimeConfigService, clock,
+                context, "sample-key", "classifier.request", payload);
+
+        Map<?, ?> captured = (Map<?, ?>) codec.capturedPayload;
+        assertTrue(captured.get("custom") instanceof String);
+        String custom = (String) captured.get("custom");
+        assertTrue(custom.contains("[REDACTED]"));
+        assertTrue(custom.endsWith("..."));
     }
 
     @Test

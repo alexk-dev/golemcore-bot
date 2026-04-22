@@ -25,6 +25,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -1114,6 +1115,53 @@ class SessionRunCoordinatorTest {
                 processedSnapshot = new ArrayList<>(processedAfterA);
             }
             assertEquals(List.of("retry-2"), processedSnapshot);
+        }
+    }
+
+    @Test
+    void shouldAllowDirectInternalContinuationSubmissionWithoutNewerRealUserActivity() throws Exception {
+        SessionPort sessionPort = mock(SessionPort.class);
+        AgentLoop agentLoop = mock(AgentLoop.class);
+        RuntimeEventService runtimeEventService = mock(RuntimeEventService.class);
+        RuntimeConfigService runtimeConfigService = runtimeConfigService(false, "one-at-a-time", "one-at-a-time");
+
+        try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
+            SessionRunCoordinator coordinator = new SessionRunCoordinator(sessionPort, agentLoop, executor,
+                    runtimeEventService, runtimeConfigService, null, mock(HiveEventPublishPort.class));
+
+            Message continuation = internalContinuation("continue-now", 0L);
+            CountDownLatch processed = new CountDownLatch(1);
+            org.mockito.Mockito.doAnswer(invocation -> {
+                processed.countDown();
+                return null;
+            }).when(agentLoop).processMessage(argThat(message -> "continue-now".equals(message.getContent())));
+
+            assertTrue(coordinator.enqueueInternalContinuationIfNoNewerRealUserActivity(continuation, 0L));
+            assertEquals(0L, ((Number) continuation.getMetadata()
+                    .get(ContextAttributes.MESSAGE_REAL_USER_ACTIVITY_SEQUENCE)).longValue());
+            assertTrue(processed.await(2, TimeUnit.SECONDS));
+        }
+    }
+
+    @Test
+    void shouldRejectInternalContinuationImmediatelyWhenNewerRealUserActivityAlreadyExists() throws Exception {
+        SessionPort sessionPort = mock(SessionPort.class);
+        AgentLoop agentLoop = mock(AgentLoop.class);
+        RuntimeEventService runtimeEventService = mock(RuntimeEventService.class);
+        RuntimeConfigService runtimeConfigService = runtimeConfigService(false, "one-at-a-time", "one-at-a-time");
+
+        try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
+            SessionRunCoordinator coordinator = new SessionRunCoordinator(sessionPort, agentLoop, executor,
+                    runtimeEventService, runtimeConfigService, null, mock(HiveEventPublishPort.class));
+
+            coordinator.enqueue(user("real-user"));
+            Message continuation = autoProceedContinuation("continue-stale", 0L);
+
+            assertFalse(coordinator.enqueueInternalContinuationIfNoNewerRealUserActivity(continuation, 0L));
+            verify(agentLoop, timeout(1000))
+                    .processMessage(argThat(message -> "real-user".equals(message.getContent())));
+            verify(agentLoop, never())
+                    .processMessage(argThat(message -> "continue-stale".equals(message.getContent())));
         }
     }
 

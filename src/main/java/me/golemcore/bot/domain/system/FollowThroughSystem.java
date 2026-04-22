@@ -6,12 +6,9 @@ package me.golemcore.bot.domain.system;
  * Contact: alex@kuleshov.tech
  */
 
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.ContextAttributes;
-import me.golemcore.bot.domain.model.LlmResponse;
-import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.resilience.ClassifierRequest;
 import me.golemcore.bot.domain.resilience.followthrough.ClassifierVerdict;
@@ -25,9 +22,7 @@ import org.springframework.stereotype.Component;
 
 import java.time.Clock;
 import java.time.Duration;
-import java.util.ArrayList;
 import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Map;
 
 /**
@@ -48,19 +43,25 @@ import java.util.Map;
  * depth.
  */
 @Component
-@RequiredArgsConstructor
 @Slf4j
-public class FollowThroughSystem implements AgentSystem {
+public class FollowThroughSystem extends AbstractResilienceContinuationSystem {
 
     static final String SAFE_CONTINUATION_PROMPT = "Continue with the concrete next action you just promised, using only the latest user request and visible conversation context. Do not broaden scope. If the action is destructive, asks for credentials, sends external messages, modifies production, or is ambiguous, ask the real user for confirmation.";
     static final String OBSERVED_DEPTH_EXCEEDED = "observability.follow_through.depth_exceeded";
 
     private final FollowThroughClassifier classifier;
     private final InternalTurnService internalTurnService;
-    private final RuntimeConfigService runtimeConfigService;
-    private final TraceService traceService;
-    private final TraceSnapshotCodecPort traceSnapshotCodecPort;
-    private final Clock clock;
+
+    public FollowThroughSystem(FollowThroughClassifier classifier,
+            InternalTurnService internalTurnService,
+            RuntimeConfigService runtimeConfigService,
+            TraceService traceService,
+            TraceSnapshotCodecPort traceSnapshotCodecPort,
+            Clock clock) {
+        super(runtimeConfigService, traceService, traceSnapshotCodecPort, clock);
+        this.classifier = classifier;
+        this.internalTurnService = internalTurnService;
+    }
 
     @Override
     public String getName() {
@@ -82,47 +83,12 @@ public class FollowThroughSystem implements AgentSystem {
         if (context == null || !isEnabled()) {
             return false;
         }
-        if (context.getAttribute(ContextAttributes.LLM_ERROR) != null) {
-            return false;
-        }
-        if (Boolean.TRUE.equals(context.getAttribute(ContextAttributes.PLAN_MODE_ACTIVE))
-                || context.getAttribute(ContextAttributes.PLAN_APPROVAL_NEEDED) != null) {
-            return false;
-        }
-        if (isInterruptRequested(context)) {
-            return false;
-        }
-        if (isAutoModeContext(context)) {
-            return false;
-        }
-        if (Boolean.TRUE.equals(context.getAttribute(ContextAttributes.RESILIENCE_FOLLOW_THROUGH_SCHEDULED))) {
-            return false;
-        }
-        if (toolsExecutedSinceLastUserMessage(context)) {
-            return false;
-        }
-        String assistantText = extractAssistantText(context);
-        if (assistantText == null || assistantText.isBlank()) {
-            return false;
-        }
-        String userText = extractLastUserText(context);
-        if (userText == null || userText.isBlank()) {
-            return false;
-        }
-        int incomingDepth = readIncomingChainDepth(context);
-        int maxChainDepth = resolveMaxChainDepth();
-        if (incomingDepth >= maxChainDepth) {
-            if (ResilienceObservabilitySupport.markObservedOnce(context, OBSERVED_DEPTH_EXCEEDED)) {
-                ResilienceObservabilitySupport.emitContextMetric(log, traceService, runtimeConfigService, clock,
-                        context, "synthetic_turn.global_depth_exceeded",
-                        Map.of(
-                                "driver", "follow_through",
-                                "incoming_depth", incomingDepth,
-                                "max_depth", maxChainDepth));
-            }
-            return false;
-        }
-        return true;
+        return shouldProcessBase(log, context,
+                ContextAttributes.RESILIENCE_FOLLOW_THROUGH_SCHEDULED,
+                ContextAttributes.RESILIENCE_FOLLOW_THROUGH_CHAIN_DEPTH,
+                OBSERVED_DEPTH_EXCEEDED,
+                "follow_through",
+                resolveMaxChainDepth(runtimeConfigService.getFollowThroughConfig().getMaxChainDepth(), 1));
     }
 
     @Override
@@ -133,7 +99,7 @@ public class FollowThroughSystem implements AgentSystem {
         RuntimeConfig.FollowThroughConfig cfg = runtimeConfigService.getFollowThroughConfig();
         String modelTier = cfg.getModelTier();
         Duration timeout = Duration.ofSeconds(cfg.getTimeoutSeconds());
-        int incomingDepth = readIncomingChainDepth(context);
+        int incomingDepth = readIncomingChainDepth(context, ContextAttributes.RESILIENCE_FOLLOW_THROUGH_CHAIN_DEPTH);
 
         ClassifierRequest request = new ClassifierRequest(
                 extractLastUserText(context),
@@ -146,7 +112,8 @@ public class FollowThroughSystem implements AgentSystem {
                         "model_tier", modelTier));
         ResilienceObservabilitySupport.captureSampledPayload(log, traceService, traceSnapshotCodecPort,
                 runtimeConfigService, clock, context, "follow_through.classifier",
-                "follow_through.classifier.request", buildTracePayload(request, modelTier, timeout, incomingDepth));
+                "follow_through.classifier.request",
+                buildTracePayload("follow_through", request, modelTier, timeout, incomingDepth));
 
         ClassifierVerdict verdict = classifier.classify(request, modelTier, timeout);
         ResilienceObservabilitySupport.emitContextMetric(log, traceService, runtimeConfigService, clock, context,
@@ -159,7 +126,7 @@ public class FollowThroughSystem implements AgentSystem {
                 runtimeConfigService, clock, context, "follow_through.classifier",
                 "follow_through.classifier.verdict", buildVerdictTracePayload(verdict));
 
-        if (isTimeoutVerdict(verdict)) {
+        if (isTimeoutReason(verdict.reason())) {
             ResilienceObservabilitySupport.emitContextMetric(log, traceService, runtimeConfigService, clock, context,
                     "follow_through.classifier.timeout",
                     Map.of("model_tier", modelTier));
@@ -201,19 +168,6 @@ public class FollowThroughSystem implements AgentSystem {
         return context;
     }
 
-    private Map<String, Object> buildTracePayload(ClassifierRequest request, String modelTier, Duration timeout,
-            int incomingDepth) {
-        Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("driver", "follow_through");
-        payload.put("model_tier", modelTier);
-        payload.put("timeout_ms", timeout != null ? timeout.toMillis() : null);
-        payload.put("incoming_depth", incomingDepth);
-        payload.put("user_message", request.userMessage());
-        payload.put("assistant_reply", request.assistantReply());
-        payload.put("executed_tools_in_turn", request.executedToolsInTurn());
-        return payload;
-    }
-
     private Map<String, Object> buildVerdictTracePayload(ClassifierVerdict verdict) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("driver", "follow_through");
@@ -224,135 +178,5 @@ public class FollowThroughSystem implements AgentSystem {
         payload.put("commitment_text", verdict.commitmentText());
         payload.put("reason", verdict.reason());
         return payload;
-    }
-
-    private boolean isTimeoutVerdict(ClassifierVerdict verdict) {
-        return verdict != null
-                && verdict.reason() != null
-                && verdict.reason().toLowerCase(java.util.Locale.ROOT).contains("timed out");
-    }
-
-    private boolean toolsExecutedSinceLastUserMessage(AgentContext context) {
-        List<Message> messages = context.getMessages();
-        if (messages == null) {
-            return false;
-        }
-        for (int i = messages.size() - 1; i >= 0; i--) {
-            Message msg = messages.get(i);
-            if ("user".equalsIgnoreCase(msg.getRole())) {
-                return false;
-            }
-            if ("tool".equalsIgnoreCase(msg.getRole())) {
-                return true;
-            }
-            if ("assistant".equalsIgnoreCase(msg.getRole())
-                    && msg.getToolCalls() != null && !msg.getToolCalls().isEmpty()) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    private List<String> executedToolsSinceLastUserMessage(AgentContext context) {
-        List<String> names = new ArrayList<>();
-        List<Message> messages = context.getMessages();
-        if (messages == null) {
-            return names;
-        }
-        for (int i = messages.size() - 1; i >= 0; i--) {
-            Message msg = messages.get(i);
-            if ("user".equalsIgnoreCase(msg.getRole())) {
-                break;
-            }
-            if ("tool".equalsIgnoreCase(msg.getRole()) && msg.getToolName() != null) {
-                names.add(0, msg.getToolName());
-            }
-        }
-        return names;
-    }
-
-    private String extractAssistantText(AgentContext context) {
-        LlmResponse response = context.getAttribute(ContextAttributes.LLM_RESPONSE);
-        if (response != null && response.getContent() != null && !response.getContent().isBlank()) {
-            return response.getContent();
-        }
-        List<Message> messages = context.getMessages();
-        if (messages == null || messages.isEmpty()) {
-            return null;
-        }
-        for (int i = messages.size() - 1; i >= 0; i--) {
-            Message msg = messages.get(i);
-            if ("assistant".equalsIgnoreCase(msg.getRole()) && msg.getContent() != null
-                    && !msg.getContent().isBlank()) {
-                return msg.getContent();
-            }
-        }
-        return null;
-    }
-
-    private String extractLastUserText(AgentContext context) {
-        List<Message> messages = context.getMessages();
-        if (messages == null) {
-            return null;
-        }
-        for (int i = messages.size() - 1; i >= 0; i--) {
-            Message msg = messages.get(i);
-            if ("user".equalsIgnoreCase(msg.getRole()) && msg.getContent() != null) {
-                return msg.getContent();
-            }
-        }
-        return null;
-    }
-
-    private int readIncomingChainDepth(AgentContext context) {
-        Message lastUser = findLastUserMessage(context);
-        if (lastUser == null || lastUser.getMetadata() == null) {
-            return 0;
-        }
-        Object raw = lastUser.getMetadata().get(ContextAttributes.RESILIENCE_FOLLOW_THROUGH_CHAIN_DEPTH);
-        if (raw instanceof Number number) {
-            return Math.max(0, number.intValue());
-        }
-        return 0;
-    }
-
-    private Message findLastUserMessage(AgentContext context) {
-        List<Message> messages = context.getMessages();
-        if (messages == null) {
-            return null;
-        }
-        for (int i = messages.size() - 1; i >= 0; i--) {
-            Message msg = messages.get(i);
-            if ("user".equalsIgnoreCase(msg.getRole())) {
-                return msg;
-            }
-        }
-        return null;
-    }
-
-    private int resolveMaxChainDepth() {
-        RuntimeConfig.FollowThroughConfig cfg = runtimeConfigService.getFollowThroughConfig();
-        Integer max = cfg.getMaxChainDepth();
-        return max != null && max >= 0 ? max : 1;
-    }
-
-    private boolean isAutoModeContext(AgentContext context) {
-        if (Boolean.TRUE.equals(context.getAttribute(ContextAttributes.AUTO_MODE))) {
-            return true;
-        }
-        Message lastUser = findLastUserMessage(context);
-        return lastUser != null && lastUser.getMetadata() != null
-                && Boolean.TRUE.equals(lastUser.getMetadata().get(ContextAttributes.AUTO_MODE));
-    }
-
-    private boolean isInterruptRequested(AgentContext context) {
-        if (Boolean.TRUE.equals(context.getAttribute(ContextAttributes.TURN_INTERRUPT_REQUESTED))) {
-            return true;
-        }
-        if (context.getSession() == null || context.getSession().getMetadata() == null) {
-            return false;
-        }
-        Object raw = context.getSession().getMetadata().get(ContextAttributes.TURN_INTERRUPT_REQUESTED);
-        return Boolean.TRUE.equals(raw);
     }
 }
