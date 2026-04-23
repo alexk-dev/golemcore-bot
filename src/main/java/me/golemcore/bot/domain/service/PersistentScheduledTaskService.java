@@ -44,6 +44,7 @@ public class PersistentScheduledTaskService {
 
     private static final String AUTO_DIR = "auto";
     private static final String FILE_NAME = "scheduled-tasks.json";
+    private static final String SCHEDULED_TASK_NOT_FOUND = "Scheduled task not found: ";
     private static final TypeReference<List<ScheduledTask>> TYPE_REF = new TypeReference<>() {
     };
 
@@ -88,7 +89,7 @@ public class PersistentScheduledTaskService {
             String prompt,
             String reflectionModelTier, Boolean reflectionTierPriority) {
         ScheduledTask task = getScheduledTask(scheduledTaskId)
-                .orElseThrow(() -> new IllegalArgumentException("Scheduled task not found: " + scheduledTaskId));
+                .orElseThrow(() -> new IllegalArgumentException(SCHEDULED_TASK_NOT_FOUND + scheduledTaskId));
         task.setTitle(requireTitle(title));
         task.setDescription(normalizeOptionalValue(description));
         task.setPrompt(normalizeOptionalValue(prompt));
@@ -105,7 +106,7 @@ public class PersistentScheduledTaskService {
         List<ScheduledTask> tasks = ensureLoaded();
         boolean removed = tasks.removeIf(task -> scheduledTaskId.equals(task.getId()));
         if (!removed) {
-            throw new IllegalArgumentException("Scheduled task not found: " + scheduledTaskId);
+            throw new IllegalArgumentException(SCHEDULED_TASK_NOT_FOUND + scheduledTaskId);
         }
         saveScheduledTasks(tasks);
     }
@@ -185,7 +186,7 @@ public class PersistentScheduledTaskService {
     public synchronized void recordFailure(String scheduledTaskId, String failureSummary, String failureFingerprint,
             String activeSkillName, int threshold) {
         ScheduledTask task = getScheduledTask(scheduledTaskId)
-                .orElseThrow(() -> new IllegalArgumentException("Scheduled task not found: " + scheduledTaskId));
+                .orElseThrow(() -> new IllegalArgumentException(SCHEDULED_TASK_NOT_FOUND + scheduledTaskId));
         Instant now = Instant.now();
         task.setConsecutiveFailureCount(task.getConsecutiveFailureCount() + 1);
         task.setReflectionRequired(task.getConsecutiveFailureCount() >= Math.max(1, threshold));
@@ -199,7 +200,7 @@ public class PersistentScheduledTaskService {
 
     public synchronized void recordSuccess(String scheduledTaskId, String activeSkillName) {
         ScheduledTask task = getScheduledTask(scheduledTaskId)
-                .orElseThrow(() -> new IllegalArgumentException("Scheduled task not found: " + scheduledTaskId));
+                .orElseThrow(() -> new IllegalArgumentException(SCHEDULED_TASK_NOT_FOUND + scheduledTaskId));
         Instant now = Instant.now();
         task.setConsecutiveFailureCount(0);
         task.setReflectionRequired(false);
@@ -213,7 +214,7 @@ public class PersistentScheduledTaskService {
 
     public synchronized void applyReflectionResult(String scheduledTaskId, String reflectionStrategy) {
         ScheduledTask task = getScheduledTask(scheduledTaskId)
-                .orElseThrow(() -> new IllegalArgumentException("Scheduled task not found: " + scheduledTaskId));
+                .orElseThrow(() -> new IllegalArgumentException(SCHEDULED_TASK_NOT_FOUND + scheduledTaskId));
         Instant now = Instant.now();
         task.setReflectionStrategy(normalizeOptionalValue(reflectionStrategy));
         task.setReflectionRequired(false);

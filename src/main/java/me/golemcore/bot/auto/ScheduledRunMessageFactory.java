@@ -48,6 +48,8 @@ import java.util.Optional;
 @Slf4j
 public class ScheduledRunMessageFactory {
 
+    private static final String REFLECTION_PROMPT_SUFFIX = "' and propose an alternative strategy for the next run.";
+
     private final AutoModeService autoModeService;
     private final RuntimeConfigService runtimeConfigService;
     private final SkillComponent skillComponent;
@@ -99,11 +101,11 @@ public class ScheduledRunMessageFactory {
         if (!StringValueSupport.isBlank(source.taskId())) {
             prompt.append("[AUTO][REFLECTION] Analyze the repeated failure for task '")
                     .append(source.taskTitle() != null ? source.taskTitle() : source.taskId())
-                    .append("' and propose an alternative strategy for the next run.");
+                    .append(REFLECTION_PROMPT_SUFFIX);
         } else {
             prompt.append("[AUTO][REFLECTION] Analyze the repeated failure while planning goal '")
                     .append(source.goalTitle() != null ? source.goalTitle() : source.goalId())
-                    .append("' and propose an alternative strategy for the next run.");
+                    .append(REFLECTION_PROMPT_SUFFIX);
         }
         if (!StringValueSupport.isBlank(reflectionState.lastFailureSummary())) {
             prompt.append(" Latest failure: ").append(reflectionState.lastFailureSummary()).append('.');
@@ -289,7 +291,7 @@ public class ScheduledRunMessageFactory {
         StringBuilder prompt = new StringBuilder();
         prompt.append("[AUTO][REFLECTION] Analyze the repeated failure for scheduled task '")
                 .append(source.taskTitle() != null ? source.taskTitle() : source.scheduledTaskId())
-                .append("' and propose an alternative strategy for the next run.");
+                .append(REFLECTION_PROMPT_SUFFIX);
         if (!StringValueSupport.isBlank(reflectionState.lastFailureSummary())) {
             prompt.append(" Latest failure: ").append(reflectionState.lastFailureSummary()).append('.');
         }

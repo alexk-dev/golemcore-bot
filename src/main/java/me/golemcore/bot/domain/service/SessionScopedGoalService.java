@@ -46,6 +46,7 @@ public class SessionScopedGoalService {
 
     private static final String GOAL_NOT_FOUND = "Goal not found: ";
     private static final String TASK_NOT_FOUND = "Task not found: ";
+    private static final String TASK_TITLE_REQUIRED = "Task title is required";
     private static final String INBOX_GOAL_ID = "inbox";
     private static final String INBOX_GOAL_TITLE = "Inbox";
     private static final String INBOX_GOAL_DESCRIPTION = "System container for standalone tasks";
@@ -157,7 +158,7 @@ public class SessionScopedGoalService {
         AutoTask task = AutoTask.builder()
                 .id(UUID.randomUUID().toString())
                 .goalId(goalId)
-                .title(requireTitle(title, "Task title is required"))
+                .title(requireTitle(title, TASK_TITLE_REQUIRED))
                 .description(normalizeOptionalValue(description))
                 .prompt(normalizeOptionalValue(prompt))
                 .reflectionModelTier(normalizeOptionalValue(reflectionModelTier))
@@ -184,7 +185,7 @@ public class SessionScopedGoalService {
         AutoTask task = AutoTask.builder()
                 .id(UUID.randomUUID().toString())
                 .goalId(targetGoal.getId())
-                .title(requireTitle(title, "Task title is required"))
+                .title(requireTitle(title, TASK_TITLE_REQUIRED))
                 .description(normalizeOptionalValue(description))
                 .prompt(normalizeOptionalValue(prompt))
                 .reflectionModelTier(normalizeOptionalValue(reflectionModelTier))
@@ -250,7 +251,7 @@ public class SessionScopedGoalService {
         AutoTask.TaskStatus resolvedStatus = status != null ? status : task.getStatus();
         Instant now = Instant.now();
 
-        task.setTitle(requireTitle(title, "Task title is required"));
+        task.setTitle(requireTitle(title, TASK_TITLE_REQUIRED));
         task.setDescription(normalizeOptionalValue(description));
         task.setPrompt(normalizeOptionalValue(prompt));
         task.setReflectionModelTier(normalizeOptionalValue(reflectionModelTier));
@@ -809,27 +810,39 @@ public class SessionScopedGoalService {
             return;
         }
         for (Goal goal : goals) {
-            if (goal == null) {
-                continue;
-            }
-            goal.setSessionId(sessionId);
-            if (INBOX_GOAL_ID.equals(goal.getId())) {
-                goal.setSystemInbox(true);
-                if (goal.getTitle() == null) {
-                    goal.setTitle(INBOX_GOAL_TITLE);
-                }
-                if (goal.getDescription() == null) {
-                    goal.setDescription(INBOX_GOAL_DESCRIPTION);
-                }
-            }
-            if (goal.getTasks() == null) {
-                goal.setTasks(new ArrayList<>());
-                continue;
-            }
-            for (AutoTask task : goal.getTasks()) {
-                if (task != null) {
-                    task.setGoalId(goal.getId());
-                }
+            normalizeGoal(sessionId, goal);
+        }
+    }
+
+    private void normalizeGoal(String sessionId, Goal goal) {
+        if (goal == null) {
+            return;
+        }
+        goal.setSessionId(sessionId);
+        if (INBOX_GOAL_ID.equals(goal.getId())) {
+            normalizeInboxGoal(goal);
+        }
+        normalizeGoalTasks(goal);
+    }
+
+    private void normalizeInboxGoal(Goal goal) {
+        goal.setSystemInbox(true);
+        if (goal.getTitle() == null) {
+            goal.setTitle(INBOX_GOAL_TITLE);
+        }
+        if (goal.getDescription() == null) {
+            goal.setDescription(INBOX_GOAL_DESCRIPTION);
+        }
+    }
+
+    private void normalizeGoalTasks(Goal goal) {
+        if (goal.getTasks() == null) {
+            goal.setTasks(new ArrayList<>());
+            return;
+        }
+        for (AutoTask task : goal.getTasks()) {
+            if (task != null) {
+                task.setGoalId(goal.getId());
             }
         }
     }

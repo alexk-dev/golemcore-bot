@@ -122,52 +122,72 @@ public class AutoModeMigrationService {
             return;
         }
 
+        LegacyTargetIndex targetIndex = buildLegacyTargetIndex(legacyGoals);
+        for (ScheduleEntry schedule : schedules) {
+            migrateScheduleTarget(schedule, targetIndex);
+        }
+    }
+
+    private LegacyTargetIndex buildLegacyTargetIndex(List<Goal> legacyGoals) {
         Map<String, Goal> goalById = new HashMap<>();
         Map<String, AutoTask> taskById = new HashMap<>();
         Map<String, Goal> taskGoalById = new HashMap<>();
         for (Goal goal : legacyGoals) {
-            if (goal == null || goal.getId() == null) {
-                continue;
-            }
-            goalById.put(goal.getId(), goal);
-            if (goal.getTasks() == null) {
-                continue;
-            }
-            for (AutoTask task : goal.getTasks()) {
-                if (task == null || task.getId() == null) {
-                    continue;
-                }
-                taskById.put(task.getId(), task);
-                taskGoalById.put(task.getId(), goal);
-            }
+            indexLegacyGoal(goal, goalById, taskById, taskGoalById);
         }
+        return new LegacyTargetIndex(goalById, taskById, taskGoalById);
+    }
 
-        for (ScheduleEntry schedule : schedules) {
-            if (schedule == null || schedule.getType() == null) {
-                continue;
-            }
-            if (schedule.getType() == ScheduleEntry.ScheduleType.SCHEDULED_TASK) {
-                continue;
-            }
-            if (schedule.getType() == ScheduleEntry.ScheduleType.GOAL) {
-                Goal goal = goalById.get(schedule.getTargetId());
-                if (goal == null) {
-                    continue;
-                }
-                schedule.setType(ScheduleEntry.ScheduleType.SCHEDULED_TASK);
-                schedule.setTargetId(persistentScheduledTaskService.createFromLegacyGoal(goal).getId());
-                continue;
-            }
-            if (schedule.getType() == ScheduleEntry.ScheduleType.TASK) {
-                AutoTask task = taskById.get(schedule.getTargetId());
-                if (task == null) {
-                    continue;
-                }
-                schedule.setType(ScheduleEntry.ScheduleType.SCHEDULED_TASK);
-                schedule.setTargetId(persistentScheduledTaskService.createFromLegacyTask(taskGoalById.get(task.getId()),
-                        task).getId());
-            }
+    private void indexLegacyGoal(Goal goal, Map<String, Goal> goalById, Map<String, AutoTask> taskById,
+            Map<String, Goal> taskGoalById) {
+        if (goal == null || goal.getId() == null) {
+            return;
         }
+        goalById.put(goal.getId(), goal);
+        if (goal.getTasks() == null) {
+            return;
+        }
+        for (AutoTask task : goal.getTasks()) {
+            if (task == null || task.getId() == null) {
+                continue;
+            }
+            taskById.put(task.getId(), task);
+            taskGoalById.put(task.getId(), goal);
+        }
+    }
+
+    private void migrateScheduleTarget(ScheduleEntry schedule, LegacyTargetIndex targetIndex) {
+        if (schedule == null || schedule.getType() == null
+                || schedule.getType() == ScheduleEntry.ScheduleType.SCHEDULED_TASK) {
+            return;
+        }
+        if (schedule.getType() == ScheduleEntry.ScheduleType.GOAL) {
+            migrateGoalSchedule(schedule, targetIndex.goalById());
+            return;
+        }
+        if (schedule.getType() == ScheduleEntry.ScheduleType.TASK) {
+            migrateTaskSchedule(schedule, targetIndex);
+        }
+    }
+
+    private void migrateGoalSchedule(ScheduleEntry schedule, Map<String, Goal> goalById) {
+        Goal goal = goalById.get(schedule.getTargetId());
+        if (goal == null) {
+            return;
+        }
+        schedule.setType(ScheduleEntry.ScheduleType.SCHEDULED_TASK);
+        schedule.setTargetId(persistentScheduledTaskService.createFromLegacyGoal(goal).getId());
+    }
+
+    private void migrateTaskSchedule(ScheduleEntry schedule, LegacyTargetIndex targetIndex) {
+        AutoTask task = targetIndex.taskById().get(schedule.getTargetId());
+        if (task == null) {
+            return;
+        }
+        schedule.setType(ScheduleEntry.ScheduleType.SCHEDULED_TASK);
+        schedule.setTargetId(persistentScheduledTaskService.createFromLegacyTask(
+                targetIndex.taskGoalById().get(task.getId()),
+                task).getId());
     }
 
     private AgentSession findLatestTelegramOrWebSession() {
@@ -192,5 +212,11 @@ public class AutoModeMigrationService {
         } catch (IOException exception) {
             throw new IllegalStateException("Failed to clone goal during migration", exception);
         }
+    }
+
+    private record LegacyTargetIndex(
+            Map<String, Goal> goalById,
+            Map<String, AutoTask> taskById,
+            Map<String, Goal> taskGoalById) {
     }
 }
