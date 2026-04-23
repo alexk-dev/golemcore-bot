@@ -277,7 +277,8 @@ public final class RuntimeLauncher {
     }
 
     private LaunchCommand resolveLaunchCommand(LauncherArguments launcherArguments) {
-        Path currentJar = currentRuntimeResolver.resolveCurrentJar(launcherArguments);
+        Path bundledJar = bundledRuntimeLocator.resolve(launcherArguments);
+        Path currentJar = currentRuntimeResolver.resolveCurrentJar(launcherArguments, bundledJar);
         List<String> command = new ArrayList<>();
         command.add(javaCommand);
         command.addAll(javaOptionsResolver.resolve(launcherArguments));
@@ -289,7 +290,6 @@ public final class RuntimeLauncher {
             return new LaunchCommand(List.copyOf(command), "updated runtime " + currentJar);
         }
 
-        Path bundledJar = bundledRuntimeLocator.resolve(launcherArguments);
         if (bundledJar != null) {
             command.add("-jar");
             command.add(bundledJar.toString());

@@ -44,6 +44,7 @@ expect_manifest_value "${EXEC_JAR_PATH}" "Main-Class" "org.springframework.boot.
 expect_manifest_value "${EXEC_JAR_PATH}" "Start-Class" "me.golemcore.bot.BotApplication"
 expect_jar_entry "${EXEC_JAR_PATH}" "BOOT-INF/classes/me/golemcore/bot/launcher/RuntimeLauncher.class"
 expect_jar_entry "${EXEC_JAR_PATH}" "BOOT-INF/classes/me/golemcore/bot/launcher/RuntimeCliLauncher.class"
+expect_jar_entry "${EXEC_JAR_PATH}" "BOOT-INF/classes/me/golemcore/bot/launcher/RuntimeJarVersionReader.class"
 
 if [[ ! -f "${NATIVE_LAUNCHER_JAR_PATH}" ]]; then
   echo "Native launcher jar not found: ${NATIVE_LAUNCHER_JAR_PATH}" >&2
@@ -53,5 +54,6 @@ fi
 expect_manifest_value "${NATIVE_LAUNCHER_JAR_PATH}" "Main-Class" "me.golemcore.bot.launcher.RuntimeCliLauncher"
 expect_jar_entry "${NATIVE_LAUNCHER_JAR_PATH}" "me/golemcore/bot/launcher/RuntimeLauncher.class"
 expect_jar_entry "${NATIVE_LAUNCHER_JAR_PATH}" "me/golemcore/bot/launcher/RuntimeCliLauncher.class"
+expect_jar_entry "${NATIVE_LAUNCHER_JAR_PATH}" "me/golemcore/bot/launcher/RuntimeJarVersionReader.class"
 
 echo "Launcher entrypoint packaging contract verified."

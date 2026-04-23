@@ -14,6 +14,7 @@ final class CurrentRuntimeResolver {
     private final LauncherOutput output;
     private final RuntimeVersionReader runtimeVersionReader;
     private final RuntimeVersionSupport runtimeVersionSupport;
+    private final RuntimeJarVersionReader runtimeJarVersionReader;
 
     CurrentRuntimeResolver(
             EnvironmentReader environmentReader,
@@ -26,6 +27,7 @@ final class CurrentRuntimeResolver {
         this.output = output;
         this.runtimeVersionReader = runtimeVersionReader;
         this.runtimeVersionSupport = runtimeVersionSupport;
+        this.runtimeJarVersionReader = new RuntimeJarVersionReader(runtimeVersionSupport);
     }
 
     /**
@@ -43,6 +45,10 @@ final class CurrentRuntimeResolver {
      *         exists
      */
     Path resolveCurrentJar(LauncherArguments launcherArguments) {
+        return resolveCurrentJar(launcherArguments, null);
+    }
+
+    Path resolveCurrentJar(LauncherArguments launcherArguments, Path bundledRuntimeJar) {
         Path updatesDir = resolveUpdatesDir(launcherArguments);
         Path markerPath = updatesDir.resolve(RuntimeLauncher.CURRENT_MARKER_NAME);
         if (!Files.isRegularFile(markerPath)) {
@@ -69,7 +75,7 @@ final class CurrentRuntimeResolver {
                 output.error("Current marker points to a missing jar: " + jarPath);
                 return null;
             }
-            if (isBundledRuntimeNewer(assetName)) {
+            if (isBundledRuntimeNewer(assetName, bundledRuntimeJar)) {
                 return null;
             }
             return jarPath;
@@ -122,8 +128,8 @@ final class CurrentRuntimeResolver {
      * image suppresses the current marker.
      * </p>
      */
-    private boolean isBundledRuntimeNewer(String assetName) {
-        String bundledVersion = runtimeVersionSupport.normalizeVersion(runtimeVersionReader.currentVersion());
+    private boolean isBundledRuntimeNewer(String assetName, Path bundledRuntimeJar) {
+        String bundledVersion = resolveBundledRuntimeVersion(bundledRuntimeJar);
         String currentJarVersion = runtimeVersionSupport.extractVersionFromAssetName(assetName);
         if (bundledVersion == null || currentJarVersion == null) {
             return false;
@@ -139,5 +145,13 @@ final class CurrentRuntimeResolver {
                     + " is newer than " + currentJarVersion);
         }
         return bundledIsNewer;
+    }
+
+    private String resolveBundledRuntimeVersion(Path bundledRuntimeJar) {
+        String bundledJarVersion = runtimeJarVersionReader.readVersion(bundledRuntimeJar);
+        if (bundledJarVersion != null) {
+            return runtimeVersionSupport.normalizeVersion(bundledJarVersion);
+        }
+        return runtimeVersionSupport.normalizeVersion(runtimeVersionReader.currentVersion());
     }
 }

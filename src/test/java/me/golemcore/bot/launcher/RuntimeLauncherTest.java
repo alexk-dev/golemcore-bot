@@ -367,6 +367,42 @@ class RuntimeLauncherTest {
     }
 
     @Test
+    void shouldLaunchBundledRuntimeJarWhenBundledJarVersionIsNewerThanCurrentMarker(@TempDir Path tempDir)
+            throws Exception {
+        Path jarsDir = tempDir.resolve("jars");
+        Files.createDirectories(jarsDir);
+        Path currentJar = jarsDir.resolve("bot-0.1.0-exec.jar");
+        Files.writeString(currentJar, "payload", StandardCharsets.UTF_8);
+        Files.writeString(tempDir.resolve("current.txt"), currentJar.getFileName() + "\n", StandardCharsets.UTF_8);
+
+        Path bundledJar = tempDir.resolve("bundled").resolve("bot-0.2.0-exec.jar");
+        Files.createDirectories(bundledJar.getParent());
+        Files.writeString(bundledJar, "payload", StandardCharsets.UTF_8);
+
+        RecordingProcessStarter processStarter = new RecordingProcessStarter(List.of(0));
+        CapturingLauncherOutput output = new CapturingLauncherOutput();
+        RuntimeLauncher launcher = createLauncher(
+                Map.of("UPDATE_PATH", tempDir.toString()),
+                processStarter,
+                output,
+                bundledJar,
+                null,
+                Map.of(),
+                "dev");
+
+        int exitCode = launcher.run(webCommand());
+
+        assertEquals(0, exitCode);
+        assertEquals(List.of(
+                "java",
+                "-jar",
+                bundledJar.toAbsolutePath().normalize().toString()), processStarter.commands().getFirst());
+        assertTrue(output.infoMessages().stream()
+                .anyMatch(message -> message.contains(
+                        "Ignoring current marker because bundled runtime 0.2.0 is newer than 0.1.0")));
+    }
+
+    @Test
     void shouldLaunchUpdatedJarWhenVersionsAreEqual(@TempDir Path tempDir) throws Exception {
         Path jarsDir = tempDir.resolve("jars");
         Files.createDirectories(jarsDir);
