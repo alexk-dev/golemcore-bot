@@ -22,6 +22,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import lombok.extern.slf4j.Slf4j;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import me.golemcore.bot.domain.loop.AgentContextHolder;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.AutoTask;
@@ -30,7 +31,7 @@ import me.golemcore.bot.domain.model.Goal;
 import me.golemcore.bot.domain.model.Skill;
 import me.golemcore.bot.domain.model.ScheduledTask;
 import me.golemcore.bot.port.outbound.StoragePort;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 /**
@@ -47,9 +48,11 @@ public class AutoModeService {
     private final SessionScopedGoalService sessionScopedGoalService;
     private final SessionDiaryService sessionDiaryService;
     private final PersistentScheduledTaskService persistentScheduledTaskService;
+    private final String fallbackSessionId;
 
     private volatile boolean enabled = false;
 
+    @Autowired
     public AutoModeService(StoragePort storagePort, ObjectMapper objectMapper,
             RuntimeConfigService runtimeConfigService,
             SessionScopedGoalService sessionScopedGoalService,
@@ -61,6 +64,44 @@ public class AutoModeService {
         this.sessionScopedGoalService = sessionScopedGoalService;
         this.sessionDiaryService = sessionDiaryService;
         this.persistentScheduledTaskService = persistentScheduledTaskService;
+        this.fallbackSessionId = null;
+    }
+
+    AutoModeService(StoragePort storagePort, ObjectMapper objectMapper, RuntimeConfigService runtimeConfigService) {
+        this(
+                storagePort,
+                objectMapper,
+                runtimeConfigService,
+                createLegacySessionScopedGoalService(storagePort, objectMapper, runtimeConfigService),
+                new LegacySessionDiaryService(storagePort, objectMapper),
+                new PersistentScheduledTaskService(storagePort, objectMapper),
+                "legacy-test-session");
+    }
+
+    private AutoModeService(StoragePort storagePort, ObjectMapper objectMapper,
+            RuntimeConfigService runtimeConfigService,
+            SessionScopedGoalService sessionScopedGoalService,
+            SessionDiaryService sessionDiaryService,
+            PersistentScheduledTaskService persistentScheduledTaskService,
+            String fallbackSessionId) {
+        this.storagePort = storagePort;
+        this.objectMapper = objectMapper;
+        this.runtimeConfigService = runtimeConfigService;
+        this.sessionScopedGoalService = sessionScopedGoalService;
+        this.sessionDiaryService = sessionDiaryService;
+        this.persistentScheduledTaskService = persistentScheduledTaskService;
+        this.fallbackSessionId = fallbackSessionId;
+    }
+
+    private static SessionScopedGoalService createLegacySessionScopedGoalService(
+            StoragePort storagePort,
+            ObjectMapper objectMapper,
+            RuntimeConfigService runtimeConfigService) {
+        SessionDiaryService diaryService = new LegacySessionDiaryService(storagePort, objectMapper);
+        return new SessionScopedGoalService(
+                new LegacyGoalStorageService(storagePort, objectMapper),
+                runtimeConfigService,
+                diaryService);
     }
 
     public boolean isFeatureEnabled() {
@@ -374,7 +415,6 @@ public class AutoModeService {
         return sessionScopedGoalService.findGoalForTask(sessionId, taskId);
     }
 
-
     public void deleteSessionGoals(String sessionId) {
         sessionScopedGoalService.replaceGoals(sessionId, List.of());
     }
@@ -417,6 +457,51 @@ public class AutoModeService {
         persistentScheduledTaskService.applyReflectionResult(scheduledTaskId, reflectionStrategy);
     }
 
+    public boolean shouldTriggerScheduledTaskReflection(String scheduledTaskId) {
+        return persistentScheduledTaskService.getScheduledTask(scheduledTaskId)
+                .map(ScheduledTask::isReflectionRequired)
+                .orElse(false);
+    }
+
+    public TaskReflectionState resolveScheduledTaskReflectionState(String scheduledTaskId) {
+        ScheduledTask task = persistentScheduledTaskService.getScheduledTask(scheduledTaskId)
+                .orElseThrow(() -> new IllegalArgumentException("Scheduled task not found: " + scheduledTaskId));
+        return new TaskReflectionState(
+                null,
+                false,
+                task.getReflectionModelTier(),
+                task.isReflectionTierPriority(),
+                task.getLastUsedSkillName(),
+                task.getConsecutiveFailureCount(),
+                task.isReflectionRequired(),
+                task.getLastFailureSummary(),
+                task.getLastFailureFingerprint(),
+                task.getReflectionStrategy());
+    }
+
+    public String resolveScheduledTaskReflectionTier(String scheduledTaskId, Skill skill) {
+        TaskReflectionState state = resolveScheduledTaskReflectionState(scheduledTaskId);
+        if (state.taskReflectionModelTier() != null && !state.taskReflectionModelTier().isBlank()
+                && state.taskReflectionTierPriority()) {
+            return state.taskReflectionModelTier();
+        }
+        if (skill != null && skill.getReflectionTier() != null && !skill.getReflectionTier().isBlank()) {
+            return skill.getReflectionTier();
+        }
+        if (state.taskReflectionModelTier() != null && !state.taskReflectionModelTier().isBlank()) {
+            return state.taskReflectionModelTier();
+        }
+        return runtimeConfigService.getAutoReflectionModelTier();
+    }
+
+    public boolean isScheduledTaskReflectionTierPriority(String scheduledTaskId) {
+        TaskReflectionState state = resolveScheduledTaskReflectionState(scheduledTaskId);
+        if (state.taskReflectionModelTier() != null && !state.taskReflectionModelTier().isBlank()) {
+            return state.taskReflectionTierPriority();
+        }
+        return runtimeConfigService.isAutoReflectionTierPriority();
+    }
+
     private TaskReflectionState toTaskReflectionState(SessionScopedGoalService.TaskReflectionStateSnapshot snapshot) {
         return new TaskReflectionState(
                 snapshot.goalReflectionModelTier(),
@@ -443,11 +528,13 @@ public class AutoModeService {
     private String requireCurrentSessionId() {
         AgentContext context = AgentContextHolder.get();
         if (context == null || context.getSession() == null || context.getSession().getId() == null) {
+            if (fallbackSessionId != null) {
+                return fallbackSessionId;
+            }
             throw new IllegalStateException("No current session available for auto mode operation");
         }
         return context.getSession().getId();
     }
-
 
     public SessionScopedGoalService getSessionScopedGoalService() {
         return sessionScopedGoalService;

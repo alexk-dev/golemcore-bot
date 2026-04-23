@@ -53,22 +53,19 @@ public class PersistentScheduledTaskService {
     private volatile List<ScheduledTask> cache;
 
     public synchronized List<ScheduledTask> getScheduledTasks() {
-        if (cache == null) {
-            cache = loadScheduledTasks();
-        }
-        return cache;
+        return List.copyOf(ensureLoaded());
     }
 
-    public Optional<ScheduledTask> getScheduledTask(String scheduledTaskId) {
+    public synchronized Optional<ScheduledTask> getScheduledTask(String scheduledTaskId) {
         if (StringValueSupport.isBlank(scheduledTaskId)) {
             return Optional.empty();
         }
-        return getScheduledTasks().stream()
+        return ensureLoaded().stream()
                 .filter(task -> scheduledTaskId.equals(task.getId()))
                 .findFirst();
     }
 
-    public ScheduledTask createScheduledTask(String title, String description, String prompt,
+    public synchronized ScheduledTask createScheduledTask(String title, String description, String prompt,
             String reflectionModelTier, boolean reflectionTierPriority) {
         Instant now = Instant.now();
         ScheduledTask task = ScheduledTask.builder()
@@ -81,13 +78,14 @@ public class PersistentScheduledTaskService {
                 .createdAt(now)
                 .updatedAt(now)
                 .build();
-        List<ScheduledTask> tasks = getScheduledTasks();
+        List<ScheduledTask> tasks = ensureLoaded();
         tasks.add(task);
         saveScheduledTasks(tasks);
         return task;
     }
 
-    public ScheduledTask updateScheduledTask(String scheduledTaskId, String title, String description, String prompt,
+    public synchronized ScheduledTask updateScheduledTask(String scheduledTaskId, String title, String description,
+            String prompt,
             String reflectionModelTier, Boolean reflectionTierPriority) {
         ScheduledTask task = getScheduledTask(scheduledTaskId)
                 .orElseThrow(() -> new IllegalArgumentException("Scheduled task not found: " + scheduledTaskId));
@@ -99,12 +97,12 @@ public class PersistentScheduledTaskService {
             task.setReflectionTierPriority(reflectionTierPriority);
         }
         task.setUpdatedAt(Instant.now());
-        saveScheduledTasks(getScheduledTasks());
+        saveScheduledTasks(ensureLoaded());
         return task;
     }
 
-    public void deleteScheduledTask(String scheduledTaskId) {
-        List<ScheduledTask> tasks = getScheduledTasks();
+    public synchronized void deleteScheduledTask(String scheduledTaskId) {
+        List<ScheduledTask> tasks = ensureLoaded();
         boolean removed = tasks.removeIf(task -> scheduledTaskId.equals(task.getId()));
         if (!removed) {
             throw new IllegalArgumentException("Scheduled task not found: " + scheduledTaskId);
@@ -112,10 +110,15 @@ public class PersistentScheduledTaskService {
         saveScheduledTasks(tasks);
     }
 
-    public ScheduledTask createFromLegacyGoal(Goal goal) {
+    public synchronized ScheduledTask createFromLegacyGoal(Goal goal) {
         if (goal == null) {
             throw new IllegalArgumentException("goal is required");
         }
+        Optional<ScheduledTask> existing = findByLegacySource("GOAL", goal.getId());
+        if (existing.isPresent()) {
+            return existing.get();
+        }
+
         Instant now = Instant.now();
         ScheduledTask task = ScheduledTask.builder()
                 .id(UUID.randomUUID().toString())
@@ -137,16 +140,21 @@ public class PersistentScheduledTaskService {
                 .createdAt(goal.getCreatedAt() != null ? goal.getCreatedAt() : now)
                 .updatedAt(goal.getUpdatedAt() != null ? goal.getUpdatedAt() : now)
                 .build();
-        List<ScheduledTask> tasks = getScheduledTasks();
+        List<ScheduledTask> tasks = ensureLoaded();
         tasks.add(task);
         saveScheduledTasks(tasks);
         return task;
     }
 
-    public ScheduledTask createFromLegacyTask(Goal goal, AutoTask task) {
+    public synchronized ScheduledTask createFromLegacyTask(Goal goal, AutoTask task) {
         if (task == null) {
             throw new IllegalArgumentException("task is required");
         }
+        Optional<ScheduledTask> existing = findByLegacySource("TASK", task.getId());
+        if (existing.isPresent()) {
+            return existing.get();
+        }
+
         Instant now = Instant.now();
         ScheduledTask scheduledTask = ScheduledTask.builder()
                 .id(UUID.randomUUID().toString())
@@ -168,13 +176,13 @@ public class PersistentScheduledTaskService {
                 .createdAt(task.getCreatedAt() != null ? task.getCreatedAt() : now)
                 .updatedAt(task.getUpdatedAt() != null ? task.getUpdatedAt() : now)
                 .build();
-        List<ScheduledTask> tasks = getScheduledTasks();
+        List<ScheduledTask> tasks = ensureLoaded();
         tasks.add(scheduledTask);
         saveScheduledTasks(tasks);
         return scheduledTask;
     }
 
-    public void recordFailure(String scheduledTaskId, String failureSummary, String failureFingerprint,
+    public synchronized void recordFailure(String scheduledTaskId, String failureSummary, String failureFingerprint,
             String activeSkillName, int threshold) {
         ScheduledTask task = getScheduledTask(scheduledTaskId)
                 .orElseThrow(() -> new IllegalArgumentException("Scheduled task not found: " + scheduledTaskId));
@@ -186,10 +194,10 @@ public class PersistentScheduledTaskService {
         task.setLastFailureAt(now);
         task.setLastUsedSkillName(normalizeOptionalValue(activeSkillName));
         task.setUpdatedAt(now);
-        saveScheduledTasks(getScheduledTasks());
+        saveScheduledTasks(ensureLoaded());
     }
 
-    public void recordSuccess(String scheduledTaskId, String activeSkillName) {
+    public synchronized void recordSuccess(String scheduledTaskId, String activeSkillName) {
         ScheduledTask task = getScheduledTask(scheduledTaskId)
                 .orElseThrow(() -> new IllegalArgumentException("Scheduled task not found: " + scheduledTaskId));
         Instant now = Instant.now();
@@ -200,10 +208,10 @@ public class PersistentScheduledTaskService {
         task.setLastFailureAt(null);
         task.setLastUsedSkillName(normalizeOptionalValue(activeSkillName));
         task.setUpdatedAt(now);
-        saveScheduledTasks(getScheduledTasks());
+        saveScheduledTasks(ensureLoaded());
     }
 
-    public void applyReflectionResult(String scheduledTaskId, String reflectionStrategy) {
+    public synchronized void applyReflectionResult(String scheduledTaskId, String reflectionStrategy) {
         ScheduledTask task = getScheduledTask(scheduledTaskId)
                 .orElseThrow(() -> new IllegalArgumentException("Scheduled task not found: " + scheduledTaskId));
         Instant now = Instant.now();
@@ -212,7 +220,19 @@ public class PersistentScheduledTaskService {
         task.setConsecutiveFailureCount(0);
         task.setLastReflectionAt(now);
         task.setUpdatedAt(now);
-        saveScheduledTasks(getScheduledTasks());
+        saveScheduledTasks(ensureLoaded());
+    }
+
+    public synchronized Optional<ScheduledTask> findByLegacySource(String legacySourceType, String legacySourceId) {
+        if (StringValueSupport.isBlank(legacySourceType) || StringValueSupport.isBlank(legacySourceId)) {
+            return Optional.empty();
+        }
+        String normalizedType = legacySourceType.trim();
+        String normalizedId = legacySourceId.trim();
+        return ensureLoaded().stream()
+                .filter(task -> normalizedType.equals(task.getLegacySourceType()))
+                .filter(task -> normalizedId.equals(task.getLegacySourceId()))
+                .findFirst();
     }
 
     public List<ScheduledTask> loadScheduledTasks() {
@@ -237,6 +257,13 @@ public class PersistentScheduledTaskService {
         } catch (IOException | RuntimeException exception) { // NOSONAR
             throw new IllegalStateException("Failed to save scheduled tasks", exception);
         }
+    }
+
+    private List<ScheduledTask> ensureLoaded() {
+        if (cache == null) {
+            cache = loadScheduledTasks();
+        }
+        return cache;
     }
 
     private String resolveLegacyTaskDescription(Goal goal, AutoTask task) {

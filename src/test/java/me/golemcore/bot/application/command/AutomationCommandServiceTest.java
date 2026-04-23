@@ -6,9 +6,6 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import java.util.List;
-import java.util.Optional;
-import me.golemcore.bot.domain.model.Goal;
-import me.golemcore.bot.domain.model.ScheduleEntry;
 import me.golemcore.bot.domain.service.AutoModeService;
 import me.golemcore.bot.domain.service.DelayedActionPolicyService;
 import me.golemcore.bot.domain.service.DelayedSessionActionService;
@@ -65,39 +62,29 @@ class AutomationCommandServiceTest {
     }
 
     @Test
-    void createGoalScheduleShouldRejectUnknownGoalBeforeCronValidation() {
+    void createGoalScheduleShouldRejectLegacyGoalSchedules() {
         when(autoModeService.isFeatureEnabled()).thenReturn(true);
-        when(autoModeService.getGoal("goal-1")).thenReturn(Optional.empty());
 
         AutomationCommandService.ScheduleOutcome outcome = service.createGoalSchedule("goal-1",
                 List.of("goal-1", "0", "0", "*", "*", "*"));
 
-        AutomationCommandService.GoalNotFound notFound = assertInstanceOf(
-                AutomationCommandService.GoalNotFound.class,
+        AutomationCommandService.InvalidCron invalidCron = assertInstanceOf(
+                AutomationCommandService.InvalidCron.class,
                 outcome);
-        assertEquals("goal-1", notFound.goalId());
+        assertEquals("Goal schedules are no longer supported", invalidCron.message());
     }
 
     @Test
-    void createGoalScheduleShouldCreateScheduleFromCronArgs() {
+    void createTaskScheduleShouldRejectLegacyTaskSchedules() {
         when(autoModeService.isFeatureEnabled()).thenReturn(true);
-        when(autoModeService.getGoal("goal-1")).thenReturn(Optional.of(Goal.builder().id("goal-1").build()));
-        when(scheduleService.createSchedule(
-                ScheduleEntry.ScheduleType.GOAL,
-                "goal-1",
-                "0 0 * * *",
-                -1)).thenReturn(ScheduleEntry.builder()
-                        .id("sched-goal-1")
-                        .cronExpression("0 0 * * *")
-                        .build());
 
-        AutomationCommandService.ScheduleOutcome outcome = service.createGoalSchedule("goal-1",
-                List.of("goal-1", "0", "0", "*", "*", "*"));
+        AutomationCommandService.ScheduleOutcome outcome = service.createTaskSchedule("task-1",
+                List.of("task-1", "0", "0", "*", "*", "*"));
 
-        AutomationCommandService.ScheduleCreated created = assertInstanceOf(
-                AutomationCommandService.ScheduleCreated.class,
+        AutomationCommandService.InvalidCron invalidCron = assertInstanceOf(
+                AutomationCommandService.InvalidCron.class,
                 outcome);
-        assertEquals("sched-goal-1", created.scheduleId());
+        assertEquals("Task schedules are no longer supported", invalidCron.message());
     }
 
     @Test

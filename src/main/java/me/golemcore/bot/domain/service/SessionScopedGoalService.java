@@ -339,6 +339,12 @@ public class SessionScopedGoalService {
             throw new IllegalArgumentException(GOAL_NOT_FOUND + goalId);
         }
         saveGoals(sessionId, goals);
+        sessionDiaryService.writeDiary(sessionId, DiaryEntry.builder()
+                .timestamp(Instant.now())
+                .type(DiaryEntry.DiaryType.PROGRESS)
+                .content("Goal deleted: " + goalId)
+                .goalId(goalId)
+                .build());
     }
 
     public void deleteTask(String sessionId, String goalId, String taskId) {
@@ -561,6 +567,9 @@ public class SessionScopedGoalService {
             if (task.getDescription() != null && !task.getDescription().isBlank()) {
                 sb.append("Details: ").append(task.getDescription()).append("\n");
             }
+            if (task.getReflectionStrategy() != null && !task.getReflectionStrategy().isBlank()) {
+                sb.append("Recovery strategy: ").append(task.getReflectionStrategy()).append("\n");
+            }
         }
         List<DiaryEntry> recentDiary = sessionDiaryService.getRecentDiary(sessionId, 10);
         if (!recentDiary.isEmpty()) {
@@ -621,7 +630,24 @@ public class SessionScopedGoalService {
 
     private Goal resolveTaskGoal(String sessionId, List<Goal> goals, String goalId) {
         if (StringValueSupport.isBlank(goalId)) {
-            return getOrCreateInboxGoal(sessionId);
+            Optional<Goal> existingInbox = findGoal(goals, INBOX_GOAL_ID);
+            if (existingInbox.isPresent()) {
+                return existingInbox.get();
+            }
+            Instant now = Instant.now();
+            Goal inboxGoal = Goal.builder()
+                    .id(INBOX_GOAL_ID)
+                    .sessionId(sessionId)
+                    .title(INBOX_GOAL_TITLE)
+                    .description(INBOX_GOAL_DESCRIPTION)
+                    .systemInbox(true)
+                    .status(Goal.GoalStatus.ACTIVE)
+                    .tasks(new ArrayList<>())
+                    .createdAt(now)
+                    .updatedAt(now)
+                    .build();
+            goals.add(inboxGoal);
+            return inboxGoal;
         }
         return findGoal(goals, goalId)
                 .orElseThrow(() -> new IllegalArgumentException(GOAL_NOT_FOUND + goalId));

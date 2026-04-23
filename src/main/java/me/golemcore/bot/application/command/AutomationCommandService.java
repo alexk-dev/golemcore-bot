@@ -35,11 +35,25 @@ public class AutomationCommandService {
     }
 
     public List<Goal> getActiveGoals(String sessionId) {
+        if (isBlank(sessionId)) {
+            return List.copyOf(autoModeService.getActiveGoals());
+        }
         return List.copyOf(autoModeService.getActiveGoals(sessionId));
     }
 
+    public List<Goal> getActiveGoals() {
+        return List.copyOf(autoModeService.getActiveGoals());
+    }
+
     public java.util.Optional<AutoTask> getNextPendingTask(String sessionId) {
+        if (isBlank(sessionId)) {
+            return autoModeService.getNextPendingTask();
+        }
         return autoModeService.getNextPendingTask(sessionId);
+    }
+
+    public java.util.Optional<AutoTask> getNextPendingTask() {
+        return autoModeService.getNextPendingTask();
     }
 
     public boolean isLaterFeatureEnabled() {
@@ -73,7 +87,18 @@ public class AutomationCommandService {
         if (!autoModeService.isFeatureEnabled()) {
             return new AutoFeatureUnavailable();
         }
-        List<Goal> goals = autoModeService.getGoals(sessionId);
+        List<Goal> goals = isBlank(sessionId) ? autoModeService.getGoals() : autoModeService.getGoals(sessionId);
+        if (goals.isEmpty()) {
+            return new EmptyGoals();
+        }
+        return new GoalsOverview(List.copyOf(goals));
+    }
+
+    public GoalsOutcome getGoals() {
+        if (!autoModeService.isFeatureEnabled()) {
+            return new AutoFeatureUnavailable();
+        }
+        List<Goal> goals = autoModeService.getGoals();
         if (goals.isEmpty()) {
             return new EmptyGoals();
         }
@@ -88,7 +113,24 @@ public class AutomationCommandService {
             return new GoalDescriptionRequired();
         }
         try {
-            Goal goal = autoModeService.createGoal(sessionId, description, null, null, null, false);
+            Goal goal = isBlank(sessionId)
+                    ? autoModeService.createGoal(description, null)
+                    : autoModeService.createGoal(sessionId, description, null, null, null, false);
+            return new GoalCreated(goal);
+        } catch (IllegalStateException exception) {
+            return new GoalLimitReached(runtimeConfigService.getAutoMaxGoals());
+        }
+    }
+
+    public GoalCreationOutcome createGoal(String description) {
+        if (!autoModeService.isFeatureEnabled()) {
+            return new AutoFeatureUnavailable();
+        }
+        if (description == null || description.isBlank()) {
+            return new GoalDescriptionRequired();
+        }
+        try {
+            Goal goal = autoModeService.createGoal(description, null);
             return new GoalCreated(goal);
         } catch (IllegalStateException exception) {
             return new GoalLimitReached(runtimeConfigService.getAutoMaxGoals());
@@ -99,7 +141,19 @@ public class AutomationCommandService {
         if (!autoModeService.isFeatureEnabled()) {
             return new AutoFeatureUnavailable();
         }
-        List<Goal> goals = autoModeService.getGoals(sessionId);
+        List<Goal> goals = isBlank(sessionId) ? autoModeService.getGoals() : autoModeService.getGoals(sessionId);
+        boolean hasTasks = goals.stream().anyMatch(goal -> !goal.getTasks().isEmpty());
+        if (goals.isEmpty() || !hasTasks) {
+            return new EmptyTasks();
+        }
+        return new TasksOverview(List.copyOf(goals));
+    }
+
+    public TasksOutcome getTasks() {
+        if (!autoModeService.isFeatureEnabled()) {
+            return new AutoFeatureUnavailable();
+        }
+        List<Goal> goals = autoModeService.getGoals();
         boolean hasTasks = goals.stream().anyMatch(goal -> !goal.getTasks().isEmpty());
         if (goals.isEmpty() || !hasTasks) {
             return new EmptyTasks();
@@ -111,7 +165,20 @@ public class AutomationCommandService {
         if (!autoModeService.isFeatureEnabled()) {
             return new AutoFeatureUnavailable();
         }
-        List<DiaryEntry> entries = autoModeService.getRecentDiary(sessionId, count);
+        List<DiaryEntry> entries = isBlank(sessionId)
+                ? autoModeService.getRecentDiary(count)
+                : autoModeService.getRecentDiary(sessionId, count);
+        if (entries.isEmpty()) {
+            return new EmptyDiary();
+        }
+        return new DiaryOverview(List.copyOf(entries));
+    }
+
+    public DiaryOutcome getDiary(int count) {
+        if (!autoModeService.isFeatureEnabled()) {
+            return new AutoFeatureUnavailable();
+        }
+        List<DiaryEntry> entries = autoModeService.getRecentDiary(count);
         if (entries.isEmpty()) {
             return new EmptyDiary();
         }
@@ -218,6 +285,10 @@ public class AutomationCommandService {
             return false;
         }
         return delayedActionPolicyService == null || delayedActionPolicyService.canScheduleActions(channelType);
+    }
+
+    private static boolean isBlank(String value) {
+        return value == null || value.isBlank();
     }
 
     private ScheduleOutcome createScheduleFromArgs(

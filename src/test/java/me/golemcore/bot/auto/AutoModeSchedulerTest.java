@@ -9,6 +9,7 @@ import me.golemcore.bot.domain.model.Goal;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.ScheduleEntry;
 import me.golemcore.bot.domain.model.ScheduleReportConfig;
+import me.golemcore.bot.domain.model.ScheduledTask;
 import me.golemcore.bot.domain.model.Skill;
 import me.golemcore.bot.domain.service.AutoModeService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
@@ -713,6 +714,38 @@ class AutoModeSchedulerTest {
     }
 
     @Test
+    void shouldExecutePersistentScheduledTaskSchedule() {
+        when(autoModeService.isAutoModeEnabled()).thenReturn(true);
+        ScheduledTask task = ScheduledTask.builder()
+                .id("scheduled-task-1")
+                .title("Refresh inbox")
+                .prompt("Review feeds")
+                .build();
+        when(autoModeService.getScheduledTask("scheduled-task-1")).thenReturn(Optional.of(task));
+
+        ScheduleEntry schedule = ScheduleEntry.builder()
+                .id("sched-persistent-1")
+                .type(ScheduleEntry.ScheduleType.SCHEDULED_TASK)
+                .targetId("scheduled-task-1")
+                .cronExpression("0 0 15 * * *")
+                .enabled(true)
+                .build();
+        when(scheduleService.getDueSchedules()).thenReturn(List.of(schedule));
+
+        scheduler.tick();
+
+        ArgumentCaptor<Message> captor = ArgumentCaptor.forClass(Message.class);
+        verify(sessionRunCoordinator).submit(captor.capture());
+
+        Message sent = captor.getValue();
+        assertTrue(sent.getContent().contains("Review feeds"));
+        assertEquals("sched-persistent-1", sent.getMetadata().get(ContextAttributes.AUTO_SCHEDULE_ID));
+        assertEquals("scheduled-task-1", sent.getMetadata().get(ContextAttributes.AUTO_SCHEDULED_TASK_ID));
+        verify(autoModeService).recordScheduledTaskSuccess("scheduled-task-1", null);
+        verify(scheduleService).recordExecution("sched-persistent-1");
+    }
+
+    @Test
     void shouldSkipTickWhenExecutionInProgress() throws Exception {
         when(autoModeService.isAutoModeEnabled()).thenReturn(true);
 
@@ -883,7 +916,7 @@ class AutoModeSchedulerTest {
         scheduler.tick();
 
         verify(sessionRunCoordinator, never()).submit(any(Message.class));
-        verify(scheduleService).recordExecution("sched-goal-missing");
+        verify(scheduleService, never()).recordExecution("sched-goal-missing");
     }
 
     @Test

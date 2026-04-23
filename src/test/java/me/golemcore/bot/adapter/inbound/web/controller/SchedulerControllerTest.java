@@ -9,6 +9,7 @@ import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.ScheduleEntry;
 import me.golemcore.bot.domain.model.ScheduleReportConfig;
 import me.golemcore.bot.domain.model.ScheduleReportConfigUpdate;
+import me.golemcore.bot.domain.model.ScheduledTask;
 import me.golemcore.bot.domain.service.AutoModeService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.ScheduleService;
@@ -68,6 +69,14 @@ class SchedulerControllerTest {
         ChannelPort webhookChannel = mock(ChannelPort.class);
         when(webhookChannel.getChannelType()).thenReturn("webhook");
         when(channelRuntimePort.listChannels()).thenReturn(List.of(webhookChannel));
+        when(autoModeService.getScheduledTask(anyString())).thenAnswer(invocation -> {
+            String id = invocation.getArgument(0, String.class);
+            if (id == null || id.contains("missing")) {
+                return Optional.empty();
+            }
+            String title = id.startsWith("task") ? "Task" : "Goal";
+            return Optional.of(ScheduledTask.builder().id(id).title(title).build());
+        });
     }
 
     @Test
@@ -229,7 +238,7 @@ class SchedulerControllerTest {
         when(autoModeService.isFeatureEnabled()).thenReturn(false);
 
         SchedulerController.CreateScheduleRequest request = new SchedulerController.CreateScheduleRequest(
-                "GOAL",
+                "SCHEDULED_TASK",
                 "goal-1",
                 "daily",
                 List.of(),
@@ -258,7 +267,7 @@ class SchedulerControllerTest {
         Goal goal = Goal.builder().id("goal-1").title("Goal").build();
         ScheduleEntry created = ScheduleEntry.builder()
                 .id("sched-goal-1")
-                .type(ScheduleEntry.ScheduleType.GOAL)
+                .type(ScheduleEntry.ScheduleType.SCHEDULED_TASK)
                 .targetId("goal-1")
                 .cronExpression("0 0 9 * * *")
                 .enabled(true)
@@ -271,12 +280,13 @@ class SchedulerControllerTest {
         when(autoModeService.isFeatureEnabled()).thenReturn(true);
         when(autoModeService.getGoal("goal-1")).thenReturn(Optional.of(goal));
         when(autoModeService.getGoals()).thenReturn(List.of(goal));
-        when(scheduleService.createSchedule(eq(ScheduleEntry.ScheduleType.GOAL), eq("goal-1"), eq("0 0 9 * * *"),
+        when(scheduleService.createSchedule(eq(ScheduleEntry.ScheduleType.SCHEDULED_TASK), eq("goal-1"),
+                eq("0 0 9 * * *"),
                 eq(5), eq(false), isNull()))
                 .thenReturn(created);
 
         SchedulerController.CreateScheduleRequest request = new SchedulerController.CreateScheduleRequest(
-                "GOAL",
+                "SCHEDULED_TASK",
                 "goal-1",
                 "daily",
                 List.of(),
@@ -302,7 +312,7 @@ class SchedulerControllerTest {
         Goal taskGoal = Goal.builder().id("goal-2").title("Goal 2").tasks(List.of(task)).build();
         ScheduleEntry created = ScheduleEntry.builder()
                 .id("sched-task-1")
-                .type(ScheduleEntry.ScheduleType.TASK)
+                .type(ScheduleEntry.ScheduleType.SCHEDULED_TASK)
                 .targetId("task-1")
                 .cronExpression("0 30 18 * * MON,THU")
                 .enabled(true)
@@ -315,12 +325,12 @@ class SchedulerControllerTest {
         when(autoModeService.isFeatureEnabled()).thenReturn(true);
         when(autoModeService.findGoalForTask("task-1")).thenReturn(Optional.of(taskGoal));
         when(autoModeService.getGoals()).thenReturn(List.of(goal, taskGoal));
-        when(scheduleService.createSchedule(eq(ScheduleEntry.ScheduleType.TASK), eq("task-1"),
+        when(scheduleService.createSchedule(eq(ScheduleEntry.ScheduleType.SCHEDULED_TASK), eq("task-1"),
                 eq("0 30 18 * * MON,THU"), eq(-1), eq(false), isNull()))
                 .thenReturn(created);
 
         SchedulerController.CreateScheduleRequest request = new SchedulerController.CreateScheduleRequest(
-                "TASK",
+                "SCHEDULED_TASK",
                 "task-1",
                 "custom",
                 List.of(1, 4),
@@ -343,7 +353,7 @@ class SchedulerControllerTest {
         Goal goal = Goal.builder().id("goal-1").title("Goal").build();
         ScheduleEntry created = ScheduleEntry.builder()
                 .id("sched-goal-weekdays")
-                .type(ScheduleEntry.ScheduleType.GOAL)
+                .type(ScheduleEntry.ScheduleType.SCHEDULED_TASK)
                 .targetId("goal-1")
                 .cronExpression("0 15 8 * * MON-FRI")
                 .enabled(true)
@@ -356,12 +366,12 @@ class SchedulerControllerTest {
         when(autoModeService.isFeatureEnabled()).thenReturn(true);
         when(autoModeService.getGoal("goal-1")).thenReturn(Optional.of(goal));
         when(autoModeService.getGoals()).thenReturn(List.of(goal));
-        when(scheduleService.createSchedule(eq(ScheduleEntry.ScheduleType.GOAL), eq("goal-1"),
+        when(scheduleService.createSchedule(eq(ScheduleEntry.ScheduleType.SCHEDULED_TASK), eq("goal-1"),
                 eq("0 15 8 * * MON-FRI"), eq(1), eq(false), isNull()))
                 .thenReturn(created);
 
         SchedulerController.CreateScheduleRequest request = new SchedulerController.CreateScheduleRequest(
-                "GOAL",
+                "SCHEDULED_TASK",
                 "goal-1",
                 "weekdays",
                 List.of(),
@@ -378,7 +388,7 @@ class SchedulerControllerTest {
         Goal goal = Goal.builder().id("goal-1").title("Goal").build();
         ScheduleEntry created = ScheduleEntry.builder()
                 .id("sched-goal-weekly")
-                .type(ScheduleEntry.ScheduleType.GOAL)
+                .type(ScheduleEntry.ScheduleType.SCHEDULED_TASK)
                 .targetId("goal-1")
                 .cronExpression("0 0 7 * * MON,TUE,WED,THU,FRI,SAT,SUN")
                 .enabled(true)
@@ -391,12 +401,12 @@ class SchedulerControllerTest {
         when(autoModeService.isFeatureEnabled()).thenReturn(true);
         when(autoModeService.getGoal("goal-1")).thenReturn(Optional.of(goal));
         when(autoModeService.getGoals()).thenReturn(List.of(goal));
-        when(scheduleService.createSchedule(eq(ScheduleEntry.ScheduleType.GOAL), eq("goal-1"),
+        when(scheduleService.createSchedule(eq(ScheduleEntry.ScheduleType.SCHEDULED_TASK), eq("goal-1"),
                 eq("0 0 7 * * MON,TUE,WED,THU,FRI,SAT,SUN"), eq(1), eq(false), isNull()))
                 .thenReturn(created);
 
         SchedulerController.CreateScheduleRequest request = new SchedulerController.CreateScheduleRequest(
-                "GOAL",
+                "SCHEDULED_TASK",
                 "goal-1",
                 "weekly",
                 List.of(1, 2, 3, 4, 5, 6, 7),
@@ -413,7 +423,7 @@ class SchedulerControllerTest {
         Goal goal = Goal.builder().id("goal-1").title("Goal").build();
         ScheduleEntry created = ScheduleEntry.builder()
                 .id("sched-goal-unlimited")
-                .type(ScheduleEntry.ScheduleType.GOAL)
+                .type(ScheduleEntry.ScheduleType.SCHEDULED_TASK)
                 .targetId("goal-1")
                 .cronExpression("0 0 9 * * *")
                 .enabled(true)
@@ -426,12 +436,12 @@ class SchedulerControllerTest {
         when(autoModeService.isFeatureEnabled()).thenReturn(true);
         when(autoModeService.getGoal("goal-1")).thenReturn(Optional.of(goal));
         when(autoModeService.getGoals()).thenReturn(List.of(goal));
-        when(scheduleService.createSchedule(eq(ScheduleEntry.ScheduleType.GOAL), eq("goal-1"),
+        when(scheduleService.createSchedule(eq(ScheduleEntry.ScheduleType.SCHEDULED_TASK), eq("goal-1"),
                 eq("0 0 9 * * *"), eq(-1), eq(false), isNull()))
                 .thenReturn(created);
 
         SchedulerController.CreateScheduleRequest request = new SchedulerController.CreateScheduleRequest(
-                "GOAL",
+                "SCHEDULED_TASK",
                 "goal-1",
                 "daily",
                 List.of(),
@@ -453,7 +463,7 @@ class SchedulerControllerTest {
         Goal goal = Goal.builder().id("goal-1").title("Goal").build();
         ScheduleEntry created = ScheduleEntry.builder()
                 .id("sched-goal-advanced")
-                .type(ScheduleEntry.ScheduleType.GOAL)
+                .type(ScheduleEntry.ScheduleType.SCHEDULED_TASK)
                 .targetId("goal-1")
                 .cronExpression("0 */5 * * * *")
                 .enabled(true)
@@ -466,12 +476,12 @@ class SchedulerControllerTest {
         when(autoModeService.isFeatureEnabled()).thenReturn(true);
         when(autoModeService.getGoal("goal-1")).thenReturn(Optional.of(goal));
         when(autoModeService.getGoals()).thenReturn(List.of(goal));
-        when(scheduleService.createSchedule(eq(ScheduleEntry.ScheduleType.GOAL), eq("goal-1"),
+        when(scheduleService.createSchedule(eq(ScheduleEntry.ScheduleType.SCHEDULED_TASK), eq("goal-1"),
                 eq("0 */5 * * * *"), eq(-1), eq(false), isNull()))
                 .thenReturn(created);
 
         SchedulerController.CreateScheduleRequest request = new SchedulerController.CreateScheduleRequest(
-                "GOAL",
+                "SCHEDULED_TASK",
                 "goal-1",
                 null,
                 List.of(),
@@ -496,7 +506,7 @@ class SchedulerControllerTest {
         Goal goal = Goal.builder().id("goal-1").title("Goal").build();
         ScheduleEntry created = ScheduleEntry.builder()
                 .id("sched-goal-clear")
-                .type(ScheduleEntry.ScheduleType.GOAL)
+                .type(ScheduleEntry.ScheduleType.SCHEDULED_TASK)
                 .targetId("goal-1")
                 .cronExpression("0 0 9 * * *")
                 .enabled(true)
@@ -511,7 +521,7 @@ class SchedulerControllerTest {
         when(autoModeService.getGoal("goal-1")).thenReturn(Optional.of(goal));
         when(autoModeService.getGoals()).thenReturn(List.of(goal));
         when(scheduleService.createSchedule(
-                eq(ScheduleEntry.ScheduleType.GOAL),
+                eq(ScheduleEntry.ScheduleType.SCHEDULED_TASK),
                 eq("goal-1"),
                 eq("0 0 9 * * *"),
                 eq(1),
@@ -520,7 +530,7 @@ class SchedulerControllerTest {
                 .thenReturn(created);
 
         SchedulerController.CreateScheduleRequest request = new SchedulerController.CreateScheduleRequest(
-                "GOAL",
+                "SCHEDULED_TASK",
                 "goal-1",
                 "daily",
                 List.of(),
@@ -545,7 +555,7 @@ class SchedulerControllerTest {
         Goal goal = Goal.builder().id("goal-1").title("Goal").build();
         ScheduleEntry created = ScheduleEntry.builder()
                 .id("sched-goal-custom")
-                .type(ScheduleEntry.ScheduleType.GOAL)
+                .type(ScheduleEntry.ScheduleType.SCHEDULED_TASK)
                 .targetId("goal-1")
                 .cronExpression("0 45 8 * * MON,WED,FRI")
                 .enabled(true)
@@ -558,12 +568,12 @@ class SchedulerControllerTest {
         when(autoModeService.isFeatureEnabled()).thenReturn(true);
         when(autoModeService.getGoal("goal-1")).thenReturn(Optional.of(goal));
         when(autoModeService.getGoals()).thenReturn(List.of(goal));
-        when(scheduleService.createSchedule(eq(ScheduleEntry.ScheduleType.GOAL), eq("goal-1"),
+        when(scheduleService.createSchedule(eq(ScheduleEntry.ScheduleType.SCHEDULED_TASK), eq("goal-1"),
                 eq("0 45 8 * * MON,WED,FRI"), eq(1), eq(false), isNull()))
                 .thenReturn(created);
 
         SchedulerController.CreateScheduleRequest request = new SchedulerController.CreateScheduleRequest(
-                "GOAL",
+                "SCHEDULED_TASK",
                 "goal-1",
                 "custom",
                 List.of(5, 1, 5, 3),
@@ -585,7 +595,7 @@ class SchedulerControllerTest {
         Goal goal = Goal.builder().id("goal-1").title("Goal").build();
         ScheduleEntry updated = ScheduleEntry.builder()
                 .id("sched-goal-advanced")
-                .type(ScheduleEntry.ScheduleType.GOAL)
+                .type(ScheduleEntry.ScheduleType.SCHEDULED_TASK)
                 .targetId("goal-1")
                 .cronExpression("0 0 6 * * *")
                 .enabled(false)
@@ -600,7 +610,7 @@ class SchedulerControllerTest {
         when(autoModeService.getGoals()).thenReturn(List.of(goal));
         when(scheduleService.updateSchedule(
                 eq("sched-goal-advanced"),
-                eq(ScheduleEntry.ScheduleType.GOAL),
+                eq(ScheduleEntry.ScheduleType.SCHEDULED_TASK),
                 eq("goal-1"),
                 eq("0 0 6 * * *"),
                 eq(2),
@@ -610,7 +620,7 @@ class SchedulerControllerTest {
                 .thenReturn(updated);
 
         SchedulerController.UpdateScheduleRequest request = new SchedulerController.UpdateScheduleRequest(
-                "GOAL",
+                "SCHEDULED_TASK",
                 "goal-1",
                 "daily",
                 List.of(),
@@ -637,7 +647,7 @@ class SchedulerControllerTest {
         Goal goal = Goal.builder().id("goal-1").title("Goal").build();
         ScheduleEntry updated = ScheduleEntry.builder()
                 .id("sched-goal-default-enabled")
-                .type(ScheduleEntry.ScheduleType.GOAL)
+                .type(ScheduleEntry.ScheduleType.SCHEDULED_TASK)
                 .targetId("goal-1")
                 .cronExpression("0 0 6 * * *")
                 .enabled(true)
@@ -652,7 +662,7 @@ class SchedulerControllerTest {
         when(autoModeService.getGoals()).thenReturn(List.of(goal));
         when(scheduleService.updateSchedule(
                 eq("sched-goal-default-enabled"),
-                eq(ScheduleEntry.ScheduleType.GOAL),
+                eq(ScheduleEntry.ScheduleType.SCHEDULED_TASK),
                 eq("goal-1"),
                 eq("0 0 6 * * *"),
                 eq(2),
@@ -662,7 +672,7 @@ class SchedulerControllerTest {
                 .thenReturn(updated);
 
         SchedulerController.UpdateScheduleRequest request = new SchedulerController.UpdateScheduleRequest(
-                "GOAL",
+                "SCHEDULED_TASK",
                 "goal-1",
                 "daily",
                 List.of(),
@@ -687,7 +697,7 @@ class SchedulerControllerTest {
         Goal goal = Goal.builder().id("goal-1").title("Goal").build();
         ScheduleEntry updated = ScheduleEntry.builder()
                 .id("sched-goal-clear")
-                .type(ScheduleEntry.ScheduleType.GOAL)
+                .type(ScheduleEntry.ScheduleType.SCHEDULED_TASK)
                 .targetId("goal-1")
                 .cronExpression("0 0 6 * * *")
                 .enabled(true)
@@ -703,7 +713,7 @@ class SchedulerControllerTest {
         when(autoModeService.getGoals()).thenReturn(List.of(goal));
         when(scheduleService.updateSchedule(
                 eq("sched-goal-clear"),
-                eq(ScheduleEntry.ScheduleType.GOAL),
+                eq(ScheduleEntry.ScheduleType.SCHEDULED_TASK),
                 eq("goal-1"),
                 eq("0 0 6 * * *"),
                 eq(2),
@@ -713,7 +723,7 @@ class SchedulerControllerTest {
                 .thenReturn(updated);
 
         SchedulerController.UpdateScheduleRequest request = new SchedulerController.UpdateScheduleRequest(
-                "GOAL",
+                "SCHEDULED_TASK",
                 "goal-1",
                 "daily",
                 List.of(),
@@ -742,7 +752,7 @@ class SchedulerControllerTest {
         when(autoModeService.getGoal("goal-1")).thenReturn(Optional.of(goal));
 
         SchedulerController.UpdateScheduleRequest request = new SchedulerController.UpdateScheduleRequest(
-                "GOAL",
+                "SCHEDULED_TASK",
                 "goal-1",
                 null,
                 List.of(),
@@ -770,7 +780,7 @@ class SchedulerControllerTest {
                 .thenThrow(new IllegalArgumentException("broken schedule"));
 
         SchedulerController.CreateScheduleRequest request = new SchedulerController.CreateScheduleRequest(
-                "GOAL",
+                "SCHEDULED_TASK",
                 "goal-1",
                 "daily",
                 List.of(),
@@ -827,7 +837,7 @@ class SchedulerControllerTest {
         when(autoModeService.isFeatureEnabled()).thenReturn(true);
 
         SchedulerController.CreateScheduleRequest request = new SchedulerController.CreateScheduleRequest(
-                "GOAL",
+                "SCHEDULED_TASK",
                 " ",
                 "daily",
                 List.of(),
@@ -847,7 +857,7 @@ class SchedulerControllerTest {
         when(autoModeService.getGoal("goal-missing")).thenReturn(Optional.empty());
 
         SchedulerController.CreateScheduleRequest request = new SchedulerController.CreateScheduleRequest(
-                "GOAL",
+                "SCHEDULED_TASK",
                 "goal-missing",
                 "daily",
                 List.of(),
@@ -858,7 +868,7 @@ class SchedulerControllerTest {
                 () -> controller.createSchedule(request));
 
         assertEquals(HttpStatus.BAD_REQUEST, exception.getStatusCode());
-        assertTrue(exception.getReason() != null && exception.getReason().contains("Goal not found"));
+        assertTrue(exception.getReason() != null && exception.getReason().contains("Scheduled task not found"));
     }
 
     @Test
@@ -867,7 +877,7 @@ class SchedulerControllerTest {
         when(autoModeService.findGoalForTask("task-missing")).thenReturn(Optional.empty());
 
         SchedulerController.CreateScheduleRequest request = new SchedulerController.CreateScheduleRequest(
-                "TASK",
+                "SCHEDULED_TASK",
                 "task-missing",
                 "daily",
                 List.of(),
@@ -878,7 +888,7 @@ class SchedulerControllerTest {
                 () -> controller.createSchedule(request));
 
         assertEquals(HttpStatus.BAD_REQUEST, exception.getStatusCode());
-        assertTrue(exception.getReason() != null && exception.getReason().contains("Task not found"));
+        assertTrue(exception.getReason() != null && exception.getReason().contains("Scheduled task not found"));
     }
 
     @Test
@@ -889,7 +899,7 @@ class SchedulerControllerTest {
         when(autoModeService.getGoal("goal-1")).thenReturn(Optional.of(goal));
 
         SchedulerController.CreateScheduleRequest request = new SchedulerController.CreateScheduleRequest(
-                "GOAL",
+                "SCHEDULED_TASK",
                 "goal-1",
                 " ",
                 List.of(),
@@ -911,7 +921,7 @@ class SchedulerControllerTest {
         when(autoModeService.getGoal("goal-1")).thenReturn(Optional.of(goal));
 
         SchedulerController.CreateScheduleRequest request = new SchedulerController.CreateScheduleRequest(
-                "GOAL",
+                "SCHEDULED_TASK",
                 "goal-1",
                 "monthly",
                 List.of(),
@@ -933,7 +943,7 @@ class SchedulerControllerTest {
         when(autoModeService.getGoal("goal-1")).thenReturn(Optional.of(goal));
 
         SchedulerController.CreateScheduleRequest request = new SchedulerController.CreateScheduleRequest(
-                "GOAL",
+                "SCHEDULED_TASK",
                 "goal-1",
                 "weekly",
                 List.of(),
@@ -954,7 +964,7 @@ class SchedulerControllerTest {
                 .thenReturn(Optional.of(Goal.builder().id("goal-1").title("Goal").build()));
 
         SchedulerController.CreateScheduleRequest request = new SchedulerController.CreateScheduleRequest(
-                "GOAL",
+                "SCHEDULED_TASK",
                 "goal-1",
                 "weekly",
                 List.of(9),
@@ -976,7 +986,7 @@ class SchedulerControllerTest {
         when(autoModeService.getGoal("goal-1")).thenReturn(Optional.of(goal));
 
         SchedulerController.CreateScheduleRequest request = new SchedulerController.CreateScheduleRequest(
-                "GOAL",
+                "SCHEDULED_TASK",
                 "goal-1",
                 "daily",
                 List.of(),
@@ -998,7 +1008,7 @@ class SchedulerControllerTest {
         when(autoModeService.getGoal("goal-1")).thenReturn(Optional.of(goal));
 
         SchedulerController.CreateScheduleRequest request = new SchedulerController.CreateScheduleRequest(
-                "GOAL",
+                "SCHEDULED_TASK",
                 "goal-1",
                 "daily",
                 List.of(),
@@ -1020,7 +1030,7 @@ class SchedulerControllerTest {
         when(autoModeService.getGoal("goal-1")).thenReturn(Optional.of(goal));
 
         SchedulerController.CreateScheduleRequest request = new SchedulerController.CreateScheduleRequest(
-                "GOAL",
+                "SCHEDULED_TASK",
                 "goal-1",
                 "daily",
                 List.of(),
@@ -1042,7 +1052,7 @@ class SchedulerControllerTest {
         when(autoModeService.getGoal("goal-1")).thenReturn(Optional.of(goal));
 
         SchedulerController.CreateScheduleRequest request = new SchedulerController.CreateScheduleRequest(
-                "GOAL",
+                "SCHEDULED_TASK",
                 "goal-1",
                 "daily",
                 List.of(),
@@ -1064,7 +1074,7 @@ class SchedulerControllerTest {
         when(autoModeService.getGoal("goal-1")).thenReturn(Optional.of(goal));
 
         SchedulerController.CreateScheduleRequest request = new SchedulerController.CreateScheduleRequest(
-                "GOAL",
+                "SCHEDULED_TASK",
                 "goal-1",
                 "daily",
                 List.of(),
@@ -1143,7 +1153,7 @@ class SchedulerControllerTest {
         Goal goal = Goal.builder().id("goal-1").title("Goal").build();
         ScheduleEntry created = ScheduleEntry.builder()
                 .id("sched-report")
-                .type(ScheduleEntry.ScheduleType.GOAL)
+                .type(ScheduleEntry.ScheduleType.SCHEDULED_TASK)
                 .targetId("goal-1")
                 .cronExpression("0 0 9 * * *")
                 .enabled(true)
@@ -1163,12 +1173,12 @@ class SchedulerControllerTest {
         ChannelPort telegramChannel = mock(ChannelPort.class);
         when(channelRuntimePort.findChannel("telegram")).thenReturn(Optional.of(telegramChannel));
 
-        when(scheduleService.createSchedule(eq(ScheduleEntry.ScheduleType.GOAL), eq("goal-1"),
+        when(scheduleService.createSchedule(eq(ScheduleEntry.ScheduleType.SCHEDULED_TASK), eq("goal-1"),
                 eq("0 0 9 * * *"), eq(-1), eq(false), any(ScheduleReportConfig.class)))
                 .thenReturn(created);
 
         SchedulerController.CreateScheduleRequest request = new SchedulerController.CreateScheduleRequest(
-                "GOAL", "goal-1", "daily", List.of(), "09:00", null, null, null, null,
+                "SCHEDULED_TASK", "goal-1", "daily", List.of(), "09:00", null, null, null, null,
                 new SchedulerController.ScheduleReportRequest("telegram", null, null, null));
 
         StepVerifier.create(controller.createSchedule(request))
@@ -1190,7 +1200,7 @@ class SchedulerControllerTest {
         when(autoModeService.getGoal("goal-1")).thenReturn(Optional.of(goal));
 
         SchedulerController.CreateScheduleRequest request = new SchedulerController.CreateScheduleRequest(
-                "GOAL", "goal-1", "daily", List.of(), "09:00", null, null, null, null,
+                "SCHEDULED_TASK", "goal-1", "daily", List.of(), "09:00", null, null, null, null,
                 new SchedulerController.ScheduleReportRequest(null, "12345", null, null));
 
         ResponseStatusException exception = assertThrows(ResponseStatusException.class,
@@ -1209,7 +1219,7 @@ class SchedulerControllerTest {
         when(channelRuntimePort.findChannel("nonexistent")).thenReturn(Optional.empty());
 
         SchedulerController.CreateScheduleRequest request = new SchedulerController.CreateScheduleRequest(
-                "GOAL", "goal-1", "daily", List.of(), "09:00", null, null, null, null,
+                "SCHEDULED_TASK", "goal-1", "daily", List.of(), "09:00", null, null, null, null,
                 new SchedulerController.ScheduleReportRequest("nonexistent", null, null, null));
 
         ResponseStatusException exception = assertThrows(ResponseStatusException.class,
@@ -1224,7 +1234,7 @@ class SchedulerControllerTest {
         Goal goal = Goal.builder().id("goal-1").title("Goal").build();
         ScheduleEntry created = ScheduleEntry.builder()
                 .id("sched-full-report")
-                .type(ScheduleEntry.ScheduleType.GOAL)
+                .type(ScheduleEntry.ScheduleType.SCHEDULED_TASK)
                 .targetId("goal-1")
                 .cronExpression("0 0 9 * * *")
                 .enabled(true)
@@ -1245,12 +1255,12 @@ class SchedulerControllerTest {
         ChannelPort telegramChannel = mock(ChannelPort.class);
         when(channelRuntimePort.findChannel("telegram")).thenReturn(Optional.of(telegramChannel));
 
-        when(scheduleService.createSchedule(eq(ScheduleEntry.ScheduleType.GOAL), eq("goal-1"),
+        when(scheduleService.createSchedule(eq(ScheduleEntry.ScheduleType.SCHEDULED_TASK), eq("goal-1"),
                 eq("0 0 9 * * *"), eq(-1), eq(false), any(ScheduleReportConfig.class)))
                 .thenReturn(created);
 
         SchedulerController.CreateScheduleRequest request = new SchedulerController.CreateScheduleRequest(
-                "GOAL", "goal-1", "daily", List.of(), "09:00", null, null, null, null,
+                "SCHEDULED_TASK", "goal-1", "daily", List.of(), "09:00", null, null, null, null,
                 new SchedulerController.ScheduleReportRequest("telegram", "54321", null, null));
 
         StepVerifier.create(controller.createSchedule(request))
@@ -1270,7 +1280,7 @@ class SchedulerControllerTest {
         Goal goal = Goal.builder().id("goal-1").title("Goal").build();
         ScheduleEntry created = ScheduleEntry.builder()
                 .id("sched-webhook")
-                .type(ScheduleEntry.ScheduleType.GOAL)
+                .type(ScheduleEntry.ScheduleType.SCHEDULED_TASK)
                 .targetId("goal-1")
                 .cronExpression("0 0 9 * * *")
                 .enabled(true)
@@ -1288,12 +1298,12 @@ class SchedulerControllerTest {
         when(autoModeService.getGoal("goal-1")).thenReturn(Optional.of(goal));
         when(autoModeService.getGoals()).thenReturn(List.of(goal));
 
-        when(scheduleService.createSchedule(eq(ScheduleEntry.ScheduleType.GOAL), eq("goal-1"),
+        when(scheduleService.createSchedule(eq(ScheduleEntry.ScheduleType.SCHEDULED_TASK), eq("goal-1"),
                 eq("0 0 9 * * *"), eq(-1), eq(false), any(ScheduleReportConfig.class)))
                 .thenReturn(created);
 
         SchedulerController.CreateScheduleRequest request = new SchedulerController.CreateScheduleRequest(
-                "GOAL", "goal-1", "daily", List.of(), "09:00", null, null, null, null,
+                "SCHEDULED_TASK", "goal-1", "daily", List.of(), "09:00", null, null, null, null,
                 new SchedulerController.ScheduleReportRequest("webhook", null, "https://example.com/hook", null));
 
         StepVerifier.create(controller.createSchedule(request))
@@ -1319,7 +1329,7 @@ class SchedulerControllerTest {
                 .build();
         ScheduleEntry entry = ScheduleEntry.builder()
                 .id("sched-webhook-state")
-                .type(ScheduleEntry.ScheduleType.GOAL)
+                .type(ScheduleEntry.ScheduleType.SCHEDULED_TASK)
                 .targetId("goal-1")
                 .cronExpression("0 0 9 * * *")
                 .enabled(true)
@@ -1364,7 +1374,7 @@ class SchedulerControllerTest {
         when(autoModeService.getGoal("goal-1")).thenReturn(Optional.of(goal));
 
         SchedulerController.CreateScheduleRequest request = new SchedulerController.CreateScheduleRequest(
-                "GOAL", "goal-1", "daily", List.of(), "09:00", null, null, null, null,
+                "SCHEDULED_TASK", "goal-1", "daily", List.of(), "09:00", null, null, null, null,
                 new SchedulerController.ScheduleReportRequest("webhook", null, null, null));
 
         ResponseStatusException exception = assertThrows(ResponseStatusException.class,
@@ -1382,7 +1392,7 @@ class SchedulerControllerTest {
         when(autoModeService.getGoal("goal-1")).thenReturn(Optional.of(goal));
 
         SchedulerController.CreateScheduleRequest request = new SchedulerController.CreateScheduleRequest(
-                "GOAL", "goal-1", "daily", List.of(), "09:00", null, null, null, null,
+                "SCHEDULED_TASK", "goal-1", "daily", List.of(), "09:00", null, null, null, null,
                 new SchedulerController.ScheduleReportRequest("webhook", null, "ftp://not-http.com/hook", null));
 
         ResponseStatusException exception = assertThrows(ResponseStatusException.class,
@@ -1396,7 +1406,7 @@ class SchedulerControllerTest {
     void createScheduleRequestJsonShouldUseNestedReportShape() throws Exception {
         String json = """
                 {
-                  "targetType": "GOAL",
+                  "targetType": "SCHEDULED_TASK",
                   "targetId": "goal-1",
                   "frequency": "daily",
                   "time": "09:00",
@@ -1422,7 +1432,7 @@ class SchedulerControllerTest {
     void updateScheduleRequestJsonShouldUseNestedReportPatchShapeForSet() throws Exception {
         String json = """
                 {
-                  "targetType": "GOAL",
+                  "targetType": "SCHEDULED_TASK",
                   "targetId": "goal-1",
                   "frequency": "daily",
                   "time": "09:00",
@@ -1454,7 +1464,7 @@ class SchedulerControllerTest {
     void updateScheduleRequestJsonShouldUseNestedReportPatchShapeForClear() throws Exception {
         String json = """
                 {
-                  "targetType": "GOAL",
+                  "targetType": "SCHEDULED_TASK",
                   "targetId": "goal-1",
                   "frequency": "daily",
                   "time": "09:00",
@@ -1478,7 +1488,7 @@ class SchedulerControllerTest {
     void scheduleDtoJsonShouldExposeOnlyNestedReportFields() throws Exception {
         SchedulerController.ScheduleDto dto = new SchedulerController.ScheduleDto(
                 "sched-1",
-                "GOAL",
+                "SCHEDULED_TASK",
                 "goal-1",
                 "Goal",
                 "0 0 9 * * *",
@@ -1516,7 +1526,7 @@ class SchedulerControllerTest {
         SchedulerController.ScheduleReportRequest reportReq = new SchedulerController.ScheduleReportRequest(
                 "webhook", "12345", "https://example.com/hook", null);
         SchedulerController.CreateScheduleRequest request = new SchedulerController.CreateScheduleRequest(
-                "GOAL", "goal-1", "daily", List.of(), "09:00", null,
+                "SCHEDULED_TASK", "goal-1", "daily", List.of(), "09:00", null,
                 null, null, null, reportReq);
 
         ResponseStatusException ex = assertThrows(ResponseStatusException.class,
@@ -1532,7 +1542,7 @@ class SchedulerControllerTest {
         SchedulerController.ScheduleReportRequest reportReq = new SchedulerController.ScheduleReportRequest(
                 "webhook", null, null, null);
         SchedulerController.CreateScheduleRequest request = new SchedulerController.CreateScheduleRequest(
-                "GOAL", "goal-1", "daily", List.of(), "09:00", null,
+                "SCHEDULED_TASK", "goal-1", "daily", List.of(), "09:00", null,
                 null, null, null, reportReq);
 
         ResponseStatusException ex = assertThrows(ResponseStatusException.class,
@@ -1548,7 +1558,7 @@ class SchedulerControllerTest {
         SchedulerController.ScheduleReportRequest reportReq = new SchedulerController.ScheduleReportRequest(
                 "webhook", null, "ftp://bad.url", null);
         SchedulerController.CreateScheduleRequest request = new SchedulerController.CreateScheduleRequest(
-                "GOAL", "goal-1", "daily", List.of(), "09:00", null,
+                "SCHEDULED_TASK", "goal-1", "daily", List.of(), "09:00", null,
                 null, null, null, reportReq);
 
         ResponseStatusException ex = assertThrows(ResponseStatusException.class,
@@ -1568,7 +1578,7 @@ class SchedulerControllerTest {
         SchedulerController.ScheduleReportRequest reportReq = new SchedulerController.ScheduleReportRequest(
                 "telegram", null, "https://example.com", null);
         SchedulerController.CreateScheduleRequest request = new SchedulerController.CreateScheduleRequest(
-                "GOAL", "goal-1", "daily", List.of(), "09:00", null,
+                "SCHEDULED_TASK", "goal-1", "daily", List.of(), "09:00", null,
                 null, null, null, reportReq);
 
         ResponseStatusException ex = assertThrows(ResponseStatusException.class,
@@ -1585,7 +1595,7 @@ class SchedulerControllerTest {
         SchedulerController.ScheduleReportRequest reportReq = new SchedulerController.ScheduleReportRequest(
                 "unknown", "12345", null, null);
         SchedulerController.CreateScheduleRequest request = new SchedulerController.CreateScheduleRequest(
-                "GOAL", "goal-1", "daily", List.of(), "09:00", null,
+                "SCHEDULED_TASK", "goal-1", "daily", List.of(), "09:00", null,
                 null, null, null, reportReq);
 
         ResponseStatusException ex = assertThrows(ResponseStatusException.class,
@@ -1601,7 +1611,7 @@ class SchedulerControllerTest {
         SchedulerController.ScheduleReportRequest reportReq = new SchedulerController.ScheduleReportRequest(
                 null, "12345", null, null);
         SchedulerController.CreateScheduleRequest request = new SchedulerController.CreateScheduleRequest(
-                "GOAL", "goal-1", "daily", List.of(), "09:00", null,
+                "SCHEDULED_TASK", "goal-1", "daily", List.of(), "09:00", null,
                 null, null, null, reportReq);
 
         ResponseStatusException ex = assertThrows(ResponseStatusException.class,
@@ -1664,7 +1674,7 @@ class SchedulerControllerTest {
                 .thenReturn(List.of(Goal.builder().id("goal-1").title("G").tasks(List.of()).build()));
 
         ScheduleEntry updated = ScheduleEntry.builder()
-                .id("sched-1").type(ScheduleEntry.ScheduleType.GOAL).targetId("goal-1")
+                .id("sched-1").type(ScheduleEntry.ScheduleType.SCHEDULED_TASK).targetId("goal-1")
                 .cronExpression("0 0 9 * * *").enabled(true).createdAt(Instant.now()).updatedAt(Instant.now())
                 .build();
         when(scheduleService.updateSchedule(eq("sched-1"), any(), eq("goal-1"), anyString(),
@@ -1673,7 +1683,7 @@ class SchedulerControllerTest {
         SchedulerController.ScheduleReportPatchRequest reportPatch = new SchedulerController.ScheduleReportPatchRequest(
                 "CLEAR", null);
         SchedulerController.UpdateScheduleRequest request = new SchedulerController.UpdateScheduleRequest(
-                "GOAL", "goal-1", "daily", List.of(), "09:00", null,
+                "SCHEDULED_TASK", "goal-1", "daily", List.of(), "09:00", null,
                 null, null, true, null, reportPatch);
 
         StepVerifier.create(controller.updateSchedule("sched-1", request))
@@ -1689,7 +1699,7 @@ class SchedulerControllerTest {
         SchedulerController.ScheduleReportPatchRequest reportPatch = new SchedulerController.ScheduleReportPatchRequest(
                 "INVALID", null);
         SchedulerController.UpdateScheduleRequest request = new SchedulerController.UpdateScheduleRequest(
-                "GOAL", "goal-1", "daily", List.of(), "09:00", null,
+                "SCHEDULED_TASK", "goal-1", "daily", List.of(), "09:00", null,
                 null, null, true, null, reportPatch);
 
         ResponseStatusException ex = assertThrows(ResponseStatusException.class,
@@ -1705,7 +1715,7 @@ class SchedulerControllerTest {
         SchedulerController.ScheduleReportPatchRequest reportPatch = new SchedulerController.ScheduleReportPatchRequest(
                 "SET", null);
         SchedulerController.UpdateScheduleRequest request = new SchedulerController.UpdateScheduleRequest(
-                "GOAL", "goal-1", "daily", List.of(), "09:00", null,
+                "SCHEDULED_TASK", "goal-1", "daily", List.of(), "09:00", null,
                 null, null, true, null, reportPatch);
 
         ResponseStatusException ex = assertThrows(ResponseStatusException.class,

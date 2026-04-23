@@ -50,8 +50,16 @@ class AutomationCommandHandler {
         return automationCommandService.getActiveGoals(sessionId);
     }
 
+    List<Goal> getActiveGoals() {
+        return automationCommandService.getActiveGoals();
+    }
+
     Optional<AutoTask> getNextPendingTask(String sessionId) {
         return automationCommandService.getNextPendingTask(sessionId);
+    }
+
+    Optional<AutoTask> getNextPendingTask() {
+        return automationCommandService.getNextPendingTask();
     }
 
     boolean isLaterFeatureEnabled() {
@@ -125,6 +133,17 @@ class AutomationCommandHandler {
         return CommandPort.CommandResult.success(builder.toString());
     }
 
+    CommandPort.CommandResult handleGoals() {
+        AutomationCommandService.GoalsOutcome outcome = automationCommandService.getGoals();
+        if (outcome instanceof AutomationCommandService.AutoFeatureUnavailable) {
+            return CommandPort.CommandResult.success(msg(MSG_AUTO_NOT_AVAILABLE));
+        }
+        if (outcome instanceof AutomationCommandService.EmptyGoals) {
+            return CommandPort.CommandResult.success(msg("command.goals.empty"));
+        }
+        return renderGoals(((AutomationCommandService.GoalsOverview) outcome).goals());
+    }
+
     CommandPort.CommandResult handleGoal(List<String> args, String sessionId) {
         if (args.isEmpty()) {
             return CommandPort.CommandResult.success(msg("command.goals.empty"));
@@ -186,6 +205,17 @@ class AutomationCommandHandler {
         return CommandPort.CommandResult.success(builder.toString().trim());
     }
 
+    CommandPort.CommandResult handleTasks() {
+        AutomationCommandService.TasksOutcome outcome = automationCommandService.getTasks();
+        if (outcome instanceof AutomationCommandService.AutoFeatureUnavailable) {
+            return CommandPort.CommandResult.success(msg(MSG_AUTO_NOT_AVAILABLE));
+        }
+        if (outcome instanceof AutomationCommandService.EmptyTasks) {
+            return CommandPort.CommandResult.success(msg("command.tasks.empty"));
+        }
+        return renderTasks(((AutomationCommandService.TasksOverview) outcome).goals());
+    }
+
     CommandPort.CommandResult handleDiary(List<String> args, String sessionId) {
         int count = 10;
         if (!args.isEmpty()) {
@@ -216,6 +246,101 @@ class AutomationCommandHandler {
         }
 
         return CommandPort.CommandResult.success(builder.toString());
+    }
+
+    CommandPort.CommandResult handleDiary(List<String> args) {
+        int count = parseDiaryCount(args);
+
+        AutomationCommandService.DiaryOutcome outcome = automationCommandService.getDiary(count);
+        if (outcome instanceof AutomationCommandService.AutoFeatureUnavailable) {
+            return CommandPort.CommandResult.success(msg(MSG_AUTO_NOT_AVAILABLE));
+        }
+        if (outcome instanceof AutomationCommandService.EmptyDiary) {
+            return CommandPort.CommandResult.success(msg("command.diary.empty"));
+        }
+        return renderDiary(((AutomationCommandService.DiaryOverview) outcome).entries());
+    }
+
+    private CommandPort.CommandResult renderGoals(List<Goal> goals) {
+        StringBuilder builder = new StringBuilder();
+        builder.append(msg("command.goals.title", goals.size())).append(DOUBLE_NEWLINE);
+
+        for (Goal goal : goals) {
+            long completed = goal.getCompletedTaskCount();
+            int total = goal.getTasks().size();
+            String statusIcon = switch (goal.getStatus()) {
+            case ACTIVE -> "▶️";
+            case COMPLETED -> "✅";
+            case PAUSED -> "⏸️";
+            case CANCELLED -> "❌";
+            };
+            builder.append(String.format("%s **%s** [%s] (%d/%d tasks) `goal_id: %s`%n",
+                    statusIcon, goal.getTitle(), goal.getStatus(), completed, total, goal.getId()));
+            if (goal.getDescription() != null && !goal.getDescription().isBlank()) {
+                builder.append("  ").append(goal.getDescription()).append("\n");
+            }
+        }
+
+        return CommandPort.CommandResult.success(builder.toString());
+    }
+
+    private CommandPort.CommandResult renderTasks(List<Goal> goals) {
+        StringBuilder builder = new StringBuilder();
+        builder.append(msg("command.tasks.title")).append(DOUBLE_NEWLINE);
+
+        for (Goal goal : goals) {
+            if (goal.getTasks().isEmpty()) {
+                continue;
+            }
+
+            builder.append(msg("command.tasks.goal", goal.getTitle()));
+            builder.append(" [").append(goal.getStatus()).append("] `goal_id: ").append(goal.getId()).append("`\n");
+
+            List<AutoTask> sortedTasks = goal.getTasks().stream()
+                    .sorted(Comparator.comparingInt(AutoTask::getOrder))
+                    .toList();
+
+            for (AutoTask task : sortedTasks) {
+                String icon = switch (task.getStatus()) {
+                case PENDING -> "[ ]";
+                case IN_PROGRESS -> "[>]";
+                case COMPLETED -> "[x]";
+                case FAILED -> "[!]";
+                case SKIPPED -> "[-]";
+                };
+                builder.append("  ").append(icon).append(" ").append(task.getTitle())
+                        .append(" `task_id: ").append(task.getId()).append("`\n");
+            }
+            builder.append("\n");
+        }
+
+        return CommandPort.CommandResult.success(builder.toString().trim());
+    }
+
+    private CommandPort.CommandResult renderDiary(List<DiaryEntry> entries) {
+        StringBuilder builder = new StringBuilder();
+        builder.append(msg("command.diary.title", entries.size())).append(DOUBLE_NEWLINE);
+
+        DateTimeFormatter timeFormat = DateTimeFormatter.ofPattern("HH:mm").withZone(ZoneOffset.UTC);
+        for (DiaryEntry entry : entries) {
+            builder.append("[").append(timeFormat.format(entry.getTimestamp())).append("] ");
+            builder.append("**").append(entry.getType()).append("**: ");
+            builder.append(entry.getContent()).append("\n");
+        }
+
+        return CommandPort.CommandResult.success(builder.toString());
+    }
+
+    private int parseDiaryCount(List<String> args) {
+        int count = 10;
+        if (!args.isEmpty()) {
+            try {
+                count = Integer.parseInt(args.get(0));
+                count = Math.max(1, Math.min(count, 50));
+            } catch (NumberFormatException ignored) {
+            }
+        }
+        return count;
     }
 
     CommandPort.CommandResult handleSchedule(List<String> args) {

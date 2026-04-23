@@ -89,7 +89,6 @@ public class SchedulerController {
                 goal.tasks().stream().map(this::toTaskDto).toList());
     }
 
-
     private ScheduledTaskDto toScheduledTaskDto(SchedulerFacade.ScheduledTaskView task) {
         return new ScheduledTaskDto(
                 task.id(),

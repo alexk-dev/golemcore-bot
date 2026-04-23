@@ -57,6 +57,13 @@ public class CoreLayerConfiguration {
         return new ScheduleService(schedulePersistencePort, scheduleCronPort, clock, autoModeMigrationService);
     }
 
+    ScheduleService scheduleService(
+            SchedulePersistencePort schedulePersistencePort,
+            ScheduleCronPort scheduleCronPort,
+            Clock clock) {
+        return new ScheduleService(schedulePersistencePort, scheduleCronPort, clock);
+    }
+
     @Bean
     UpdateService updateService(
             UpdateSettingsPort settingsPort,

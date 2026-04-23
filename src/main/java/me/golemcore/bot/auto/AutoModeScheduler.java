@@ -219,8 +219,15 @@ public class AutoModeScheduler implements AutoExecutionStatusPort {
 
                 int taskTimeLimitMinutes = runtimeConfigService.getAutoTaskTimeLimitMinutes();
                 for (ScheduleEntry schedule : dueSchedules) {
-                    scheduledRunExecutor.executeSchedule(schedule, deliveryContext.get(), taskTimeLimitMinutes);
-                    scheduleService.recordExecution(schedule.getId());
+                    ScheduledRunOutcome outcome = scheduledRunExecutor.executeSchedule(
+                            schedule,
+                            deliveryContext.get(),
+                            taskTimeLimitMinutes);
+                    if (outcome == ScheduledRunOutcome.EXECUTED) {
+                        scheduleService.recordExecution(schedule.getId());
+                    } else {
+                        log.warn("[AutoScheduler] Schedule {} was not executed: {}", schedule.getId(), outcome);
+                    }
                 }
             } finally {
                 executing.set(false);

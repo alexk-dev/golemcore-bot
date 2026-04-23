@@ -47,7 +47,7 @@ public class SchedulerFacade {
     }
 
     public SchedulerStateView getState() {
-        List<Goal> allGoals = autoModeService.getGoals();
+        List<Goal> allGoals = loadSessionGoalsForState();
         Map<String, Goal> goalById = new HashMap<>();
         Map<String, String> taskTitleById = new HashMap<>();
         Map<String, String> scheduledTaskTitleById = new HashMap<>();
@@ -73,7 +73,8 @@ public class SchedulerFacade {
                 .toList();
 
         List<ScheduledTaskView> scheduledTasks = autoModeService.getScheduledTasks().stream()
-                .sorted(Comparator.comparing(ScheduledTask::getCreatedAt, Comparator.nullsLast(Comparator.naturalOrder())))
+                .sorted(Comparator.comparing(ScheduledTask::getCreatedAt,
+                        Comparator.nullsLast(Comparator.naturalOrder())))
                 .map(task -> {
                     scheduledTaskTitleById.put(task.getId(), task.getTitle());
                     return toScheduledTaskView(task);
@@ -104,7 +105,7 @@ public class SchedulerFacade {
         }
 
         ScheduleEntry.ScheduleType targetType = parseTargetType(request.targetType());
-        String targetId = validateTargetId(request.targetId(), targetType);
+        String requestedTargetId = requireId(request.targetId(), "targetId");
         int maxExecutions = normalizeMaxExecutions(request.maxExecutions());
         ScheduleMode mode = parseMode(request.mode(), request.cronExpression());
         String cronExpression = buildRequestedCronExpression(
@@ -115,6 +116,7 @@ public class SchedulerFacade {
                 request.cronExpression());
 
         ScheduleReportConfig report = normalizeReportRequest(request.report());
+        String targetId = validateTargetId(requestedTargetId, targetType);
         ScheduleEntry entry = scheduleService.createSchedule(
                 targetType,
                 targetId,
@@ -133,7 +135,7 @@ public class SchedulerFacade {
 
         String normalizedScheduleId = requireId(scheduleId, "scheduleId");
         ScheduleEntry.ScheduleType targetType = parseTargetType(request.targetType());
-        String targetId = validateTargetId(request.targetId(), targetType);
+        String requestedTargetId = requireId(request.targetId(), "targetId");
         int maxExecutions = normalizeMaxExecutions(request.maxExecutions());
         ScheduleMode mode = parseMode(request.mode(), request.cronExpression());
         String cronExpression = buildRequestedCronExpression(
@@ -144,6 +146,7 @@ public class SchedulerFacade {
                 request.cronExpression());
 
         ScheduleReportConfigUpdate reportUpdate = normalizeReportUpdateRequest(request.report());
+        String targetId = validateTargetId(requestedTargetId, targetType);
         ScheduleEntry entry = scheduleService.updateSchedule(
                 normalizedScheduleId,
                 targetType,
@@ -340,7 +343,7 @@ public class SchedulerFacade {
     }
 
     private String validateTargetId(String targetId, ScheduleEntry.ScheduleType type) {
-        String normalizedTargetId = requireId(targetId, "targetId");
+        String normalizedTargetId = targetId.trim();
 
         if (type == ScheduleEntry.ScheduleType.GOAL) {
             throw new IllegalArgumentException("Goal schedules are no longer supported");
@@ -355,17 +358,28 @@ public class SchedulerFacade {
         return normalizedTargetId;
     }
 
+    private List<Goal> loadSessionGoalsForState() {
+        try {
+            return autoModeService.getGoals();
+        } catch (IllegalStateException exception) {
+            return List.of();
+        }
+    }
+
     private static ScheduleEntry.ScheduleType parseTargetType(String value) {
         if (StringValueSupport.isBlank(value)) {
             throw new IllegalArgumentException("targetType is required");
         }
 
-        String normalized = value.trim().toUpperCase(Locale.ROOT);
+        String normalized = value.trim().toUpperCase(Locale.ROOT).replace('-', '_').replace(' ', '_');
         if ("GOAL".equals(normalized)) {
             return ScheduleEntry.ScheduleType.GOAL;
         }
         if ("TASK".equals(normalized)) {
             return ScheduleEntry.ScheduleType.TASK;
+        }
+        if ("SCHEDULED_TASK".equals(normalized)) {
+            return ScheduleEntry.ScheduleType.SCHEDULED_TASK;
         }
         throw new IllegalArgumentException("Unsupported targetType: " + value);
     }

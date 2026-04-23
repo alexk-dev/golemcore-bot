@@ -3,9 +3,11 @@ package me.golemcore.bot.adapter.inbound.web.controller;
 import java.util.Comparator;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
-import me.golemcore.bot.domain.model.ScheduledTask;
 import me.golemcore.bot.domain.model.ModelTierCatalog;
+import me.golemcore.bot.domain.model.ScheduleEntry;
+import me.golemcore.bot.domain.model.ScheduledTask;
 import me.golemcore.bot.domain.service.AutoModeService;
+import me.golemcore.bot.domain.service.ScheduleService;
 import me.golemcore.bot.domain.service.StringValueSupport;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -28,11 +30,13 @@ public class ScheduledTasksController {
     private static final String FEATURE_DISABLED = "Auto mode feature is disabled";
 
     private final AutoModeService autoModeService;
+    private final ScheduleService scheduleService;
 
     @GetMapping
     public Mono<ResponseEntity<ScheduledTasksResponse>> listScheduledTasks() {
         List<ScheduledTaskDto> scheduledTasks = autoModeService.getScheduledTasks().stream()
-                .sorted(Comparator.comparing(ScheduledTask::getCreatedAt, Comparator.nullsLast(Comparator.naturalOrder())))
+                .sorted(Comparator.comparing(ScheduledTask::getCreatedAt,
+                        Comparator.nullsLast(Comparator.naturalOrder())))
                 .map(this::toDto)
                 .toList();
         return Mono.just(ResponseEntity.ok(new ScheduledTasksResponse(
@@ -86,11 +90,19 @@ public class ScheduledTasksController {
         requireFeatureEnabled();
         try {
             String normalizedId = requireId(scheduledTaskId, "scheduledTaskId");
+            if (hasLinkedSchedules(normalizedId)) {
+                throw badRequest("Scheduled task has linked schedules; delete schedules before deleting the task");
+            }
             autoModeService.deleteScheduledTask(normalizedId);
             return Mono.just(ResponseEntity.ok(new DeleteScheduledTaskResponse(normalizedId)));
         } catch (IllegalArgumentException exception) {
             throw badRequest(exception.getMessage());
         }
+    }
+
+    private boolean hasLinkedSchedules(String scheduledTaskId) {
+        return scheduleService.findSchedulesForTarget(scheduledTaskId).stream()
+                .anyMatch(schedule -> schedule.getType() == ScheduleEntry.ScheduleType.SCHEDULED_TASK);
     }
 
     private void requireFeatureEnabled() {

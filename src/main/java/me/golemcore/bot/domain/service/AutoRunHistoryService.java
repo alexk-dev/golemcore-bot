@@ -96,7 +96,6 @@ public class AutoRunHistoryService {
         return scheduleMatches && goalMatches && taskMatches;
     }
 
-
     private Map<String, me.golemcore.bot.domain.model.ScheduledTask> buildScheduledTaskById() {
         Map<String, me.golemcore.bot.domain.model.ScheduledTask> scheduledTaskById = new LinkedHashMap<>();
         for (me.golemcore.bot.domain.model.ScheduledTask scheduledTask : autoModeService.getScheduledTasks()) {
@@ -115,10 +114,18 @@ public class AutoRunHistoryService {
 
     private Map<String, Goal> buildGoalById() {
         Map<String, Goal> goalById = new LinkedHashMap<>();
-        for (Goal goal : autoModeService.getGoals()) {
+        for (Goal goal : loadSessionGoalsForHistory()) {
             goalById.put(goal.getId(), goal);
         }
         return goalById;
+    }
+
+    private List<Goal> loadSessionGoalsForHistory() {
+        try {
+            return autoModeService.getGoals();
+        } catch (IllegalStateException exception) {
+            return List.of();
+        }
     }
 
     private Map<String, AutoTask> buildTaskById(Map<String, Goal> goalById) {

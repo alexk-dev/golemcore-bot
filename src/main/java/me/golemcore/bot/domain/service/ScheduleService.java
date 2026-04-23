@@ -49,6 +49,13 @@ public class ScheduleService {
     public ScheduleService(
             SchedulePersistencePort schedulePersistencePort,
             ScheduleCronPort scheduleCronPort,
+            Clock clock) {
+        this(schedulePersistencePort, scheduleCronPort, clock, null);
+    }
+
+    public ScheduleService(
+            SchedulePersistencePort schedulePersistencePort,
+            ScheduleCronPort scheduleCronPort,
             Clock clock,
             AutoModeMigrationService autoModeMigrationService) {
         this.schedulePersistencePort = schedulePersistencePort;
@@ -203,7 +210,8 @@ public class ScheduleService {
         return getSchedules().stream()
                 .filter(ScheduleEntry::isEnabled)
                 .filter(schedule -> !schedule.isExhausted())
-                .filter(schedule -> schedule.getNextExecutionAt() != null && !schedule.getNextExecutionAt().isAfter(now))
+                .filter(schedule -> schedule.getNextExecutionAt() != null
+                        && !schedule.getNextExecutionAt().isAfter(now))
                 .toList();
     }
 

@@ -27,13 +27,13 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Predicate;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.port.outbound.SessionPort;
 import me.golemcore.bot.port.outbound.SessionRecordCodecPort;
 import me.golemcore.bot.port.outbound.StoragePort;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 /**
@@ -43,7 +43,6 @@ import org.springframework.stereotype.Service;
  * summarization to manage context window limits.
  */
 @Service
-@RequiredArgsConstructor
 @Slf4j
 public class SessionService implements SessionPort {
 
@@ -59,6 +58,19 @@ public class SessionService implements SessionPort {
     private final AutoModeService autoModeService;
 
     private final Map<String, AgentSession> sessionCache = new ConcurrentHashMap<>();
+
+    @Autowired
+    public SessionService(StoragePort storagePort, SessionRecordCodecPort sessionRecordCodecPort, Clock clock,
+            AutoModeService autoModeService) {
+        this.storagePort = storagePort;
+        this.sessionRecordCodecPort = sessionRecordCodecPort;
+        this.clock = clock;
+        this.autoModeService = autoModeService;
+    }
+
+    public SessionService(StoragePort storagePort, SessionRecordCodecPort sessionRecordCodecPort, Clock clock) {
+        this(storagePort, sessionRecordCodecPort, clock, null);
+    }
 
     public AgentSession getOrCreate(String channelType, String chatId) {
         String sessionId = buildSessionId(channelType, chatId);
@@ -109,7 +121,7 @@ public class SessionService implements SessionPort {
     public void delete(String sessionId) {
         AgentSession removed = sessionCache.remove(sessionId);
         if (deletePersistedSession(sessionId)) {
-            autoModeService.deleteSessionGoals(sessionId);
+            deleteSessionGoals(sessionId);
             return;
         }
         restoreCachedSession(sessionId, removed);
@@ -253,7 +265,7 @@ public class SessionService implements SessionPort {
             }
             sessionCache.remove(session.getId());
             if (deletePersistedSession(session.getId())) {
-                autoModeService.deleteSessionGoals(session.getId());
+                deleteSessionGoals(session.getId());
                 deletedCount++;
                 continue;
             }
@@ -270,6 +282,12 @@ public class SessionService implements SessionPort {
         } catch (Exception e) {
             log.error("Failed to delete session: {}", sessionId, e);
             return false;
+        }
+    }
+
+    private void deleteSessionGoals(String sessionId) {
+        if (autoModeService != null) {
+            autoModeService.deleteSessionGoals(sessionId);
         }
     }
 

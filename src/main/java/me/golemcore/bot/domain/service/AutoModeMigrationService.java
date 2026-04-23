@@ -107,7 +107,11 @@ public class AutoModeMigrationService {
         List<Goal> migratedGoals = legacyGoals.stream()
                 .map(this::deepCopyGoal)
                 .peek(goal -> goal.setSessionId(latestSession.getId()))
-                .peek(goal -> { if ("inbox".equals(goal.getId())) { goal.setSystemInbox(true); } })
+                .peek(goal -> {
+                    if ("inbox".equals(goal.getId())) {
+                        goal.setSystemInbox(true);
+                    }
+                })
                 .toList();
         sessionScopedGoalService.replaceGoals(latestSession.getId(), migratedGoals);
     }

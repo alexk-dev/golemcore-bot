@@ -51,6 +51,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.RETURNS_DEFAULTS;
 import static org.mockito.Mockito.any;
+import static org.mockito.Mockito.anyBoolean;
 import static org.mockito.Mockito.anyInt;
 import static org.mockito.Mockito.anyString;
 import static org.mockito.Mockito.eq;
@@ -146,6 +147,16 @@ class CommandRouterTest {
         });
 
         autoModeService = mock(AutoModeService.class);
+        when(autoModeService.getGoals(SESSION_ID)).thenAnswer(invocation -> autoModeService.getGoals());
+        when(autoModeService.getActiveGoals(SESSION_ID)).thenAnswer(invocation -> autoModeService.getActiveGoals());
+        when(autoModeService.getNextPendingTask(SESSION_ID))
+                .thenAnswer(invocation -> autoModeService.getNextPendingTask());
+        when(autoModeService.getRecentDiary(eq(SESSION_ID), anyInt()))
+                .thenAnswer(invocation -> autoModeService.getRecentDiary(invocation.getArgument(1, Integer.class)));
+        when(autoModeService.createGoal(eq(SESSION_ID), anyString(), any(), any(), any(), anyBoolean()))
+                .thenAnswer(invocation -> autoModeService.createGoal(
+                        invocation.getArgument(1, String.class),
+                        invocation.getArgument(2, String.class)));
         modelSelectionCommandService = mock(ModelSelectionCommandService.class);
         planService = mock(PlanService.class);
         planExecutionService = mock(PlanExecutionService.class);
@@ -1183,8 +1194,9 @@ class CommandRouterTest {
 
         CommandPort.CommandResult result = router.execute(CMD_SCHEDULE,
                 List.of(CMD_GOAL, TEST_GOAL_ID, "0", "9", "*", "*", "MON-FRI"), CTX).get();
-        assertTrue(result.success());
-        assertTrue(result.output().contains("command.schedule.created"));
+        assertFalse(result.success());
+        assertTrue(result.output().contains("command.schedule.invalid-cron"));
+        assertTrue(result.output().contains("Goal schedules are no longer supported"));
     }
 
     @Test
@@ -1207,8 +1219,9 @@ class CommandRouterTest {
 
         CommandPort.CommandResult result = router.execute(CMD_SCHEDULE,
                 List.of("task", TEST_TASK_ID, "*/30", "*", "*", "*", "*"), CTX).get();
-        assertTrue(result.success());
-        assertTrue(result.output().contains("command.schedule.created"));
+        assertFalse(result.success());
+        assertTrue(result.output().contains("command.schedule.invalid-cron"));
+        assertTrue(result.output().contains("Task schedules are no longer supported"));
     }
 
     @Test
@@ -1303,7 +1316,8 @@ class CommandRouterTest {
         CommandPort.CommandResult result = router.execute(CMD_SCHEDULE,
                 List.of(CMD_GOAL, "missing-goal", "0", "9", "*", "*", "*"), CTX).get();
         assertFalse(result.success());
-        assertTrue(result.output().contains("command.schedule.goal.not-found"));
+        assertTrue(result.output().contains("command.schedule.invalid-cron"));
+        assertTrue(result.output().contains("Goal schedules are no longer supported"));
     }
 
     @Test
@@ -1314,7 +1328,8 @@ class CommandRouterTest {
         CommandPort.CommandResult result = router.execute(CMD_SCHEDULE,
                 List.of("task", "missing-task", "0", "9", "*", "*", "*"), CTX).get();
         assertFalse(result.success());
-        assertTrue(result.output().contains("command.schedule.task.not-found"));
+        assertTrue(result.output().contains("command.schedule.invalid-cron"));
+        assertTrue(result.output().contains("Task schedules are no longer supported"));
     }
 
     @Test
@@ -1338,8 +1353,9 @@ class CommandRouterTest {
 
         CommandPort.CommandResult result = router.execute(CMD_SCHEDULE,
                 List.of(CMD_GOAL, TEST_GOAL_ID, "0", "12", "*", "*", "*", "3"), CTX).get();
-        assertTrue(result.success());
-        assertTrue(result.output().contains("command.schedule.created"));
+        assertFalse(result.success());
+        assertTrue(result.output().contains("command.schedule.invalid-cron"));
+        assertTrue(result.output().contains("Goal schedules are no longer supported"));
     }
 
     @Test

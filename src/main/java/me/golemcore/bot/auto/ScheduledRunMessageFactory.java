@@ -20,12 +20,12 @@ package me.golemcore.bot.auto;
 
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.component.SkillComponent;
-import me.golemcore.bot.domain.model.AutoRunKind;
 import me.golemcore.bot.domain.model.AutoTask;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.Goal;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.ScheduleEntry;
+import me.golemcore.bot.domain.model.ScheduledTask;
 import me.golemcore.bot.domain.model.Skill;
 import me.golemcore.bot.domain.model.trace.TraceSpanKind;
 import me.golemcore.bot.domain.service.AutoModeService;
@@ -62,16 +62,29 @@ public class ScheduledRunMessageFactory {
     }
 
     public Optional<ScheduledRunMessage> buildForSchedule(ScheduleEntry schedule) {
-        if (schedule.getType() == ScheduleEntry.ScheduleType.GOAL) {
-            return buildGoalMessage(schedule.getTargetId());
+        if (schedule == null || schedule.getType() == null) {
+            return Optional.empty();
         }
-        if (schedule.getType() == ScheduleEntry.ScheduleType.TASK) {
-            return buildTaskMessage(schedule.getTargetId());
+        try {
+            return switch (schedule.getType()) {
+            case SCHEDULED_TASK -> buildScheduledTaskMessage(schedule.getTargetId());
+            case GOAL -> buildGoalMessage(schedule.getTargetId());
+            case TASK -> buildTaskMessage(schedule.getTargetId());
+            };
+        } catch (IllegalStateException exception) {
+            log.warn("[ScheduledRunMessageFactory] Cannot build {} schedule {} without session context: {}",
+                    schedule.getType(), schedule.getId(), exception.getMessage());
+            return Optional.empty();
         }
-        return Optional.empty();
     }
 
     public Optional<ScheduledRunMessage> buildReflectionMessage(ScheduledRunMessage source, String scheduleId) {
+        if (source == null) {
+            return Optional.empty();
+        }
+        if (!StringValueSupport.isBlank(source.scheduledTaskId())) {
+            return buildScheduledTaskReflectionMessage(source, scheduleId);
+        }
         if (StringValueSupport.isBlank(source.goalId())) {
             return Optional.empty();
         }
@@ -101,17 +114,11 @@ public class ScheduledRunMessageFactory {
         prompt.append(" Schedule: ").append(scheduleId).append('.');
         prompt.append(" Return a concise recovery strategy that changes the next approach.");
 
-        return Optional.of(new ScheduledRunMessage(
+        return Optional.of(ScheduledRunMessage.forReflection(
+                source,
                 prompt.toString(),
-                source.runKind(),
-                source.goalId(),
-                source.taskId(),
-                source.goalTitle(),
-                source.taskTitle(),
-                true,
                 tier,
-                priority,
-                false));
+                priority));
     }
 
     public Message buildSyntheticMessage(
@@ -131,6 +138,9 @@ public class ScheduledRunMessageFactory {
         }
         if (!StringValueSupport.isBlank(scheduledRunMessage.taskId())) {
             metadata.put(ContextAttributes.AUTO_TASK_ID, scheduledRunMessage.taskId());
+        }
+        if (!StringValueSupport.isBlank(scheduledRunMessage.scheduledTaskId())) {
+            metadata.put(ContextAttributes.AUTO_SCHEDULED_TASK_ID, scheduledRunMessage.scheduledTaskId());
         }
         if (scheduledRunMessage.reflectionActive()) {
             metadata.put(ContextAttributes.AUTO_REFLECTION_ACTIVE, true);
@@ -162,6 +172,9 @@ public class ScheduledRunMessageFactory {
             if (!StringValueSupport.isBlank(scheduledRunMessage.taskTitle())) {
                 header.append(" / Task: ").append(scheduledRunMessage.taskTitle());
             }
+        } else if (!StringValueSupport.isBlank(scheduledRunMessage.scheduledTaskId())
+                && !StringValueSupport.isBlank(scheduledRunMessage.taskTitle())) {
+            header.append("Scheduled task: ").append(scheduledRunMessage.taskTitle());
         } else if (!StringValueSupport.isBlank(scheduledRunMessage.taskTitle())) {
             header.append("Task: ").append(scheduledRunMessage.taskTitle());
         } else {
@@ -191,32 +204,25 @@ public class ScheduledRunMessageFactory {
 
         if (nextTask.isPresent()) {
             AutoTask task = nextTask.get();
-            return Optional.of(new ScheduledRunMessage(
+            return Optional.of(ScheduledRunMessage.forTask(
                     buildTaskPrompt("Continue working on task", task.getExecutionPrompt(), goal.getTitle(),
                             goalId, task.getId()),
-                    AutoRunKind.GOAL_RUN,
                     goalId,
                     task.getId(),
                     goal.getTitle(),
                     task.getTitle(),
-                    false,
                     resolveReflectionTier(goal, task),
                     resolveReflectionTierPriority(goal, task),
                     false));
         }
 
         if (goal.getTasks().isEmpty()) {
-            return Optional.of(new ScheduledRunMessage(
+            return Optional.of(ScheduledRunMessage.forGoal(
                     buildGoalPrompt("Plan tasks for goal", goal.getExecutionPrompt(), goalId),
-                    AutoRunKind.GOAL_RUN,
                     goalId,
-                    null,
                     goal.getTitle(),
-                    null,
-                    false,
                     goal.getReflectionModelTier(),
-                    goal.isReflectionTierPriority(),
-                    false));
+                    goal.isReflectionTierPriority()));
         }
 
         log.debug("[ScheduledRunMessageFactory] All tasks for goal {} are done, skipping", goalId);
@@ -244,17 +250,60 @@ public class ScheduledRunMessageFactory {
             return Optional.empty();
         }
 
-        return Optional.of(new ScheduledRunMessage(
+        return Optional.of(ScheduledRunMessage.forTask(
                 buildTaskPrompt("Work on task", task.getExecutionPrompt(), goal.getTitle(), goal.getId(), taskId),
-                AutoRunKind.GOAL_RUN,
                 goal.getId(),
                 taskId,
                 goal.getTitle(),
                 task.getTitle(),
-                false,
                 resolveReflectionTier(goal, task),
                 resolveReflectionTierPriority(goal, task),
                 task.getStatus() == AutoTask.TaskStatus.COMPLETED));
+    }
+
+    private Optional<ScheduledRunMessage> buildScheduledTaskMessage(String scheduledTaskId) {
+        Optional<ScheduledTask> taskOpt = autoModeService.getScheduledTask(scheduledTaskId);
+        if (taskOpt.isEmpty()) {
+            log.warn("[ScheduledRunMessageFactory] Scheduled task not found for schedule: {}", scheduledTaskId);
+            return Optional.empty();
+        }
+
+        ScheduledTask task = taskOpt.get();
+        return Optional.of(ScheduledRunMessage.forScheduledTask(
+                buildScheduledTaskPrompt(task.getExecutionPrompt(), task.getTitle(), scheduledTaskId),
+                scheduledTaskId,
+                task.getTitle(),
+                resolveReflectionTier(task),
+                resolveReflectionTierPriority(task)));
+    }
+
+    private Optional<ScheduledRunMessage> buildScheduledTaskReflectionMessage(
+            ScheduledRunMessage source,
+            String scheduleId) {
+        AutoModeService.TaskReflectionState reflectionState = autoModeService.resolveScheduledTaskReflectionState(
+                source.scheduledTaskId());
+        Skill reflectedSkill = resolveReflectedSkill(reflectionState.lastUsedSkillName());
+        String tier = autoModeService.resolveScheduledTaskReflectionTier(source.scheduledTaskId(), reflectedSkill);
+        boolean priority = autoModeService.isScheduledTaskReflectionTierPriority(source.scheduledTaskId());
+
+        StringBuilder prompt = new StringBuilder();
+        prompt.append("[AUTO][REFLECTION] Analyze the repeated failure for scheduled task '")
+                .append(source.taskTitle() != null ? source.taskTitle() : source.scheduledTaskId())
+                .append("' and propose an alternative strategy for the next run.");
+        if (!StringValueSupport.isBlank(reflectionState.lastFailureSummary())) {
+            prompt.append(" Latest failure: ").append(reflectionState.lastFailureSummary()).append('.');
+        }
+        if (!StringValueSupport.isBlank(reflectionState.lastFailureFingerprint())) {
+            prompt.append(" Failure fingerprint: ").append(reflectionState.lastFailureFingerprint()).append('.');
+        }
+        prompt.append(" Schedule: ").append(scheduleId).append('.');
+        prompt.append(" Return a concise recovery strategy that changes the next approach.");
+
+        return Optional.of(ScheduledRunMessage.forReflection(
+                source,
+                prompt.toString(),
+                tier,
+                priority));
     }
 
     private String resolveReflectionTier(Goal goal, AutoTask task) {
@@ -277,6 +326,20 @@ public class ScheduledRunMessageFactory {
         return runtimeConfigService.isAutoReflectionTierPriority();
     }
 
+    private String resolveReflectionTier(ScheduledTask task) {
+        if (task != null && !StringValueSupport.isBlank(task.getReflectionModelTier())) {
+            return task.getReflectionModelTier();
+        }
+        return runtimeConfigService.getAutoReflectionModelTier();
+    }
+
+    private boolean resolveReflectionTierPriority(ScheduledTask task) {
+        if (task != null && !StringValueSupport.isBlank(task.getReflectionModelTier())) {
+            return task.isReflectionTierPriority();
+        }
+        return runtimeConfigService.isAutoReflectionTierPriority();
+    }
+
     private Skill resolveReflectedSkill(String skillName) {
         if (StringValueSupport.isBlank(skillName)) {
             return null;
@@ -291,5 +354,10 @@ public class ScheduledRunMessageFactory {
     private String buildTaskPrompt(String prefix, String prompt, String goalTitle, String goalId, String taskId) {
         return "[AUTO] " + prefix + ": " + prompt + " (goal: " + goalTitle
                 + ", goal_id: " + goalId + ", task_id: " + taskId + ")";
+    }
+
+    private String buildScheduledTaskPrompt(String prompt, String title, String scheduledTaskId) {
+        return "[AUTO] Run scheduled task: " + prompt + " (scheduled_task: " + title
+                + ", scheduled_task_id: " + scheduledTaskId + ")";
     }
 }

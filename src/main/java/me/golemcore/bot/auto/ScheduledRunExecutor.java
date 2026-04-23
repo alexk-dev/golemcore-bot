@@ -64,11 +64,14 @@ public class ScheduledRunExecutor {
         this.reportSender = reportSender;
     }
 
-    public void executeSchedule(ScheduleEntry schedule, ScheduleDeliveryContext deliveryContext, int timeoutMinutes) {
+    public ScheduledRunOutcome executeSchedule(
+            ScheduleEntry schedule,
+            ScheduleDeliveryContext deliveryContext,
+            int timeoutMinutes) {
         ScheduledRunMessage scheduleMessage = scheduledRunMessageFactory.buildForSchedule(schedule).orElse(null);
         if (scheduleMessage == null) {
             log.debug("[ScheduledRunExecutor] No action for schedule {}", schedule.getId());
-            return;
+            return ScheduledRunOutcome.SKIPPED_TARGET_MISSING;
         }
 
         ScheduleDeliveryContext effectiveDeliveryContext = deliveryContext != null
@@ -85,6 +88,7 @@ public class ScheduledRunExecutor {
         try {
             log.info("[ScheduledRunExecutor] Processing schedule {}: {}", schedule.getId(), scheduleMessage.content());
             submitAndAwait(scheduleMessage, schedule, timeoutMinutes, effectiveDeliveryContext, deliveryContext);
+            return ScheduledRunOutcome.EXECUTED;
         } catch (TimeoutException e) {
             recordFailureAndMaybeReflect(
                     scheduleMessage,
@@ -96,6 +100,7 @@ public class ScheduledRunExecutor {
                     null);
             log.error("[ScheduledRunExecutor] Schedule {} timed out after {} minutes", schedule.getId(),
                     timeoutMinutes);
+            return ScheduledRunOutcome.EXECUTED;
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             recordFailureAndMaybeReflect(
@@ -107,6 +112,7 @@ public class ScheduledRunExecutor {
                     "interrupted",
                     null);
             log.error("[ScheduledRunExecutor] Schedule {} interrupted: {}", schedule.getId(), e.getMessage(), e);
+            return ScheduledRunOutcome.EXECUTED;
         } catch (ExecutionException e) {
             recordFailureAndMaybeReflect(
                     scheduleMessage,
@@ -117,6 +123,11 @@ public class ScheduledRunExecutor {
                     "execution_exception",
                     null);
             log.error("[ScheduledRunExecutor] Failed to process schedule {}: {}", schedule.getId(), e.getMessage(), e);
+            return ScheduledRunOutcome.EXECUTED;
+        } catch (RuntimeException e) {
+            log.error("[ScheduledRunExecutor] Schedule {} failed before run completion: {}", schedule.getId(),
+                    e.getMessage(), e);
+            return ScheduledRunOutcome.FAILED;
         }
     }
 
@@ -157,7 +168,7 @@ public class ScheduledRunExecutor {
         }
 
         if (scheduleMessage.reflectionActive()) {
-            autoModeService.applyReflectionResult(scheduleMessage.goalId(), scheduleMessage.taskId(), assistantText);
+            applyReflectionResult(scheduleMessage, assistantText);
             return;
         }
 
@@ -228,14 +239,18 @@ public class ScheduledRunExecutor {
             return;
         }
 
-        autoModeService.applyReflectionResult(
-                reflectionMessage.goalId(),
-                reflectionMessage.taskId(),
-                readAssistantText(syntheticMessage));
+        applyReflectionResult(reflectionMessage, readAssistantText(syntheticMessage));
     }
 
     private void handleRunSuccess(ScheduledRunMessage scheduleMessage, String activeSkillName) {
-        if (!scheduleMessage.reflectionActive() && !StringValueSupport.isBlank(scheduleMessage.goalId())) {
+        if (scheduleMessage.reflectionActive()) {
+            return;
+        }
+        if (!StringValueSupport.isBlank(scheduleMessage.scheduledTaskId())) {
+            autoModeService.recordScheduledTaskSuccess(scheduleMessage.scheduledTaskId(), activeSkillName);
+            return;
+        }
+        if (!StringValueSupport.isBlank(scheduleMessage.goalId())) {
             autoModeService.recordAutoRunSuccess(scheduleMessage.goalId(), scheduleMessage.taskId(), activeSkillName);
         }
     }
@@ -245,9 +260,18 @@ public class ScheduledRunExecutor {
             String summary,
             String fingerprint,
             String activeSkillName) {
+        if (!StringValueSupport.isBlank(scheduleMessage.scheduledTaskId())) {
+            autoModeService.recordScheduledTaskFailure(
+                    scheduleMessage.scheduledTaskId(),
+                    summary,
+                    fingerprint,
+                    activeSkillName);
+            return;
+        }
         if (StringValueSupport.isBlank(scheduleMessage.goalId())) {
             return;
         }
+
         autoModeService.recordAutoRunFailure(
                 scheduleMessage.goalId(),
                 scheduleMessage.taskId(),
@@ -263,10 +287,23 @@ public class ScheduledRunExecutor {
         if (!runtimeConfigService.isAutoReflectionEnabled()) {
             return false;
         }
+        if (!StringValueSupport.isBlank(scheduleMessage.scheduledTaskId())) {
+            return autoModeService.shouldTriggerScheduledTaskReflection(scheduleMessage.scheduledTaskId());
+        }
         if (StringValueSupport.isBlank(scheduleMessage.goalId())) {
             return false;
         }
         return autoModeService.shouldTriggerReflection(scheduleMessage.goalId(), scheduleMessage.taskId());
+    }
+
+    private void applyReflectionResult(ScheduledRunMessage scheduleMessage, String assistantText) {
+        if (!StringValueSupport.isBlank(scheduleMessage.scheduledTaskId())) {
+            autoModeService.applyScheduledTaskReflectionResult(scheduleMessage.scheduledTaskId(), assistantText);
+            return;
+        }
+        if (!StringValueSupport.isBlank(scheduleMessage.goalId())) {
+            autoModeService.applyReflectionResult(scheduleMessage.goalId(), scheduleMessage.taskId(), assistantText);
+        }
     }
 
     private String readStatus(Message syntheticMessage) {
