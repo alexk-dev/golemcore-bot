@@ -703,6 +703,8 @@ class RuntimeLauncherTest {
                 "0.0.0.0",
                 "-J=-Xmx512m",
                 "-Dspring.profiles.active=prod",
+                "-Dfeature.enabled",
+                "-Dfeature.empty=",
                 "--spring.main.banner-mode=off"
         });
 
@@ -714,7 +716,11 @@ class RuntimeLauncherTest {
         assertEquals("/opt/bot.jar", launcherArguments.bundledJar());
         assertEquals("9090", launcherArguments.serverPort());
         assertEquals("0.0.0.0", launcherArguments.serverAddress());
-        assertIterableEquals(List.of("-Xmx512m", "-Dspring.profiles.active=prod"),
+        assertIterableEquals(List.of(
+                "-Xmx512m",
+                "-Dspring.profiles.active=prod",
+                "-Dfeature.enabled",
+                "-Dfeature.empty="),
                 launcherArguments.explicitJavaOptions());
         assertIterableEquals(List.of("--spring.main.banner-mode=off"), launcherArguments.applicationArguments());
     }
