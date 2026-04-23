@@ -1,6 +1,5 @@
 package me.golemcore.bot.application.command;
 
-import java.util.ArrayList;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.domain.model.AutoTask;
@@ -18,7 +17,6 @@ import me.golemcore.bot.domain.service.ScheduleService;
 public class AutomationCommandService {
 
     private static final int MIN_SCHEDULE_ARGS = 2;
-    private static final int MIN_CRON_PARTS_FOR_REPEAT_CHECK = 1;
 
     private final AutoModeService autoModeService;
     private final RuntimeConfigService runtimeConfigService;
@@ -289,30 +287,6 @@ public class AutomationCommandService {
 
     private static boolean isBlank(String value) {
         return value == null || value.isBlank();
-    }
-
-    private ScheduleOutcome createScheduleFromArgs(
-            ScheduleEntry.ScheduleType type,
-            String targetId,
-            List<String> cronAndRepeat) {
-        int maxExecutions = -1;
-        List<String> cronParts = new ArrayList<>(cronAndRepeat);
-        if (cronParts.size() > MIN_CRON_PARTS_FOR_REPEAT_CHECK) {
-            String lastArg = cronParts.get(cronParts.size() - 1);
-            try {
-                maxExecutions = Integer.parseInt(lastArg);
-                cronParts = cronParts.subList(0, cronParts.size() - 1);
-            } catch (NumberFormatException ignored) {
-            }
-        }
-
-        String cronExpression = String.join(" ", cronParts);
-        try {
-            ScheduleEntry entry = scheduleService.createSchedule(type, targetId, cronExpression, maxExecutions);
-            return new ScheduleCreated(entry.getId(), entry.getCronExpression());
-        } catch (IllegalArgumentException exception) {
-            return new InvalidCron(exception.getMessage());
-        }
     }
 
     public sealed

@@ -2,6 +2,7 @@ package me.golemcore.bot.domain.service;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import me.golemcore.bot.domain.model.Goal;
@@ -37,7 +38,7 @@ final class LegacyGoalStorageService extends SessionGoalStorageService {
             List<Goal> goals = objectMapper.readValue(json, GOAL_LIST_TYPE_REF);
             cachedGoals = goals != null ? new ArrayList<>(goals) : new ArrayList<>();
             return new ArrayList<>(cachedGoals);
-        } catch (Exception exception) { // NOSONAR - legacy test adapter mirrors old empty-state fallback
+        } catch (IOException | RuntimeException exception) { // NOSONAR - legacy test adapter mirrors old fallback
             return new ArrayList<>();
         }
     }
@@ -49,7 +50,7 @@ final class LegacyGoalStorageService extends SessionGoalStorageService {
             cachedGoals = new ArrayList<>(normalizedGoals);
             String json = objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(normalizedGoals);
             storagePort.putText(AUTO_DIR, GOALS_FILE, json).join();
-        } catch (Exception exception) { // NOSONAR
+        } catch (IOException | RuntimeException exception) { // NOSONAR
             throw new IllegalStateException("Failed to persist legacy goals", exception);
         }
     }

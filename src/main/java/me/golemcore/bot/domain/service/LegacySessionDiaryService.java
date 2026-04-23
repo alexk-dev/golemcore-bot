@@ -1,6 +1,7 @@
 package me.golemcore.bot.domain.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.io.IOException;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
@@ -48,7 +49,7 @@ final class LegacySessionDiaryService extends SessionDiaryService {
             }
             Collections.reverse(entries);
             return entries;
-        } catch (Exception exception) { // NOSONAR - legacy tests expect best-effort diary reads
+        } catch (IOException | RuntimeException exception) { // NOSONAR - legacy tests expect best-effort diary reads
             return List.of();
         }
     }

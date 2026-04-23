@@ -18,6 +18,7 @@ package me.golemcore.bot.domain.service;
  * Contact: alex@kuleshov.tech
  */
 
+import java.io.IOException;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -402,7 +403,7 @@ public class AutoModeService {
                 enabled = Boolean.TRUE.equals(state.get("enabled"));
             }
             log.info("[AutoMode] Loaded state: enabled={}", enabled);
-        } catch (Exception exception) {
+        } catch (IOException | RuntimeException exception) {
             log.debug("[AutoMode] Failed to load state: {}", exception.getMessage());
         }
     }
