@@ -6,6 +6,14 @@ All notable changes to this project will be documented in this file. See [conven
 - (**auto**) add configurable session retention cleanup for persisted chat sessions
 
 - - -
+## v0.69.1 - 2026-04-23
+#### Bug Fixes
+- (**context**) context management budgeting (#316) - (a0fc7fb) - Alex Kuleshov
+#### Miscellaneous
+- add code owners - (b70cca3) - Alex Kuleshov
+
+- - -
+
 ## v0.12.0 - 2026-02-25
 #### Features
 - (**browser**) fetch Playwright driver bundle from Maven at runtime (#117) - (2121f20) - Alex Kuleshov
