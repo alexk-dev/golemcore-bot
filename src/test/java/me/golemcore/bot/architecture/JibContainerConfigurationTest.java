@@ -26,7 +26,7 @@ class JibContainerConfigurationTest {
             + "/*[local-name()='container']";
 
     @Test
-    void docker_image_should_default_to_web_command_when_runtime_launcher_is_entrypoint() throws Exception {
+    void docker_image_should_use_strict_cli_entrypoint_with_default_web_command() throws Exception {
         Document pom = parsePom();
         XPath xpath = XPathFactory.newInstance().newXPath();
 

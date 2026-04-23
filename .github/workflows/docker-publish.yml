@@ -141,6 +141,9 @@ jobs:
       - name: Build native distribution bundle
         run: ./.github/scripts/build-native-distribution.sh
 
+      - name: Verify launcher entrypoints
+        run: ./.github/scripts/verify-launcher-entrypoints.sh
+
       - name: Smoke test native launcher
         run: |
           archive="$(find target/native-dist -maxdepth 1 -type f -name '*-linux-x64.tar.gz' | sort | head -n 1)"

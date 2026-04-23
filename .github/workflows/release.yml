@@ -209,6 +209,10 @@ jobs:
         if: steps.release-flag.outputs.should-release == 'true' && steps.tag-push.outputs.should-release == 'true'
         run: ./.github/scripts/build-native-distribution.sh
 
+      - name: Verify launcher entrypoints
+        if: steps.release-flag.outputs.should-release == 'true' && steps.tag-push.outputs.should-release == 'true'
+        run: ./.github/scripts/verify-launcher-entrypoints.sh
+
       - name: Prepare release assets
         if: steps.release-flag.outputs.should-release == 'true' && steps.tag-push.outputs.should-release == 'true'
         id: assets
