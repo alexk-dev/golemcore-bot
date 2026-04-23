@@ -1,17 +1,26 @@
 package me.golemcore.bot.domain.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import me.golemcore.bot.domain.model.AgentSession;
+import me.golemcore.bot.domain.model.AutoTask;
+import me.golemcore.bot.domain.model.ChannelTypes;
 import me.golemcore.bot.domain.model.Goal;
 import me.golemcore.bot.domain.model.ScheduleEntry;
 import me.golemcore.bot.port.outbound.SchedulePersistencePort;
@@ -19,10 +28,14 @@ import me.golemcore.bot.port.outbound.SessionPort;
 import me.golemcore.bot.port.outbound.StoragePort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 class AutoModeMigrationServiceTest {
 
     private StoragePort storagePort;
+    private ObjectMapper objectMapper;
+    private SessionPort sessionPort;
+    private SessionScopedGoalService sessionScopedGoalService;
     private SchedulePersistencePort schedulePersistencePort;
     private PersistentScheduledTaskService persistentScheduledTaskService;
     private AutoModeMigrationService migrationService;
@@ -30,7 +43,7 @@ class AutoModeMigrationServiceTest {
 
     @BeforeEach
     void setUp() throws Exception {
-        ObjectMapper objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
+        objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
         legacyGoalsJson = objectMapper.writeValueAsString(List.of(Goal.builder()
                 .id("goal-1")
                 .title("Legacy goal")
@@ -53,13 +66,10 @@ class AutoModeMigrationServiceTest {
 
         schedulePersistencePort = mock(SchedulePersistencePort.class);
         when(schedulePersistencePort.loadSchedules()).thenAnswer(ignored -> List.of(legacyGoalSchedule()));
-        doThrow(new RuntimeException("partial failure"))
-                .doNothing()
-                .when(schedulePersistencePort).saveSchedules(any());
 
-        SessionPort sessionPort = mock(SessionPort.class);
+        sessionPort = mock(SessionPort.class);
         when(sessionPort.listAll()).thenReturn(List.of());
-        SessionScopedGoalService sessionScopedGoalService = mock(SessionScopedGoalService.class);
+        sessionScopedGoalService = mock(SessionScopedGoalService.class);
         persistentScheduledTaskService = new PersistentScheduledTaskService(storagePort, objectMapper);
         migrationService = new AutoModeMigrationService(
                 storagePort,
@@ -72,11 +82,106 @@ class AutoModeMigrationServiceTest {
 
     @Test
     void migrationRetryAfterPartialFailureShouldNotDuplicateScheduledTasks() {
+        doThrow(new RuntimeException("partial failure"))
+                .doNothing()
+                .when(schedulePersistencePort).saveSchedules(any());
+
         migrationService.migrateIfNeeded();
         migrationService.migrateIfNeeded();
 
         assertEquals(1, persistentScheduledTaskService.getScheduledTasks().size());
         assertEquals("goal-1", persistentScheduledTaskService.getScheduledTasks().getFirst().getLegacySourceId());
+    }
+
+    @Test
+    void shouldSkipMigrationWhenMarkerExists() {
+        when(storagePort.exists(eq("auto"), eq("goals-session-migration.marker")))
+                .thenReturn(CompletableFuture.completedFuture(true));
+
+        migrationService.migrateIfNeeded();
+
+        verify(storagePort, never()).getText(eq("auto"), eq("goals.json"));
+        verify(schedulePersistencePort, never()).loadSchedules();
+    }
+
+    @Test
+    void shouldMigrateLegacyGoalsAndSchedulesToLatestTelegramOrWebSession() throws Exception {
+        AutoTask legacyTask = AutoTask.builder()
+                .id("task-1")
+                .title("Legacy task")
+                .description("Task description")
+                .prompt("Task prompt")
+                .build();
+        Goal legacyGoal = Goal.builder()
+                .id("goal-1")
+                .title("Legacy goal")
+                .tasks(new ArrayList<>(List.of(legacyTask)))
+                .build();
+        Goal inboxGoal = Goal.builder()
+                .id("inbox")
+                .title("Inbox")
+                .tasks(new ArrayList<>())
+                .build();
+        legacyGoalsJson = objectMapper.writeValueAsString(List.of(legacyGoal, inboxGoal));
+
+        ScheduleEntry goalSchedule = legacyGoalSchedule();
+        ScheduleEntry taskSchedule = ScheduleEntry.builder()
+                .id("sched-task-1")
+                .type(ScheduleEntry.ScheduleType.TASK)
+                .targetId("task-1")
+                .cronExpression("0 0 10 * * *")
+                .enabled(true)
+                .build();
+        ScheduleEntry existingScheduledTaskSchedule = ScheduleEntry.builder()
+                .id("sched-existing")
+                .type(ScheduleEntry.ScheduleType.SCHEDULED_TASK)
+                .targetId("scheduled-task-existing")
+                .enabled(true)
+                .build();
+        ScheduleEntry missingGoalSchedule = ScheduleEntry.builder()
+                .id("sched-missing")
+                .type(ScheduleEntry.ScheduleType.GOAL)
+                .targetId("missing")
+                .enabled(true)
+                .build();
+        ScheduleEntry nullTypeSchedule = ScheduleEntry.builder()
+                .id("sched-null-type")
+                .targetId("goal-1")
+                .enabled(true)
+                .build();
+        List<ScheduleEntry> schedules = new ArrayList<>();
+        schedules.add(null);
+        schedules.add(goalSchedule);
+        schedules.add(taskSchedule);
+        schedules.add(existingScheduledTaskSchedule);
+        schedules.add(missingGoalSchedule);
+        schedules.add(nullTypeSchedule);
+        when(schedulePersistencePort.loadSchedules()).thenReturn(schedules);
+        when(sessionPort.listAll()).thenReturn(List.of(
+                session("telegram-old", ChannelTypes.TELEGRAM, Instant.parse("2026-01-01T00:00:00Z")),
+                session("telegram-unknown", ChannelTypes.TELEGRAM, null),
+                session("web-new", ChannelTypes.WEB, Instant.parse("2026-02-01T00:00:00Z")),
+                session("slack-latest", "slack", Instant.parse("2026-03-01T00:00:00Z"))));
+
+        migrationService.migrateIfNeeded();
+
+        ArgumentCaptor<List<Goal>> goalsCaptor = ArgumentCaptor.captor();
+        verify(sessionScopedGoalService).replaceGoals(eq("web-new"), goalsCaptor.capture());
+        assertEquals("web-new", goalsCaptor.getValue().getFirst().getSessionId());
+        assertTrue(goalsCaptor.getValue().stream()
+                .filter(goal -> "inbox".equals(goal.getId()))
+                .findFirst()
+                .orElseThrow()
+                .isSystemInbox());
+        assertEquals(ScheduleEntry.ScheduleType.SCHEDULED_TASK, goalSchedule.getType());
+        assertEquals(ScheduleEntry.ScheduleType.SCHEDULED_TASK, taskSchedule.getType());
+        assertFalse("goal-1".equals(goalSchedule.getTargetId()));
+        assertFalse("task-1".equals(taskSchedule.getTargetId()));
+        assertEquals("scheduled-task-existing", existingScheduledTaskSchedule.getTargetId());
+        assertEquals(ScheduleEntry.ScheduleType.GOAL, missingGoalSchedule.getType());
+        assertEquals(2, persistentScheduledTaskService.getScheduledTasks().size());
+        verify(schedulePersistencePort).saveSchedules(schedules);
+        verify(storagePort).putText(eq("auto"), eq("goals-session-migration.marker"), anyString());
     }
 
     private static ScheduleEntry legacyGoalSchedule() {
@@ -86,6 +191,15 @@ class AutoModeMigrationServiceTest {
                 .targetId("goal-1")
                 .cronExpression("0 0 9 * * *")
                 .enabled(true)
+                .build();
+    }
+
+    private static AgentSession session(String id, String channelType, Instant lastActivity) {
+        return AgentSession.builder()
+                .id(id)
+                .channelType(channelType)
+                .createdAt(lastActivity)
+                .updatedAt(lastActivity)
                 .build();
     }
 }

@@ -596,11 +596,11 @@ public class SessionScopedGoalService {
         if (currentTask.isPresent()) {
             String taskGoalId = currentTask.get().getGoalId();
             return activeGoals.stream()
-                    .filter(goal -> goal.getId().equals(taskGoalId))
+                    .filter(goal -> !StringValueSupport.isBlank(taskGoalId) && taskGoalId.equals(goal.getId()))
                     .findFirst();
         }
         return activeGoals.stream()
-                .sorted(Comparator.comparing(Goal::getCreatedAt))
+                .sorted(Comparator.comparing(Goal::getCreatedAt, Comparator.nullsLast(Comparator.naturalOrder())))
                 .findFirst();
     }
 

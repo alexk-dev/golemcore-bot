@@ -3,6 +3,7 @@ package me.golemcore.bot.domain.service;
 import me.golemcore.bot.domain.model.AutoTask;
 import me.golemcore.bot.domain.model.DiaryEntry;
 import me.golemcore.bot.domain.model.Goal;
+import me.golemcore.bot.domain.model.ScheduledTask;
 import me.golemcore.bot.domain.model.Skill;
 import me.golemcore.bot.port.outbound.StoragePort;
 import com.fasterxml.jackson.core.type.TypeReference;
@@ -59,6 +60,8 @@ class AutoModeServiceTest {
         when(runtimeConfigService.isAutoReflectionTierPriority()).thenReturn(false);
 
         when(storagePort.putText(anyString(), anyString(), anyString()))
+                .thenReturn(CompletableFuture.completedFuture(null));
+        when(storagePort.putTextAtomic(anyString(), anyString(), anyString(), eq(true)))
                 .thenReturn(CompletableFuture.completedFuture(null));
         when(storagePort.appendText(anyString(), anyString(), anyString()))
                 .thenReturn(CompletableFuture.completedFuture(null));
@@ -240,6 +243,59 @@ class AutoModeServiceTest {
 
         assertEquals("smart", task.getReflectionModelTier());
         assertTrue(task.isReflectionTierPriority());
+    }
+
+    @Test
+    void scheduledTaskLifecycleShouldUsePersistentScheduledTaskState() {
+        ScheduledTask task = service.createScheduledTask(
+                " Refresh reports ",
+                " Pull metrics ",
+                " Check dashboard ",
+                "fast",
+                false);
+
+        assertEquals("Refresh reports", task.getTitle());
+        assertEquals("Pull metrics", service.getScheduledTask(task.getId()).orElseThrow().getDescription());
+        assertEquals(1, service.getScheduledTasks().size());
+        assertFalse(service.shouldTriggerScheduledTaskReflection(task.getId()));
+        assertFalse(service.shouldTriggerScheduledTaskReflection("missing"));
+        assertEquals("skill-tier", service.resolveScheduledTaskReflectionTier(
+                task.getId(),
+                Skill.builder().reflectionTier("skill-tier").build()));
+        assertFalse(service.isScheduledTaskReflectionTierPriority(task.getId()));
+
+        service.recordScheduledTaskFailure(task.getId(), " first failure ", null, " reporter ");
+        assertFalse(service.shouldTriggerScheduledTaskReflection(task.getId()));
+
+        service.recordScheduledTaskFailure(task.getId(), " second failure ", " explicit ", " reporter ");
+        AutoModeService.TaskReflectionState failedState = service.resolveScheduledTaskReflectionState(task.getId());
+        assertTrue(failedState.reflectionRequired());
+        assertEquals(2, failedState.consecutiveFailureCount());
+        assertEquals("explicit", failedState.lastFailureFingerprint());
+        assertEquals("fast", service.resolveScheduledTaskReflectionTier(task.getId(), null));
+
+        ScheduledTask prioritized = service.updateScheduledTask(task.getId(), "Refresh reports", null, null, "deep",
+                true);
+        assertTrue(prioritized.isReflectionTierPriority());
+        assertEquals("deep", service.resolveScheduledTaskReflectionTier(task.getId(),
+                Skill.builder().reflectionTier("skill-tier").build()));
+        assertTrue(service.isScheduledTaskReflectionTierPriority(task.getId()));
+
+        service.applyScheduledTaskReflectionResult(task.getId(), " retry with cache ");
+        assertFalse(service.shouldTriggerScheduledTaskReflection(task.getId()));
+        assertEquals("retry with cache",
+                service.resolveScheduledTaskReflectionState(task.getId()).reflectionStrategy());
+
+        service.recordScheduledTaskSuccess(task.getId(), " closer ");
+        AutoModeService.TaskReflectionState successState = service.resolveScheduledTaskReflectionState(task.getId());
+        assertEquals(0, successState.consecutiveFailureCount());
+        assertFalse(successState.reflectionRequired());
+        assertNull(successState.lastFailureSummary());
+        assertEquals("closer", successState.lastUsedSkillName());
+
+        service.deleteScheduledTask(task.getId());
+        assertTrue(service.getScheduledTasks().isEmpty());
+        assertThrows(IllegalArgumentException.class, () -> service.resolveScheduledTaskReflectionState(task.getId()));
     }
 
     @Test

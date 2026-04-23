@@ -27,6 +27,7 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.AgentSession;
@@ -171,9 +172,10 @@ public class AutoModeMigrationService {
 
     private AgentSession findLatestTelegramOrWebSession() {
         return sessionPort.listAll().stream()
+                .filter(Objects::nonNull)
                 .filter(session -> ChannelTypes.TELEGRAM.equals(session.getChannelType())
                         || ChannelTypes.WEB.equals(session.getChannelType()))
-                .max(Comparator.comparing(this::resolveLastActivity, Comparator.nullsLast(Comparator.naturalOrder())))
+                .max(Comparator.comparing(this::resolveLastActivity, Comparator.nullsFirst(Comparator.naturalOrder())))
                 .orElse(null);
     }
 
