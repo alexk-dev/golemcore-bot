@@ -16,6 +16,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -249,5 +250,22 @@ class ActiveSessionPointerServiceTest {
         void releaseWrites() {
             writesMayContinue.countDown();
         }
+    }
+
+    @Test
+    void extractChannelTypeReturnsPrefixBeforeSeparator() {
+        assertEquals(Optional.of("telegram"), ActiveSessionPointerService.extractChannelType("telegram|12345"));
+        assertEquals(Optional.of("web"),
+                ActiveSessionPointerService.extractChannelType("web|user@example.com|client-1"));
+    }
+
+    @Test
+    void extractChannelTypeRejectsBlankOrMalformedKeys() {
+        assertTrue(ActiveSessionPointerService.extractChannelType(null).isEmpty());
+        assertTrue(ActiveSessionPointerService.extractChannelType("").isEmpty());
+        assertTrue(ActiveSessionPointerService.extractChannelType("   ").isEmpty());
+        assertTrue(ActiveSessionPointerService.extractChannelType("no-separator").isEmpty());
+        assertTrue(ActiveSessionPointerService.extractChannelType("|leading-separator").isEmpty());
+        assertFalse(ActiveSessionPointerService.extractChannelType("telegram|12345").isEmpty());
     }
 }

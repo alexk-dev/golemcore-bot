@@ -28,6 +28,12 @@ public interface RuntimeSettingsWebDtos {
     public static class TurnConfigDto extends RuntimeConfig.TurnConfig {
     }
 
+    public static class ToolLoopConfigDto extends RuntimeConfig.ToolLoopConfig {
+    }
+
+    public static class SessionRetentionConfigDto extends RuntimeConfig.SessionRetentionConfig {
+    }
+
     public static class MemoryConfigDto extends RuntimeConfig.MemoryConfig {
     }
 

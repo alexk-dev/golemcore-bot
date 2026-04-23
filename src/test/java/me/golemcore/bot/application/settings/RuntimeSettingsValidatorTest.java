@@ -152,7 +152,18 @@ class RuntimeSettingsValidatorTest {
         assertThrows(IllegalArgumentException.class, () -> validator.validateTurnConfig(
                 RuntimeConfig.TurnConfig.builder().maxToolExecutions(0).build()));
         assertThrows(IllegalArgumentException.class, () -> validator.validateTurnConfig(
+                RuntimeConfig.TurnConfig.builder().maxSkillTransitions(0).build()));
+        assertThrows(IllegalArgumentException.class, () -> validator.validateTurnConfig(
                 RuntimeConfig.TurnConfig.builder().deadline("PT0S").build()));
+    }
+
+    @Test
+    void shouldRejectInvalidToolLoopNumericConstraints() {
+        assertThrows(IllegalArgumentException.class, () -> validator.validateToolLoopConfig(null));
+        assertThrows(IllegalArgumentException.class, () -> validator.validateToolLoopConfig(
+                RuntimeConfig.ToolLoopConfig.builder().maxLlmCalls(0).build()));
+        assertThrows(IllegalArgumentException.class, () -> validator.validateToolLoopConfig(
+                RuntimeConfig.ToolLoopConfig.builder().maxToolExecutions(0).build()));
     }
 
     @Test
@@ -785,4 +796,31 @@ class RuntimeSettingsValidatorTest {
         assertEquals(Map.of(), llmConfig.getProviders());
         assertEquals("model_ratio", compactionConfig.getTriggerMode());
     }
+
+    @Test
+    void shouldAcceptValidSessionRetentionConfig() {
+        RuntimeConfig.SessionRetentionConfig sessionRetentionConfig = RuntimeConfig.SessionRetentionConfig.builder()
+                .enabled(true)
+                .maxAge("P30D")
+                .cleanupInterval("PT24H")
+                .protectActiveSessions(true)
+                .protectSessionsWithPlans(true)
+                .protectSessionsWithDelayedActions(true)
+                .build();
+
+        assertDoesNotThrow(() -> validator.validateSessionRetentionConfig(sessionRetentionConfig));
+    }
+
+    @Test
+    void shouldRejectInvalidSessionRetentionConfig() {
+        RuntimeConfig.SessionRetentionConfig sessionRetentionConfig = RuntimeConfig.SessionRetentionConfig.builder()
+                .maxAge("PT1H")
+                .cleanupInterval("PT1M")
+                .build();
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> validator.validateSessionRetentionConfig(sessionRetentionConfig));
+        assertTrue(error.getMessage().contains("sessionRetention.maxAge"));
+    }
+
 }

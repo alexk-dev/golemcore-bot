@@ -12,6 +12,7 @@ export interface RuntimeConfig {
   memory: MemoryConfig;
   skills: SkillsConfig;
   turn: TurnConfig;
+  sessionRetention: SessionRetentionConfig;
   usage: UsageConfig;
   telemetry?: TelemetryConfig;
   mcp: McpConfig;
@@ -41,6 +42,7 @@ export interface MemoryDisclosureConfig { mode: MemoryDisclosureMode | null; pro
 export interface MemoryDiagnosticsConfig { verbosity: MemoryDiagnosticsVerbosity | null; }
 export interface SkillsConfig { enabled: boolean | null; progressiveLoading: boolean | null; marketplaceSourceType: 'repository' | 'directory' | 'sandbox' | null; marketplaceRepositoryDirectory: string | null; marketplaceSandboxPath: string | null; marketplaceRepositoryUrl: string | null; marketplaceBranch: string | null; }
 export interface TurnConfig { maxLlmCalls: number | null; maxToolExecutions: number | null; deadline: string | null; progressUpdatesEnabled: boolean | null; progressIntentEnabled: boolean | null; progressBatchSize: number | null; progressMaxSilenceSeconds: number | null; progressSummaryTimeoutMs: number | null; }
+export interface SessionRetentionConfig { enabled: boolean | null; maxAge: string | null; cleanupInterval: string | null; protectActiveSessions: boolean | null; protectSessionsWithPlans: boolean | null; protectSessionsWithDelayedActions: boolean | null; }
 export interface TelegramConfig { enabled: boolean | null; token: string | null; tokenPresent?: boolean; authMode: 'invite_only' | null; allowedUsers: string[]; inviteCodes: InviteCode[]; }
 export interface InviteCode { code: string; used: boolean; createdAt: string; }
 export interface ModelRouterConfig { routing: TierBinding; tiers: Record<ExplicitModelTierId, TierBinding>; dynamicTierEnabled: boolean | null; }
@@ -77,4 +79,6 @@ export interface SecurityConfig { sanitizeInput: boolean | null; detectPromptInj
 export interface McpCatalogEntry { name: string; description: string | null; command: string; env: Record<string, string>; startupTimeoutSeconds: number | null; idleTimeoutMinutes: number | null; enabled: boolean | null; }
 export interface McpConfig { enabled: boolean | null; defaultStartupTimeout: number | null; defaultIdleTimeout: number | null; catalog: McpCatalogEntry[]; }
 export interface CompactionConfig { enabled: boolean | null; triggerMode: 'model_ratio' | 'token_threshold' | null; modelThresholdRatio: number | null; maxContextTokens: number | null; keepLastMessages: number | null; }
-export interface ResilienceConfig { enabled: boolean | null; hotRetryMaxAttempts: number | null; hotRetryBaseDelayMs: number | null; hotRetryCapMs: number | null; l2ProviderFallbackMaxAttempts: number | null; circuitBreakerFailureThreshold: number | null; circuitBreakerWindowSeconds: number | null; circuitBreakerOpenDurationSeconds: number | null; degradationCompactContext: boolean | null; degradationCompactMinMessages: number | null; degradationDowngradeModel: boolean | null; degradationFallbackModelTier: string | null; degradationStripTools: boolean | null; coldRetryEnabled: boolean | null; coldRetryMaxAttempts: number | null; }
+export interface ResilienceConfig { enabled: boolean | null; hotRetryMaxAttempts: number | null; hotRetryBaseDelayMs: number | null; hotRetryCapMs: number | null; l2ProviderFallbackMaxAttempts: number | null; circuitBreakerFailureThreshold: number | null; circuitBreakerWindowSeconds: number | null; circuitBreakerOpenDurationSeconds: number | null; degradationCompactContext: boolean | null; degradationCompactMinMessages: number | null; degradationDowngradeModel: boolean | null; degradationFallbackModelTier: string | null; degradationStripTools: boolean | null; coldRetryEnabled: boolean | null; coldRetryMaxAttempts: number | null; followThrough: FollowThroughConfig | null; autoProceed: AutoProceedConfig | null; }
+export interface FollowThroughConfig { enabled: boolean | null; modelTier: string | null; timeoutSeconds: number | null; maxChainDepth: number | null; }
+export interface AutoProceedConfig { enabled: boolean | null; modelTier: string | null; timeoutSeconds: number | null; maxChainDepth: number | null; }

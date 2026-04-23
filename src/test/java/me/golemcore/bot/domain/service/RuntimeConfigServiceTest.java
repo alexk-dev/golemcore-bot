@@ -554,6 +554,7 @@ class RuntimeConfigServiceTest {
         assertFalse(service.isTraceOutboundPayloadCaptureEnabled());
         assertFalse(service.isTraceToolPayloadCaptureEnabled());
         assertFalse(service.isTraceLlmPayloadCaptureEnabled());
+        assertEquals(0.0d, service.getTraceResiliencePayloadSampleRate());
     }
 
     @Test
@@ -570,6 +571,7 @@ class RuntimeConfigServiceTest {
         tracing.setCaptureOutboundPayloads(null);
         tracing.setCaptureToolPayloads(null);
         tracing.setCaptureLlmPayloads(null);
+        tracing.setResiliencePayloadSampleRate(null);
         config.setTracing(tracing);
         setCachedConfig(config);
 
@@ -583,6 +585,7 @@ class RuntimeConfigServiceTest {
         assertFalse(service.isTraceOutboundPayloadCaptureEnabled());
         assertFalse(service.isTraceToolPayloadCaptureEnabled());
         assertFalse(service.isTraceLlmPayloadCaptureEnabled());
+        assertEquals(0.0d, service.getTraceResiliencePayloadSampleRate());
     }
 
     @Test
@@ -599,6 +602,7 @@ class RuntimeConfigServiceTest {
         tracing.setCaptureOutboundPayloads(true);
         tracing.setCaptureToolPayloads(true);
         tracing.setCaptureLlmPayloads(true);
+        tracing.setResiliencePayloadSampleRate(0.25d);
         config.setTracing(tracing);
         setCachedConfig(config);
 
@@ -612,6 +616,18 @@ class RuntimeConfigServiceTest {
         assertTrue(service.isTraceOutboundPayloadCaptureEnabled());
         assertTrue(service.isTraceToolPayloadCaptureEnabled());
         assertTrue(service.isTraceLlmPayloadCaptureEnabled());
+        assertEquals(0.25d, service.getTraceResiliencePayloadSampleRate());
+    }
+
+    @Test
+    void shouldClampInvalidResiliencePayloadSampleRateToDefault() throws Exception {
+        RuntimeConfig config = service.getRuntimeConfig();
+        RuntimeConfig.TracingConfig tracing = RuntimeConfig.TracingConfig.builder().build();
+        tracing.setResiliencePayloadSampleRate(2.5d);
+        config.setTracing(tracing);
+        service.updateRuntimeConfig(config);
+
+        assertEquals(0.0d, service.getTraceResiliencePayloadSampleRate());
     }
 
     @Test
@@ -851,9 +867,34 @@ class RuntimeConfigServiceTest {
 
     @Test
     void shouldReturnDefaultTurnBudget() {
+        assertEquals(3, service.getTurnMaxSkillTransitions());
         assertEquals(200, service.getTurnMaxLlmCalls());
         assertEquals(500, service.getTurnMaxToolExecutions());
+        assertEquals(20, service.getToolLoopMaxLlmCalls());
+        assertEquals(80, service.getToolLoopMaxToolExecutions());
         assertEquals(java.time.Duration.ofHours(1), service.getTurnDeadline());
+    }
+
+    @Test
+    void shouldReturnConfiguredToolLoopBudgetSeparatelyFromTurnBudget() throws Exception {
+        RuntimeConfig config = RuntimeConfig.builder()
+                .turn(RuntimeConfig.TurnConfig.builder()
+                        .maxSkillTransitions(4)
+                        .maxLlmCalls(200)
+                        .maxToolExecutions(500)
+                        .build())
+                .toolLoop(RuntimeConfig.ToolLoopConfig.builder()
+                        .maxLlmCalls(12)
+                        .maxToolExecutions(34)
+                        .build())
+                .build();
+        setCachedConfig(config);
+
+        assertEquals(4, service.getTurnMaxSkillTransitions());
+        assertEquals(200, service.getTurnMaxLlmCalls());
+        assertEquals(500, service.getTurnMaxToolExecutions());
+        assertEquals(12, service.getToolLoopMaxLlmCalls());
+        assertEquals(34, service.getToolLoopMaxToolExecutions());
     }
 
     @Test
@@ -2064,6 +2105,26 @@ class RuntimeConfigServiceTest {
     }
 
     @Test
+    void shouldDisableFollowThroughWhenMasterResilienceFlagIsOffEvenIfFollowThroughEnabled() {
+        RuntimeConfig config = service.snapshotRuntimeConfig();
+        config.getResilience().setEnabled(false);
+        RuntimeConfig.FollowThroughConfig followThrough = RuntimeConfig.FollowThroughConfig.builder()
+                .enabled(true)
+                .modelTier("routing")
+                .timeoutSeconds(5)
+                .maxChainDepth(1)
+                .build();
+        config.getResilience().setFollowThrough(followThrough);
+        service.updateRuntimeConfig(config);
+
+        assertFalse(service.isResilienceEnabled());
+        assertTrue(service.getFollowThroughConfig().getEnabled(),
+                "sub-flag stays true — fix must be on the computed aggregate, not the raw field");
+        assertFalse(service.isFollowThroughEnabled(),
+                "master resilience.enabled=false must short-circuit follow-through regardless of its own flag");
+    }
+
+    @Test
     void shouldNormalizeResilienceNullsAndUnknownFallbackTier() {
         RuntimeConfig config = service.snapshotRuntimeConfig();
         RuntimeConfig.ResilienceConfig resilience = RuntimeConfig.ResilienceConfig.builder().build();
@@ -2134,4 +2195,66 @@ class RuntimeConfigServiceTest {
     private void assertPersistedModelMissing(Map<?, ?> binding) {
         assertTrue(!binding.containsKey("model") || binding.get("model") == null);
     }
+
+    @Test
+    void shouldReturnDefaultSessionRetentionSettings() {
+        assertTrue(service.isSessionRetentionEnabled());
+        assertEquals(java.time.Duration.ofDays(30), service.getSessionRetentionMaxAge());
+        assertEquals(java.time.Duration.ofHours(24), service.getSessionRetentionCleanupInterval());
+        assertTrue(service.isSessionRetentionProtectActiveSessions());
+        assertTrue(service.isSessionRetentionProtectSessionsWithPlans());
+        assertTrue(service.isSessionRetentionProtectSessionsWithDelayedActions());
+    }
+
+    @Test
+    void shouldReturnConfiguredSessionRetentionSettings() throws Exception {
+        RuntimeConfig.SessionRetentionConfig sessionRetentionConfig = RuntimeConfig.SessionRetentionConfig.builder()
+                .enabled(false)
+                .maxAge("P14D")
+                .cleanupInterval("PT12H")
+                .protectActiveSessions(false)
+                .protectSessionsWithPlans(true)
+                .protectSessionsWithDelayedActions(false)
+                .build();
+        persistedSections.put("session-retention.json", objectMapper.writeValueAsString(sessionRetentionConfig));
+
+        assertFalse(service.isSessionRetentionEnabled());
+        assertEquals(java.time.Duration.ofDays(14), service.getSessionRetentionMaxAge());
+        assertEquals(java.time.Duration.ofHours(12), service.getSessionRetentionCleanupInterval());
+        assertFalse(service.isSessionRetentionProtectActiveSessions());
+        assertTrue(service.isSessionRetentionProtectSessionsWithPlans());
+        assertFalse(service.isSessionRetentionProtectSessionsWithDelayedActions());
+    }
+
+    @Test
+    void shouldNormalizeInvalidSessionRetentionSettingsDuringUpdate() {
+        RuntimeConfig config = service.getRuntimeConfig();
+        RuntimeConfig.SessionRetentionConfig sessionRetentionConfig = RuntimeConfig.SessionRetentionConfig.builder()
+                .enabled(null)
+                .maxAge("bad")
+                .cleanupInterval("bad")
+                .protectActiveSessions(null)
+                .protectSessionsWithPlans(null)
+                .protectSessionsWithDelayedActions(null)
+                .build();
+        config.setSessionRetention(sessionRetentionConfig);
+
+        service.updateRuntimeConfig(config);
+
+        assertTrue(service.isSessionRetentionEnabled());
+        assertEquals(java.time.Duration.ofDays(30), service.getSessionRetentionMaxAge());
+        assertEquals(java.time.Duration.ofHours(24), service.getSessionRetentionCleanupInterval());
+        assertTrue(service.isSessionRetentionProtectActiveSessions());
+        assertTrue(service.isSessionRetentionProtectSessionsWithPlans());
+        assertTrue(service.isSessionRetentionProtectSessionsWithDelayedActions());
+    }
+
+    @Test
+    void shouldExposeSessionRetentionConfigSectionMetadata() {
+        assertTrue(RuntimeConfig.ConfigSection.isValidSection("session-retention"));
+        assertEquals(RuntimeConfig.ConfigSection.SESSION_RETENTION,
+                RuntimeConfig.ConfigSection.fromFileId("session-retention").orElseThrow());
+        assertEquals("session-retention.json", RuntimeConfig.ConfigSection.SESSION_RETENTION.getFileName());
+    }
+
 }

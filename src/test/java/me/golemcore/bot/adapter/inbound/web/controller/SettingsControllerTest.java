@@ -149,6 +149,34 @@ class SettingsControllerTest {
     }
 
     @Test
+    void shouldReturnAvailableModelsGroupedByProvider() throws Exception {
+        when(modelSelectionService.getAvailableModelsGrouped()).thenReturn(Map.of(
+                "openai", List.of(new ModelSelectionService.AvailableModel(
+                        "openai/gpt-5.4",
+                        "openai",
+                        "GPT-5.4",
+                        true,
+                        List.of("low", "medium"),
+                        true,
+                        true))));
+        Method method = SettingsController.class.getMethod("getModels");
+        @SuppressWarnings("unchecked")
+        Mono<ResponseEntity<Map<String, ?>>> responseMono = (Mono<ResponseEntity<Map<String, ?>>>) method
+                .invoke(controller);
+
+        StepVerifier.create(responseMono)
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.OK, response.getStatusCode());
+                    Map<String, ?> body = response.getBody();
+                    assertNotNull(body);
+                    assertTrue(body.containsKey("openai"));
+                    assertTrue(body.get("openai").toString().contains("GPT-5.4"));
+                    assertTrue(body.get("openai").toString().contains("medium"));
+                })
+                .verifyComplete();
+    }
+
+    @Test
     void shouldGetSettingsWithTierOverrides() {
         UserPreferences prefs = new UserPreferences();
         prefs.setLanguage("en");
@@ -2927,4 +2955,29 @@ class SettingsControllerTest {
                         fourth.getClass()));
         return constructor.invoke(first, second, third, fourth);
     }
+
+    @Test
+    void shouldUpdateSessionRetentionConfig() {
+        RuntimeConfig runtimeConfig = RuntimeConfig.builder()
+                .sessionRetention(RuntimeConfig.SessionRetentionConfig.builder().build())
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
+
+        RuntimeSettingsWebDtos.SessionRetentionConfigDto sessionRetentionConfig = new RuntimeSettingsWebDtos.SessionRetentionConfigDto();
+        sessionRetentionConfig.setEnabled(true);
+        sessionRetentionConfig.setMaxAge("P14D");
+        sessionRetentionConfig.setCleanupInterval("PT12H");
+        sessionRetentionConfig.setProtectActiveSessions(true);
+        sessionRetentionConfig.setProtectSessionsWithPlans(true);
+        sessionRetentionConfig.setProtectSessionsWithDelayedActions(false);
+
+        StepVerifier.create(controller.updateSessionRetentionConfig(sessionRetentionConfig))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+
+        ArgumentCaptor<RuntimeConfig> captor = ArgumentCaptor.forClass(RuntimeConfig.class);
+        verify(runtimeConfigService).updateRuntimeConfig(captor.capture());
+        assertEquals(sessionRetentionConfig, captor.getValue().getSessionRetention());
+    }
+
 }

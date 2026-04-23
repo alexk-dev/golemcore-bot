@@ -15,11 +15,13 @@ import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.
 import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.RateLimitConfigDto;
 import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.ResilienceConfigDto;
 import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.RuntimeConfigDto;
+import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.SessionRetentionConfigDto;
 import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.SecurityConfigDto;
 import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.ShellEnvironmentVariableDto;
 import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.SkillsConfigDto;
 import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.TelemetryConfigDto;
 import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.ToolsConfigDto;
+import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.ToolLoopConfigDto;
 import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.TurnConfigDto;
 import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.TracingConfigDto;
 import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.UsageConfigDto;
@@ -307,11 +309,26 @@ public class SettingsController {
                 runtimeSettingsFacade.updateTurnConfig(runtimeSettingsWebMapper.toTurnConfig(turnConfig))));
     }
 
+    @PutMapping("/runtime/tool-loop")
+    public Mono<ResponseEntity<RuntimeConfigDto>> updateToolLoopConfig(
+            @RequestBody ToolLoopConfigDto toolLoopConfig) {
+        return runtimeConfigResponse(() -> runtimeSettingsWebMapper.toRuntimeConfigDto(
+                runtimeSettingsFacade.updateToolLoopConfig(runtimeSettingsWebMapper.toToolLoopConfig(toolLoopConfig))));
+    }
+
     @PutMapping("/runtime/memory")
     public Mono<ResponseEntity<RuntimeConfigDto>> updateMemoryConfig(
             @RequestBody MemoryConfigDto memoryConfig) {
         return runtimeConfigResponse(() -> runtimeSettingsWebMapper.toRuntimeConfigDto(
                 runtimeSettingsFacade.updateMemoryConfig(runtimeSettingsWebMapper.toMemoryConfig(memoryConfig))));
+    }
+
+    @PutMapping("/runtime/session-retention")
+    public Mono<ResponseEntity<RuntimeConfigDto>> updateSessionRetentionConfig(
+            @RequestBody SessionRetentionConfigDto sessionRetentionConfig) {
+        return runtimeConfigResponse(() -> runtimeSettingsWebMapper.toRuntimeConfigDto(
+                runtimeSettingsFacade.updateSessionRetentionConfig(
+                        runtimeSettingsWebMapper.toSessionRetentionConfig(sessionRetentionConfig))));
     }
 
     @GetMapping("/runtime/memory/presets")
@@ -465,6 +482,11 @@ public class SettingsController {
     public Mono<ResponseEntity<RuntimeConfigDto>> updateTurnConfig(RuntimeConfig.TurnConfig turnConfig) {
         return runtimeConfigResponse(() -> runtimeSettingsWebMapper
                 .toRuntimeConfigDto(runtimeSettingsFacade.updateTurnConfig(turnConfig)));
+    }
+
+    public Mono<ResponseEntity<RuntimeConfigDto>> updateToolLoopConfig(RuntimeConfig.ToolLoopConfig toolLoopConfig) {
+        return runtimeConfigResponse(() -> runtimeSettingsWebMapper
+                .toRuntimeConfigDto(runtimeSettingsFacade.updateToolLoopConfig(toolLoopConfig)));
     }
 
     public Mono<ResponseEntity<RuntimeConfigDto>> updateMemoryConfig(RuntimeConfig.MemoryConfig memoryConfig) {

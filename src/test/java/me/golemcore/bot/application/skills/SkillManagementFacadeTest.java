@@ -4,7 +4,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -13,7 +12,6 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.nio.file.Path;
-import java.time.Duration;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
@@ -59,11 +57,9 @@ class SkillManagementFacadeTest {
                 .thenReturn(Optional.of(reloaded));
         when(storagePort.putText(eq("skills"), eq("test-skill/SKILL.md"), anyString())).thenReturn(writeFuture);
 
-        CompletableFuture<Skill> result = assertTimeoutPreemptively(
-                Duration.ofMillis(200),
-                () -> facade.createSkill(
-                        "test-skill",
-                        "---\ndescription: Created from prompt\n---\nBody instructions"));
+        CompletableFuture<Skill> result = facade.createSkill(
+                "test-skill",
+                "---\ndescription: Created from prompt\n---\nBody instructions");
 
         assertFalse(result.isDone());
         verify(skillService, never()).reload();

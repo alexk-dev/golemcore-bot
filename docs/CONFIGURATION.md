@@ -537,6 +537,40 @@ Field notes:
 3. `queueSteeringMode`: `one-at-a-time` or `all`.
 4. `queueFollowUpMode`: `one-at-a-time` or `all`.
 
+### Session Retention
+
+Automatic cleanup of persisted chat sessions is configured under `sessionRetention`:
+
+```json
+{
+  "sessionRetention": {
+    "enabled": true,
+    "maxAge": "P30D",
+    "cleanupInterval": "PT24H",
+    "protectActiveSessions": true,
+    "protectSessionsWithPlans": true,
+    "protectSessionsWithDelayedActions": true
+  }
+}
+```
+
+Field notes:
+
+1. `maxAge`: ISO-8601 retention window before a session becomes eligible for deletion.
+2. `cleanupInterval`: how often the background cleanup job may run.
+3. `protectActiveSessions`: keeps sessions referenced by current web/Telegram active-session pointers.
+4. `protectSessionsWithPlans`: keeps sessions that still have collecting, ready, approved, or executing plan mode state.
+5. `protectSessionsWithDelayedActions`: keeps sessions referenced by pending delayed actions and reminders.
+
+Recommended defaults:
+
+- `enabled=true`
+- `maxAge=P30D`
+- `cleanupInterval=PT24H`
+- all protection flags enabled
+
+This cleanup targets the `sessions/` directory, which is usually the fastest-growing durable state for long-running chat usage.
+
 ### Memory (V2)
 
 Memory behavior is configured under `memory`:
@@ -799,7 +833,7 @@ Behavior:
 - If source type is `sandbox`, the configured path is resolved relative to the configured tool workspace and must stay inside that sandbox.
 - If source type is `sandbox`, the configured path may point either to the repository root or directly to its `registry/` directory.
 - Otherwise the backend reads the configured remote repository through the GitHub tree/raw endpoints.
-- Remote repository mode currently supports GitHub-style repository URLs such as `https://github.com/alexk-dev/golemcore-skills`.
+- Remote repository mode currently expects a GitHub repository URL such as `https://github.com/alexk-dev/golemcore-skills`.
 - Installed skill artifacts are written into `skills/marketplace/<maintainer>/<artifact>/...` and then the skill registry is reloaded.
 - Standalone marketplace artifacts install one runtime skill; pack artifacts install multiple runtime skills with namespaced runtime ids.
 - The registry format is manifest-driven: `registry/<maintainer>/maintainer.yaml` plus `registry/<maintainer>/<artifact>/artifact.yaml`.

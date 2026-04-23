@@ -42,7 +42,7 @@ import java.util.Map;
  * prompt by {@link PromptComposer}. Use {@link #empty(String)} for convenience.
  */
 @Data
-@Builder
+@Builder(toBuilder = true)
 public class ContextLayerResult {
 
     /** Layer name, matching {@link ContextLayer#getName()}. */
@@ -57,6 +57,26 @@ public class ContextLayerResult {
     /** Estimated token count for this content (characters / 3.5, rounded up). */
     @Builder.Default
     private final int estimatedTokens = 0;
+
+    /** Selector priority inherited from the producing {@link ContextLayer}. */
+    @Builder.Default
+    private final int priority = ContextLayer.DEFAULT_PRIORITY;
+
+    /** Lifecycle inherited from the producing {@link ContextLayer}. */
+    @Builder.Default
+    private final ContextLayerLifecycle lifecycle = ContextLayerLifecycle.TURN;
+
+    /** Per-layer soft token budget inherited from the producing layer. */
+    @Builder.Default
+    private final int tokenBudget = ContextLayer.UNLIMITED_TOKEN_BUDGET;
+
+    /** Whether prompt budgeting must keep this layer even when over budget. */
+    @Builder.Default
+    private final boolean required = false;
+
+    /** Hard-budget behavior for this rendered layer. */
+    @Builder.Default
+    private final LayerCriticality criticality = LayerCriticality.OPTIONAL;
 
     /**
      * Arbitrary metadata produced by the layer (diagnostics, resolved values,

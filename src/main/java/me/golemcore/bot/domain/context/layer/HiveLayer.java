@@ -19,7 +19,7 @@ package me.golemcore.bot.domain.context.layer;
  */
 
 import lombok.extern.slf4j.Slf4j;
-import me.golemcore.bot.domain.context.ContextLayer;
+import me.golemcore.bot.domain.context.ContextLayerLifecycle;
 import me.golemcore.bot.domain.context.ContextLayerResult;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.ToolNames;
@@ -34,16 +34,10 @@ import me.golemcore.bot.domain.model.ToolNames;
  * transitions.
  */
 @Slf4j
-public class HiveLayer implements ContextLayer {
+public class HiveLayer extends AbstractContextLayer {
 
-    @Override
-    public String getName() {
-        return "hive";
-    }
-
-    @Override
-    public int getOrder() {
-        return 75;
+    public HiveLayer() {
+        super("hive", 75, 90, ContextLayerLifecycle.TURN, true);
     }
 
     @Override
@@ -64,10 +58,6 @@ public class HiveLayer implements ContextLayer {
                 + "Do not rely on plain text alone to move Hive card state. "
                 + "`WORK_STARTED` and interruption-driven cancellation are emitted automatically.";
 
-        return ContextLayerResult.builder()
-                .layerName(getName())
-                .content(content)
-                .estimatedTokens(TokenEstimator.estimate(content))
-                .build();
+        return result(content);
     }
 }

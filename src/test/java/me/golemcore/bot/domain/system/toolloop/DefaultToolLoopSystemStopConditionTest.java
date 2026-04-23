@@ -147,7 +147,7 @@ class DefaultToolLoopSystemStopConditionTest extends DefaultToolLoopSystemFixtur
 
     @Test
     void shouldStopWhenMaxLlmCallsReached() {
-        turnSettings.setMaxLlmCalls(2);
+        settings.setMaxLlmCalls(2);
         system = buildSystem();
         AgentContext context = buildContext();
         Message.ToolCall tc = toolCall(TOOL_CALL_ID, TOOL_NAME);
@@ -167,7 +167,7 @@ class DefaultToolLoopSystemStopConditionTest extends DefaultToolLoopSystemFixtur
 
     @Test
     void shouldStopWhenMaxToolExecutionsReached() {
-        turnSettings.setMaxToolExecutions(1);
+        settings.setMaxToolExecutions(1);
         system = buildSystem();
         AgentContext context = buildContext();
         Message.ToolCall tc1 = toolCall(TOOL_CALL_ID, TOOL_NAME);
@@ -187,7 +187,7 @@ class DefaultToolLoopSystemStopConditionTest extends DefaultToolLoopSystemFixtur
 
     @Test
     void shouldSkipDuplicateSyntheticResultsInStopTurn() {
-        turnSettings.setMaxLlmCalls(1);
+        settings.setMaxLlmCalls(1);
         system = buildSystem();
         AgentContext context = buildContext();
         Message.ToolCall tc1 = toolCall(TOOL_CALL_ID, TOOL_NAME);
@@ -211,7 +211,7 @@ class DefaultToolLoopSystemStopConditionTest extends DefaultToolLoopSystemFixtur
 
     @Test
     void shouldReplaceLlmResponseWithCleanResponseOnStop() {
-        turnSettings.setMaxLlmCalls(1);
+        settings.setMaxLlmCalls(1);
         system = buildSystem();
         AgentContext context = buildContext();
         Message.ToolCall tc = toolCall(TOOL_CALL_ID, TOOL_NAME);
@@ -236,7 +236,7 @@ class DefaultToolLoopSystemStopConditionTest extends DefaultToolLoopSystemFixtur
 
     @Test
     void shouldSetToolLoopLimitReachedWhenMaxLlmCallsExhausted() {
-        turnSettings.setMaxLlmCalls(1);
+        settings.setMaxLlmCalls(1);
         system = buildSystem();
         AgentContext context = buildContext();
         Message.ToolCall tc = toolCall(TOOL_CALL_ID, TOOL_NAME);
@@ -257,7 +257,7 @@ class DefaultToolLoopSystemStopConditionTest extends DefaultToolLoopSystemFixtur
 
     @Test
     void shouldSetLimitReasonWhenMaxLlmCallsExhausted() {
-        turnSettings.setMaxLlmCalls(1);
+        settings.setMaxLlmCalls(1);
         system = buildSystem();
         AgentContext context = buildContext();
         Message.ToolCall tc = toolCall(TOOL_CALL_ID, TOOL_NAME);
@@ -277,7 +277,7 @@ class DefaultToolLoopSystemStopConditionTest extends DefaultToolLoopSystemFixtur
 
     @Test
     void shouldSetLimitReasonWhenMaxToolExecutionsExhausted() {
-        turnSettings.setMaxToolExecutions(1);
+        settings.setMaxToolExecutions(1);
         system = buildSystem();
         AgentContext context = buildContext();
         Message.ToolCall tc = toolCall(TOOL_CALL_ID, TOOL_NAME);

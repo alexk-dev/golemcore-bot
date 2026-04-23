@@ -104,6 +104,7 @@ public class RuntimeConfigService {
     private static final boolean DEFAULT_TRACING_CAPTURE_OUTBOUND_PAYLOADS = false;
     private static final boolean DEFAULT_TRACING_CAPTURE_TOOL_PAYLOADS = false;
     private static final boolean DEFAULT_TRACING_CAPTURE_LLM_PAYLOADS = false;
+    private static final double DEFAULT_TRACING_RESILIENCE_PAYLOAD_SAMPLE_RATE = 0.0d;
     private static final int DEFAULT_AUTO_COMPACT_MAX_TOKENS = 50000;
     private static final int DEFAULT_AUTO_COMPACT_KEEP_LAST = 20;
     private static final String DEFAULT_COMPACTION_TRIGGER_MODE = "model_ratio";
@@ -134,8 +135,17 @@ public class RuntimeConfigService {
     private static final boolean DEFAULT_MEMORY_RERANKING_ENABLED = true;
     private static final String DEFAULT_MEMORY_RERANKING_PROFILE = "balanced";
     private static final String DEFAULT_MEMORY_DIAGNOSTICS_VERBOSITY = "basic";
+    private static final int DEFAULT_TURN_MAX_SKILL_TRANSITIONS = 3;
     private static final int DEFAULT_TURN_MAX_LLM_CALLS = 200;
+    private static final int DEFAULT_TOOL_LOOP_MAX_LLM_CALLS = 20;
+    private static final boolean DEFAULT_SESSION_RETENTION_ENABLED = true;
+    private static final Duration DEFAULT_SESSION_RETENTION_MAX_AGE = Duration.ofDays(30);
+    private static final Duration DEFAULT_SESSION_RETENTION_CLEANUP_INTERVAL = Duration.ofHours(24);
+    private static final boolean DEFAULT_SESSION_RETENTION_PROTECT_ACTIVE = true;
+    private static final boolean DEFAULT_SESSION_RETENTION_PROTECT_PLANS = true;
+    private static final boolean DEFAULT_SESSION_RETENTION_PROTECT_DELAYED_ACTIONS = true;
     private static final int DEFAULT_TURN_MAX_TOOL_EXECUTIONS = 500;
+    private static final int DEFAULT_TOOL_LOOP_MAX_TOOL_EXECUTIONS = 80;
     private static final Duration DEFAULT_TURN_DEADLINE = Duration.ofHours(1);
     private static final String DEFAULT_STT_PROVIDER = "golemcore/elevenlabs";
     private static final String DEFAULT_TTS_PROVIDER = "golemcore/elevenlabs";
@@ -399,6 +409,32 @@ public class RuntimeConfigService {
 
     public boolean isResilienceEnabled() {
         Boolean enabled = getResilienceConfig().getEnabled();
+        return enabled != null && enabled;
+    }
+
+    public RuntimeConfig.FollowThroughConfig getFollowThroughConfig() {
+        RuntimeConfig.FollowThroughConfig cfg = getResilienceConfig().getFollowThrough();
+        return cfg != null ? cfg : RuntimeConfig.FollowThroughConfig.builder().build();
+    }
+
+    public boolean isFollowThroughEnabled() {
+        if (!isResilienceEnabled()) {
+            return false;
+        }
+        Boolean enabled = getFollowThroughConfig().getEnabled();
+        return enabled == null || enabled;
+    }
+
+    public RuntimeConfig.AutoProceedConfig getAutoProceedConfig() {
+        RuntimeConfig.AutoProceedConfig cfg = getResilienceConfig().getAutoProceed();
+        return cfg != null ? cfg : RuntimeConfig.AutoProceedConfig.builder().build();
+    }
+
+    public boolean isAutoProceedEnabled() {
+        if (!isResilienceEnabled()) {
+            return false;
+        }
+        Boolean enabled = getAutoProceedConfig().getEnabled();
         return enabled != null && enabled;
     }
 
@@ -1194,6 +1230,18 @@ public class RuntimeConfigService {
         return value != null ? value : DEFAULT_TRACING_CAPTURE_LLM_PAYLOADS;
     }
 
+    public double getTraceResiliencePayloadSampleRate() {
+        RuntimeConfig.TracingConfig tracingConfig = getRuntimeConfig().getTracing();
+        if (tracingConfig == null || tracingConfig.getResiliencePayloadSampleRate() == null) {
+            return DEFAULT_TRACING_RESILIENCE_PAYLOAD_SAMPLE_RATE;
+        }
+        Double value = tracingConfig.getResiliencePayloadSampleRate();
+        if (value.isNaN()) {
+            return DEFAULT_TRACING_RESILIENCE_PAYLOAD_SAMPLE_RATE;
+        }
+        return Math.max(0.0d, Math.min(1.0d, value.doubleValue()));
+    }
+
     // ==================== Rate Limit ====================
 
     public boolean isRateLimitEnabled() {
@@ -1315,6 +1363,15 @@ public class RuntimeConfigService {
 
     // ==================== Turn Budget ====================
 
+    public int getTurnMaxSkillTransitions() {
+        RuntimeConfig.TurnConfig turnConfig = getRuntimeConfig().getTurn();
+        if (turnConfig == null) {
+            return DEFAULT_TURN_MAX_SKILL_TRANSITIONS;
+        }
+        Integer val = turnConfig.getMaxSkillTransitions();
+        return val != null ? val : DEFAULT_TURN_MAX_SKILL_TRANSITIONS;
+    }
+
     public int getTurnMaxLlmCalls() {
         RuntimeConfig.TurnConfig turnConfig = getRuntimeConfig().getTurn();
         if (turnConfig == null) {
@@ -1333,6 +1390,22 @@ public class RuntimeConfigService {
         return val != null ? val : DEFAULT_TURN_MAX_TOOL_EXECUTIONS;
     }
 
+    public int getToolLoopMaxLlmCalls() {
+        RuntimeConfig.ToolLoopConfig toolLoopConfig = getRuntimeConfig().getToolLoop();
+        if (toolLoopConfig != null && toolLoopConfig.getMaxLlmCalls() != null) {
+            return toolLoopConfig.getMaxLlmCalls();
+        }
+        return getTurnMaxLlmCalls();
+    }
+
+    public int getToolLoopMaxToolExecutions() {
+        RuntimeConfig.ToolLoopConfig toolLoopConfig = getRuntimeConfig().getToolLoop();
+        if (toolLoopConfig != null && toolLoopConfig.getMaxToolExecutions() != null) {
+            return toolLoopConfig.getMaxToolExecutions();
+        }
+        return getTurnMaxToolExecutions();
+    }
+
     public Duration getTurnDeadline() {
         RuntimeConfig.TurnConfig turnConfig = getRuntimeConfig().getTurn();
         if (turnConfig == null || turnConfig.getDeadline() == null || turnConfig.getDeadline().isBlank()) {
@@ -1342,6 +1415,73 @@ public class RuntimeConfigService {
             return Duration.parse(turnConfig.getDeadline());
         } catch (DateTimeParseException e) {
             return DEFAULT_TURN_DEADLINE;
+        }
+    }
+
+    public boolean isSessionRetentionEnabled() {
+        return sessionRetentionBoolean(RuntimeConfig.SessionRetentionConfig::getEnabled,
+                DEFAULT_SESSION_RETENTION_ENABLED);
+    }
+
+    public Duration getSessionRetentionMaxAge() {
+        return sessionRetentionDuration(RuntimeConfig.SessionRetentionConfig::getMaxAge,
+                DEFAULT_SESSION_RETENTION_MAX_AGE, "sessionRetention.maxAge");
+    }
+
+    public Duration getSessionRetentionCleanupInterval() {
+        return sessionRetentionDuration(RuntimeConfig.SessionRetentionConfig::getCleanupInterval,
+                DEFAULT_SESSION_RETENTION_CLEANUP_INTERVAL, "sessionRetention.cleanupInterval");
+    }
+
+    public boolean isSessionRetentionProtectActiveSessions() {
+        return sessionRetentionBoolean(RuntimeConfig.SessionRetentionConfig::getProtectActiveSessions,
+                DEFAULT_SESSION_RETENTION_PROTECT_ACTIVE);
+    }
+
+    public boolean isSessionRetentionProtectSessionsWithPlans() {
+        return sessionRetentionBoolean(RuntimeConfig.SessionRetentionConfig::getProtectSessionsWithPlans,
+                DEFAULT_SESSION_RETENTION_PROTECT_PLANS);
+    }
+
+    public boolean isSessionRetentionProtectSessionsWithDelayedActions() {
+        return sessionRetentionBoolean(RuntimeConfig.SessionRetentionConfig::getProtectSessionsWithDelayedActions,
+                DEFAULT_SESSION_RETENTION_PROTECT_DELAYED_ACTIONS);
+    }
+
+    private boolean sessionRetentionBoolean(
+            java.util.function.Function<RuntimeConfig.SessionRetentionConfig, Boolean> getter,
+            boolean defaultValue) {
+        RuntimeConfig.SessionRetentionConfig cfg = getRuntimeConfig().getSessionRetention();
+        if (cfg == null) {
+            return defaultValue;
+        }
+        Boolean val = getter.apply(cfg);
+        return val != null ? val : defaultValue;
+    }
+
+    private Duration sessionRetentionDuration(
+            java.util.function.Function<RuntimeConfig.SessionRetentionConfig, String> getter,
+            Duration defaultValue,
+            String fieldName) {
+        RuntimeConfig.SessionRetentionConfig cfg = getRuntimeConfig().getSessionRetention();
+        if (cfg == null) {
+            return defaultValue;
+        }
+        String raw = getter.apply(cfg);
+        if (raw == null || raw.isBlank()) {
+            return defaultValue;
+        }
+        try {
+            Duration parsed = Duration.parse(raw);
+            if (parsed.isNegative() || parsed.isZero()) {
+                log.warn("Ignoring non-positive duration for {}: {} (falling back to {})", fieldName, raw,
+                        defaultValue);
+                return defaultValue;
+            }
+            return parsed;
+        } catch (DateTimeParseException e) {
+            log.warn("Failed to parse duration for {}: {} (falling back to {})", fieldName, raw, defaultValue);
+            return defaultValue;
         }
     }
 
@@ -1808,6 +1948,11 @@ public class RuntimeConfigService {
         if (cfg.getTracing().getCaptureLlmPayloads() == null) {
             cfg.getTracing().setCaptureLlmPayloads(DEFAULT_TRACING_CAPTURE_LLM_PAYLOADS);
         }
+        Double resiliencePayloadSampleRate = cfg.getTracing().getResiliencePayloadSampleRate();
+        if (resiliencePayloadSampleRate == null || resiliencePayloadSampleRate.isNaN()
+                || resiliencePayloadSampleRate < 0.0d || resiliencePayloadSampleRate > 1.0d) {
+            cfg.getTracing().setResiliencePayloadSampleRate(DEFAULT_TRACING_RESILIENCE_PAYLOAD_SAMPLE_RATE);
+        }
         cfg.getTools().setShellEnvironmentVariables(
                 normalizeShellEnvironmentVariables(cfg.getTools().getShellEnvironmentVariables()));
         if (cfg.getLlm() == null) {
@@ -1841,6 +1986,46 @@ public class RuntimeConfigService {
         }
         if (cfg.getTurn() == null) {
             cfg.setTurn(new RuntimeConfig.TurnConfig());
+        }
+        if (cfg.getToolLoop() == null) {
+            cfg.setToolLoop(new RuntimeConfig.ToolLoopConfig());
+        }
+        Integer maxSkillTransitions = cfg.getTurn().getMaxSkillTransitions();
+        if (maxSkillTransitions == null || maxSkillTransitions < 1) {
+            cfg.getTurn().setMaxSkillTransitions(DEFAULT_TURN_MAX_SKILL_TRANSITIONS);
+        }
+        Integer toolLoopMaxLlmCalls = cfg.getToolLoop().getMaxLlmCalls();
+        if (toolLoopMaxLlmCalls == null || toolLoopMaxLlmCalls < 1) {
+            cfg.getToolLoop().setMaxLlmCalls(DEFAULT_TOOL_LOOP_MAX_LLM_CALLS);
+        }
+        Integer toolLoopMaxToolExecutions = cfg.getToolLoop().getMaxToolExecutions();
+        if (toolLoopMaxToolExecutions == null || toolLoopMaxToolExecutions < 1) {
+            cfg.getToolLoop().setMaxToolExecutions(DEFAULT_TOOL_LOOP_MAX_TOOL_EXECUTIONS);
+        }
+        if (cfg.getSessionRetention() == null) {
+            cfg.setSessionRetention(new RuntimeConfig.SessionRetentionConfig());
+        }
+        if (cfg.getSessionRetention().getEnabled() == null) {
+            cfg.getSessionRetention().setEnabled(DEFAULT_SESSION_RETENTION_ENABLED);
+        }
+        if (cfg.getSessionRetention().getMaxAge() == null || cfg.getSessionRetention().getMaxAge().isBlank()
+                || !isValidDuration(cfg.getSessionRetention().getMaxAge())) {
+            cfg.getSessionRetention().setMaxAge(DEFAULT_SESSION_RETENTION_MAX_AGE.toString());
+        }
+        if (cfg.getSessionRetention().getCleanupInterval() == null
+                || cfg.getSessionRetention().getCleanupInterval().isBlank()
+                || !isValidDuration(cfg.getSessionRetention().getCleanupInterval())) {
+            cfg.getSessionRetention().setCleanupInterval(DEFAULT_SESSION_RETENTION_CLEANUP_INTERVAL.toString());
+        }
+        if (cfg.getSessionRetention().getProtectActiveSessions() == null) {
+            cfg.getSessionRetention().setProtectActiveSessions(DEFAULT_SESSION_RETENTION_PROTECT_ACTIVE);
+        }
+        if (cfg.getSessionRetention().getProtectSessionsWithPlans() == null) {
+            cfg.getSessionRetention().setProtectSessionsWithPlans(DEFAULT_SESSION_RETENTION_PROTECT_PLANS);
+        }
+        if (cfg.getSessionRetention().getProtectSessionsWithDelayedActions() == null) {
+            cfg.getSessionRetention()
+                    .setProtectSessionsWithDelayedActions(DEFAULT_SESSION_RETENTION_PROTECT_DELAYED_ACTIONS);
         }
         if (cfg.getModelRegistry() == null) {
             cfg.setModelRegistry(new RuntimeConfig.ModelRegistryConfig());
@@ -1921,6 +2106,7 @@ public class RuntimeConfigService {
         }
         cfg.getResilience().setDegradationFallbackModelTier(
                 normalizeResilienceFallbackTier(cfg.getResilience().getDegradationFallbackModelTier()));
+        normalizeFollowThroughConfig(cfg.getResilience());
         if (cfg.getHive() == null) {
             cfg.setHive(new RuntimeConfig.HiveConfig());
         }
@@ -2410,6 +2596,30 @@ public class RuntimeConfigService {
         Integer coldRetryMaxAttempts = resilienceConfig.getColdRetryMaxAttempts();
         if (coldRetryMaxAttempts == null || coldRetryMaxAttempts < 1) {
             resilienceConfig.setColdRetryMaxAttempts(defaults.getColdRetryMaxAttempts());
+        }
+    }
+
+    private void normalizeFollowThroughConfig(RuntimeConfig.ResilienceConfig resilienceConfig) {
+        RuntimeConfig.FollowThroughConfig defaults = RuntimeConfig.FollowThroughConfig.builder().build();
+        if (resilienceConfig.getFollowThrough() == null) {
+            resilienceConfig.setFollowThrough(RuntimeConfig.FollowThroughConfig.builder().build());
+        }
+        RuntimeConfig.FollowThroughConfig cfg = resilienceConfig.getFollowThrough();
+        if (cfg.getEnabled() == null) {
+            cfg.setEnabled(defaults.getEnabled());
+        }
+        String tier = ModelTierCatalog.normalizeTierId(cfg.getModelTier());
+        if (tier == null || !ModelTierCatalog.isExplicitSelectableTier(tier)) {
+            tier = defaults.getModelTier();
+        }
+        cfg.setModelTier(tier);
+        Integer timeoutSeconds = cfg.getTimeoutSeconds();
+        if (timeoutSeconds == null || timeoutSeconds < 1) {
+            cfg.setTimeoutSeconds(defaults.getTimeoutSeconds());
+        }
+        Integer maxChainDepth = cfg.getMaxChainDepth();
+        if (maxChainDepth == null || maxChainDepth < 0) {
+            cfg.setMaxChainDepth(defaults.getMaxChainDepth());
         }
     }
 

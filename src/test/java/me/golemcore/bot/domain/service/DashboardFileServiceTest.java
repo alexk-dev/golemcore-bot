@@ -18,6 +18,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.stream.Stream;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -176,6 +177,24 @@ class DashboardFileServiceTest {
                 () -> dashboardFileService.getContent("bad.txt"));
 
         assertTrue(exception.getMessage().contains("valid UTF-8"));
+    }
+
+    @Test
+    void shouldAcceptValidateEditablePathForTextFile() throws IOException {
+        writeTextFile("editable.txt", "hello");
+
+        assertDoesNotThrow(() -> dashboardFileService.validateEditablePath("editable.txt"));
+    }
+
+    @Test
+    void shouldRejectValidateEditablePathForBinaryFile() throws IOException {
+        Path imageFile = workspaceRoot.resolve("image.png");
+        Files.write(imageFile, new byte[] { 0x01, 0x02, 0x03 });
+
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
+                () -> dashboardFileService.validateEditablePath("image.png"));
+
+        assertTrue(exception.getMessage().contains("not editable"));
     }
 
     @Test
@@ -644,6 +663,26 @@ class DashboardFileServiceTest {
         assertEquals("text/plain", uploaded.getMimeType());
         assertTrue(uploaded.isEditable());
         assertTrue(Files.exists(workspaceRoot.resolve("uploads/notes.txt")));
+    }
+
+    @Test
+    void shouldValidateEditablePathForInlineEdit() throws IOException {
+        writeTextFile("src/App.tsx", "export default function App() {}\n");
+
+        dashboardFileService.validateEditablePath("src/App.tsx");
+    }
+
+    @Test
+    void shouldRejectNonEditablePathForInlineEditValidation() throws IOException {
+        byte[] pngBytes = new byte[] { (byte) 0x89, 0x50, 0x4E, 0x47 };
+        Path path = workspaceRoot.resolve("images/logo.png");
+        Files.createDirectories(path.getParent());
+        Files.write(path, pngBytes);
+
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
+                () -> dashboardFileService.validateEditablePath("images/logo.png"));
+
+        assertTrue(exception.getMessage().contains("not editable"));
     }
 
     private static Stream<String> extensionOnlyTextPaths() {

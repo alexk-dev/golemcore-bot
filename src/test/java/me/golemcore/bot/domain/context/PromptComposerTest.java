@@ -2,7 +2,10 @@ package me.golemcore.bot.domain.context;
 
 import org.junit.jupiter.api.Test;
 
+import me.golemcore.bot.domain.context.layer.TokenEstimator;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class PromptComposerTest {
@@ -64,5 +67,166 @@ class PromptComposerTest {
 
         String result = composer.compose(blueprint);
         assertEquals("content", result);
+    }
+
+    @Test
+    void shouldKeepRequiredAndHigherPriorityOptionalLayersWithinBudget() {
+        ContextBlueprint blueprint = ContextBlueprint.create();
+        blueprint.add(ContextLayerResult.builder()
+                .layerName("identity")
+                .content("# Identity")
+                .estimatedTokens(200)
+                .required(true)
+                .priority(100)
+                .build());
+        blueprint.add(ContextLayerResult.builder()
+                .layerName("memory")
+                .content("# Memory")
+                .estimatedTokens(500)
+                .priority(40)
+                .build());
+        blueprint.add(ContextLayerResult.builder()
+                .layerName("tool")
+                .content("# Tools")
+                .estimatedTokens(300)
+                .priority(70)
+                .build());
+
+        String result = composer.compose(blueprint, 500);
+
+        assertTrue(result.contains("# Identity"));
+        assertTrue(result.contains("# Tools"));
+        assertEquals(-1, result.indexOf("# Memory"));
+        assertTrue(result.indexOf("# Identity") < result.indexOf("# Tools"),
+                "selected layers must keep blueprint order");
+    }
+
+    @Test
+    void shouldDropOptionalLayerThatExceedsItsOwnBudget() {
+        ContextBlueprint blueprint = ContextBlueprint.create();
+        blueprint.add(ContextLayerResult.builder()
+                .layerName("identity")
+                .content("# Identity")
+                .estimatedTokens(100)
+                .required(true)
+                .priority(100)
+                .build());
+        blueprint.add(ContextLayerResult.builder()
+                .layerName("rag")
+                .content("# Relevant Memory")
+                .estimatedTokens(600)
+                .priority(90)
+                .tokenBudget(300)
+                .build());
+
+        String result = composer.compose(blueprint, 1_000);
+
+        assertTrue(result.contains("# Identity"));
+        assertEquals(-1, result.indexOf("# Relevant Memory"));
+    }
+
+    @Test
+    void shouldKeepRequiredLayerEvenWhenItExceedsGlobalBudget() {
+        ContextBlueprint blueprint = ContextBlueprint.create();
+        blueprint.add(ContextLayerResult.builder()
+                .layerName("identity")
+                .content("# Identity")
+                .estimatedTokens(2_000)
+                .required(true)
+                .priority(100)
+                .build());
+        blueprint.add(ContextLayerResult.builder()
+                .layerName("memory")
+                .content("# Memory")
+                .estimatedTokens(10)
+                .priority(40)
+                .build());
+
+        String result = composer.compose(blueprint, 100);
+
+        assertTrue(result.contains("# Identity"));
+        assertEquals(-1, result.indexOf("# Memory"));
+    }
+
+    @Test
+    void shouldTruncateRequiredLayerToEnforceHardBudget() {
+        ContextBlueprint blueprint = ContextBlueprint.create();
+        blueprint.add(ContextLayerResult.builder()
+                .layerName("identity")
+                .content("# Identity\n" + "required ".repeat(2_000))
+                .estimatedTokens(2_000)
+                .required(true)
+                .priority(100)
+                .build());
+
+        String result = composer.compose(blueprint, 120);
+
+        assertTrue(TokenEstimator.estimate(result) <= 120);
+        assertTrue(result.contains("Layer truncated by system prompt budget"));
+    }
+
+    @Test
+    void shouldFailFastWhenPinnedUntrimmableLayerExceedsHardBudget() {
+        ContextBlueprint blueprint = ContextBlueprint.create();
+        blueprint.add(ContextLayerResult.builder()
+                .layerName("identity")
+                .content("# Identity\n" + "invariant ".repeat(2_000))
+                .estimatedTokens(2_000)
+                .required(true)
+                .priority(100)
+                .criticality(LayerCriticality.PINNED_UNTRIMMABLE)
+                .build());
+
+        IllegalStateException error = assertThrows(IllegalStateException.class,
+                () -> composer.compose(blueprint, 120));
+
+        assertTrue(error.getMessage().contains("Pinned untrimmable context layer 'identity'"));
+    }
+
+    @Test
+    void shouldKeepFallbackWithinHardBudget() {
+        String result = composer.compose(null, 1);
+
+        assertTrue(TokenEstimator.estimate(result) <= 1);
+    }
+
+    @Test
+    void shouldKeepHighestPriorityLayerWhenBudgetSelectionWouldOtherwiseBeEmpty() {
+        ContextBlueprint blueprint = ContextBlueprint.create();
+        blueprint.add(ContextLayerResult.builder()
+                .layerName("optional")
+                .content("optional ".repeat(1_000))
+                .estimatedTokens(1_000)
+                .priority(10)
+                .tokenBudget(20)
+                .build());
+
+        String result = composer.compose(blueprint, 12);
+
+        assertTrue(TokenEstimator.estimate(result) <= 12);
+        assertTrue(result.contains("optional"));
+    }
+
+    @Test
+    void shouldFailWhenLaterPinnedLayerHasNoRemainingBudget() {
+        ContextBlueprint blueprint = ContextBlueprint.create();
+        blueprint.add(ContextLayerResult.builder()
+                .layerName("required")
+                .content("required ".repeat(80))
+                .estimatedTokens(80)
+                .required(true)
+                .criticality(LayerCriticality.REQUIRED_COMPRESSIBLE)
+                .build());
+        blueprint.add(ContextLayerResult.builder()
+                .layerName(null)
+                .content("# Protocol")
+                .estimatedTokens(10)
+                .criticality(LayerCriticality.PINNED_UNTRIMMABLE)
+                .build());
+
+        IllegalStateException error = assertThrows(IllegalStateException.class,
+                () -> composer.compose(blueprint, 20));
+
+        assertTrue(error.getMessage().contains("unknown"));
     }
 }

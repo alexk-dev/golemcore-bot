@@ -18,6 +18,12 @@ me.golemcore.bot.domain.memory.retrieval.MemoryCandidateScorer
 me.golemcore.bot.domain.memory.retrieval.MemoryCandidateSelector
 me.golemcore.bot.domain.memory.retrieval.MemoryQueryFactory
 me.golemcore.bot.domain.memory.retrieval.MemoryRetrievalPlanner
+me.golemcore.bot.domain.resilience.autoproceed.AutoProceedClassifier
+me.golemcore.bot.domain.resilience.autoproceed.AutoProceedPromptBuilder
+me.golemcore.bot.domain.resilience.autoproceed.AutoProceedVerdictParser
+me.golemcore.bot.domain.resilience.followthrough.FollowThroughClassifier
+me.golemcore.bot.domain.resilience.followthrough.FollowThroughPromptBuilder
+me.golemcore.bot.domain.resilience.followthrough.FollowThroughVerdictParser
 me.golemcore.bot.domain.selfevolving.SelfEvolvingBootstrapOverrideService
 me.golemcore.bot.domain.selfevolving.artifact.ArtifactBundleService
 me.golemcore.bot.domain.selfevolving.artifact.ArtifactDiffProjectionService
@@ -128,9 +134,11 @@ me.golemcore.bot.domain.service.VoiceResponseHandler
 me.golemcore.bot.domain.service.WorkspaceInstructionService
 me.golemcore.bot.domain.service.WorkspacePathService
 me.golemcore.bot.domain.system.AutoCompactionSystem
+me.golemcore.bot.domain.system.AutoProceedSystem
 me.golemcore.bot.domain.system.ContextBuildingSystem
 me.golemcore.bot.domain.system.DynamicTierSystem
 me.golemcore.bot.domain.system.FeedbackGuaranteeSystem
+me.golemcore.bot.domain.system.FollowThroughSystem
 me.golemcore.bot.domain.system.HiveRuntimeEventDispatchSystem
 me.golemcore.bot.domain.system.InputSanitizationSystem
 me.golemcore.bot.domain.system.MemoryPersistSystem

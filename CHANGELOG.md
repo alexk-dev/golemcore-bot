@@ -1,6 +1,10 @@
 # Changelog
 All notable changes to this project will be documented in this file. See [conventional commits](https://www.conventionalcommits.org/) for commit guidelines.
 
+## Unreleased
+#### Features
+- (**auto**) add configurable session retention cleanup for persisted chat sessions
+
 - - -
 ## v0.12.0 - 2026-02-25
 #### Features

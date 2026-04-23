@@ -76,6 +76,12 @@ public class RuntimeConfig {
     private TurnConfig turn = new TurnConfig();
 
     @Builder.Default
+    private ToolLoopConfig toolLoop = new ToolLoopConfig();
+
+    @Builder.Default
+    private SessionRetentionConfig sessionRetention = new SessionRetentionConfig();
+
+    @Builder.Default
     private MemoryConfig memory = new MemoryConfig();
 
     @Builder.Default
@@ -703,6 +709,8 @@ public class RuntimeConfig {
         private Boolean captureToolPayloads = true;
         @Builder.Default
         private Boolean captureLlmPayloads = true;
+        @Builder.Default
+        private Double resiliencePayloadSampleRate = 0.0d;
     }
 
     @Data
@@ -760,7 +768,17 @@ public class RuntimeConfig {
     @Builder
     public static class TurnConfig {
         @Builder.Default
+        private Integer maxSkillTransitions = 3;
+        /**
+         * Legacy location for the internal tool-loop LLM-call budget. Prefer
+         * {@link ToolLoopConfig#maxLlmCalls} for new configuration.
+         */
+        @Builder.Default
         private Integer maxLlmCalls = 200;
+        /**
+         * Legacy location for the internal tool-loop tool-execution budget. Prefer
+         * {@link ToolLoopConfig#maxToolExecutions} for new configuration.
+         */
         @Builder.Default
         private Integer maxToolExecutions = 500;
         @Builder.Default
@@ -787,6 +805,37 @@ public class RuntimeConfig {
         private Integer progressMaxSilenceSeconds = 10;
         @Builder.Default
         private Integer progressSummaryTimeoutMs = 8000;
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    public static class ToolLoopConfig {
+        @Builder.Default
+        private Integer maxLlmCalls = 20;
+        @Builder.Default
+        private Integer maxToolExecutions = 80;
+    }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class SessionRetentionConfig {
+        @Builder.Default
+        private Boolean enabled = true;
+        @Builder.Default
+        private String maxAge = "P30D";
+        @Builder.Default
+        private String cleanupInterval = "PT24H";
+        @Builder.Default
+        private Boolean protectActiveSessions = true;
+        @Builder.Default
+        private Boolean protectSessionsWithPlans = true;
+        @Builder.Default
+        private Boolean protectSessionsWithDelayedActions = true;
     }
 
     @Data
@@ -1359,6 +1408,81 @@ public class RuntimeConfig {
         /** Maximum delayed retry attempts before dead-letter handling. */
         @Builder.Default
         private Integer coldRetryMaxAttempts = 4;
+
+        /**
+         * Follow-through classifier: detects unfulfilled commitments in the assistant
+         * reply and forces a synthetic continuation turn.
+         */
+        @Builder.Default
+        private FollowThroughConfig followThrough = new FollowThroughConfig();
+
+        /**
+         * Auto-Proceed classifier: detects rhetorical "ready to continue?" questions in
+         * the assistant reply and sends a synthetic affirmative user message so the
+         * agent keeps moving without waiting for human input.
+         */
+        @Builder.Default
+        private AutoProceedConfig autoProceed = new AutoProceedConfig();
+    }
+
+    /**
+     * Settings for the follow-through resilience classifier. The classifier
+     * analyses the last assistant reply after the main turn completes and, if the
+     * model committed to a next action but failed to invoke any tool, it schedules
+     * a synthetic "continue" user message to unblock the agent.
+     */
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    public static class FollowThroughConfig {
+        /** Enables the follow-through classifier. Default: on. */
+        @Builder.Default
+        private Boolean enabled = true;
+
+        /** Model tier used for the classifier LLM call. Default: routing. */
+        @Builder.Default
+        private String modelTier = "routing";
+
+        /** Per-call timeout in seconds for the classifier LLM call. */
+        @Builder.Default
+        private Integer timeoutSeconds = 5;
+
+        /** Maximum consecutive follow-through nudges allowed per conversation. */
+        @Builder.Default
+        private Integer maxChainDepth = 1;
+    }
+
+    /**
+     * Settings for the Auto-Proceed resilience classifier. When the assistant
+     * closes its reply with a rhetorical confirmation question that has no
+     * branching alternatives (for example "Ready to continue?", "Shall I
+     * proceed?"), the classifier dispatches a synthetic affirmative user message so
+     * the loop carries on without a human in the loop.
+     *
+     * <p>
+     * Off by default: this is an aggressive driver and must be opted into.
+     */
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    public static class AutoProceedConfig {
+        /** Enables the Auto-Proceed classifier. Default: off. */
+        @Builder.Default
+        private Boolean enabled = false;
+
+        /** Model tier used for the classifier LLM call. Default: routing. */
+        @Builder.Default
+        private String modelTier = "routing";
+
+        /** Per-call timeout in seconds for the classifier LLM call. */
+        @Builder.Default
+        private Integer timeoutSeconds = 5;
+
+        /** Maximum consecutive auto-proceed affirmations allowed per conversation. */
+        @Builder.Default
+        private Integer maxChainDepth = 2;
     }
 
     @Data
@@ -1399,28 +1523,32 @@ public class RuntimeConfig {
                                         "rate-limit",
                                         RateLimitConfig.class), SECURITY("security", SecurityConfig.class), COMPACTION(
                                                 "compaction",
-                                                CompactionConfig.class), TURN("turn", TurnConfig.class), MEMORY(
-                                                        "memory",
-                                                        MemoryConfig.class), SKILLS("skills",
-                                                                SkillsConfig.class), MODEL_REGISTRY(
-                                                                        "model-registry",
-                                                                        ModelRegistryConfig.class), USAGE(
-                                                                                "usage",
-                                                                                UsageConfig.class), TELEMETRY(
-                                                                                        "telemetry",
-                                                                                        TelemetryConfig.class), MCP(
-                                                                                                "mcp",
-                                                                                                McpConfig.class), PLAN(
-                                                                                                        "plan",
-                                                                                                        PlanConfig.class), DELAYED_ACTIONS(
-                                                                                                                "delayed-actions",
-                                                                                                                DelayedActionsConfig.class), HIVE(
-                                                                                                                        "hive",
-                                                                                                                        HiveConfig.class), SELF_EVOLVING(
-                                                                                                                                "self-evolving",
-                                                                                                                                SelfEvolvingConfig.class), RESILIENCE(
-                                                                                                                                        "resilience",
-                                                                                                                                        ResilienceConfig.class);
+                                                CompactionConfig.class), TURN("turn",
+                                                        TurnConfig.class), TOOL_LOOP("tool-loop",
+                                                                ToolLoopConfig.class), SESSION_RETENTION(
+                                                                        "session-retention",
+                                                                        SessionRetentionConfig.class), MEMORY(
+                                                                                "memory",
+                                                                                MemoryConfig.class), SKILLS("skills",
+                                                                                        SkillsConfig.class), MODEL_REGISTRY(
+                                                                                                "model-registry",
+                                                                                                ModelRegistryConfig.class), USAGE(
+                                                                                                        "usage",
+                                                                                                        UsageConfig.class), TELEMETRY(
+                                                                                                                "telemetry",
+                                                                                                                TelemetryConfig.class), MCP(
+                                                                                                                        "mcp",
+                                                                                                                        McpConfig.class), PLAN(
+                                                                                                                                "plan",
+                                                                                                                                PlanConfig.class), DELAYED_ACTIONS(
+                                                                                                                                        "delayed-actions",
+                                                                                                                                        DelayedActionsConfig.class), HIVE(
+                                                                                                                                                "hive",
+                                                                                                                                                HiveConfig.class), SELF_EVOLVING(
+                                                                                                                                                        "self-evolving",
+                                                                                                                                                        SelfEvolvingConfig.class), RESILIENCE(
+                                                                                                                                                                "resilience",
+                                                                                                                                                                ResilienceConfig.class);
 
         private final String fileId;
         private final Class<?> configClass;

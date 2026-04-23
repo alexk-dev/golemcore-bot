@@ -232,10 +232,10 @@ public final class ContextAttributes {
     public static final String TURN_QUEUE_KIND = "turn.queue.kind";
 
     /**
-     * String value for {@link #TURN_QUEUE_KIND}: internal retry after model
+     * String value for {@link #TURN_QUEUE_KIND}: internal model retry after model
      * failure.
      */
-    public static final String TURN_QUEUE_KIND_INTERNAL_RETRY = "internal_retry";
+    public static final String TURN_QUEUE_KIND_INTERNAL_MODEL_RETRY = "internal_model_retry";
 
     /** String value for {@link #TURN_QUEUE_KIND}: prioritize as steering input. */
     public static final String TURN_QUEUE_KIND_STEERING = "steering";
@@ -244,12 +244,47 @@ public final class ContextAttributes {
     public static final String TURN_QUEUE_KIND_FOLLOW_UP = "follow_up";
 
     /** String value for {@link #TURN_QUEUE_KIND}: delayed internal wake-up. */
+    public static final String TURN_QUEUE_KIND_INTERNAL_DELAYED_ACTION = "internal_delayed_action";
+
+    /**
+     * String value for {@link #TURN_QUEUE_KIND}: follow-through continuation that
+     * must yield to real user follow-up.
+     */
+    public static final String TURN_QUEUE_KIND_INTERNAL_FOLLOW_THROUGH = "internal_follow_through";
+
+    /**
+     * String value for {@link #TURN_QUEUE_KIND}: Auto-Proceed continuation that
+     * must yield to real user follow-up.
+     */
+    public static final String TURN_QUEUE_KIND_INTERNAL_AUTO_PROCEED = "internal_auto_proceed";
+
+    /**
+     * Legacy string value for {@link #TURN_QUEUE_KIND}: internal retry after model
+     * failure.
+     */
+    public static final String TURN_QUEUE_KIND_INTERNAL_RETRY = "internal_retry";
+
+    /**
+     * String legacy value for {@link #TURN_QUEUE_KIND}: delayed internal wake-up.
+     */
     public static final String TURN_QUEUE_KIND_DELAYED_ACTION = "delayed_action";
+
+    /**
+     * Legacy string value for {@link #TURN_QUEUE_KIND}: low-priority internal
+     * continuation.
+     */
+    public static final String TURN_QUEUE_KIND_INTERNAL_CONTINUATION = "internal_continuation";
 
     /**
      * Boolean - current turn scheduled an internal retry instead of user feedback.
      */
     public static final String TURN_INTERNAL_RETRY_SCHEDULED = "turn.internal.retry.scheduled";
+
+    /**
+     * Long - latest real non-internal user activity sequence observed for the
+     * session when this message was accepted or scheduled.
+     */
+    public static final String MESSAGE_REAL_USER_ACTIVITY_SEQUENCE = "message.real_user_activity.sequence";
 
     /** Boolean ? message metadata flag for invisible internal messages. */
     public static final String MESSAGE_INTERNAL = "message.internal";
@@ -280,6 +315,44 @@ public final class ContextAttributes {
      * guidance for the current turn.
      */
     public static final String MESSAGE_INTERNAL_KIND_TACTIC_ADVISORY = "tactic_advisory";
+
+    /**
+     * String value for {@link #MESSAGE_INTERNAL_KIND}: follow-through classifier
+     * forced continuation after the assistant committed but did not invoke a tool.
+     */
+    public static final String MESSAGE_INTERNAL_KIND_FOLLOW_THROUGH_NUDGE = "follow_through_nudge";
+
+    /**
+     * Boolean - follow-through classifier scheduled a continuation nudge in the
+     * current turn.
+     */
+    public static final String RESILIENCE_FOLLOW_THROUGH_SCHEDULED = "resilience.follow_through.scheduled";
+
+    /**
+     * Integer - consecutive follow-through nudge chain depth. Incremented each time
+     * a nudge is scheduled; used to enforce the max-chain-depth anti-loop guard.
+     */
+    public static final String RESILIENCE_FOLLOW_THROUGH_CHAIN_DEPTH = "resilience.follow_through.chain_depth";
+
+    /**
+     * String value for {@link #MESSAGE_INTERNAL_KIND}: Auto-Proceed classifier
+     * affirmative reply after the assistant asked a rhetorical confirmation
+     * question.
+     */
+    public static final String MESSAGE_INTERNAL_KIND_AUTO_PROCEED = "auto_proceed";
+
+    /**
+     * Boolean - Auto-Proceed classifier scheduled an affirmative reply in the
+     * current turn.
+     */
+    public static final String RESILIENCE_AUTO_PROCEED_SCHEDULED = "resilience.auto_proceed.scheduled";
+
+    /**
+     * Integer - consecutive Auto-Proceed affirmation chain depth. Incremented each
+     * time an affirmation is scheduled; used to enforce the max-chain-depth
+     * anti-loop guard.
+     */
+    public static final String RESILIENCE_AUTO_PROCEED_CHAIN_DEPTH = "resilience.auto_proceed.chain_depth";
 
     /** Boolean ? current inbound message is an internal runtime-only message. */
     public static final String TURN_INPUT_INTERNAL = "turn.input.internal";
@@ -325,6 +398,34 @@ public final class ContextAttributes {
 
     /** String ? web dashboard client instance id owning the current session. */
     public static final String WEB_CLIENT_INSTANCE_ID = "session.web.client.instance.id";
+
+    /**
+     * {@code List<Map<String,Object>>} - opened IDE tabs forwarded with web chat
+     * turns.
+     */
+    public static final String WEB_OPENED_TABS = "session.web.openedTabs";
+
+    /** String ? active IDE path forwarded with web chat turns. */
+    public static final String WEB_ACTIVE_PATH = "session.web.activePath";
+
+    /** String ? inline editor selection text forwarded with web chat turns. */
+    public static final String WEB_SELECTION_TEXT = "session.web.selection.text";
+
+    /**
+     * Integer ? inline editor selection start offset forwarded with web chat turns.
+     */
+    public static final String WEB_SELECTION_FROM = "session.web.selection.from";
+
+    /**
+     * Integer ? inline editor selection end offset forwarded with web chat turns.
+     */
+    public static final String WEB_SELECTION_TO = "session.web.selection.to";
+
+    /** String ? inline edit instruction requested from the web IDE. */
+    public static final String WEB_INLINE_EDIT_INSTRUCTION = "session.web.inlineEdit.instruction";
+
+    /** String ? file path targeted by the web inline edit flow. */
+    public static final String WEB_INLINE_EDIT_PATH = "session.web.inlineEdit.path";
 
     /** String ? channel type from canonical session identity. */
     public static final String SESSION_IDENTITY_CHANNEL = "session.identity.channel";
@@ -454,6 +555,12 @@ public final class ContextAttributes {
      * diagnostics.
      */
     public static final String LLM_CONTEXT_OVERFLOW_RECOVERY = "llm.context.overflow.recovery";
+
+    /**
+     * {@code Map<String,Object>} - latest request-time context hygiene projection
+     * report.
+     */
+    public static final String CONTEXT_HYGIENE_REPORT = "context.hygiene.report";
 
     /**
      * {@code List<Map<String,Object>>} - per-turn edited file stats for UI hints.

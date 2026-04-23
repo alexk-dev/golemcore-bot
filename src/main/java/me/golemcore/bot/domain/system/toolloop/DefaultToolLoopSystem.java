@@ -247,16 +247,26 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
 
     private int resolveMaxLlmCalls() {
         if (runtimeConfigService != null) {
+            int maxLlmCalls = runtimeConfigService.getToolLoopMaxLlmCalls();
+            if (maxLlmCalls > 0) {
+                return maxLlmCalls;
+            }
             return runtimeConfigService.getTurnMaxLlmCalls();
         }
-        return turnSettings != null ? turnSettings.maxLlmCalls() : 200;
+        return settings != null ? settings.maxLlmCalls()
+                : turnSettings != null ? turnSettings.maxLlmCalls() : 200;
     }
 
     private int resolveMaxToolExecutions() {
         if (runtimeConfigService != null) {
+            int maxToolExecutions = runtimeConfigService.getToolLoopMaxToolExecutions();
+            if (maxToolExecutions > 0) {
+                return maxToolExecutions;
+            }
             return runtimeConfigService.getTurnMaxToolExecutions();
         }
-        return turnSettings != null ? turnSettings.maxToolExecutions() : 500;
+        return settings != null ? settings.maxToolExecutions()
+                : turnSettings != null ? turnSettings.maxToolExecutions() : 500;
     }
 
     private Duration resolveTurnDeadline() {
