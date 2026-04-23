@@ -18,9 +18,8 @@ package me.golemcore.bot.domain.context.layer;
  * Contact: alex@kuleshov.tech
  */
 
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import me.golemcore.bot.domain.context.ContextLayer;
+import me.golemcore.bot.domain.context.ContextLayerLifecycle;
 import me.golemcore.bot.domain.context.ContextLayerResult;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.ContextAttributes;
@@ -36,20 +35,14 @@ import me.golemcore.bot.domain.service.AutoModeService;
  * turn is a reflection/recovery run, an additional preamble is added to guide
  * the LLM toward diagnosing failures.
  */
-@RequiredArgsConstructor
 @Slf4j
-public class AutoModeLayer implements ContextLayer {
+public class AutoModeLayer extends AbstractContextLayer {
 
     private final AutoModeService autoModeService;
 
-    @Override
-    public String getName() {
-        return "auto_mode";
-    }
-
-    @Override
-    public int getOrder() {
-        return 70;
+    public AutoModeLayer(AutoModeService autoModeService) {
+        super("auto_mode", 70, 95, ContextLayerLifecycle.TURN, true);
+        this.autoModeService = autoModeService;
     }
 
     @Override
@@ -73,21 +66,14 @@ public class AutoModeLayer implements ContextLayer {
             sb.append("and propose a concrete alternative strategy for the next run.\n\n");
         }
 
-        String autoContext = autoModeService.buildAutoContext();
-        if (autoContext != null && !autoContext.isBlank()) {
-            sb.append(autoContext);
-        }
+        appendAutoContext(sb, context);
 
         String content = sb.toString().trim();
         if (content.isBlank()) {
-            return ContextLayerResult.empty(getName());
+            return empty();
         }
 
-        return ContextLayerResult.builder()
-                .layerName(getName())
-                .content(content)
-                .estimatedTokens(TokenEstimator.estimate(content))
-                .build();
+        return result(content);
     }
 
     private boolean isAutoModeMessage(AgentContext context) {
@@ -97,6 +83,20 @@ public class AutoModeLayer implements ContextLayer {
         Message last = context.getMessages().get(context.getMessages().size() - 1);
         return last.getMetadata() != null
                 && Boolean.TRUE.equals(last.getMetadata().get(ContextAttributes.AUTO_MODE));
+    }
+
+    private void appendAutoContext(StringBuilder sb, AgentContext context) {
+        try {
+            String autoContext = autoModeService.buildAutoContext(
+                    context.getAttribute(ContextAttributes.AUTO_GOAL_ID),
+                    context.getAttribute(ContextAttributes.AUTO_TASK_ID));
+            if (autoContext != null && !autoContext.isBlank()) {
+                sb.append(autoContext);
+            }
+        } catch (RuntimeException exception) {
+            log.debug("[AutoModeLayer] Auto goal context unavailable; keeping autonomous guidelines only",
+                    exception);
+        }
     }
 
     private boolean isAutoReflectionContext(AgentContext context) {

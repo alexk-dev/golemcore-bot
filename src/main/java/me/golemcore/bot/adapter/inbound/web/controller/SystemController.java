@@ -97,7 +97,9 @@ public class SystemController {
     public Mono<ResponseEntity<Map<String, Object>>> getConfig() {
         Map<String, Object> config = new LinkedHashMap<>();
         config.put("llmProvider", botProperties.getLlm().getProvider());
-        config.put("maxIterations", runtimeConfigService.getTurnMaxLlmCalls());
+        config.put("maxIterations", runtimeConfigService.getTurnMaxSkillTransitions());
+        config.put("toolLoopMaxLlmCalls", runtimeConfigService.getToolLoopMaxLlmCalls());
+        config.put("toolLoopMaxToolExecutions", runtimeConfigService.getToolLoopMaxToolExecutions());
         config.put("voiceEnabled", runtimeConfigService.isVoiceEnabled());
         config.put("ragEnabled", ragPort.isAvailable());
         config.put("planEnabled", runtimeConfigService.isPlanEnabled());

@@ -52,6 +52,8 @@ public class StorageRuntimeConfigPersistenceAdapter implements RuntimeConfigPers
                 RuntimeConfig.CompactionConfig.class, RuntimeConfig.CompactionConfig::new, true);
         RuntimeConfig.TurnConfig turn = loadSection(RuntimeConfig.ConfigSection.TURN,
                 RuntimeConfig.TurnConfig.class, RuntimeConfig.TurnConfig::new, true);
+        RuntimeConfig.ToolLoopConfig toolLoop = loadSection(RuntimeConfig.ConfigSection.TOOL_LOOP,
+                RuntimeConfig.ToolLoopConfig.class, RuntimeConfig.ToolLoopConfig::new, true);
         RuntimeConfig.SessionRetentionConfig sessionRetention = loadSection(
                 RuntimeConfig.ConfigSection.SESSION_RETENTION,
                 RuntimeConfig.SessionRetentionConfig.class, RuntimeConfig.SessionRetentionConfig::new, true);
@@ -94,6 +96,7 @@ public class StorageRuntimeConfigPersistenceAdapter implements RuntimeConfigPers
                 .security(security)
                 .compaction(compaction)
                 .turn(turn)
+                .toolLoop(toolLoop)
                 .sessionRetention(sessionRetention)
                 .memory(memory)
                 .skills(skills)
@@ -135,6 +138,8 @@ public class StorageRuntimeConfigPersistenceAdapter implements RuntimeConfigPers
                 RuntimeConfig.CompactionConfig::new);
         persistSection(RuntimeConfig.ConfigSection.TURN, runtimeConfig.getTurn(),
                 RuntimeConfig.TurnConfig::new);
+        persistSection(RuntimeConfig.ConfigSection.TOOL_LOOP, runtimeConfig.getToolLoop(),
+                RuntimeConfig.ToolLoopConfig::new);
         persistSection(RuntimeConfig.ConfigSection.SESSION_RETENTION, runtimeConfig.getSessionRetention(),
                 RuntimeConfig.SessionRetentionConfig::new);
         persistSection(RuntimeConfig.ConfigSection.MEMORY, runtimeConfig.getMemory(),

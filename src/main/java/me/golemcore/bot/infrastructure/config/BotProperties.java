@@ -189,10 +189,19 @@ public class BotProperties {
 
     @Data
     public static class TurnProperties {
-        /** Max number of internal LLM calls allowed within a single turn. */
+        /** Max number of outer skill-transition iterations allowed within a turn. */
+        private int maxSkillTransitions = 3;
+
+        /**
+         * Legacy alias for the internal tool-loop LLM-call budget. Prefer
+         * bot.tool-loop.max-llm-calls for new configuration.
+         */
         private int maxLlmCalls = 200;
 
-        /** Max number of tool executions allowed within a single turn. */
+        /**
+         * Legacy alias for the internal tool-loop tool-execution budget. Prefer
+         * bot.tool-loop.max-tool-executions for new configuration.
+         */
         private int maxToolExecutions = 500;
 
         /** Max wall-clock time budget for a single turn. Default: 1 hour. */
@@ -205,7 +214,12 @@ public class BotProperties {
     public static class ToolLoopProperties {
 
         // Execution behavior flags that are specific to tool calling.
-        // NOTE: budgets/timeouts moved to bot.turn.*.
+        /** Max number of LLM calls allowed inside the internal tool loop. */
+        private int maxLlmCalls = 20;
+
+        /** Max number of tool executions allowed inside the internal tool loop. */
+        private int maxToolExecutions = 80;
+
         /**
          * If true, stop the internal loop immediately after the first tool failure
          * (ToolResult.success=false).

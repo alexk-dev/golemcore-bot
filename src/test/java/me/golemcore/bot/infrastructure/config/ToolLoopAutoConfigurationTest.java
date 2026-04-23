@@ -18,9 +18,11 @@ import me.golemcore.bot.domain.system.toolloop.ToolExecutorPort;
 import me.golemcore.bot.domain.system.toolloop.ToolFailureRecoveryService;
 import me.golemcore.bot.domain.system.toolloop.ToolLoopSystem;
 import me.golemcore.bot.domain.system.toolloop.ToolCallExecutionServiceToolExecutorAdapter;
+import me.golemcore.bot.domain.system.toolloop.view.ContextBudgetResolver;
+import me.golemcore.bot.domain.system.toolloop.view.ContextWindowProjector;
 import me.golemcore.bot.domain.system.toolloop.view.ConversationViewBuilder;
-import me.golemcore.bot.domain.system.toolloop.view.DefaultConversationViewBuilder;
 import me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker;
+import me.golemcore.bot.domain.system.toolloop.view.HygieneConversationViewBuilder;
 import me.golemcore.bot.domain.system.toolloop.view.ToolMessageMasker;
 import me.golemcore.bot.port.outbound.LlmPort;
 import me.golemcore.bot.port.outbound.UsageTrackingPort;
@@ -56,10 +58,12 @@ class ToolLoopAutoConfigurationTest {
     @Test
     void shouldCreateConversationViewComponents() {
         ToolMessageMasker masker = configuration.toolMessageMasker();
-        ConversationViewBuilder builder = configuration.conversationViewBuilder(masker);
+        ContextWindowProjector projector = mock(ContextWindowProjector.class);
+        ContextBudgetResolver budgetResolver = mock(ContextBudgetResolver.class);
+        ConversationViewBuilder builder = configuration.conversationViewBuilder(masker, projector, budgetResolver);
 
         assertInstanceOf(FlatteningToolMessageMasker.class, masker);
-        assertInstanceOf(DefaultConversationViewBuilder.class, builder);
+        assertInstanceOf(HygieneConversationViewBuilder.class, builder);
     }
 
     @Test

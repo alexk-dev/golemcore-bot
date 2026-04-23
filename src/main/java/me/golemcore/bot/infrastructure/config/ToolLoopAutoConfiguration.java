@@ -19,9 +19,15 @@ import me.golemcore.bot.domain.system.toolloop.ToolExecutorPort;
 import me.golemcore.bot.domain.system.toolloop.ToolFailureRecoveryService;
 import me.golemcore.bot.domain.system.toolloop.ToolLoopSystem;
 import me.golemcore.bot.domain.system.toolloop.UsageTrackingLlmPortDecorator;
+import me.golemcore.bot.domain.system.toolloop.view.ContextBudgetResolver;
+import me.golemcore.bot.domain.system.toolloop.view.ContextGarbagePolicy;
+import me.golemcore.bot.domain.system.toolloop.view.ContextWindowProjector;
 import me.golemcore.bot.domain.system.toolloop.view.ConversationViewBuilder;
+import me.golemcore.bot.domain.system.toolloop.view.DefaultContextBudgetResolver;
+import me.golemcore.bot.domain.system.toolloop.view.DefaultContextWindowProjector;
 import me.golemcore.bot.domain.system.toolloop.view.DefaultConversationViewBuilder;
 import me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker;
+import me.golemcore.bot.domain.system.toolloop.view.HygieneConversationViewBuilder;
 import me.golemcore.bot.domain.system.toolloop.view.ToolMessageMasker;
 import me.golemcore.bot.domain.system.toolloop.resilience.LlmResilienceOrchestrator;
 import me.golemcore.bot.port.outbound.LlmPort;
@@ -56,8 +62,28 @@ public class ToolLoopAutoConfiguration {
     }
 
     @Bean
-    public ConversationViewBuilder conversationViewBuilder(ToolMessageMasker toolMessageMasker) {
-        return new DefaultConversationViewBuilder(toolMessageMasker);
+    public ContextGarbagePolicy contextGarbagePolicy() {
+        return new ContextGarbagePolicy();
+    }
+
+    @Bean
+    public ContextWindowProjector contextWindowProjector(ContextTokenEstimator contextTokenEstimator,
+            ContextGarbagePolicy contextGarbagePolicy) {
+        return new DefaultContextWindowProjector(contextTokenEstimator, contextGarbagePolicy);
+    }
+
+    @Bean
+    public ContextBudgetResolver contextBudgetResolver(ContextCompactionPolicy contextCompactionPolicy) {
+        return new DefaultContextBudgetResolver(contextCompactionPolicy);
+    }
+
+    @Bean
+    public ConversationViewBuilder conversationViewBuilder(ToolMessageMasker toolMessageMasker,
+            ContextWindowProjector contextWindowProjector, ContextBudgetResolver contextBudgetResolver) {
+        return new HygieneConversationViewBuilder(
+                new DefaultConversationViewBuilder(toolMessageMasker),
+                contextWindowProjector,
+                contextBudgetResolver);
     }
 
     @Bean

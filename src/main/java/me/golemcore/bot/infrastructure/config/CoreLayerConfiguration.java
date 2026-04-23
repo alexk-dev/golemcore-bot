@@ -6,7 +6,9 @@ import me.golemcore.bot.application.update.UpdateService;
 import me.golemcore.bot.domain.service.AutoModeMigrationService;
 import me.golemcore.bot.domain.loop.AgentLoop;
 import me.golemcore.bot.domain.service.ContextCompactionPolicy;
+import me.golemcore.bot.domain.service.ContextHygieneService;
 import me.golemcore.bot.domain.service.ContextTokenEstimator;
+import me.golemcore.bot.domain.service.DefaultContextHygieneService;
 import me.golemcore.bot.domain.service.ModelSelectionService;
 import me.golemcore.bot.domain.service.PlanService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
@@ -97,7 +99,8 @@ public class CoreLayerConfiguration {
             UserPreferencesService preferencesService,
             LlmPort llmPort,
             Clock clock,
-            TraceService traceService) {
+            TraceService traceService,
+            ContextHygieneService contextHygieneService) {
         return new AgentLoop(
                 sessionService,
                 rateLimiter,
@@ -107,7 +110,13 @@ public class CoreLayerConfiguration {
                 preferencesService,
                 llmPort,
                 clock,
-                traceService);
+                traceService,
+                contextHygieneService);
+    }
+
+    @Bean
+    ContextHygieneService contextHygieneService() {
+        return new DefaultContextHygieneService();
     }
 
     @Bean

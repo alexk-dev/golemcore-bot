@@ -494,6 +494,7 @@ class LlmCallPhase {
                     appendRequestContextEvent(context, llmSpan, requestContextAttributes);
                     LlmRequest request = buildRequestWithPreflight(context,
                             llmSpan != null ? llmSpan : context.getTraceContext(), selection, attempt);
+                    emitContextHygieneEvent(context, selection, attempt, request);
                     captureLlmSnapshot(context, llmSpan, tracingConfig, "request", request);
                     try (MdcSupport.Scope ignored = MdcSupport.withContext(buildTraceMdcContext(llmSpan, context))) {
                         LlmResponse response = llmPort.chat(request).get();
@@ -646,6 +647,28 @@ class LlmCallPhase {
                         .traceRootKind(traceContext != null ? traceContext.getRootKind() : null)
                         .modelTier(normalizeTierForTrace(context.getModelTier()))
                         .build();
+            }
+
+            private void emitContextHygieneEvent(AgentContext context,
+                    ModelSelectionService.ModelSelection selection, int attempt, LlmRequest request) {
+                if (context == null) {
+                    return;
+                }
+                Map<String, Object> hygieneReport = context.getAttribute(ContextAttributes.CONTEXT_HYGIENE_REPORT);
+                if (hygieneReport == null || hygieneReport.isEmpty()) {
+                    return;
+                }
+                Map<String, Object> payload = new LinkedHashMap<>();
+                payload.put("attempt", attempt);
+                if (selection != null && selection.model() != null && !selection.model().isBlank()) {
+                    payload.put("model", selection.model());
+                }
+                if (request != null) {
+                    payload.put("messageCount", request.getMessages() != null ? request.getMessages().size() : 0);
+                    payload.put("toolCount", request.getTools() != null ? request.getTools().size() : 0);
+                }
+                payload.put("contextHygiene", new LinkedHashMap<>(hygieneReport));
+                emitRuntimeEvent(context, RuntimeEventType.CONTEXT_HYGIENE, payload);
             }
 
             private Map<String, Object> buildRequestContextAttributes(AgentContext context,
