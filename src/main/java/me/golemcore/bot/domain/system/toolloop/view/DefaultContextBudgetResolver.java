@@ -64,7 +64,6 @@ public class DefaultContextBudgetResolver implements ContextBudgetResolver {
         if (availableForConversation < MIN_CONVERSATION_TOKENS) {
             return Math.max(1, availableForConversation);
         }
-        return Math.max(MIN_CONVERSATION_TOKENS,
-                Math.min(availableForConversation, proportionalConversation));
+        return Math.clamp(proportionalConversation, MIN_CONVERSATION_TOKENS, availableForConversation);
     }
 }

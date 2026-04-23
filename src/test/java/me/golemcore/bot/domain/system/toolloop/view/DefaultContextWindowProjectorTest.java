@@ -249,9 +249,10 @@ class DefaultContextWindowProjectorTest {
                 .systemPrompt("system")
                 .build();
         ContextBudget impossibleBudget = new ContextBudget(32, 8, 1, 1);
+        ConversationView rawView = ConversationView.ofMessages(rawMessages);
 
         assertThrows(ContextWindowBudgetExceededException.class,
-                () -> projector.project(context, ConversationView.ofMessages(rawMessages), impossibleBudget));
+                () -> projector.project(context, rawView, impossibleBudget));
         assertEquals(largeHtml(), rawMessages.get(2).getContent(),
                 "raw session history must not be mutated even when projection fails");
         assertFalse(context.getAttributes().containsKey(ContextAttributes.CONTEXT_HYGIENE_REPORT));

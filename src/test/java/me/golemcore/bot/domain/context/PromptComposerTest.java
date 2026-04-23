@@ -189,4 +189,44 @@ class PromptComposerTest {
 
         assertTrue(TokenEstimator.estimate(result) <= 1);
     }
+
+    @Test
+    void shouldKeepHighestPriorityLayerWhenBudgetSelectionWouldOtherwiseBeEmpty() {
+        ContextBlueprint blueprint = ContextBlueprint.create();
+        blueprint.add(ContextLayerResult.builder()
+                .layerName("optional")
+                .content("optional ".repeat(1_000))
+                .estimatedTokens(1_000)
+                .priority(10)
+                .tokenBudget(20)
+                .build());
+
+        String result = composer.compose(blueprint, 12);
+
+        assertTrue(TokenEstimator.estimate(result) <= 12);
+        assertTrue(result.contains("optional"));
+    }
+
+    @Test
+    void shouldFailWhenLaterPinnedLayerHasNoRemainingBudget() {
+        ContextBlueprint blueprint = ContextBlueprint.create();
+        blueprint.add(ContextLayerResult.builder()
+                .layerName("required")
+                .content("required ".repeat(80))
+                .estimatedTokens(80)
+                .required(true)
+                .criticality(LayerCriticality.REQUIRED_COMPRESSIBLE)
+                .build());
+        blueprint.add(ContextLayerResult.builder()
+                .layerName(null)
+                .content("# Protocol")
+                .estimatedTokens(10)
+                .criticality(LayerCriticality.PINNED_UNTRIMMABLE)
+                .build());
+
+        IllegalStateException error = assertThrows(IllegalStateException.class,
+                () -> composer.compose(blueprint, 20));
+
+        assertTrue(error.getMessage().contains("unknown"));
+    }
 }
