@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Builds a local native distribution bundle around RuntimeLauncher and the
+# Builds a local native distribution bundle around RuntimeCliLauncher and the
 # executable bot jar produced by Maven. The resulting archive mirrors the
 # layout shipped by GitHub Releases.
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -11,7 +11,7 @@ BUILD_DIR="${NATIVE_DIST_DIR}/build"
 JPACKAGE_INPUT_DIR="${BUILD_DIR}/jpackage-input"
 APP_IMAGE_OUTPUT_DIR="${BUILD_DIR}/app-image"
 APP_NAME="golemcore-bot"
-LAUNCHER_MAIN_CLASS="me.golemcore.bot.launcher.RuntimeLauncher"
+LAUNCHER_MAIN_CLASS="me.golemcore.bot.launcher.RuntimeCliLauncher"
 
 # The native bundle relies on jpackage because it produces an app-image with
 # platform-specific launchers while still allowing us to ship the real runtime jar.
@@ -20,7 +20,7 @@ if ! command -v jpackage >/dev/null 2>&1; then
   exit 1
 fi
 
-# The release jar is the actual Spring Boot runtime that RuntimeLauncher should
+# The release jar is the actual Spring Boot runtime that RuntimeCliLauncher should
 # restart into after an update.
 RUNTIME_JAR_PATH="$(find "${TARGET_DIR}" -maxdepth 1 -type f -name 'bot-*-exec.jar' | sort | head -n 1)"
 if [[ -z "${RUNTIME_JAR_PATH}" ]]; then
@@ -31,7 +31,7 @@ fi
 # The launcher classes are packaged separately so jpackage can bootstrap the
 # app-image with the lightweight restart-aware entry point.
 if [[ ! -d "${TARGET_DIR}/classes/me/golemcore/bot/launcher" ]]; then
-  echo "RuntimeLauncher classes not found in target/classes. Run ./mvnw clean package first." >&2
+  echo "Launcher classes not found in target/classes. Run ./mvnw clean package first." >&2
   exit 1
 fi
 if [[ ! -d "${TARGET_DIR}/classes/me/golemcore/bot/runtime" ]]; then

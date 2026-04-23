@@ -259,7 +259,7 @@ If you want to make the handoff explicit, use `--`:
 
 ### How the launcher behaves
 
-The native bundle wraps `RuntimeLauncher`, which resolves runtime in this order:
+The native bundle wraps the strict CLI launcher entrypoint, which resolves runtime in this order:
 
 1. staged update selected by `updates/current.txt`
 2. bundled runtime jar from the app-image under `lib/runtime/`

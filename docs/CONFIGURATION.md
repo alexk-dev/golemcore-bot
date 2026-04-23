@@ -855,7 +855,7 @@ Configurable properties:
 
 ### Local native bundle runtime resolution
 
-When the app starts through the native app-image launcher, `RuntimeLauncher` can also use:
+When the app starts through the native app-image launcher, the CLI launcher can also use:
 
 - `GOLEMCORE_BUNDLED_JAR`
 - `golemcore.launcher.bundled-jar`

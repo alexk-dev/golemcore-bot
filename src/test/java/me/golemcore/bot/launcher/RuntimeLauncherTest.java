@@ -18,6 +18,7 @@ import java.util.Map;
 import java.util.Properties;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertIterableEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -700,6 +701,15 @@ class RuntimeLauncherTest {
         assertTrue(processStarter.commands().isEmpty());
         assertTrue(output.errorMessages().stream()
                 .anyMatch(message -> message.contains("Missing command")));
+    }
+
+    @Test
+    void legacyEntrypointShouldDefaultToWebCommand() {
+        assertArrayEquals(new String[] { "web" }, RuntimeLauncher.legacyEntrypointArguments(new String[0]));
+        assertArrayEquals(new String[] { "web", "--server.port=9090" },
+                RuntimeLauncher.legacyEntrypointArguments(new String[] { "--server.port=9090" }));
+        assertArrayEquals(new String[] { "web", "--port=8080" },
+                RuntimeLauncher.legacyEntrypointArguments(new String[] { "web", "--port=8080" }));
     }
 
     @Test

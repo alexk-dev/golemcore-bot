@@ -363,6 +363,50 @@ jobs:
             -Djib.to.auth.username=${{ github.actor }} \
             -Djib.to.auth.password=${{ secrets.GITHUB_TOKEN }}
 
+      - name: Log in to GHCR for smoke test
+        if: matrix.arch == 'amd64'
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Smoke test app image default command
+        if: matrix.arch == 'amd64'
+        run: |
+          set -euo pipefail
+          image="${{ steps.tags.outputs.app-image }}"
+          container_name="golemcore-bot-smoke-${{ github.run_id }}-${{ github.run_attempt }}"
+
+          cleanup() {
+            docker logs "${container_name}" || true
+            docker rm -f "${container_name}" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+
+          docker run -d \
+            --name "${container_name}" \
+            --shm-size=256m \
+            -e STORAGE_PATH=/app/workspace \
+            -e TOOLS_WORKSPACE=/app/sandbox \
+            -p 18080:8080 \
+            "${image}"
+
+          for attempt in {1..60}; do
+            if curl -fsS http://127.0.0.1:18080/api/system/health >/tmp/golemcore-health.json; then
+              cat /tmp/golemcore-health.json
+              exit 0
+            fi
+            if ! docker ps --format '{{.Names}}' | grep -Fxq "${container_name}"; then
+              echo "Container exited before health check passed." >&2
+              exit 1
+            fi
+            sleep 2
+          done
+
+          echo "Timed out waiting for app image health endpoint." >&2
+          exit 1
+
   # ── Stitch multiarch manifest ────────────────────────────────────────────
   create-manifest:
     name: Multiarch Manifest

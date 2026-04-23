@@ -27,9 +27,10 @@ import picocli.CommandLine;
  * </ol>
  *
  * <p>
- * The native app-image entry point uses picocli so the local launcher can
- * document its own options while forwarding unknown arguments to the spawned
- * Spring Boot runtime.
+ * {@link RuntimeCliLauncher} exposes the strict picocli CLI entrypoint. This
+ * class keeps the legacy main entrypoint used by older Docker images and
+ * defaults it to the {@code web} command before launching the same runtime
+ * loop.
  */
 public final class RuntimeLauncher {
 
@@ -128,10 +129,22 @@ public final class RuntimeLauncher {
 
     public static void main(String[] args) {
         RuntimeLauncher launcher = new RuntimeLauncher();
-        int exitCode = launcher.run(args);
+        int exitCode = launcher.run(legacyEntrypointArguments(args));
         if (exitCode != 0) {
             System.exit(exitCode);
         }
+    }
+
+    static String[] legacyEntrypointArguments(String[] args) {
+        if (args != null && args.length > 0 && "web".equals(args[0])) {
+            return args;
+        }
+        String[] normalizedArgs = new String[(args == null ? 0 : args.length) + 1];
+        normalizedArgs[0] = "web";
+        if (args != null && args.length > 0) {
+            System.arraycopy(args, 0, normalizedArgs, 1, args.length);
+        }
+        return normalizedArgs;
     }
 
     /**

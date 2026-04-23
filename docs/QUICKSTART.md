@@ -186,7 +186,7 @@ If you want to make the separation explicit, use `--`:
 
 ### 6. What the launcher does
 
-The local launcher uses `RuntimeLauncher` and starts runtime in this order:
+The local launcher uses the strict CLI entrypoint and starts runtime in this order:
 
 1. staged jar selected through `updates/current.txt`
 2. bundled runtime jar from the app-image
