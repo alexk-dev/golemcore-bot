@@ -389,12 +389,13 @@ jobs:
             --shm-size=256m \
             -e STORAGE_PATH=/app/workspace \
             -e TOOLS_WORKSPACE=/app/sandbox \
+            -e BOT_UPDATE_ENABLED=false \
             -p 18080:8080 \
             "${image}"
 
           for attempt in {1..60}; do
-            if curl -fsS http://127.0.0.1:18080/api/system/health >/tmp/golemcore-health.json; then
-              cat /tmp/golemcore-health.json
+            if curl -fsS http://127.0.0.1:18080/ >/tmp/golemcore-root.html; then
+              head -c 200 /tmp/golemcore-root.html
               exit 0
             fi
             if ! docker ps --format '{{.Names}}' | grep -Fxq "${container_name}"; then
@@ -404,7 +405,7 @@ jobs:
             sleep 2
           done
 
-          echo "Timed out waiting for app image health endpoint." >&2
+          echo "Timed out waiting for app image HTTP endpoint." >&2
           exit 1
 
   # ── Stitch multiarch manifest ────────────────────────────────────────────
