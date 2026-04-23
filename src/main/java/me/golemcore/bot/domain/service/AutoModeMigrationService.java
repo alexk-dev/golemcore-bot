@@ -70,7 +70,13 @@ public class AutoModeMigrationService {
                 return;
             }
 
-            List<Goal> legacyGoals = loadLegacyGoals();
+            LegacyGoalsLoadResult legacyGoalsLoadResult = loadLegacyGoals();
+            if (legacyGoalsLoadResult.failed()) {
+                log.info("[AutoModeMigration] Legacy goals are temporarily unavailable; deferring migration");
+                return;
+            }
+
+            List<Goal> legacyGoals = legacyGoalsLoadResult.goals();
             List<ScheduleEntry> schedules = schedulePersistencePort.loadSchedules();
 
             boolean goalsMigrationComplete = migrateLegacyGoalsToLatestSession(legacyGoals);
@@ -88,17 +94,17 @@ public class AutoModeMigrationService {
         }
     }
 
-    private List<Goal> loadLegacyGoals() {
+    private LegacyGoalsLoadResult loadLegacyGoals() {
         try {
             String json = storagePort.getText(AUTO_DIR, LEGACY_GOALS_FILE).join();
             if (json == null || json.isBlank()) {
-                return new ArrayList<>();
+                return new LegacyGoalsLoadResult(new ArrayList<>(), false);
             }
             List<Goal> goals = objectMapper.readValue(json, GOAL_LIST_TYPE_REF);
-            return goals != null ? new ArrayList<>(goals) : new ArrayList<>();
+            return new LegacyGoalsLoadResult(goals != null ? new ArrayList<>(goals) : new ArrayList<>(), false);
         } catch (IOException | RuntimeException exception) { // NOSONAR
             log.debug("[AutoModeMigration] Failed to load legacy goals: {}", exception.getMessage());
-            return new ArrayList<>();
+            return new LegacyGoalsLoadResult(new ArrayList<>(), true);
         }
     }
 
@@ -131,15 +137,58 @@ public class AutoModeMigrationService {
             if (existingGoal == null || existingGoal.getId() == null) {
                 continue;
             }
-            goalsById.put(existingGoal.getId(), existingGoal);
+            goalsById.put(existingGoal.getId(), deepCopyGoal(existingGoal));
         }
         for (Goal migratedGoal : migratedGoals) {
             if (migratedGoal == null || migratedGoal.getId() == null) {
                 continue;
             }
-            goalsById.putIfAbsent(migratedGoal.getId(), migratedGoal);
+            Goal existingGoal = goalsById.get(migratedGoal.getId());
+            if (existingGoal == null) {
+                goalsById.put(migratedGoal.getId(), migratedGoal);
+                continue;
+            }
+            goalsById.put(migratedGoal.getId(), mergeGoal(existingGoal, migratedGoal, sessionId));
         }
         return new ArrayList<>(goalsById.values());
+    }
+
+    private Goal mergeGoal(Goal existingGoal, Goal migratedGoal, String sessionId) {
+        Goal mergedGoal = deepCopyGoal(existingGoal);
+        mergedGoal.setSessionId(sessionId);
+        if (existingGoal.isSystemInbox() || migratedGoal.isSystemInbox() || "inbox".equals(migratedGoal.getId())) {
+            mergedGoal.setSystemInbox(true);
+        }
+        mergedGoal.setTasks(mergeTasks(existingGoal.getTasks(), migratedGoal.getTasks(), mergedGoal.getId()));
+        return mergedGoal;
+    }
+
+    private List<AutoTask> mergeTasks(List<AutoTask> existingTasks, List<AutoTask> migratedTasks, String goalId) {
+        Map<String, AutoTask> tasksById = new LinkedHashMap<>();
+        addTasks(tasksById, existingTasks, goalId, false);
+        addTasks(tasksById, migratedTasks, goalId, true);
+        return new ArrayList<>(tasksById.values());
+    }
+
+    private void addTasks(
+            Map<String, AutoTask> tasksById,
+            List<AutoTask> tasks,
+            String goalId,
+            boolean appendOnly) {
+        if (tasks == null || tasks.isEmpty()) {
+            return;
+        }
+        for (AutoTask task : tasks) {
+            if (task == null || task.getId() == null) {
+                continue;
+            }
+            if (appendOnly && tasksById.containsKey(task.getId())) {
+                continue;
+            }
+            AutoTask taskCopy = deepCopyTask(task);
+            taskCopy.setGoalId(goalId);
+            tasksById.put(taskCopy.getId(), taskCopy);
+        }
     }
 
     private void migrateScheduledTargets(List<Goal> legacyGoals, List<ScheduleEntry> schedules) {
@@ -249,9 +298,20 @@ public class AutoModeMigrationService {
         }
     }
 
+    private AutoTask deepCopyTask(AutoTask task) {
+        try {
+            return objectMapper.readValue(objectMapper.writeValueAsBytes(task), AutoTask.class);
+        } catch (IOException exception) {
+            throw new IllegalStateException("Failed to clone task during migration", exception);
+        }
+    }
+
     private record LegacyTargetIndex(
             Map<String, Goal> goalById,
             Map<String, AutoTask> taskById,
             Map<String, Goal> taskGoalById) {
+    }
+
+    private record LegacyGoalsLoadResult(List<Goal> goals, boolean failed) {
     }
 }

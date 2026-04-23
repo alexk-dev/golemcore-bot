@@ -3,6 +3,7 @@ package me.golemcore.bot.domain.service;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -113,6 +114,21 @@ class AutoModeMigrationServiceTest {
     }
 
     @Test
+    void shouldNotWriteMigrationMarkerWhenLegacyGoalsCannotBeLoaded() {
+        when(sessionPort.listAll()).thenReturn(List.of(
+                session("web-1", ChannelTypes.WEB, Instant.parse("2026-02-01T00:00:00Z"))));
+        when(storagePort.getText(eq("auto"), eq("goals.json")))
+                .thenReturn(CompletableFuture.failedFuture(new RuntimeException("storage unavailable")));
+
+        migrationService.migrateIfNeeded();
+
+        verify(sessionScopedGoalService, never()).replaceGoals(anyString(), any());
+        verify(schedulePersistencePort, never()).saveSchedules(any());
+        verify(storagePort, never()).putText(eq("auto"), eq("goals-session-migration.marker"), anyString());
+        assertTrue(persistentScheduledTaskService.getScheduledTasks().isEmpty());
+    }
+
+    @Test
     void shouldMergeLegacyGoalsIntoExistingSessionGoalsInsteadOfReplacingThem() {
         Goal existingGoal = Goal.builder()
                 .id("existing-goal")
@@ -130,6 +146,46 @@ class AutoModeMigrationServiceTest {
         List<Goal> mergedGoals = goalsCaptor.getValue();
         assertEquals(List.of("existing-goal", "goal-1"), mergedGoals.stream().map(Goal::getId).toList());
         assertEquals("web-1", mergedGoals.get(1).getSessionId());
+    }
+
+    @Test
+    void shouldMergeLegacyInboxTasksIntoExistingInboxGoal() throws Exception {
+        AutoTask existingTask = AutoTask.builder()
+                .id("task-existing")
+                .title("Existing task")
+                .build();
+        Goal existingInbox = Goal.builder()
+                .id("inbox")
+                .sessionId("web-1")
+                .title("Inbox")
+                .systemInbox(true)
+                .tasks(new ArrayList<>(List.of(existingTask)))
+                .build();
+        AutoTask migratedTask = AutoTask.builder()
+                .id("task-migrated")
+                .title("Migrated task")
+                .build();
+        legacyGoalsJson = objectMapper.writeValueAsString(List.of(Goal.builder()
+                .id("inbox")
+                .title("Inbox")
+                .tasks(new ArrayList<>(List.of(migratedTask)))
+                .build()));
+        when(schedulePersistencePort.loadSchedules()).thenReturn(List.of());
+        when(sessionPort.listAll()).thenReturn(List.of(
+                session("web-1", ChannelTypes.WEB, Instant.parse("2026-02-01T00:00:00Z"))));
+        when(sessionScopedGoalService.getGoals("web-1")).thenReturn(new ArrayList<>(List.of(existingInbox)));
+
+        migrationService.migrateIfNeeded();
+
+        ArgumentCaptor<List<Goal>> goalsCaptor = ArgumentCaptor.captor();
+        verify(sessionScopedGoalService).replaceGoals(eq("web-1"), goalsCaptor.capture());
+        Goal inbox = goalsCaptor.getValue().stream()
+                .filter(goal -> "inbox".equals(goal.getId()))
+                .findFirst()
+                .orElseThrow();
+        assertEquals(List.of("task-existing", "task-migrated"),
+                inbox.getTasks().stream().map(AutoTask::getId).toList());
+        assertTrue(inbox.isSystemInbox());
     }
 
     @Test

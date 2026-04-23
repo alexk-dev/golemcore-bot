@@ -74,10 +74,19 @@ public class ScheduledRunMessageFactory {
             case TASK -> buildTaskMessage(schedule.getTargetId());
             };
         } catch (IllegalStateException exception) {
+            if (schedule.getType() == ScheduleEntry.ScheduleType.SCHEDULED_TASK
+                    || !isMissingSessionContext(exception)) {
+                throw exception;
+            }
             log.warn("[ScheduledRunMessageFactory] Cannot build {} schedule {} without session context: {}",
                     schedule.getType(), schedule.getId(), exception.getMessage());
             return Optional.empty();
         }
+    }
+
+    private static boolean isMissingSessionContext(IllegalStateException exception) {
+        return exception.getMessage() != null
+                && exception.getMessage().contains("No current session available");
     }
 
     public Optional<ScheduledRunMessage> buildReflectionMessage(ScheduledRunMessage source, String scheduleId) {

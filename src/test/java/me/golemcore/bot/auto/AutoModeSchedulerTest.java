@@ -195,6 +195,49 @@ class AutoModeSchedulerTest {
     }
 
     @Test
+    void shouldRunOnlyOneSchedulePerScheduledTaskInSingleTickAfterSuccess() {
+        when(autoModeService.isAutoModeEnabled()).thenReturn(true);
+        ScheduledTask task = ScheduledTask.builder()
+                .id("scheduled-task-1")
+                .title("Nightly cleanup")
+                .executionMode(ScheduledTask.ExecutionMode.AGENT_PROMPT)
+                .prompt("cleanup")
+                .build();
+        when(autoModeService.getScheduledTask("scheduled-task-1")).thenReturn(Optional.of(task));
+
+        ScheduleEntry first = ScheduleEntry.builder()
+                .id("sched-1")
+                .type(ScheduleEntry.ScheduleType.SCHEDULED_TASK)
+                .targetId("scheduled-task-1")
+                .cronExpression(TEST_CRON)
+                .enabled(true)
+                .build();
+        ScheduleEntry second = ScheduleEntry.builder()
+                .id("sched-2")
+                .type(ScheduleEntry.ScheduleType.SCHEDULED_TASK)
+                .targetId("scheduled-task-1")
+                .cronExpression(TEST_CRON)
+                .enabled(true)
+                .build();
+        when(scheduleService.getDueSchedules())
+                .thenReturn(List.of(first, second))
+                .thenReturn(List.of(first, second))
+                .thenReturn(List.of());
+        when(sessionRunCoordinator.submit(any(Message.class))).thenAnswer(invocation -> {
+            Message message = invocation.getArgument(0);
+            message.getMetadata().put(ContextAttributes.AUTO_RUN_STATUS, "SUCCESS");
+            message.getMetadata().put(ContextAttributes.AUTO_RUN_ASSISTANT_TEXT, "done");
+            return CompletableFuture.completedFuture(null);
+        });
+
+        scheduler.tick();
+
+        verify(sessionRunCoordinator, times(1)).submit(any(Message.class));
+        verify(scheduleService).recordExecution("sched-1");
+        verify(scheduleService, never()).recordExecution("sched-2");
+    }
+
+    @Test
     void shouldExposeExecutingStateWhileTickIsRunning() throws Exception {
         when(autoModeService.isAutoModeEnabled()).thenReturn(true);
 
@@ -993,6 +1036,28 @@ class AutoModeSchedulerTest {
         verify(scheduleService).recordFailedAttempt("sched-failed-attempt");
         verify(scheduleService, never()).recordExecution("sched-failed-attempt");
         verify(scheduleService, never()).disableSchedule("sched-failed-attempt");
+    }
+
+    @Test
+    void shouldBackoffInsteadOfDisablingWhenScheduledTaskStorageFails() {
+        when(autoModeService.isAutoModeEnabled()).thenReturn(true);
+        when(autoModeService.getScheduledTask("scheduled-task-1"))
+                .thenThrow(new IllegalStateException("Failed to load scheduled tasks"));
+
+        ScheduleEntry schedule = ScheduleEntry.builder()
+                .id("sched-storage-failure")
+                .type(ScheduleEntry.ScheduleType.SCHEDULED_TASK)
+                .targetId("scheduled-task-1")
+                .cronExpression(TEST_CRON)
+                .enabled(true)
+                .build();
+        when(scheduleService.getDueSchedules()).thenReturn(List.of(schedule));
+
+        scheduler.tick();
+
+        verify(scheduleService).recordFailedAttempt("sched-storage-failure");
+        verify(scheduleService, never()).recordExecution("sched-storage-failure");
+        verify(scheduleService, never()).disableSchedule("sched-storage-failure");
     }
 
     @Test

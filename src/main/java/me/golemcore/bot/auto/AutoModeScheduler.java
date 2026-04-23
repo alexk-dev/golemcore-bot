@@ -234,15 +234,13 @@ public class AutoModeScheduler implements AutoExecutionStatusPort {
                     if (schedule == null) {
                         return;
                     }
+                    String scheduledTaskId = resolveBusyScheduledTaskId(schedule);
                     ScheduledRunOutcome outcome = scheduledRunExecutor.executeSchedule(
                             schedule,
                             deliveryContext.get(),
                             taskTimeLimitMinutes);
-                    if (outcome == ScheduledRunOutcome.SKIPPED_TASK_BUSY) {
-                        String busyScheduledTaskId = resolveBusyScheduledTaskId(schedule);
-                        if (busyScheduledTaskId != null) {
-                            busyScheduledTaskIds.add(busyScheduledTaskId);
-                        }
+                    if (scheduledTaskId != null) {
+                        busyScheduledTaskIds.add(scheduledTaskId);
                     }
                     handleRunOutcome(schedule, outcome);
                     processedScheduleIds.add(schedule.getId());

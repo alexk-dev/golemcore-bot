@@ -241,7 +241,7 @@ class PersistentScheduledTaskServiceTest {
     }
 
     @Test
-    void shouldLoadExistingTasksAndHandleStorageFailures() throws Exception {
+    void shouldLoadExistingTasksAndFailFastOnStorageFailures() throws Exception {
         ScheduledTask existing = ScheduledTask.builder()
                 .id("scheduled-task-1")
                 .title("Existing")
@@ -261,7 +261,11 @@ class PersistentScheduledTaskServiceTest {
                         failingStorage,
                         new ObjectMapper().registerModule(new JavaTimeModule())));
 
-        assertTrue(failingService.getScheduledTasks().isEmpty());
+        assertThrows(IllegalStateException.class, failingService::getScheduledTasks);
+        assertThrows(IllegalStateException.class,
+                () -> failingService.createScheduledTask("New task", null, null, null, false));
+        verify(failingStorage, org.mockito.Mockito.never()).putTextAtomic(
+                eq("auto"), eq("scheduled-tasks.json"), anyString(), eq(true));
     }
 
     @Test

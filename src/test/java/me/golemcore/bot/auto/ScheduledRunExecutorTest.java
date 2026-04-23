@@ -15,6 +15,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.HashMap;
+import java.util.ArrayList;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
@@ -28,6 +29,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -321,6 +323,30 @@ class ScheduledRunExecutorTest {
     }
 
     @Test
+    void shouldReleaseScheduledTaskLockWhenTaskLookupFails() {
+        ScheduleEntry schedule = buildSchedule("scheduled-task-1", ScheduleEntry.ScheduleType.SCHEDULED_TASK);
+        ScheduledRunMessage runMessage = new ScheduledRunMessage(
+                "prompt", AutoRunKind.SCHEDULED_TASK_RUN, "scheduled-task-1", null, null,
+                null, "Nightly cleanup", false, null, false, false);
+        ScheduledTask task = ScheduledTask.builder()
+                .id("scheduled-task-1")
+                .title("Nightly cleanup")
+                .executionMode(ScheduledTask.ExecutionMode.AGENT_PROMPT)
+                .prompt("cleanup")
+                .build();
+        ScheduleDeliveryContext ctx = new ScheduleDeliveryContext("telegram", "sess", "trans");
+        when(scheduledRunMessageFactory.buildForSchedule(schedule)).thenReturn(Optional.of(runMessage));
+        when(autoModeService.getScheduledTask("scheduled-task-1"))
+                .thenThrow(new IllegalStateException("Failed to load scheduled tasks"))
+                .thenReturn(Optional.of(task));
+        Message syntheticMessage = stubSyntheticMessage(runMessage, schedule, ctx);
+        stubSuccessfulRun(syntheticMessage, "done");
+
+        assertEquals(ScheduledRunOutcome.FAILED, executor.executeSchedule(schedule, ctx, TIMEOUT));
+        assertEquals(ScheduledRunOutcome.EXECUTED, executor.executeSchedule(schedule, ctx, TIMEOUT));
+    }
+
+    @Test
     void shouldExecuteShellScheduledTaskWithoutSubmittingAgentRun() throws Exception {
         ScheduleEntry schedule = buildSchedule("scheduled-task-1", ScheduleEntry.ScheduleType.SCHEDULED_TASK);
         ScheduledRunMessage runMessage = new ScheduledRunMessage(
@@ -344,6 +370,121 @@ class ScheduledRunExecutorTest {
         assertEquals(ScheduledRunOutcome.EXECUTED, outcome);
         verify(sessionRunCoordinator, never()).submit(any());
         verify(autoModeService).recordScheduledTaskSuccess("scheduled-task-1", null);
+        verify(reportSender).sendReport(eq(schedule), eq("header"), eq("ok"), eq(ctx));
+    }
+
+    @Test
+    void shouldPersistShellScheduledTaskMessagesForRunHistory() throws Exception {
+        ScheduleEntry schedule = buildSchedule("scheduled-task-1", ScheduleEntry.ScheduleType.SCHEDULED_TASK);
+        ScheduledRunMessage runMessage = new ScheduledRunMessage(
+                "prompt", AutoRunKind.SCHEDULED_TASK_RUN, "scheduled-task-1", null, null,
+                null, "Nightly cleanup", false, null, false, false);
+        ScheduledTask shellTask = ScheduledTask.builder()
+                .id("scheduled-task-1")
+                .title("Nightly cleanup")
+                .executionMode(ScheduledTask.ExecutionMode.SHELL_COMMAND)
+                .shellCommand("printf 'ok'")
+                .build();
+        ScheduleDeliveryContext ctx = new ScheduleDeliveryContext("telegram", "sess", "trans");
+        AgentSession session = AgentSession.builder()
+                .id("session-1")
+                .channelType("telegram")
+                .chatId("sess")
+                .messages(new ArrayList<>())
+                .build();
+        when(scheduledRunMessageFactory.buildForSchedule(schedule)).thenReturn(Optional.of(runMessage));
+        when(scheduledRunMessageFactory.buildReportHeader(runMessage)).thenReturn("header");
+        when(autoModeService.getScheduledTask("scheduled-task-1")).thenReturn(Optional.of(shellTask));
+        when(sessionPort.getOrCreate("telegram", "sess")).thenReturn(session);
+        when(scheduledRunMessageFactory.buildSyntheticMessage(eq(runMessage), eq(schedule), eq(ctx), anyString()))
+                .thenAnswer(invocation -> Message.builder()
+                        .role("user")
+                        .content(runMessage.content())
+                        .channelType(ctx.channelType())
+                        .chatId(ctx.sessionChatId())
+                        .senderId("auto")
+                        .metadata(new HashMap<>())
+                        .build());
+        when(scheduledTaskShellRunner.run(shellTask, TIMEOUT))
+                .thenReturn(new ScheduledTaskShellRunner.ShellRunResult(true, "ok", "ok", null));
+
+        ScheduledRunOutcome outcome = executor.executeSchedule(schedule, ctx, TIMEOUT);
+
+        assertEquals(ScheduledRunOutcome.EXECUTED, outcome);
+        assertEquals(2, session.getMessages().size());
+        Message userMessage = session.getMessages().get(0);
+        Message assistantMessage = session.getMessages().get(1);
+        assertEquals("user", userMessage.getRole());
+        assertEquals("assistant", assistantMessage.getRole());
+        assertEquals("scheduled-task-1",
+                userMessage.getMetadata().get(ContextAttributes.AUTO_SCHEDULED_TASK_ID));
+        assertEquals(userMessage.getMetadata().get(ContextAttributes.AUTO_RUN_ID),
+                assistantMessage.getMetadata().get(ContextAttributes.AUTO_RUN_ID));
+        assertEquals("COMPLETED", assistantMessage.getMetadata().get(ContextAttributes.AUTO_RUN_STATUS));
+        verify(sessionPort).save(session);
+    }
+
+    @Test
+    void shouldKeepShellRunSuccessfulWhenHistoryPersistenceFails() throws Exception {
+        ScheduleEntry schedule = buildSchedule("scheduled-task-1", ScheduleEntry.ScheduleType.SCHEDULED_TASK);
+        ScheduledRunMessage runMessage = new ScheduledRunMessage(
+                "prompt", AutoRunKind.SCHEDULED_TASK_RUN, "scheduled-task-1", null, null,
+                null, "Nightly cleanup", false, null, false, false);
+        ScheduledTask shellTask = ScheduledTask.builder()
+                .id("scheduled-task-1")
+                .title("Nightly cleanup")
+                .executionMode(ScheduledTask.ExecutionMode.SHELL_COMMAND)
+                .shellCommand("printf 'ok'")
+                .build();
+        ScheduleDeliveryContext ctx = new ScheduleDeliveryContext("telegram", "sess", "trans");
+        AgentSession session = AgentSession.builder()
+                .id("session-1")
+                .channelType("telegram")
+                .chatId("sess")
+                .messages(new ArrayList<>())
+                .build();
+        when(scheduledRunMessageFactory.buildForSchedule(schedule)).thenReturn(Optional.of(runMessage));
+        when(scheduledRunMessageFactory.buildReportHeader(runMessage)).thenReturn("header");
+        when(autoModeService.getScheduledTask("scheduled-task-1")).thenReturn(Optional.of(shellTask));
+        when(sessionPort.getOrCreate("telegram", "sess")).thenReturn(session);
+        doThrow(new IllegalStateException("history unavailable")).when(sessionPort).save(session);
+        when(scheduledTaskShellRunner.run(shellTask, TIMEOUT))
+                .thenReturn(new ScheduledTaskShellRunner.ShellRunResult(true, "ok", "ok", null));
+
+        ScheduledRunOutcome outcome = executor.executeSchedule(schedule, ctx, TIMEOUT);
+
+        assertEquals(ScheduledRunOutcome.EXECUTED, outcome);
+        verify(autoModeService).recordScheduledTaskSuccess("scheduled-task-1", null);
+        verify(autoModeService, never()).recordScheduledTaskFailure(anyString(), any(), any(), any());
+        verify(reportSender).sendReport(eq(schedule), eq("header"), eq("ok"), eq(ctx));
+    }
+
+    @Test
+    void shouldKeepShellRunSuccessfulWhenHistorySessionLookupFails() throws Exception {
+        ScheduleEntry schedule = buildSchedule("scheduled-task-1", ScheduleEntry.ScheduleType.SCHEDULED_TASK);
+        ScheduledRunMessage runMessage = new ScheduledRunMessage(
+                "prompt", AutoRunKind.SCHEDULED_TASK_RUN, "scheduled-task-1", null, null,
+                null, "Nightly cleanup", false, null, false, false);
+        ScheduledTask shellTask = ScheduledTask.builder()
+                .id("scheduled-task-1")
+                .title("Nightly cleanup")
+                .executionMode(ScheduledTask.ExecutionMode.SHELL_COMMAND)
+                .shellCommand("printf 'ok'")
+                .build();
+        ScheduleDeliveryContext ctx = new ScheduleDeliveryContext("telegram", "sess", "trans");
+        when(scheduledRunMessageFactory.buildForSchedule(schedule)).thenReturn(Optional.of(runMessage));
+        when(scheduledRunMessageFactory.buildReportHeader(runMessage)).thenReturn("header");
+        when(autoModeService.getScheduledTask("scheduled-task-1")).thenReturn(Optional.of(shellTask));
+        when(sessionPort.getOrCreate("telegram", "sess"))
+                .thenThrow(new IllegalStateException("session unavailable"));
+        when(scheduledTaskShellRunner.run(shellTask, TIMEOUT))
+                .thenReturn(new ScheduledTaskShellRunner.ShellRunResult(true, "ok", "ok", null));
+
+        ScheduledRunOutcome outcome = executor.executeSchedule(schedule, ctx, TIMEOUT);
+
+        assertEquals(ScheduledRunOutcome.EXECUTED, outcome);
+        verify(autoModeService).recordScheduledTaskSuccess("scheduled-task-1", null);
+        verify(autoModeService, never()).recordScheduledTaskFailure(anyString(), any(), any(), any());
         verify(reportSender).sendReport(eq(schedule), eq("header"), eq("ok"), eq(ctx));
     }
 

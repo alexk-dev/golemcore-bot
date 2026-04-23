@@ -256,7 +256,7 @@ public class PersistentScheduledTaskService {
             return normalized;
         } catch (RuntimeException exception) { // NOSONAR
             log.debug("[ScheduledTask] Failed to load scheduled tasks: {}", exception.getMessage());
-            return new ArrayList<>();
+            throw new IllegalStateException("Failed to load scheduled tasks", exception);
         }
     }
 
