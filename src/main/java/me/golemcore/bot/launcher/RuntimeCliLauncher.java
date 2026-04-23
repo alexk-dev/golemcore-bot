@@ -1,7 +1,7 @@
 package me.golemcore.bot.launcher;
 
 /**
- * Strict CLI entrypoint for native app-image and new Docker images.
+ * Strict CLI entrypoint for native app-image launchers.
  */
 public final class RuntimeCliLauncher {
 

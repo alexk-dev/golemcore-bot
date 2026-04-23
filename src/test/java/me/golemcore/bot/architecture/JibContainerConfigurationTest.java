@@ -26,7 +26,7 @@ class JibContainerConfigurationTest {
             + "/*[local-name()='container']";
 
     @Test
-    void docker_image_should_use_strict_cli_entrypoint_with_default_web_command() throws Exception {
+    void docker_image_should_use_legacy_compatible_entrypoint_with_default_web_command() throws Exception {
         Document pom = parsePom();
         XPath xpath = XPathFactory.newInstance().newXPath();
 
@@ -36,7 +36,7 @@ class JibContainerConfigurationTest {
                 "java",
                 "-cp",
                 "@/app/jib-classpath-file",
-                "me.golemcore.bot.launcher.RuntimeCliLauncher"),
+                "me.golemcore.bot.launcher.RuntimeLauncher"),
                 textList(pom, xpath, JIB_CONTAINER + "/*[local-name()='entrypoint']/*[local-name()='arg']"));
         assertEquals(List.of("web"),
                 textList(pom, xpath, JIB_CONTAINER + "/*[local-name()='args']/*[local-name()='arg']"));

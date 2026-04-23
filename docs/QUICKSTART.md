@@ -34,6 +34,9 @@ docker run -d \
   golemcore-bot:latest
 
 docker logs -f golemcore-bot
+
+# Health probe:
+curl http://localhost:8080/api/system/health
 ```
 
 Why the extra Docker flags?
@@ -98,15 +101,15 @@ Optional next steps outside Settings:
 git clone https://github.com/alexk-dev/golemcore-bot.git
 cd golemcore-bot
 ./mvnw clean package -DskipTests
-java -jar target/bot-<version>.jar
+java -jar target/bot-<version>-exec.jar
 ```
 
 To start on a different port:
 
 ```bash
-java -jar target/bot-<version>.jar --server.port=9090
+java -jar target/bot-<version>-exec.jar --server.port=9090
 # or
-java -Dserver.port=9090 -jar target/bot-<version>.jar
+java -Dserver.port=9090 -jar target/bot-<version>-exec.jar
 ```
 
 Then open the dashboard at `http://localhost:9090/dashboard` and configure providers.
@@ -135,8 +138,10 @@ target/native-dist/golemcore-bot-<version>-<platform>-<arch>.tar.gz
 ```bash
 mkdir -p /tmp/golemcore-bot-local
 tar -xzf target/native-dist/golemcore-bot-<version>-<platform>-<arch>.tar.gz -C /tmp/golemcore-bot-local
-/tmp/golemcore-bot-local/golemcore-bot/bin/golemcore-bot
+/tmp/golemcore-bot-local/golemcore-bot/bin/golemcore-bot web
 ```
+
+The native app-image includes its own Java runtime, so this extracted binary does not require Java to be installed on the machine.
 
 ### 3. Inspect launcher help
 
@@ -188,7 +193,7 @@ If you want to make the separation explicit, use `--`:
 
 The local launcher uses the strict CLI entrypoint and starts runtime in this order:
 
-1. staged jar selected through `updates/current.txt`
+1. staged jar selected through `updates/current.txt`, unless the bundled runtime jar is newer
 2. bundled runtime jar from the app-image
 3. legacy Jib/classpath fallback
 

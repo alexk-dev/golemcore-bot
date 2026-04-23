@@ -55,6 +55,12 @@ docker run -d \
 
 docker logs -f golemcore-bot
 
+# Health probe:
+# curl http://localhost:8080/api/system/health
+#
+# Compatibility: Docker CMD overrides may still pass Spring Boot args directly:
+# docker run ... ghcr.io/alexk-dev/golemcore-bot:latest --server.port=9090
+
 # Open http://localhost:8080/dashboard
 # On first start, check logs for the temporary admin password.
 ```
@@ -98,13 +104,14 @@ target/native-dist/golemcore-bot-<version>-<platform>-<arch>.tar.gz
 The app-image contains:
 
 - a small launcher application produced by `jpackage`
+- a bundled Java runtime, so running the extracted app-image does not require a separately installed Java
 - the regular self-updatable runtime jar under `lib/runtime/`
 - a picocli-powered native launcher entrypoint with built-in help and launcher-only options
 - launcher wiring that points to that bundled runtime jar first
 
 So the startup order becomes:
 
-1. staged update from `updates/current.txt`
+1. staged update from `updates/current.txt`, unless the bundled runtime jar is newer
 2. bundled runtime jar from the app-image
 3. legacy Jib/classpath fallback
 

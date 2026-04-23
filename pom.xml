@@ -520,7 +520,7 @@
                             <arg>java</arg>
                             <arg>-cp</arg>
                             <arg>@/app/jib-classpath-file</arg>
-                            <arg>me.golemcore.bot.launcher.RuntimeCliLauncher</arg>
+                            <arg>me.golemcore.bot.launcher.RuntimeLauncher</arg>
                         </entrypoint>
                         <args>
                             <arg>web</arg>

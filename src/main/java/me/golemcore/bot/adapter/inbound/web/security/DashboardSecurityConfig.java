@@ -63,6 +63,7 @@ public class DashboardSecurityConfig {
                         .permitAll()
                         .pathMatchers("/api/hooks/**").permitAll()
                         .pathMatchers(HttpMethod.POST, "/api/telegram/webhook").permitAll()
+                        .pathMatchers(HttpMethod.GET, "/api/system/health").permitAll()
                         .pathMatchers("/ws/**").permitAll()
                         .pathMatchers("/dashboard/**").permitAll()
                         .pathMatchers(HttpMethod.GET, "/", "/favicon.ico").permitAll()

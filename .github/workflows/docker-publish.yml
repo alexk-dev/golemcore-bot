@@ -138,6 +138,53 @@ jobs:
       - name: Build release JAR
         run: ./mvnw -B -ntp clean package -DskipTests -DskipGitHooks=true
 
+      - name: Smoke test standalone JAR
+        run: |
+          set -euo pipefail
+          runtime_jar="$(find target -maxdepth 1 -type f -name 'bot-*-exec.jar' | sort | head -n 1)"
+          if [[ -z "${runtime_jar}" ]]; then
+            echo "Executable runtime jar not found in target/." >&2
+            exit 1
+          fi
+
+          port=18082
+          log_file="target/standalone-jar-smoke.log"
+          mkdir -p target/standalone-jar-smoke/workspace target/standalone-jar-smoke/sandbox
+
+          cleanup() {
+            if [[ -n "${jar_pid:-}" ]] && kill -0 "${jar_pid}" >/dev/null 2>&1; then
+              kill "${jar_pid}" >/dev/null 2>&1 || true
+              wait "${jar_pid}" >/dev/null 2>&1 || true
+            fi
+            cat "${log_file}" || true
+          }
+          trap cleanup EXIT
+
+          STORAGE_PATH="$(pwd)/target/standalone-jar-smoke/workspace" \
+          TOOLS_WORKSPACE="$(pwd)/target/standalone-jar-smoke/sandbox" \
+          BOT_UPDATE_ENABLED=false \
+          BOT_PLUGINS_ENABLED=false \
+          BOT_PLUGINS_AUTO_START=false \
+            java -jar "${runtime_jar}" \
+              --server.port="${port}" \
+              --server.address=127.0.0.1 \
+              >"${log_file}" 2>&1 &
+          jar_pid="$!"
+
+          for attempt in {1..60}; do
+            if curl -fsS "http://127.0.0.1:${port}/api/system/health" | grep -F '"status":"UP"'; then
+              exit 0
+            fi
+            if ! kill -0 "${jar_pid}" >/dev/null 2>&1; then
+              echo "Standalone JAR exited before health check passed." >&2
+              exit 1
+            fi
+            sleep 2
+          done
+
+          echo "Timed out waiting for standalone JAR health endpoint." >&2
+          exit 1
+
       - name: Build native distribution bundle
         run: ./.github/scripts/build-native-distribution.sh
 
@@ -167,13 +214,64 @@ jobs:
           grep -F 'golemcore.launcher.java-command=$APPDIR/../runtime/bin/java' target/native-dist/smoke/golemcore-bot/lib/app/golemcore-bot.cfg
           grep -F 'spring.profiles.active=prod' target/native-dist/smoke/golemcore-bot/lib/app/golemcore-bot.cfg
           "${runtime_java}" -version
-          target/native-dist/smoke/golemcore-bot/bin/golemcore-bot --help
-          if target/native-dist/smoke/golemcore-bot/bin/golemcore-bot 2>target/native-dist/smoke/missing-command.err; then
+          native_bin="$(pwd)/target/native-dist/smoke/golemcore-bot/bin/golemcore-bot"
+          "${native_bin}" --help
+          if "${native_bin}" 2>target/native-dist/smoke/missing-command.err; then
             echo "Launcher unexpectedly started without a command." >&2
             exit 1
           fi
           grep -F 'Missing command. Use `golemcore-bot web` to start the web runtime.' target/native-dist/smoke/missing-command.err
-          target/native-dist/smoke/golemcore-bot/bin/golemcore-bot web --help
+          "${native_bin}" web --help
+
+          native_port=18081
+          native_workspace="$(pwd)/target/native-dist/smoke/workspace"
+          native_sandbox="$(pwd)/target/native-dist/smoke/sandbox"
+          native_home="$(pwd)/target/native-dist/smoke/home"
+          native_no_java_path="$(pwd)/target/native-dist/smoke/no-java-path"
+          native_log="$(pwd)/target/native-dist/smoke/native-web.log"
+          mkdir -p \
+            "${native_workspace}/updates/jars" \
+            "${native_sandbox}" \
+            "${native_home}" \
+            "${native_no_java_path}"
+          printf 'stale staged runtime\n' >"${native_workspace}/updates/jars/bot-0.0.0-0-exec.jar"
+          printf 'bot-0.0.0-0-exec.jar\n' >"${native_workspace}/updates/current.txt"
+
+          cleanup_native() {
+            if [[ -n "${native_pid:-}" ]] && kill -0 "${native_pid}" >/dev/null 2>&1; then
+              kill "${native_pid}" >/dev/null 2>&1 || true
+              wait "${native_pid}" >/dev/null 2>&1 || true
+            fi
+            cat "${native_log}" || true
+          }
+          trap cleanup_native EXIT
+
+          env -i \
+            HOME="${native_home}" \
+            PATH="${native_no_java_path}" \
+            STORAGE_PATH="${native_workspace}" \
+            TOOLS_WORKSPACE="${native_sandbox}" \
+            BOT_UPDATE_ENABLED=false \
+            BOT_PLUGINS_ENABLED=false \
+            BOT_PLUGINS_AUTO_START=false \
+            "${native_bin}" web --port="${native_port}" --hostname=127.0.0.1 \
+            >"${native_log}" 2>&1 &
+          native_pid="$!"
+
+          for attempt in {1..60}; do
+            if curl -fsS "http://127.0.0.1:${native_port}/api/system/health" | grep -F '"status":"UP"'; then
+              grep -F 'Ignoring current marker because bundled runtime' "${native_log}"
+              exit 0
+            fi
+            if ! kill -0 "${native_pid}" >/dev/null 2>&1; then
+              echo "Native launcher exited before health check passed." >&2
+              exit 1
+            fi
+            sleep 2
+          done
+
+          echo "Timed out waiting for native launcher health endpoint." >&2
+          exit 1
 
       - name: Upload native distribution
         uses: actions/upload-artifact@v7
@@ -374,42 +472,66 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Smoke test app image default command
+      - name: Smoke test app image launch commands
         if: matrix.arch == 'amd64'
         run: |
           set -euo pipefail
           image="${{ steps.tags.outputs.app-image }}"
-          container_name="golemcore-bot-smoke-${{ github.run_id }}-${{ github.run_attempt }}"
 
           cleanup() {
-            docker logs "${container_name}" || true
-            docker rm -f "${container_name}" >/dev/null 2>&1 || true
+            for name in "${containers[@]:-}"; do
+              docker logs "${name}" || true
+              docker rm -f "${name}" >/dev/null 2>&1 || true
+            done
           }
           trap cleanup EXIT
 
-          docker run -d \
-            --name "${container_name}" \
-            --shm-size=256m \
-            -e STORAGE_PATH=/app/workspace \
-            -e TOOLS_WORKSPACE=/app/sandbox \
-            -e BOT_UPDATE_ENABLED=false \
-            -p 18080:8080 \
-            "${image}"
+          containers=()
 
-          for attempt in {1..60}; do
-            if curl -fsS http://127.0.0.1:18080/ >/tmp/golemcore-root.html; then
-              head -c 200 /tmp/golemcore-root.html
-              exit 0
-            fi
-            if ! docker ps --format '{{.Names}}' | grep -Fxq "${container_name}"; then
-              echo "Container exited before health check passed." >&2
-              exit 1
-            fi
-            sleep 2
-          done
+          smoke_container() {
+            local name="$1"
+            local host_port="$2"
+            local container_port="$3"
+            shift 3
+            containers+=("${name}")
 
-          echo "Timed out waiting for app image HTTP endpoint." >&2
-          exit 1
+            docker run -d \
+              --name "${name}" \
+              --shm-size=256m \
+              -e STORAGE_PATH=/app/workspace \
+              -e TOOLS_WORKSPACE=/app/sandbox \
+              -e BOT_UPDATE_ENABLED=false \
+              -e BOT_PLUGINS_ENABLED=false \
+              -e BOT_PLUGINS_AUTO_START=false \
+              -p "${host_port}:${container_port}" \
+              "${image}" \
+              "$@"
+
+            for attempt in {1..60}; do
+              if curl -fsS "http://127.0.0.1:${host_port}/api/system/health" | grep -F '"status":"UP"'; then
+                return 0
+              fi
+              if ! docker ps --format '{{.Names}}' | grep -Fxq "${name}"; then
+                echo "Container ${name} exited before health check passed." >&2
+                return 1
+              fi
+              sleep 2
+            done
+
+            echo "Timed out waiting for ${name} health endpoint." >&2
+            return 1
+          }
+
+          smoke_container \
+            "golemcore-bot-smoke-default-${{ github.run_id }}-${{ github.run_attempt }}" \
+            18080 \
+            8080
+
+          smoke_container \
+            "golemcore-bot-smoke-legacy-args-${{ github.run_id }}-${{ github.run_attempt }}" \
+            18090 \
+            9090 \
+            --server.port=9090
 
   # ── Stitch multiarch manifest ────────────────────────────────────────────
   create-manifest:

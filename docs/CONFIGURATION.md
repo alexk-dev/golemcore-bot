@@ -885,11 +885,11 @@ golemcore-bot web --spring.main.banner-mode=off
 
 The launcher priority is:
 
-1. staged update selected by `updates/current.txt`
+1. staged update selected by `updates/current.txt`, unless the bundled runtime jar is newer
 2. bundled runtime jar
 3. legacy Jib classpath fallback
 
-This preserves the existing self-update model for local distributions while adding a documented native launcher CLI.
+This preserves the existing self-update model for local distributions while allowing a newer native bundle to take over from an older persisted runtime.
 
 ## Storage Layout
 

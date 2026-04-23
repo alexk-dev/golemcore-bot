@@ -41,6 +41,21 @@ docker run -d \
 
 # Configure LLM providers and Telegram in the dashboard:
 # http://localhost:8080/dashboard
+#
+# Health probe:
+# curl http://localhost:8080/api/system/health
+```
+
+The image starts the web runtime by default. If an existing deployment overrides Docker CMD with Spring Boot args, that remains supported:
+
+```bash
+docker run -d \
+  --name golemcore-bot \
+  -e STORAGE_PATH=/app/workspace \
+  -e TOOLS_WORKSPACE=/app/sandbox \
+  -p 9090:9090 \
+  golemcore-bot:latest \
+  --server.port=9090
 ```
 
 ### Docker Compose
@@ -114,7 +129,7 @@ docker-compose up -d
 ### 2. Run directly
 
 ```bash
-java -jar target/bot-<version>.jar
+java -jar target/bot-<version>-exec.jar
 ```
 
 This uses the standard Spring Boot executable jar.
@@ -122,9 +137,9 @@ This uses the standard Spring Boot executable jar.
 To override the HTTP port:
 
 ```bash
-java -jar target/bot-<version>.jar --server.port=9090
+java -jar target/bot-<version>-exec.jar --server.port=9090
 # or
-java -Dserver.port=9090 -jar target/bot-<version>.jar
+java -Dserver.port=9090 -jar target/bot-<version>-exec.jar
 ```
 
 ### 3. Create systemd Service
@@ -167,7 +182,7 @@ sudo mkdir -p /opt/golemcore-bot
 sudo chown golemcore:golemcore /opt/golemcore-bot
 
 # Copy JAR
-sudo cp target/bot-<version>.jar /opt/golemcore-bot/golemcore-bot.jar
+sudo cp target/bot-<version>-exec.jar /opt/golemcore-bot/golemcore-bot.jar
 
 # Create .env file
 sudo nano /opt/golemcore-bot/.env
@@ -206,8 +221,10 @@ target/native-dist/golemcore-bot-<version>-<platform>-<arch>.tar.gz
 ```bash
 mkdir -p /opt/golemcore-bot-native
 tar -xzf target/native-dist/golemcore-bot-<version>-<platform>-<arch>.tar.gz -C /opt/golemcore-bot-native
-/opt/golemcore-bot-native/golemcore-bot/bin/golemcore-bot
+/opt/golemcore-bot-native/golemcore-bot/bin/golemcore-bot web
 ```
+
+The app-image includes a Java runtime, so the extracted binary can run on a machine without a separately installed Java.
 
 ### Inspect launcher help
 
@@ -265,7 +282,7 @@ The native bundle wraps the strict CLI launcher entrypoint, which resolves runti
 2. bundled runtime jar from the app-image under `lib/runtime/`
 3. legacy Jib/classpath fallback
 
-That means the existing self-update flow still works for local bundles, now with a documented launcher CLI.
+If the bundled runtime jar is newer than the staged `updates/current.txt` runtime, the launcher ignores the stale staged runtime and starts the bundled jar. That means installing a newer native bundle can recover from an older persisted update while keeping the documented launcher CLI.
 
 ### Notes
 
