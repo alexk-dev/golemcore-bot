@@ -1,4 +1,4 @@
-package me.golemcore.bot.adapter.inbound.web.dto;
+package me.golemcore.bot.client.dto;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;

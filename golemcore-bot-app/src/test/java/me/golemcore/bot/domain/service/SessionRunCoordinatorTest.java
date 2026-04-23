@@ -1,6 +1,7 @@
 package me.golemcore.bot.domain.service;
 
 import me.golemcore.bot.port.outbound.RuntimeEventPublishPort;
+import me.golemcore.bot.port.outbound.HiveEventPublishPort;
 import me.golemcore.bot.domain.loop.AgentLoop;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.AgentSession;
