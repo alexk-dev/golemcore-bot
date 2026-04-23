@@ -18,6 +18,7 @@ import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.
 import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.SkillsConfigDto;
 import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.TelemetryConfigDto;
 import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.ToolsConfigDto;
+import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.ToolLoopConfigDto;
 import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.TracingConfigDto;
 import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.TurnConfigDto;
 import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.UsageConfigDto;
@@ -50,6 +51,8 @@ class RuntimeSettingsWebMapperTest {
         assertNotNull(mapper.toVoiceConfig(new VoiceConfigDto()));
         assertNotNull(mapper.toTurnConfigDto(new RuntimeConfig.TurnConfig()));
         assertNotNull(mapper.toTurnConfig(new TurnConfigDto()));
+        assertNotNull(mapper.toToolLoopConfigDto(new RuntimeConfig.ToolLoopConfig()));
+        assertNotNull(mapper.toToolLoopConfig(new ToolLoopConfigDto()));
         assertNotNull(mapper.toSessionRetentionConfigDto(new RuntimeConfig.SessionRetentionConfig()));
         assertNotNull(mapper.toSessionRetentionConfig(new SessionRetentionConfigDto()));
         assertNotNull(mapper.toMemoryConfigDto(new RuntimeConfig.MemoryConfig()));

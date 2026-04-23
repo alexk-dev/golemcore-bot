@@ -511,7 +511,16 @@ class AutoModeServiceTest {
                 .tasks(new ArrayList<>(List.of(task)))
                 .createdAt(Instant.now())
                 .build();
-        String goalsJson = objectMapper.writeValueAsString(List.of(goal));
+        Goal otherGoal = Goal.builder()
+                .id("goal-2")
+                .title("Unrelated maintenance")
+                .description("Noisy description that should not be injected")
+                .prompt("Noisy prompt that should not be injected")
+                .status(Goal.GoalStatus.ACTIVE)
+                .tasks(new ArrayList<>())
+                .createdAt(Instant.now())
+                .build();
+        String goalsJson = objectMapper.writeValueAsString(List.of(goal, otherGoal));
         when(storagePort.getText(AUTO_DIR, GOALS_FILE))
                 .thenReturn(CompletableFuture.completedFuture(goalsJson));
 
@@ -520,20 +529,33 @@ class AutoModeServiceTest {
                 .type(DiaryEntry.DiaryType.PROGRESS)
                 .content("Started working on feature X")
                 .goalId(GOAL_ID)
+                .taskId(TASK_ID)
                 .build();
-        String diaryLine = objectMapper.writeValueAsString(entry);
+        DiaryEntry unrelatedEntry = DiaryEntry.builder()
+                .timestamp(Instant.now())
+                .type(DiaryEntry.DiaryType.PROGRESS)
+                .content("Unrelated diary noise")
+                .goalId("goal-2")
+                .build();
+        String diaryLine = objectMapper.writeValueAsString(unrelatedEntry) + "\n"
+                + objectMapper.writeValueAsString(entry);
         String todayDate = java.time.LocalDate.now(java.time.ZoneOffset.UTC)
                 .format(java.time.format.DateTimeFormatter.ISO_LOCAL_DATE);
         when(storagePort.getText(AUTO_DIR, DIARY_PREFIX + todayDate + ".jsonl"))
                 .thenReturn(CompletableFuture.completedFuture(diaryLine + "\n"));
 
-        String context = service.buildAutoContext();
+        String context = service.buildAutoContext(GOAL_ID, TASK_ID);
 
         assertNotNull(context);
         assertTrue(context.contains("Build feature X"));
         assertTrue(context.contains("Write code"));
         assertTrue(context.contains("Started working on feature X"));
         assertTrue(context.contains("Recovery strategy"));
+        assertTrue(context.contains("Other Active Goals (summary)"));
+        assertTrue(context.contains("Unrelated maintenance"));
+        assertFalse(context.contains("Noisy description that should not be injected"));
+        assertFalse(context.contains("Noisy prompt that should not be injected"));
+        assertFalse(context.contains("Unrelated diary noise"));
     }
 
     @Test

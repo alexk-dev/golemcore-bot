@@ -149,6 +149,34 @@ class SettingsControllerTest {
     }
 
     @Test
+    void shouldReturnAvailableModelsGroupedByProvider() throws Exception {
+        when(modelSelectionService.getAvailableModelsGrouped()).thenReturn(Map.of(
+                "openai", List.of(new ModelSelectionService.AvailableModel(
+                        "openai/gpt-5.4",
+                        "openai",
+                        "GPT-5.4",
+                        true,
+                        List.of("low", "medium"),
+                        true,
+                        true))));
+        Method method = SettingsController.class.getMethod("getModels");
+        @SuppressWarnings("unchecked")
+        Mono<ResponseEntity<Map<String, ?>>> responseMono = (Mono<ResponseEntity<Map<String, ?>>>) method
+                .invoke(controller);
+
+        StepVerifier.create(responseMono)
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.OK, response.getStatusCode());
+                    Map<String, ?> body = response.getBody();
+                    assertNotNull(body);
+                    assertTrue(body.containsKey("openai"));
+                    assertTrue(body.get("openai").toString().contains("GPT-5.4"));
+                    assertTrue(body.get("openai").toString().contains("medium"));
+                })
+                .verifyComplete();
+    }
+
+    @Test
     void shouldGetSettingsWithTierOverrides() {
         UserPreferences prefs = new UserPreferences();
         prefs.setLanguage("en");

@@ -557,6 +557,12 @@ public final class ContextAttributes {
     public static final String LLM_CONTEXT_OVERFLOW_RECOVERY = "llm.context.overflow.recovery";
 
     /**
+     * {@code Map<String,Object>} - latest request-time context hygiene projection
+     * report.
+     */
+    public static final String CONTEXT_HYGIENE_REPORT = "context.hygiene.report";
+
+    /**
      * {@code List<Map<String,Object>>} - per-turn edited file stats for UI hints.
      */
     public static final String TURN_FILE_CHANGES = "turn.file.changes";

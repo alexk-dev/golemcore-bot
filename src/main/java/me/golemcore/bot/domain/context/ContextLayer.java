@@ -25,11 +25,11 @@ import me.golemcore.bot.domain.model.AgentContext;
  *
  * <p>
  * Each layer encapsulates one logical section of the system prompt (identity,
- * memory, skills, tools, etc.). Layers declare their priority via
- * {@link #getOrder()} and whether they apply to the current turn via
- * {@link #appliesTo(AgentContext)}. The {@link ContextAssembler} invokes
- * applicable layers in order and delegates final prompt composition to
- * {@link PromptComposer}.
+ * memory, skills, tools, etc.). Layers declare their prompt order via
+ * {@link #getOrder()}, their budget priority via {@link #getPriority()}, and
+ * whether they apply to the current turn via {@link #appliesTo(AgentContext)}.
+ * The {@link ContextAssembler} invokes applicable layers in order and delegates
+ * final prompt composition to {@link PromptComposer}.
  *
  * <h2>Contract</h2>
  * <ul>
@@ -49,6 +49,15 @@ import me.golemcore.bot.domain.model.AgentContext;
  * However, layers must never modify content produced by other layers.
  */
 public interface ContextLayer {
+
+    /** Default selector priority for optional layers. Higher values win budget. */
+    int DEFAULT_PRIORITY = 50;
+
+    /** Priority for layers that should normally survive prompt budget pressure. */
+    int REQUIRED_PRIORITY = 100;
+
+    /** Marker for layers without their own per-layer token cap. */
+    int UNLIMITED_TOKEN_BUDGET = Integer.MAX_VALUE;
 
     /**
      * Returns the unique name of this layer, used for identification in
@@ -74,6 +83,57 @@ public interface ContextLayer {
      * @return ordering value
      */
     int getOrder();
+
+    /**
+     * Returns the selector priority used when the global system-prompt budget is
+     * tight. Higher values are kept before lower values. The final prompt still
+     * preserves {@link #getOrder()} among selected layers.
+     *
+     * @return priority, higher means more important
+     */
+    default int getPriority() {
+        return DEFAULT_PRIORITY;
+    }
+
+    /**
+     * Returns the expected lifecycle of this layer's content for diagnostics and
+     * future relevance policies.
+     *
+     * @return lifecycle category
+     */
+    default ContextLayerLifecycle getLifecycle() {
+        return ContextLayerLifecycle.TURN;
+    }
+
+    /**
+     * Returns the per-layer soft token budget. Optional layers that exceed this cap
+     * can be dropped even before the global prompt budget is considered.
+     *
+     * @return positive token budget, or {@link #UNLIMITED_TOKEN_BUDGET}
+     */
+    default int getTokenBudget() {
+        return UNLIMITED_TOKEN_BUDGET;
+    }
+
+    /**
+     * Returns whether this layer must be included even when it exceeds the prompt
+     * budget. Required layers should be reserved for safety, mode semantics, and
+     * hard response contracts.
+     *
+     * @return {@code true} if this layer cannot be dropped by prompt budgeting
+     */
+    default boolean isRequired() {
+        return getPriority() >= REQUIRED_PRIORITY;
+    }
+
+    /**
+     * Returns how prompt budgeting may treat this layer after rendering.
+     *
+     * @return layer hard-budget criticality
+     */
+    default LayerCriticality getCriticality() {
+        return isRequired() ? LayerCriticality.REQUIRED_COMPRESSIBLE : LayerCriticality.OPTIONAL;
+    }
 
     /**
      * Fast guard to determine if this layer should be included in the current

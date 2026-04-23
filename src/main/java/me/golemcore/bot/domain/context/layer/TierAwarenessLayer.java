@@ -18,9 +18,8 @@ package me.golemcore.bot.domain.context.layer;
  * Contact: alex@kuleshov.tech
  */
 
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import me.golemcore.bot.domain.context.ContextLayer;
+import me.golemcore.bot.domain.context.ContextLayerLifecycle;
 import me.golemcore.bot.domain.context.ContextLayerResult;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.service.SessionModelSettingsSupport;
@@ -34,20 +33,14 @@ import me.golemcore.bot.domain.service.UserPreferencesService;
  * forced a different tier. Produces a brief note so the LLM is aware of the
  * tier context.
  */
-@RequiredArgsConstructor
 @Slf4j
-public class TierAwarenessLayer implements ContextLayer {
+public class TierAwarenessLayer extends AbstractContextLayer {
 
     private final UserPreferencesService userPreferencesService;
 
-    @Override
-    public String getName() {
-        return "tier_awareness";
-    }
-
-    @Override
-    public int getOrder() {
-        return 60;
+    public TierAwarenessLayer(UserPreferencesService userPreferencesService) {
+        super("tier_awareness", 60, 70, ContextLayerLifecycle.TURN);
+        this.userPreferencesService = userPreferencesService;
     }
 
     @Override
@@ -75,10 +68,6 @@ public class TierAwarenessLayer implements ContextLayer {
                 + "' recommends the '" + context.getActiveSkill().getModelTier()
                 + "' model tier. The system has switched to this tier.";
 
-        return ContextLayerResult.builder()
-                .layerName(getName())
-                .content(content)
-                .estimatedTokens(TokenEstimator.estimate(content))
-                .build();
+        return result(content);
     }
 }

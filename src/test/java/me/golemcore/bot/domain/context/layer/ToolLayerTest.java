@@ -2,10 +2,11 @@ package me.golemcore.bot.domain.context.layer;
 
 import me.golemcore.bot.domain.component.ToolComponent;
 import me.golemcore.bot.domain.context.ContextLayerResult;
+import me.golemcore.bot.domain.context.LayerCriticality;
 import me.golemcore.bot.domain.model.AgentContext;
+import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.Skill;
-import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.model.ToolNames;
 import me.golemcore.bot.domain.service.DelayedActionPolicyService;
@@ -17,7 +18,9 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
+import java.util.Arrays;
 import java.util.List;
+import java.util.stream.IntStream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -62,9 +65,30 @@ class ToolLayerTest {
         ContextLayerResult result = layer.assemble(context);
 
         assertTrue(result.hasContent());
+        assertTrue(result.isRequired());
+        assertEquals(LayerCriticality.REQUIRED_COMPRESSIBLE, result.getCriticality());
+        assertTrue(result.getContent().contains("# Tool Use Policy"));
         assertTrue(result.getContent().contains("# Available Tools"));
         assertTrue(result.getContent().contains("**shell**"));
         assertEquals(1, context.getAvailableTools().size());
+    }
+
+    @Test
+    void shouldRenderCompactCatalogAndAdditionalToolCount() {
+        List<ToolComponent> tools = IntStream.range(0, 27)
+                .mapToObj(index -> tool("tool_" + index,
+                        index == 0 ? "   " : "description " + "details ".repeat(80)))
+                .toList();
+        when(toolCallExecutionService.listTools()).thenReturn(tools);
+
+        AgentContext context = AgentContext.builder().build();
+        ContextLayerResult result = layer.assemble(context);
+
+        assertTrue(result.getContent().contains("No description provided."));
+        assertTrue(result.getContent().contains("details details"));
+        assertTrue(result.getContent().contains("..."));
+        assertTrue(result.getContent().contains("3 additional tools are available through schemas."));
+        assertEquals(27, context.getAvailableTools().size());
     }
 
     @Test
@@ -231,8 +255,74 @@ class ToolLayerTest {
     }
 
     @Test
+    void shouldSkipInvalidMcpToolsAndReplaceNativeDefinitionForCurrentSkill() {
+        Skill skill = Skill.builder()
+                .name("github")
+                .description("GitHub")
+                .content("Use GitHub tools.")
+                .mcpConfig(me.golemcore.bot.domain.model.McpConfig.builder()
+                        .command("npx server-github").build())
+                .build();
+        ToolComponent nativeTool = tool("create_issue", "Native issue creation");
+        ToolDefinition replacement = ToolDefinition.builder()
+                .name("create_issue")
+                .description("MCP issue creation")
+                .build();
+        when(toolCallExecutionService.listTools()).thenReturn(List.of(nativeTool));
+        when(mcpPort.getOrStartClient(any())).thenReturn(Arrays.asList(
+                null,
+                ToolDefinition.builder().name(" ").description("blank").build(),
+                replacement,
+                ToolDefinition.builder().name("skipped").description("no adapter").build()));
+        ToolComponent adapter = mock(ToolComponent.class);
+        when(mcpPort.createToolAdapter(any(), any()))
+                .thenReturn(adapter)
+                .thenReturn(null);
+
+        AgentContext context = AgentContext.builder().activeSkill(skill).build();
+        ContextLayerResult result = layer.assemble(context);
+
+        assertTrue(result.getContent().contains("MCP issue creation"));
+        assertFalse(result.getContent().contains("Native issue creation"));
+        assertEquals("create_issue", context.getAvailableTools().get(0).getName());
+        assertTrue(context.getAttributes().containsKey(ContextAttributes.CONTEXT_SCOPED_TOOLS));
+    }
+
+    @Test
+    void shouldAdvertiseScheduleToolOnlyWhenChannelPolicyAllowsIt() {
+        ToolComponent scheduleTool = tool(ToolNames.SCHEDULE_SESSION_ACTION, "Schedule later work");
+        when(toolCallExecutionService.listTools()).thenReturn(List.of(scheduleTool));
+        when(delayedActionPolicyService.canScheduleActions("telegram")).thenReturn(false);
+        when(delayedActionPolicyService.canScheduleActions("web")).thenReturn(true);
+
+        AgentContext telegramContext = AgentContext.builder()
+                .session(AgentSession.builder().channelType("telegram").chatId("chat-1").build())
+                .build();
+        layer.assemble(telegramContext);
+
+        AgentContext webContext = AgentContext.builder()
+                .session(AgentSession.builder().channelType("web").chatId("chat-2").build())
+                .build();
+        layer.assemble(webContext);
+
+        assertTrue(telegramContext.getAvailableTools().isEmpty());
+        assertEquals(1, webContext.getAvailableTools().size());
+    }
+
+    @Test
     void shouldHaveCorrectNameAndOrder() {
         assertEquals("tool", layer.getName());
         assertEquals(50, layer.getOrder());
+    }
+
+    private ToolComponent tool(String name, String description) {
+        ToolComponent tool = mock(ToolComponent.class);
+        when(tool.isEnabled()).thenReturn(true);
+        when(tool.getToolName()).thenReturn(name);
+        when(tool.getDefinition()).thenReturn(ToolDefinition.builder()
+                .name(name)
+                .description(description)
+                .build());
+        return tool;
     }
 }

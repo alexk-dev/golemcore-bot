@@ -18,12 +18,12 @@ package me.golemcore.bot.domain.context;
  * Contact: alex@kuleshov.tech
  */
 
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.context.resolution.SkillResolver;
 import me.golemcore.bot.domain.context.resolution.TierResolver;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.ContextAttributes;
+import me.golemcore.bot.domain.service.ContextCompactionPolicy;
 
 import java.util.Comparator;
 import java.util.List;
@@ -62,7 +62,6 @@ import java.util.List;
  * downstream inspection via {@code ContextAttributes}. It records which layers
  * contributed, their token estimates, and any metadata they produced.
  */
-@RequiredArgsConstructor
 @Slf4j
 public class ContextAssembler {
 
@@ -70,6 +69,26 @@ public class ContextAssembler {
     private final TierResolver tierResolver;
     private final List<ContextLayer> layers;
     private final PromptComposer promptComposer;
+    private final ContextCompactionPolicy contextCompactionPolicy;
+
+    public ContextAssembler(SkillResolver skillResolver,
+            TierResolver tierResolver,
+            List<ContextLayer> layers,
+            PromptComposer promptComposer) {
+        this(skillResolver, tierResolver, layers, promptComposer, null);
+    }
+
+    public ContextAssembler(SkillResolver skillResolver,
+            TierResolver tierResolver,
+            List<ContextLayer> layers,
+            PromptComposer promptComposer,
+            ContextCompactionPolicy contextCompactionPolicy) {
+        this.skillResolver = skillResolver;
+        this.tierResolver = tierResolver;
+        this.layers = layers;
+        this.promptComposer = promptComposer;
+        this.contextCompactionPolicy = contextCompactionPolicy;
+    }
 
     /**
      * Assembles the full context for the current agent turn.
@@ -99,7 +118,7 @@ public class ContextAssembler {
         for (ContextLayer layer : orderedLayers) {
             if (layer.appliesTo(context)) {
                 try {
-                    ContextLayerResult result = layer.assemble(context);
+                    ContextLayerResult result = applyLayerPolicy(layer, layer.assemble(context));
                     blueprint.add(result);
                     log.debug("[ContextAssembler] Layer '{}': {} chars, ~{} tokens",
                             layer.getName(),
@@ -107,7 +126,7 @@ public class ContextAssembler {
                             result.getEstimatedTokens());
                 } catch (Exception e) {
                     log.warn("[ContextAssembler] Layer '{}' failed: {}", layer.getName(), e.getMessage());
-                    blueprint.add(ContextLayerResult.empty(layer.getName()));
+                    blueprint.add(applyLayerPolicy(layer, ContextLayerResult.empty(layer.getName())));
                 }
             } else {
                 log.debug("[ContextAssembler] Layer '{}' skipped (not applicable)", layer.getName());
@@ -115,7 +134,8 @@ public class ContextAssembler {
         }
 
         // Phase 3: Compose final system prompt
-        String systemPrompt = promptComposer.compose(blueprint);
+        int promptBudget = resolvePromptBudget(context);
+        String systemPrompt = promptComposer.compose(blueprint, promptBudget);
         context.setSystemPrompt(systemPrompt);
 
         // Phase 4: Publish active skill metadata
@@ -124,11 +144,32 @@ public class ContextAssembler {
             context.setAttribute(ContextAttributes.ACTIVE_SKILL_NAME, context.getActiveSkill().getName());
         }
 
-        log.info("[ContextAssembler] Assembled context: {} layers, ~{} prompt tokens, {} chars",
+        log.info("[ContextAssembler] Assembled context: {} layers, ~{} assembled tokens, budget={}, {} chars",
                 blueprint.getContentResults().size(),
                 blueprint.getTotalEstimatedTokens(),
+                promptBudget == Integer.MAX_VALUE ? "unlimited" : promptBudget,
                 systemPrompt.length());
 
         return context;
+    }
+
+    private ContextLayerResult applyLayerPolicy(ContextLayer layer, ContextLayerResult result) {
+        if (result == null) {
+            result = ContextLayerResult.empty(layer.getName());
+        }
+        return result.toBuilder()
+                .priority(layer.getPriority())
+                .lifecycle(layer.getLifecycle())
+                .tokenBudget(layer.getTokenBudget())
+                .required(layer.isRequired())
+                .criticality(layer.getCriticality())
+                .build();
+    }
+
+    private int resolvePromptBudget(AgentContext context) {
+        if (contextCompactionPolicy == null) {
+            return Integer.MAX_VALUE;
+        }
+        return contextCompactionPolicy.resolveSystemPromptThreshold(context);
     }
 }
