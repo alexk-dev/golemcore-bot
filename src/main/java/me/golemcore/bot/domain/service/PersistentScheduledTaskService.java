@@ -51,7 +51,7 @@ public class PersistentScheduledTaskService {
     private final StoragePort storagePort;
     private final ObjectMapper objectMapper;
 
-    private volatile List<ScheduledTask> cache;
+    private List<ScheduledTask> cache;
 
     public synchronized List<ScheduledTask> getScheduledTasks() {
         return List.copyOf(ensureLoaded());
