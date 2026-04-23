@@ -80,11 +80,11 @@ class MavenCentralReleaseSourceAdapterTest {
         AvailableRelease release = result.get();
         assertEquals("0.5.0", release.getVersion());
         assertEquals("v0.5.0", release.getTagName());
-        assertEquals("bot-0.5.0.jar", release.getAssetName());
+        assertEquals("bot-0.5.0-exec.jar", release.getAssetName());
         assertEquals("maven-central", release.getSource());
         assertNotNull(release.getDownloadUrl());
         assertTrue(release.getDownloadUrl().contains("repo1.maven.org"));
-        assertTrue(release.getDownloadUrl().contains("me/golemcore/bot/0.5.0/bot-0.5.0.jar"));
+        assertTrue(release.getDownloadUrl().contains("me/golemcore/bot/0.5.0/bot-0.5.0-exec.jar"));
     }
 
     @Test
@@ -127,8 +127,8 @@ class MavenCentralReleaseSourceAdapterTest {
 
         AvailableRelease release = AvailableRelease.builder()
                 .version("0.5.0")
-                .assetName("bot-0.5.0.jar")
-                .downloadUrl("https://repo1.maven.org/maven2/me/golemcore/bot/0.5.0/bot-0.5.0.jar")
+                .assetName("bot-0.5.0-exec.jar")
+                .downloadUrl("https://repo1.maven.org/maven2/me/golemcore/bot/0.5.0/bot-0.5.0-exec.jar")
                 .build();
 
         try (InputStream stream = adapter.downloadAsset(release)) {
@@ -145,8 +145,8 @@ class MavenCentralReleaseSourceAdapterTest {
 
         AvailableRelease release = AvailableRelease.builder()
                 .version("0.5.0")
-                .assetName("bot-0.5.0.jar")
-                .downloadUrl("https://repo1.maven.org/maven2/me/golemcore/bot/0.5.0/bot-0.5.0.jar")
+                .assetName("bot-0.5.0-exec.jar")
+                .downloadUrl("https://repo1.maven.org/maven2/me/golemcore/bot/0.5.0/bot-0.5.0-exec.jar")
                 .build();
 
         assertThrows(IOException.class, () -> adapter.downloadAsset(release));
@@ -161,15 +161,15 @@ class MavenCentralReleaseSourceAdapterTest {
 
         AvailableRelease release = AvailableRelease.builder()
                 .version("0.5.0")
-                .assetName("bot-0.5.0.jar")
-                .checksumUrl("https://repo1.maven.org/maven2/me/golemcore/bot/0.5.0/bot-0.5.0.jar.sha1")
+                .assetName("bot-0.5.0-exec.jar")
+                .checksumUrl("https://repo1.maven.org/maven2/me/golemcore/bot/0.5.0/bot-0.5.0-exec.jar.sha1")
                 .build();
 
         ReleaseSourcePort.ChecksumInfo checksumInfo = adapter.downloadChecksum(release);
 
         assertEquals(sha1, checksumInfo.hexDigest());
         assertEquals("SHA-1", checksumInfo.algorithm());
-        assertEquals("bot-0.5.0.jar", checksumInfo.assetName());
+        assertEquals("bot-0.5.0-exec.jar", checksumInfo.assetName());
     }
 
     @Test
@@ -178,8 +178,8 @@ class MavenCentralReleaseSourceAdapterTest {
 
         AvailableRelease release = AvailableRelease.builder()
                 .version("0.5.0")
-                .assetName("bot-0.5.0.jar")
-                .downloadUrl("https://evil.com/bot-0.5.0.jar")
+                .assetName("bot-0.5.0-exec.jar")
+                .downloadUrl("https://evil.com/bot-0.5.0-exec.jar")
                 .build();
 
         assertThrows(IllegalStateException.class, () -> adapter.downloadAsset(release));
@@ -191,8 +191,8 @@ class MavenCentralReleaseSourceAdapterTest {
 
         AvailableRelease release = AvailableRelease.builder()
                 .version("0.5.0")
-                .assetName("bot-0.5.0.jar")
-                .downloadUrl("http://repo1.maven.org/maven2/me/golemcore/bot/0.5.0/bot-0.5.0.jar")
+                .assetName("bot-0.5.0-exec.jar")
+                .downloadUrl("http://repo1.maven.org/maven2/me/golemcore/bot/0.5.0/bot-0.5.0-exec.jar")
                 .build();
 
         assertThrows(IllegalStateException.class, () -> adapter.downloadAsset(release));
@@ -204,7 +204,7 @@ class MavenCentralReleaseSourceAdapterTest {
 
         AvailableRelease release = AvailableRelease.builder()
                 .version("0.5.0")
-                .assetName("bot-0.5.0.jar")
+                .assetName("bot-0.5.0-exec.jar")
                 .downloadUrl(null)
                 .build();
 
@@ -220,7 +220,7 @@ class MavenCentralReleaseSourceAdapterTest {
 
         AvailableRelease release = AvailableRelease.builder()
                 .version("0.5.0")
-                .assetName("bot-0.5.0.jar")
+                .assetName("bot-0.5.0-exec.jar")
                 .downloadUrl("")
                 .build();
 
@@ -239,7 +239,7 @@ class MavenCentralReleaseSourceAdapterTest {
 
         AvailableRelease release = AvailableRelease.builder()
                 .version("0.5.0")
-                .assetName("bot-0.5.0.jar")
+                .assetName("bot-0.5.0-exec.jar")
                 .checksumUrl("")
                 .build();
 
@@ -255,8 +255,8 @@ class MavenCentralReleaseSourceAdapterTest {
 
         AvailableRelease release = AvailableRelease.builder()
                 .version("0.5.0")
-                .assetName("bot-0.5.0.jar")
-                .checksumUrl("https://repo1.maven.org/maven2/me/golemcore/bot/0.5.0/bot-0.5.0.jar.sha1")
+                .assetName("bot-0.5.0-exec.jar")
+                .checksumUrl("https://repo1.maven.org/maven2/me/golemcore/bot/0.5.0/bot-0.5.0-exec.jar.sha1")
                 .build();
 
         assertThrows(IOException.class, () -> adapter.downloadChecksum(release));
@@ -293,8 +293,8 @@ class MavenCentralReleaseSourceAdapterTest {
 
         AvailableRelease release = AvailableRelease.builder()
                 .version("0.5.0")
-                .assetName("bot-0.5.0.jar")
-                .checksumUrl("https://evil.com/bot-0.5.0.jar.sha1")
+                .assetName("bot-0.5.0-exec.jar")
+                .checksumUrl("https://evil.com/bot-0.5.0-exec.jar.sha1")
                 .build();
 
         assertThrows(IllegalStateException.class, () -> adapter.downloadChecksum(release));

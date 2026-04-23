@@ -217,9 +217,9 @@ jobs:
         if: steps.release-flag.outputs.should-release == 'true' && steps.tag-push.outputs.should-release == 'true'
         id: assets
         run: |
-          JAR_PATH=$(find target -maxdepth 1 -type f -name 'bot-*.jar' ! -name '*.jar.original' | sort | head -n 1)
+          JAR_PATH=$(find target -maxdepth 1 -type f -name 'bot-*-exec.jar' | sort | head -n 1)
           if [[ -z "${JAR_PATH}" ]]; then
-            echo "Release jar not found (expected target/bot-*.jar)." >&2
+            echo "Release jar not found (expected target/bot-*-exec.jar)." >&2
             exit 1
           fi
           SHA_FILE=sha256sums.txt

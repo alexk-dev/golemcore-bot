@@ -845,7 +845,7 @@ Core self-update is controlled by Spring properties under `bot.update.*`.
 - `bot.update.enabled` defaults to `true` (disable with `BOT_UPDATE_ENABLED=false`).
 - Release repository is fixed in code: `alexk-dev/golemcore-bot`.
 - GitHub token is not required (public repository).
-- Release asset glob is fixed in code: `bot-*.jar`.
+- Release asset glob is fixed in code: `bot-*-exec.jar`.
 
 Configurable properties:
 

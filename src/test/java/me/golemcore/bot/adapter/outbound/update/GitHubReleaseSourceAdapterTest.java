@@ -68,9 +68,14 @@ class GitHubReleaseSourceAdapterTest {
                   "published_at": "2026-02-22T10:00:00Z",
                   "assets": [
                     {
-                      "id": 101,
+                      "id": 100,
                       "name": "bot-0.5.0.jar",
                       "browser_download_url": "https://github.com/alexk-dev/golemcore-bot/releases/download/v0.5.0/bot-0.5.0.jar"
+                    },
+                    {
+                      "id": 101,
+                      "name": "bot-0.5.0-exec.jar",
+                      "browser_download_url": "https://github.com/alexk-dev/golemcore-bot/releases/download/v0.5.0/bot-0.5.0-exec.jar"
                     },
                     {
                       "id": 102,
@@ -91,10 +96,11 @@ class GitHubReleaseSourceAdapterTest {
         AvailableRelease release = result.get();
         assertEquals("0.5.0", release.getVersion());
         assertEquals("v0.5.0", release.getTagName());
-        assertEquals("bot-0.5.0.jar", release.getAssetName());
+        assertEquals("bot-0.5.0-exec.jar", release.getAssetName());
         assertEquals("github", release.getSource());
         assertNotNull(release.getDownloadUrl());
         assertTrue(release.getDownloadUrl().contains("api.github.com"));
+        assertTrue(release.getDownloadUrl().contains("assets/101"));
     }
 
     @Test
@@ -142,8 +148,30 @@ class GitHubReleaseSourceAdapterTest {
     }
 
     @Test
+    void shouldReturnEmptyWhenOnlyThinJarAssetFound() throws Exception {
+        String releaseJson = """
+                {
+                  "tag_name": "v0.5.0",
+                  "published_at": "2026-02-22T10:00:00Z",
+                  "assets": [
+                    { "id": 101, "name": "bot-0.5.0.jar" },
+                    { "id": 102, "name": "sha256sums.txt" }
+                  ]
+                }
+                """;
+
+        StubHttpClient httpClient = new StubHttpClient();
+        httpClient.enqueueStringResponse(200, releaseJson);
+        StubGitHubAdapter adapter = new StubGitHubAdapter(objectMapper, botProperties, httpClient);
+
+        Optional<AvailableRelease> result = adapter.fetchLatestRelease();
+
+        assertFalse(result.isPresent());
+    }
+
+    @Test
     void shouldDownloadChecksumAndReturnSha256() throws Exception {
-        String checksumContent = "abcdef1234567890 bot-0.5.0.jar\nfedcba0987654321 other-file.txt\n";
+        String checksumContent = "abcdef1234567890 bot-0.5.0-exec.jar\nfedcba0987654321 other-file.txt\n";
 
         StubHttpClient httpClient = new StubHttpClient();
         httpClient.enqueueStringResponse(200, checksumContent);
@@ -151,7 +179,7 @@ class GitHubReleaseSourceAdapterTest {
 
         AvailableRelease release = AvailableRelease.builder()
                 .version("0.5.0")
-                .assetName("bot-0.5.0.jar")
+                .assetName("bot-0.5.0-exec.jar")
                 .checksumUrl("https://api.github.com/repos/alexk-dev/golemcore-bot/releases/assets/102")
                 .build();
 
@@ -159,7 +187,7 @@ class GitHubReleaseSourceAdapterTest {
 
         assertEquals("abcdef1234567890", checksumInfo.hexDigest());
         assertEquals("SHA-256", checksumInfo.algorithm());
-        assertEquals("bot-0.5.0.jar", checksumInfo.assetName());
+        assertEquals("bot-0.5.0-exec.jar", checksumInfo.assetName());
     }
 
     @Test
@@ -169,7 +197,7 @@ class GitHubReleaseSourceAdapterTest {
                   "tag_name": " ",
                   "published_at": "2026-02-22T10:00:00Z",
                   "assets": [
-                    { "id": 101, "name": "bot-0.5.0.jar" },
+                    { "id": 101, "name": "bot-0.5.0-exec.jar" },
                     { "id": 102, "name": "sha256sums.txt" }
                   ]
                 }
@@ -191,7 +219,7 @@ class GitHubReleaseSourceAdapterTest {
 
         AvailableRelease release = AvailableRelease.builder()
                 .version("0.5.0")
-                .assetName("bot-0.5.0.jar")
+                .assetName("bot-0.5.0-exec.jar")
                 .downloadUrl("https://api.github.com/repos/alexk-dev/golemcore-bot/releases/assets/101")
                 .build();
 
@@ -206,13 +234,13 @@ class GitHubReleaseSourceAdapterTest {
         byte[] jarBytes = "redirected-jar".getBytes(StandardCharsets.UTF_8);
         StubHttpClient httpClient = new StubHttpClient();
         httpClient.enqueueResponseWithHeaders(302, new byte[0],
-                Map.of("Location", List.of("https://objects.githubusercontent.com/release-asset/bot-0.5.0.jar")));
+                Map.of("Location", List.of("https://objects.githubusercontent.com/release-asset/bot-0.5.0-exec.jar")));
         httpClient.enqueueBinaryResponse(200, jarBytes);
         StubGitHubAdapter adapter = new StubGitHubAdapter(objectMapper, botProperties, httpClient);
 
         AvailableRelease release = AvailableRelease.builder()
                 .version("0.5.0")
-                .assetName("bot-0.5.0.jar")
+                .assetName("bot-0.5.0-exec.jar")
                 .downloadUrl("https://api.github.com/repos/alexk-dev/golemcore-bot/releases/assets/101")
                 .build();
 
@@ -230,7 +258,7 @@ class GitHubReleaseSourceAdapterTest {
 
         AvailableRelease release = AvailableRelease.builder()
                 .version("0.5.0")
-                .assetName("bot-0.5.0.jar")
+                .assetName("bot-0.5.0-exec.jar")
                 .downloadUrl("https://api.github.com/repos/alexk-dev/golemcore-bot/releases/assets/101")
                 .build();
 
@@ -245,7 +273,7 @@ class GitHubReleaseSourceAdapterTest {
 
         AvailableRelease release = AvailableRelease.builder()
                 .version("0.5.0")
-                .assetName("bot-0.5.0.jar")
+                .assetName("bot-0.5.0-exec.jar")
                 .checksumUrl("https://api.github.com/repos/alexk-dev/golemcore-bot/releases/assets/102")
                 .build();
 
@@ -254,7 +282,7 @@ class GitHubReleaseSourceAdapterTest {
 
     @Test
     void shouldFollowRedirectOnChecksumDownload() throws Exception {
-        String checksumContent = "abcdef1234567890 bot-0.5.0.jar\n";
+        String checksumContent = "abcdef1234567890 bot-0.5.0-exec.jar\n";
         StubHttpClient httpClient = new StubHttpClient();
         httpClient.enqueueResponseWithHeaders(302, new byte[0],
                 Map.of("Location", List.of("https://objects.githubusercontent.com/sha256sums.txt")));
@@ -263,7 +291,7 @@ class GitHubReleaseSourceAdapterTest {
 
         AvailableRelease release = AvailableRelease.builder()
                 .version("0.5.0")
-                .assetName("bot-0.5.0.jar")
+                .assetName("bot-0.5.0-exec.jar")
                 .checksumUrl("https://api.github.com/repos/alexk-dev/golemcore-bot/releases/assets/102")
                 .build();
 
@@ -278,8 +306,8 @@ class GitHubReleaseSourceAdapterTest {
 
         AvailableRelease release = AvailableRelease.builder()
                 .version("0.5.0")
-                .assetName("bot-0.5.0.jar")
-                .downloadUrl("https://evil.com/bot-0.5.0.jar")
+                .assetName("bot-0.5.0-exec.jar")
+                .downloadUrl("https://evil.com/bot-0.5.0-exec.jar")
                 .build();
 
         assertThrows(IllegalStateException.class, () -> adapter.downloadAsset(release));
@@ -292,7 +320,7 @@ class GitHubReleaseSourceAdapterTest {
 
         AvailableRelease release = AvailableRelease.builder()
                 .version("0.5.0")
-                .assetName("bot-0.5.0.jar")
+                .assetName("bot-0.5.0-exec.jar")
                 .downloadUrl("http://api.github.com/repos/alexk-dev/golemcore-bot/releases/assets/101")
                 .build();
 
@@ -306,7 +334,7 @@ class GitHubReleaseSourceAdapterTest {
 
         AvailableRelease release = AvailableRelease.builder()
                 .version("0.5.0")
-                .assetName("bot-0.5.0.jar")
+                .assetName("bot-0.5.0-exec.jar")
                 .downloadUrl("https://user:pass@api.github.com/repos/alexk-dev/golemcore-bot/releases/assets/101")
                 .build();
 
@@ -320,7 +348,7 @@ class GitHubReleaseSourceAdapterTest {
 
         AvailableRelease release = AvailableRelease.builder()
                 .version("0.5.0")
-                .assetName("bot-0.5.0.jar")
+                .assetName("bot-0.5.0-exec.jar")
                 .downloadUrl("https://api.github.com:8080/repos/alexk-dev/golemcore-bot/releases/assets/101")
                 .build();
 
@@ -336,7 +364,7 @@ class GitHubReleaseSourceAdapterTest {
 
         AvailableRelease release = AvailableRelease.builder()
                 .version("0.5.0")
-                .assetName("bot-0.5.0.jar")
+                .assetName("bot-0.5.0-exec.jar")
                 .downloadUrl("https://api.github.com/repos/alexk-dev/golemcore-bot/releases/assets/101")
                 .build();
 
@@ -349,7 +377,7 @@ class GitHubReleaseSourceAdapterTest {
                 {
                   "tag_name": "v0.5.0; rm -rf /",
                   "assets": [
-                    { "id": 101, "name": "bot-0.5.0.jar" },
+                    { "id": 101, "name": "bot-0.5.0-exec.jar" },
                     { "id": 102, "name": "sha256sums.txt" }
                   ]
                 }
@@ -368,7 +396,7 @@ class GitHubReleaseSourceAdapterTest {
                 {
                   "tag_name": "v0.5.0",
                   "assets": [
-                    { "id": 101, "name": "bot-../../../etc/passwd.jar" },
+                    { "id": 101, "name": "bot-../../../etc/passwd-exec.jar" },
                     { "id": 102, "name": "sha256sums.txt" }
                   ]
                 }
@@ -404,7 +432,7 @@ class GitHubReleaseSourceAdapterTest {
                 {
                   "tag_name": "v0.5.0",
                   "assets": [
-                    { "id": 101, "name": "bot-0.5.0.jar" }
+                    { "id": 101, "name": "bot-0.5.0-exec.jar" }
                   ]
                 }
                 """;
@@ -422,7 +450,7 @@ class GitHubReleaseSourceAdapterTest {
                 {
                   "tag_name": "1.2.3",
                   "assets": [
-                    { "id": 101, "name": "bot-1.2.3.jar" },
+                    { "id": 101, "name": "bot-1.2.3-exec.jar" },
                     { "id": 102, "name": "sha256sums.txt" }
                   ]
                 }
@@ -443,7 +471,7 @@ class GitHubReleaseSourceAdapterTest {
                 {
                   "tag_name": "release-build",
                   "assets": [
-                    { "id": 101, "name": "bot-release.jar" },
+                    { "id": 101, "name": "bot-release-exec.jar" },
                     { "id": 102, "name": "sha256sums.txt" }
                   ]
                 }
@@ -464,7 +492,7 @@ class GitHubReleaseSourceAdapterTest {
                 {
                   "tag_name": "V3.0.1",
                   "assets": [
-                    { "id": 101, "name": "bot-3.0.1.jar" },
+                    { "id": 101, "name": "bot-3.0.1-exec.jar" },
                     { "id": 102, "name": "sha256sums.txt" }
                   ]
                 }
@@ -485,7 +513,7 @@ class GitHubReleaseSourceAdapterTest {
                 {
                   "tag_name": "v0.5.0",
                   "assets": [
-                    { "id": 101, "name": "bot-0.5.0.jar" },
+                    { "id": 101, "name": "bot-0.5.0-exec.jar" },
                     { "id": 102, "name": "sha256sums.txt" }
                   ]
                 }
@@ -507,7 +535,7 @@ class GitHubReleaseSourceAdapterTest {
                   "tag_name": "v0.5.0",
                   "published_at": "not-a-date",
                   "assets": [
-                    { "id": 101, "name": "bot-0.5.0.jar" },
+                    { "id": 101, "name": "bot-0.5.0-exec.jar" },
                     { "id": 102, "name": "sha256sums.txt" }
                   ]
                 }
@@ -523,7 +551,7 @@ class GitHubReleaseSourceAdapterTest {
 
     @Test
     void shouldHandleChecksumWithStarPrefix() throws Exception {
-        String checksumContent = "abcdef1234567890 *bot-0.5.0.jar\n";
+        String checksumContent = "abcdef1234567890 *bot-0.5.0-exec.jar\n";
 
         StubHttpClient httpClient = new StubHttpClient();
         httpClient.enqueueStringResponse(200, checksumContent);
@@ -531,7 +559,7 @@ class GitHubReleaseSourceAdapterTest {
 
         AvailableRelease release = AvailableRelease.builder()
                 .version("0.5.0")
-                .assetName("bot-0.5.0.jar")
+                .assetName("bot-0.5.0-exec.jar")
                 .checksumUrl("https://api.github.com/repos/alexk-dev/golemcore-bot/releases/assets/102")
                 .build();
 
@@ -549,7 +577,7 @@ class GitHubReleaseSourceAdapterTest {
 
         AvailableRelease release = AvailableRelease.builder()
                 .version("0.5.0")
-                .assetName("bot-0.5.0.jar")
+                .assetName("bot-0.5.0-exec.jar")
                 .checksumUrl("https://api.github.com/repos/alexk-dev/golemcore-bot/releases/assets/102")
                 .build();
 
@@ -562,7 +590,7 @@ class GitHubReleaseSourceAdapterTest {
                 {
                   "tag_name": "v0.5.0",
                   "assets": [
-                    { "name": "bot-0.5.0.jar" },
+                    { "name": "bot-0.5.0-exec.jar" },
                     { "id": 102, "name": "sha256sums.txt" }
                   ]
                 }
@@ -581,7 +609,7 @@ class GitHubReleaseSourceAdapterTest {
                 {
                   "tag_name": "v0.5.0",
                   "assets": [
-                    { "id": -1, "name": "bot-0.5.0.jar" },
+                    { "id": -1, "name": "bot-0.5.0-exec.jar" },
                     { "id": 102, "name": "sha256sums.txt" }
                   ]
                 }
@@ -601,7 +629,7 @@ class GitHubReleaseSourceAdapterTest {
 
         AvailableRelease release = AvailableRelease.builder()
                 .version("0.5.0")
-                .assetName("bot-0.5.0.jar")
+                .assetName("bot-0.5.0-exec.jar")
                 .downloadUrl("https://api.github.com/repos/alexk-dev/golemcore-bot/releases/assets/101#frag")
                 .build();
 
@@ -617,7 +645,7 @@ class GitHubReleaseSourceAdapterTest {
 
         AvailableRelease release = AvailableRelease.builder()
                 .version("0.5.0")
-                .assetName("bot-0.5.0.jar")
+                .assetName("bot-0.5.0-exec.jar")
                 .downloadUrl("https://api.github.com:443/repos/alexk-dev/golemcore-bot/releases/assets/101")
                 .build();
 
@@ -634,7 +662,7 @@ class GitHubReleaseSourceAdapterTest {
 
         AvailableRelease release = AvailableRelease.builder()
                 .version("0.5.0")
-                .assetName("bot-0.5.0.jar")
+                .assetName("bot-0.5.0-exec.jar")
                 .downloadUrl("https://api.github.com/repos/alexk-dev/golemcore-bot/releases/assets/101")
                 .build();
 
