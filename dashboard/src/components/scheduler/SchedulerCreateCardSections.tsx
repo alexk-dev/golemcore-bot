@@ -1,6 +1,6 @@
 import type { ReactElement } from 'react';
 import { Button, Form } from '../ui/tailwind-components';
-import type { SchedulerFrequency, SchedulerMode, SchedulerTargetType } from './schedulerTypes';
+import type { SchedulerFrequency, SchedulerMode } from './schedulerTypes';
 import { normalizeTimeInput, parseLimitInput, type SchedulerTargetOption } from './schedulerFormUtils';
 
 const PRESET_TIMES: readonly string[] = ['09:00', '12:00', '18:00', '21:00'];
@@ -28,6 +28,8 @@ interface ToggleGroupProps<TValue extends string> {
 }
 
 interface TargetSelectorProps {
+  label: string;
+  helpText?: string;
   featureEnabled: boolean;
   targetOptions: SchedulerTargetOption[];
   effectiveTargetId: string;
@@ -85,23 +87,6 @@ function isWeeklyOrCustom(frequency: SchedulerFrequency): boolean {
   return frequency === 'weekly' || frequency === 'custom';
 }
 
-export function TargetTypeToggle({
-  selected,
-  onChange,
-}: Pick<ToggleGroupProps<SchedulerTargetType>, 'selected' | 'onChange'>): ReactElement {
-  return (
-    <ToggleGroup
-      label="Target type"
-      options={[
-        { value: 'GOAL', label: 'Goal' },
-        { value: 'TASK', label: 'Task' },
-      ]}
-      selected={selected}
-      onChange={onChange}
-    />
-  );
-}
-
 export function SchedulerModeToggle({
   selected,
   onChange,
@@ -120,6 +105,8 @@ export function SchedulerModeToggle({
 }
 
 export function TargetSelector({
+  label,
+  helpText,
   featureEnabled,
   targetOptions,
   effectiveTargetId,
@@ -127,7 +114,7 @@ export function TargetSelector({
 }: TargetSelectorProps): ReactElement {
   return (
     <Form.Group className="mb-3">
-      <Form.Label>Target</Form.Label>
+      <Form.Label>{label}</Form.Label>
       <Form.Select
         size="sm"
         value={effectiveTargetId}
@@ -143,6 +130,9 @@ export function TargetSelector({
         <Form.Text className="text-body-secondary">
           Selected ID: <code>{effectiveTargetId}</code>
         </Form.Text>
+      )}
+      {effectiveTargetId.length === 0 && helpText != null && helpText.length > 0 && (
+        <Form.Text className="text-body-secondary">{helpText}</Form.Text>
       )}
     </Form.Group>
   );

@@ -40,6 +40,7 @@ class AutoModeSchedulingWiringTest {
             .withBean(GoalManagementTool.class)
             .withBean(ScheduleReportSender.class)
             .withBean(ScheduledRunMessageFactory.class)
+            .withBean(ScheduledTaskShellRunner.class, () -> mock(ScheduledTaskShellRunner.class))
             .withBean(ScheduledRunExecutor.class)
             .withBean(AutoModeScheduler.class)
             .withBean(UpdateActivityGate.class);

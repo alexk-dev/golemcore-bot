@@ -15,6 +15,7 @@ interface SchedulerRunLogsModalProps {
   runDetailLoading: boolean;
   resolveGoalHref: (goalId: string) => string | null;
   resolveTaskHref: (taskId: string) => string | null;
+  resolveScheduledTaskHref: (scheduledTaskId: string) => string | null;
   onHide: () => void;
   onSelectRun: (runId: string) => void;
 }
@@ -38,6 +39,7 @@ interface RunTranscriptProps {
   runDetailLoading: boolean;
   resolveGoalHref: (goalId: string) => string | null;
   resolveTaskHref: (taskId: string) => string | null;
+  resolveScheduledTaskHref: (scheduledTaskId: string) => string | null;
   onNavigate: () => void;
 }
 
@@ -157,6 +159,7 @@ function RunTranscript({
   runDetailLoading,
   resolveGoalHref,
   resolveTaskHref,
+  resolveScheduledTaskHref,
   onNavigate,
 }: RunTranscriptProps): ReactElement {
   if (runDetailLoading) {
@@ -192,6 +195,14 @@ function RunTranscript({
             onNavigate={onNavigate}
           />
         )}
+        {runDetail.scheduledTaskId != null && runDetail.scheduledTaskId.length > 0 && (
+          <TargetLink
+            label={`Scheduled task: ${runDetail.scheduledTaskLabel ?? runDetail.scheduledTaskId}`}
+            id={runDetail.scheduledTaskId}
+            href={resolveScheduledTaskHref(runDetail.scheduledTaskId)}
+            onNavigate={onNavigate}
+          />
+        )}
       </div>
 
       <div className="d-flex flex-column gap-2">
@@ -214,6 +225,7 @@ export function SchedulerRunLogsModal({
   runDetailLoading,
   resolveGoalHref,
   resolveTaskHref,
+  resolveScheduledTaskHref,
   onHide,
   onSelectRun,
 }: SchedulerRunLogsModalProps): ReactElement {
@@ -253,6 +265,7 @@ export function SchedulerRunLogsModal({
               runDetailLoading={runDetailLoading}
               resolveGoalHref={resolveGoalHref}
               resolveTaskHref={resolveTaskHref}
+              resolveScheduledTaskHref={resolveScheduledTaskHref}
               onNavigate={onHide}
             />
           </div>

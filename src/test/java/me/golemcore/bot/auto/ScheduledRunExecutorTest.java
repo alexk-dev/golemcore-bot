@@ -6,6 +6,7 @@ import me.golemcore.bot.domain.model.AutoTask;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.ScheduleEntry;
+import me.golemcore.bot.domain.model.ScheduledTask;
 import me.golemcore.bot.domain.service.AutoModeService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.SessionRunCoordinator;
@@ -17,10 +18,12 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -38,6 +41,7 @@ class ScheduledRunExecutorTest {
     private SessionPort sessionPort;
     private ScheduledRunMessageFactory scheduledRunMessageFactory;
     private ScheduleReportSender reportSender;
+    private ScheduledTaskShellRunner scheduledTaskShellRunner;
     private ScheduledRunExecutor executor;
 
     private static final String GOAL_ID = "goal-1";
@@ -52,6 +56,7 @@ class ScheduledRunExecutorTest {
         sessionPort = mock(SessionPort.class);
         scheduledRunMessageFactory = mock(ScheduledRunMessageFactory.class);
         reportSender = mock(ScheduleReportSender.class);
+        scheduledTaskShellRunner = mock(ScheduledTaskShellRunner.class);
 
         executor = new ScheduledRunExecutor(
                 autoModeService,
@@ -59,7 +64,8 @@ class ScheduledRunExecutorTest {
                 runtimeConfigService,
                 sessionPort,
                 scheduledRunMessageFactory,
-                reportSender);
+                reportSender,
+                scheduledTaskShellRunner);
     }
 
     @Test
@@ -265,6 +271,115 @@ class ScheduledRunExecutorTest {
         executor.executeSchedule(schedule, ctx, TIMEOUT);
 
         verify(autoModeService).recordScheduledTaskFailure(eq("scheduled-task-1"), eq("boom"), eq("fp"), isNull());
+    }
+
+    @Test
+    void shouldSkipBusyScheduledTaskRunWhenSameTaskIsAlreadyExecuting() throws Exception {
+        ScheduleEntry schedule = buildSchedule("scheduled-task-1", ScheduleEntry.ScheduleType.SCHEDULED_TASK);
+        ScheduledRunMessage runMessage = new ScheduledRunMessage(
+                "prompt", AutoRunKind.SCHEDULED_TASK_RUN, "scheduled-task-1", null, null,
+                null, "Nightly cleanup", false, null, false, false);
+        ScheduledTask task = ScheduledTask.builder()
+                .id("scheduled-task-1")
+                .title("Nightly cleanup")
+                .executionMode(ScheduledTask.ExecutionMode.AGENT_PROMPT)
+                .build();
+        ScheduleDeliveryContext ctx = new ScheduleDeliveryContext("telegram", "sess", "trans");
+        CountDownLatch started = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+
+        when(scheduledRunMessageFactory.buildForSchedule(schedule)).thenReturn(Optional.of(runMessage));
+        when(autoModeService.getScheduledTask("scheduled-task-1")).thenReturn(Optional.of(task));
+        when(scheduledRunMessageFactory.buildSyntheticMessage(eq(runMessage), eq(schedule), eq(ctx), anyString()))
+                .thenAnswer(invocation -> Message.builder()
+                        .role("user")
+                        .content(runMessage.content())
+                        .channelType(ctx.channelType())
+                        .chatId(ctx.sessionChatId())
+                        .senderId("auto")
+                        .metadata(new HashMap<>())
+                        .build());
+        when(sessionRunCoordinator.submit(any(Message.class))).thenAnswer(invocation -> {
+            Message message = invocation.getArgument(0);
+            started.countDown();
+            assertEquals(true, release.await(1, TimeUnit.SECONDS));
+            message.getMetadata().put(ContextAttributes.AUTO_RUN_STATUS, "SUCCESS");
+            message.getMetadata().put(ContextAttributes.AUTO_RUN_ASSISTANT_TEXT, "done");
+            return CompletableFuture.completedFuture(null);
+        });
+
+        CompletableFuture<ScheduledRunOutcome> firstRun = CompletableFuture.supplyAsync(
+                () -> executor.executeSchedule(schedule, ctx, TIMEOUT));
+        assertEquals(true, started.await(1, TimeUnit.SECONDS));
+
+        ScheduledRunOutcome secondOutcome = executor.executeSchedule(schedule, ctx, TIMEOUT);
+        release.countDown();
+
+        assertEquals(ScheduledRunOutcome.SKIPPED_TASK_BUSY, secondOutcome);
+        assertEquals(ScheduledRunOutcome.EXECUTED, firstRun.get(1, TimeUnit.SECONDS));
+        verify(sessionRunCoordinator).submit(any(Message.class));
+    }
+
+    @Test
+    void shouldExecuteShellScheduledTaskWithoutSubmittingAgentRun() throws Exception {
+        ScheduleEntry schedule = buildSchedule("scheduled-task-1", ScheduleEntry.ScheduleType.SCHEDULED_TASK);
+        ScheduledRunMessage runMessage = new ScheduledRunMessage(
+                "prompt", AutoRunKind.SCHEDULED_TASK_RUN, "scheduled-task-1", null, null,
+                null, "Nightly cleanup", false, null, false, false);
+        ScheduledTask shellTask = ScheduledTask.builder()
+                .id("scheduled-task-1")
+                .title("Nightly cleanup")
+                .executionMode(ScheduledTask.ExecutionMode.SHELL_COMMAND)
+                .shellCommand("printf 'ok'")
+                .build();
+        ScheduleDeliveryContext ctx = new ScheduleDeliveryContext("telegram", "sess", "trans");
+        when(scheduledRunMessageFactory.buildForSchedule(schedule)).thenReturn(Optional.of(runMessage));
+        when(scheduledRunMessageFactory.buildReportHeader(runMessage)).thenReturn("header");
+        when(autoModeService.getScheduledTask("scheduled-task-1")).thenReturn(Optional.of(shellTask));
+        when(scheduledTaskShellRunner.run(shellTask, TIMEOUT))
+                .thenReturn(new ScheduledTaskShellRunner.ShellRunResult(true, "ok", "ok", null));
+
+        ScheduledRunOutcome outcome = executor.executeSchedule(schedule, ctx, TIMEOUT);
+
+        assertEquals(ScheduledRunOutcome.EXECUTED, outcome);
+        verify(sessionRunCoordinator, never()).submit(any());
+        verify(autoModeService).recordScheduledTaskSuccess("scheduled-task-1", null);
+        verify(reportSender).sendReport(eq(schedule), eq("header"), eq("ok"), eq(ctx));
+    }
+
+    @Test
+    void shouldRecordFailureWhenShellScheduledTaskFails() throws Exception {
+        ScheduleEntry schedule = buildSchedule("scheduled-task-1", ScheduleEntry.ScheduleType.SCHEDULED_TASK);
+        ScheduledRunMessage runMessage = new ScheduledRunMessage(
+                "prompt", AutoRunKind.SCHEDULED_TASK_RUN, "scheduled-task-1", null, null,
+                null, "Nightly cleanup", false, null, false, false);
+        ScheduledTask shellTask = ScheduledTask.builder()
+                .id("scheduled-task-1")
+                .title("Nightly cleanup")
+                .executionMode(ScheduledTask.ExecutionMode.SHELL_COMMAND)
+                .shellCommand("printf 'fail'")
+                .build();
+        ScheduleDeliveryContext ctx = new ScheduleDeliveryContext("telegram", "sess", "trans");
+        when(scheduledRunMessageFactory.buildForSchedule(schedule)).thenReturn(Optional.of(runMessage));
+        when(scheduledRunMessageFactory.buildReportHeader(runMessage)).thenReturn("header");
+        when(autoModeService.getScheduledTask("scheduled-task-1")).thenReturn(Optional.of(shellTask));
+        when(scheduledTaskShellRunner.run(shellTask, TIMEOUT))
+                .thenReturn(new ScheduledTaskShellRunner.ShellRunResult(
+                        false,
+                        "Command failed with exit code 2",
+                        "Exit code: 2",
+                        "shell_exit_2"));
+
+        ScheduledRunOutcome outcome = executor.executeSchedule(schedule, ctx, TIMEOUT);
+
+        assertEquals(ScheduledRunOutcome.FAILED, outcome);
+        verify(sessionRunCoordinator, never()).submit(any());
+        verify(autoModeService).recordScheduledTaskFailure(
+                eq("scheduled-task-1"),
+                eq("Command failed with exit code 2"),
+                eq("shell_exit_2"),
+                isNull());
+        verify(reportSender).sendReport(eq(schedule), eq("header"), eq("Exit code: 2"), eq(ctx));
     }
 
     @Test

@@ -1,5 +1,5 @@
 package me.golemcore.bot.auto;
 
-enum ScheduledRunOutcome {
-    EXECUTED, SKIPPED_TARGET_MISSING, FAILED
+public enum ScheduledRunOutcome {
+    EXECUTED, SKIPPED_TARGET_MISSING, SKIPPED_TASK_BUSY, FAILED
 }

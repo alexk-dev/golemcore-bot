@@ -18,40 +18,35 @@ package me.golemcore.bot.domain.service;
  * Contact: alex@kuleshov.tech
  */
 
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import java.io.IOException;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
-import java.util.UUID;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.AutoTask;
 import me.golemcore.bot.domain.model.Goal;
 import me.golemcore.bot.domain.model.ScheduledTask;
-import me.golemcore.bot.port.outbound.StoragePort;
+import me.golemcore.bot.port.outbound.ScheduledTaskPersistencePort;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 /**
  * Persistent storage and lifecycle helpers for scheduled tasks.
  */
 @Service
-@RequiredArgsConstructor
 @Slf4j
 public class PersistentScheduledTaskService {
 
-    private static final String AUTO_DIR = "auto";
-    private static final String FILE_NAME = "scheduled-tasks.json";
     private static final String SCHEDULED_TASK_NOT_FOUND = "Scheduled task not found: ";
-    private static final TypeReference<List<ScheduledTask>> TYPE_REF = new TypeReference<>() {
-    };
 
-    private final StoragePort storagePort;
-    private final ObjectMapper objectMapper;
+    private final ScheduledTaskPersistencePort scheduledTaskPersistencePort;
 
     private List<ScheduledTask> cache;
+
+    @Autowired
+    public PersistentScheduledTaskService(ScheduledTaskPersistencePort scheduledTaskPersistencePort) {
+        this.scheduledTaskPersistencePort = scheduledTaskPersistencePort;
+    }
 
     public synchronized List<ScheduledTask> getScheduledTasks() {
         return List.copyOf(ensureLoaded());
@@ -66,38 +61,87 @@ public class PersistentScheduledTaskService {
                 .findFirst();
     }
 
-    public synchronized ScheduledTask createScheduledTask(String title, String description, String prompt,
-            String reflectionModelTier, boolean reflectionTierPriority) {
-        Instant now = Instant.now();
-        ScheduledTask task = ScheduledTask.builder()
-                .id(UUID.randomUUID().toString())
-                .title(requireTitle(title))
-                .description(normalizeOptionalValue(description))
-                .prompt(normalizeOptionalValue(prompt))
-                .reflectionModelTier(normalizeOptionalValue(reflectionModelTier))
-                .reflectionTierPriority(reflectionTierPriority)
-                .createdAt(now)
-                .updatedAt(now)
-                .build();
+    public synchronized ScheduledTask createScheduledTask(
+            String title,
+            String description,
+            String prompt,
+            String reflectionModelTier,
+            boolean reflectionTierPriority) {
+        return createScheduledTask(
+                title,
+                description,
+                prompt,
+                reflectionModelTier,
+                reflectionTierPriority,
+                ScheduledTask.ExecutionMode.AGENT_PROMPT,
+                null,
+                null);
+    }
+
+    public synchronized ScheduledTask createScheduledTask(
+            String title,
+            String description,
+            String prompt,
+            String reflectionModelTier,
+            boolean reflectionTierPriority,
+            ScheduledTask.ExecutionMode executionMode,
+            String shellCommand,
+            String shellWorkingDirectory) {
+        ScheduledTask task = ScheduledTaskMutationSupport.createTask(
+                title,
+                description,
+                prompt,
+                reflectionModelTier,
+                reflectionTierPriority,
+                executionMode,
+                shellCommand,
+                shellWorkingDirectory);
         List<ScheduledTask> tasks = ensureLoaded();
         tasks.add(task);
         saveScheduledTasks(tasks);
         return task;
     }
 
-    public synchronized ScheduledTask updateScheduledTask(String scheduledTaskId, String title, String description,
+    public synchronized ScheduledTask updateScheduledTask(
+            String scheduledTaskId,
+            String title,
+            String description,
             String prompt,
-            String reflectionModelTier, Boolean reflectionTierPriority) {
-        ScheduledTask task = getScheduledTask(scheduledTaskId)
-                .orElseThrow(() -> new IllegalArgumentException(SCHEDULED_TASK_NOT_FOUND + scheduledTaskId));
-        task.setTitle(requireTitle(title));
-        task.setDescription(normalizeOptionalValue(description));
-        task.setPrompt(normalizeOptionalValue(prompt));
-        task.setReflectionModelTier(normalizeOptionalValue(reflectionModelTier));
-        if (reflectionTierPriority != null) {
-            task.setReflectionTierPriority(reflectionTierPriority);
-        }
-        task.setUpdatedAt(Instant.now());
+            String reflectionModelTier,
+            Boolean reflectionTierPriority) {
+        return updateScheduledTask(
+                scheduledTaskId,
+                title,
+                description,
+                prompt,
+                reflectionModelTier,
+                reflectionTierPriority,
+                null,
+                null,
+                null);
+    }
+
+    public synchronized ScheduledTask updateScheduledTask(
+            String scheduledTaskId,
+            String title,
+            String description,
+            String prompt,
+            String reflectionModelTier,
+            Boolean reflectionTierPriority,
+            ScheduledTask.ExecutionMode executionMode,
+            String shellCommand,
+            String shellWorkingDirectory) {
+        ScheduledTask task = requireScheduledTask(scheduledTaskId);
+        ScheduledTaskMutationSupport.applyUpdate(
+                task,
+                title,
+                description,
+                prompt,
+                reflectionModelTier,
+                reflectionTierPriority,
+                executionMode,
+                shellCommand,
+                shellWorkingDirectory);
         saveScheduledTasks(ensureLoaded());
         return task;
     }
@@ -119,28 +163,7 @@ public class PersistentScheduledTaskService {
         if (existing.isPresent()) {
             return existing.get();
         }
-
-        Instant now = Instant.now();
-        ScheduledTask task = ScheduledTask.builder()
-                .id(UUID.randomUUID().toString())
-                .title(requireTitle(goal.getTitle()))
-                .description(normalizeOptionalValue(goal.getDescription()))
-                .prompt(normalizeOptionalValue(goal.getPrompt()))
-                .reflectionModelTier(normalizeOptionalValue(goal.getReflectionModelTier()))
-                .reflectionTierPriority(goal.isReflectionTierPriority())
-                .consecutiveFailureCount(goal.getConsecutiveFailureCount())
-                .reflectionRequired(goal.isReflectionRequired())
-                .lastFailureSummary(goal.getLastFailureSummary())
-                .lastFailureFingerprint(goal.getLastFailureFingerprint())
-                .reflectionStrategy(goal.getReflectionStrategy())
-                .lastUsedSkillName(goal.getLastUsedSkillName())
-                .legacySourceType("GOAL")
-                .legacySourceId(goal.getId())
-                .lastFailureAt(goal.getLastFailureAt())
-                .lastReflectionAt(goal.getLastReflectionAt())
-                .createdAt(goal.getCreatedAt() != null ? goal.getCreatedAt() : now)
-                .updatedAt(goal.getUpdatedAt() != null ? goal.getUpdatedAt() : now)
-                .build();
+        ScheduledTask task = ScheduledTaskMutationSupport.createFromLegacyGoal(goal);
         List<ScheduledTask> tasks = ensureLoaded();
         tasks.add(task);
         saveScheduledTasks(tasks);
@@ -155,68 +178,49 @@ public class PersistentScheduledTaskService {
         if (existing.isPresent()) {
             return existing.get();
         }
-
-        Instant now = Instant.now();
-        ScheduledTask scheduledTask = ScheduledTask.builder()
-                .id(UUID.randomUUID().toString())
-                .title(requireTitle(task.getTitle()))
-                .description(resolveLegacyTaskDescription(goal, task))
-                .prompt(normalizeOptionalValue(task.getPrompt()))
-                .reflectionModelTier(normalizeOptionalValue(task.getReflectionModelTier()))
-                .reflectionTierPriority(task.isReflectionTierPriority())
-                .consecutiveFailureCount(task.getConsecutiveFailureCount())
-                .reflectionRequired(task.isReflectionRequired())
-                .lastFailureSummary(task.getLastFailureSummary())
-                .lastFailureFingerprint(task.getLastFailureFingerprint())
-                .reflectionStrategy(task.getReflectionStrategy())
-                .lastUsedSkillName(task.getLastUsedSkillName())
-                .legacySourceType("TASK")
-                .legacySourceId(task.getId())
-                .lastFailureAt(task.getLastFailureAt())
-                .lastReflectionAt(task.getLastReflectionAt())
-                .createdAt(task.getCreatedAt() != null ? task.getCreatedAt() : now)
-                .updatedAt(task.getUpdatedAt() != null ? task.getUpdatedAt() : now)
-                .build();
+        ScheduledTask scheduledTask = ScheduledTaskMutationSupport.createFromLegacyTask(goal, task);
         List<ScheduledTask> tasks = ensureLoaded();
         tasks.add(scheduledTask);
         saveScheduledTasks(tasks);
         return scheduledTask;
     }
 
-    public synchronized void recordFailure(String scheduledTaskId, String failureSummary, String failureFingerprint,
-            String activeSkillName, int threshold) {
-        ScheduledTask task = getScheduledTask(scheduledTaskId)
-                .orElseThrow(() -> new IllegalArgumentException(SCHEDULED_TASK_NOT_FOUND + scheduledTaskId));
+    public synchronized void recordFailure(
+            String scheduledTaskId,
+            String failureSummary,
+            String failureFingerprint,
+            String activeSkillName,
+            int threshold) {
+        ScheduledTask task = requireScheduledTask(scheduledTaskId);
         Instant now = Instant.now();
         task.setConsecutiveFailureCount(task.getConsecutiveFailureCount() + 1);
-        task.setReflectionRequired(task.getConsecutiveFailureCount() >= Math.max(1, threshold));
-        task.setLastFailureSummary(normalizeOptionalValue(failureSummary));
-        task.setLastFailureFingerprint(resolveFailureFingerprint(failureFingerprint, failureSummary));
+        task.setReflectionRequired(ScheduledTaskMutationSupport.shouldRequireReflection(task, threshold));
+        task.setLastFailureSummary(ScheduledTaskMutationSupport.normalizeOptionalValue(failureSummary));
+        task.setLastFailureFingerprint(
+                ScheduledTaskMutationSupport.resolveFailureFingerprint(failureFingerprint, failureSummary));
         task.setLastFailureAt(now);
-        task.setLastUsedSkillName(normalizeOptionalValue(activeSkillName));
+        task.setLastUsedSkillName(ScheduledTaskMutationSupport.normalizeOptionalValue(activeSkillName));
         task.setUpdatedAt(now);
         saveScheduledTasks(ensureLoaded());
     }
 
     public synchronized void recordSuccess(String scheduledTaskId, String activeSkillName) {
-        ScheduledTask task = getScheduledTask(scheduledTaskId)
-                .orElseThrow(() -> new IllegalArgumentException(SCHEDULED_TASK_NOT_FOUND + scheduledTaskId));
+        ScheduledTask task = requireScheduledTask(scheduledTaskId);
         Instant now = Instant.now();
         task.setConsecutiveFailureCount(0);
         task.setReflectionRequired(false);
         task.setLastFailureSummary(null);
         task.setLastFailureFingerprint(null);
         task.setLastFailureAt(null);
-        task.setLastUsedSkillName(normalizeOptionalValue(activeSkillName));
+        task.setLastUsedSkillName(ScheduledTaskMutationSupport.normalizeOptionalValue(activeSkillName));
         task.setUpdatedAt(now);
         saveScheduledTasks(ensureLoaded());
     }
 
     public synchronized void applyReflectionResult(String scheduledTaskId, String reflectionStrategy) {
-        ScheduledTask task = getScheduledTask(scheduledTaskId)
-                .orElseThrow(() -> new IllegalArgumentException(SCHEDULED_TASK_NOT_FOUND + scheduledTaskId));
+        ScheduledTask task = requireScheduledTask(scheduledTaskId);
         Instant now = Instant.now();
-        task.setReflectionStrategy(normalizeOptionalValue(reflectionStrategy));
+        task.setReflectionStrategy(ScheduledTaskMutationSupport.normalizeOptionalValue(reflectionStrategy));
         task.setReflectionRequired(false);
         task.setConsecutiveFailureCount(0);
         task.setLastReflectionAt(now);
@@ -238,24 +242,34 @@ public class PersistentScheduledTaskService {
 
     public List<ScheduledTask> loadScheduledTasks() {
         try {
-            String json = storagePort.getText(AUTO_DIR, FILE_NAME).join();
-            if (json == null || json.isBlank()) {
+            List<ScheduledTask> tasks = scheduledTaskPersistencePort.loadScheduledTasks();
+            if (tasks == null || tasks.isEmpty()) {
                 return new ArrayList<>();
             }
-            List<ScheduledTask> tasks = objectMapper.readValue(json, TYPE_REF);
-            return tasks != null ? new ArrayList<>(tasks) : new ArrayList<>();
-        } catch (IOException | RuntimeException exception) { // NOSONAR
+            List<ScheduledTask> normalized = new ArrayList<>(tasks.size());
+            for (ScheduledTask task : tasks) {
+                ScheduledTask normalizedTask = ScheduledTaskMutationSupport.normalizeLoadedTask(task);
+                if (normalizedTask != null) {
+                    normalized.add(normalizedTask);
+                }
+            }
+            return normalized;
+        } catch (RuntimeException exception) { // NOSONAR
             log.debug("[ScheduledTask] Failed to load scheduled tasks: {}", exception.getMessage());
             return new ArrayList<>();
         }
     }
 
+    private ScheduledTask requireScheduledTask(String scheduledTaskId) {
+        return getScheduledTask(scheduledTaskId)
+                .orElseThrow(() -> new IllegalArgumentException(SCHEDULED_TASK_NOT_FOUND + scheduledTaskId));
+    }
+
     private void saveScheduledTasks(List<ScheduledTask> tasks) {
         try {
-            String json = objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(tasks);
-            storagePort.putTextAtomic(AUTO_DIR, FILE_NAME, json, true).join();
-            cache = tasks;
-        } catch (IOException | RuntimeException exception) { // NOSONAR
+            scheduledTaskPersistencePort.replaceScheduledTasks(tasks);
+            cache = new ArrayList<>(tasks);
+        } catch (RuntimeException exception) { // NOSONAR
             throw new IllegalStateException("Failed to save scheduled tasks", exception);
         }
     }
@@ -265,38 +279,5 @@ public class PersistentScheduledTaskService {
             cache = loadScheduledTasks();
         }
         return cache;
-    }
-
-    private String resolveLegacyTaskDescription(Goal goal, AutoTask task) {
-        String description = normalizeOptionalValue(task.getDescription());
-        if (description != null) {
-            return description;
-        }
-        if (goal == null || StringValueSupport.isBlank(goal.getTitle())) {
-            return null;
-        }
-        return "Migrated from goal: " + goal.getTitle();
-    }
-
-    private String resolveFailureFingerprint(String explicitFingerprint, String failureSummary) {
-        String normalized = normalizeOptionalValue(explicitFingerprint);
-        if (normalized != null) {
-            return normalized;
-        }
-        return normalizeOptionalValue(failureSummary);
-    }
-
-    private String requireTitle(String title) {
-        if (StringValueSupport.isBlank(title)) {
-            throw new IllegalArgumentException("title is required");
-        }
-        return title.trim();
-    }
-
-    private String normalizeOptionalValue(String value) {
-        if (StringValueSupport.isBlank(value)) {
-            return null;
-        }
-        return value.trim();
     }
 }

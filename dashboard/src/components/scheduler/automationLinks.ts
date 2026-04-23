@@ -19,6 +19,14 @@ export function getTaskHref(taskId: string): string {
   return `${GOALS_PAGE_PATH}#${getTaskAnchorId(taskId)}`;
 }
 
+export function getScheduledTaskAnchorId(scheduledTaskId: string): string {
+  return `scheduled-task-${scheduledTaskId}`;
+}
+
+export function getScheduledTaskHref(scheduledTaskId: string): string {
+  return `${SCHEDULER_PAGE_PATH}#${getScheduledTaskAnchorId(scheduledTaskId)}`;
+}
+
 export function getSchedulerPrefillHref(targetType: SchedulerTargetType, targetId: string): string {
   const params = new URLSearchParams({
     targetType,

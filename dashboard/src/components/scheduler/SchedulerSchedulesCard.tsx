@@ -7,7 +7,9 @@ import { formatLimit, formatNextExecution } from './schedulerFormUtils';
 interface SchedulerSchedulesCardProps {
   schedules: SchedulerSchedule[];
   busy: boolean;
+  canCreate: boolean;
   resolveTargetHref: (schedule: SchedulerSchedule) => string | null;
+  onCreate: () => void;
   onDelete: (scheduleId: string) => void;
   onEdit: (schedule: SchedulerSchedule) => void;
   onViewLogs: (schedule: SchedulerSchedule) => void;
@@ -17,17 +19,34 @@ function resolveStatusVariant(enabled: boolean): 'success' | 'secondary' {
   return enabled ? 'success' : 'secondary';
 }
 
+function isEditableSchedule(schedule: SchedulerSchedule): boolean {
+  return schedule.type === 'SCHEDULED_TASK';
+}
+
 export function SchedulerSchedulesCard({
   schedules,
   busy,
+  canCreate,
   resolveTargetHref,
+  onCreate,
   onDelete,
   onEdit,
   onViewLogs,
 }: SchedulerSchedulesCardProps): ReactElement {
   return (
     <Card className="h-100">
-      <Card.Header className="fw-semibold">Schedules ({schedules.length})</Card.Header>
+      <Card.Header className="d-flex align-items-center justify-content-between gap-3">
+        <div className="fw-semibold">Schedules ({schedules.length})</div>
+        <Button
+          type="button"
+          size="sm"
+          variant="primary"
+          disabled={!canCreate}
+          onClick={onCreate}
+        >
+          New schedule
+        </Button>
+      </Card.Header>
       <Card.Body className="p-0">
         {schedules.length === 0 ? (
           <div className="p-3 text-body-secondary">No schedules yet.</div>
@@ -45,6 +64,7 @@ export function SchedulerSchedulesCard({
             <tbody>
               {schedules.map((schedule) => {
                 const targetHref = resolveTargetHref(schedule);
+                const canEdit = isEditableSchedule(schedule);
                 return (
                   <tr key={schedule.id}>
                     <td>
@@ -61,6 +81,9 @@ export function SchedulerSchedulesCard({
                         </Badge>
                         {schedule.clearContextBeforeRun && (
                           <Badge bg="secondary">Clears context</Badge>
+                        )}
+                        {!canEdit && (
+                          <Badge bg="warning">Legacy target</Badge>
                         )}
                       </div>
                       <div className="small text-body-secondary">
@@ -88,7 +111,7 @@ export function SchedulerSchedulesCard({
                           type="button"
                           size="sm"
                           variant="secondary"
-                          disabled={busy}
+                          disabled={busy || !canEdit}
                           onClick={() => onEdit(schedule)}
                         >
                           Edit

@@ -19,6 +19,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import me.golemcore.bot.adapter.outbound.storage.JsonScheduledTaskPersistenceAdapter;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.AutoTask;
 import me.golemcore.bot.domain.model.ChannelTypes;
@@ -71,7 +72,8 @@ class AutoModeMigrationServiceTest {
         sessionPort = mock(SessionPort.class);
         when(sessionPort.listAll()).thenReturn(List.of());
         sessionScopedGoalService = mock(SessionScopedGoalService.class);
-        persistentScheduledTaskService = new PersistentScheduledTaskService(storagePort, objectMapper);
+        persistentScheduledTaskService = new PersistentScheduledTaskService(
+                new JsonScheduledTaskPersistenceAdapter(storagePort, objectMapper));
         migrationService = new AutoModeMigrationService(
                 storagePort,
                 objectMapper,
@@ -92,6 +94,42 @@ class AutoModeMigrationServiceTest {
 
         assertEquals(1, persistentScheduledTaskService.getScheduledTasks().size());
         assertEquals("goal-1", persistentScheduledTaskService.getScheduledTasks().getFirst().getLegacySourceId());
+    }
+
+    @Test
+    void shouldNotWriteMigrationMarkerUntilLegacyGoalsCanBeAttachedToASession() {
+        migrationService.migrateIfNeeded();
+
+        verify(sessionScopedGoalService, never()).replaceGoals(anyString(), any());
+        verify(storagePort, never()).putText(eq("auto"), eq("goals-session-migration.marker"), anyString());
+
+        when(sessionPort.listAll()).thenReturn(List.of(
+                session("web-1", ChannelTypes.WEB, Instant.parse("2026-02-01T00:00:00Z"))));
+
+        migrationService.migrateIfNeeded();
+
+        verify(sessionScopedGoalService).replaceGoals(eq("web-1"), any());
+        verify(storagePort).putText(eq("auto"), eq("goals-session-migration.marker"), anyString());
+    }
+
+    @Test
+    void shouldMergeLegacyGoalsIntoExistingSessionGoalsInsteadOfReplacingThem() {
+        Goal existingGoal = Goal.builder()
+                .id("existing-goal")
+                .sessionId("web-1")
+                .title("Existing session goal")
+                .build();
+        when(sessionPort.listAll()).thenReturn(List.of(
+                session("web-1", ChannelTypes.WEB, Instant.parse("2026-02-01T00:00:00Z"))));
+        when(sessionScopedGoalService.getGoals("web-1")).thenReturn(new ArrayList<>(List.of(existingGoal)));
+
+        migrationService.migrateIfNeeded();
+
+        ArgumentCaptor<List<Goal>> goalsCaptor = ArgumentCaptor.captor();
+        verify(sessionScopedGoalService).replaceGoals(eq("web-1"), goalsCaptor.capture());
+        List<Goal> mergedGoals = goalsCaptor.getValue();
+        assertEquals(List.of("existing-goal", "goal-1"), mergedGoals.stream().map(Goal::getId).toList());
+        assertEquals("web-1", mergedGoals.get(1).getSessionId());
     }
 
     @Test

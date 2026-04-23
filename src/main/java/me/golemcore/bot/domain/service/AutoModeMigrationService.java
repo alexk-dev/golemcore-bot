@@ -25,6 +25,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -72,9 +73,14 @@ public class AutoModeMigrationService {
             List<Goal> legacyGoals = loadLegacyGoals();
             List<ScheduleEntry> schedules = schedulePersistencePort.loadSchedules();
 
-            migrateLegacyGoalsToLatestSession(legacyGoals);
+            boolean goalsMigrationComplete = migrateLegacyGoalsToLatestSession(legacyGoals);
             migrateScheduledTargets(legacyGoals, schedules);
             schedulePersistencePort.saveSchedules(schedules);
+            if (!goalsMigrationComplete) {
+                log.info("[AutoModeMigration] Legacy schedules migrated, waiting for a Telegram/Web session before "
+                        + "marking session goal migration complete");
+                return;
+            }
             storagePort.putText(AUTO_DIR, MIGRATION_MARKER_FILE, Instant.now().toString()).join();
             log.info("[AutoModeMigration] Legacy goals/tasks migration completed");
         } catch (RuntimeException exception) { // NOSONAR - startup must remain resilient
@@ -96,13 +102,13 @@ public class AutoModeMigrationService {
         }
     }
 
-    private void migrateLegacyGoalsToLatestSession(List<Goal> legacyGoals) {
+    private boolean migrateLegacyGoalsToLatestSession(List<Goal> legacyGoals) {
         if (legacyGoals.isEmpty()) {
-            return;
+            return true;
         }
         AgentSession latestSession = findLatestTelegramOrWebSession();
         if (latestSession == null || latestSession.getId() == null || latestSession.getId().isBlank()) {
-            return;
+            return false;
         }
 
         List<Goal> migratedGoals = legacyGoals.stream()
@@ -114,7 +120,26 @@ public class AutoModeMigrationService {
                     }
                 })
                 .toList();
-        sessionScopedGoalService.replaceGoals(latestSession.getId(), migratedGoals);
+        List<Goal> mergedGoals = mergeWithExistingSessionGoals(latestSession.getId(), migratedGoals);
+        sessionScopedGoalService.replaceGoals(latestSession.getId(), mergedGoals);
+        return true;
+    }
+
+    private List<Goal> mergeWithExistingSessionGoals(String sessionId, List<Goal> migratedGoals) {
+        Map<String, Goal> goalsById = new LinkedHashMap<>();
+        for (Goal existingGoal : sessionScopedGoalService.getGoals(sessionId)) {
+            if (existingGoal == null || existingGoal.getId() == null) {
+                continue;
+            }
+            goalsById.put(existingGoal.getId(), existingGoal);
+        }
+        for (Goal migratedGoal : migratedGoals) {
+            if (migratedGoal == null || migratedGoal.getId() == null) {
+                continue;
+            }
+            goalsById.putIfAbsent(migratedGoal.getId(), migratedGoal);
+        }
+        return new ArrayList<>(goalsById.values());
     }
 
     private void migrateScheduledTargets(List<Goal> legacyGoals, List<ScheduleEntry> schedules) {

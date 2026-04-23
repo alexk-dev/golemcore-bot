@@ -217,6 +217,22 @@ class ScheduleServiceTest {
     }
 
     @Test
+    void shouldReportScheduledTaskAsBlockedWhenRetryWindowIsActive() {
+        ScheduleEntry entry = service.createSchedule(
+                ScheduleEntry.ScheduleType.SCHEDULED_TASK,
+                "scheduled-task-1",
+                CRON_DAILY_NOON,
+                -1);
+
+        entry.setActiveWindowStartedAt(FIXED_NOW.minusSeconds(30));
+        entry.setNextWindowAt(FIXED_NOW.plusSeconds(300));
+        entry.setRetryCount(1);
+
+        assertTrue(service.isScheduledTaskBlocked("scheduled-task-1"));
+        assertFalse(service.isScheduledTaskBlocked("scheduled-task-2"));
+    }
+
+    @Test
     void shouldRecordExecutionAndUpdateNextRun() {
         service.createSchedule(ScheduleEntry.ScheduleType.GOAL, TARGET_GOAL_1,
                 CRON_DAILY_NOON, -1);
@@ -256,14 +272,80 @@ class ScheduleServiceTest {
 
         ScheduleEntry entry = service.getSchedules().get(0);
         String id = entry.getId();
+        entry.setNextExecutionAt(FIXED_NOW.minusSeconds(30));
+
+        service.recordFailedAttempt(id);
+
+        ScheduleEntry updated = service.findSchedule(id).orElseThrow();
+        assertEquals(0, updated.getExecutionCount());
+        assertEquals(1, updated.getRetryCount());
+        assertNull(updated.getLastExecutedAt());
+        assertEquals(FIXED_NOW.plusSeconds(60), updated.getNextExecutionAt());
+        assertEquals(FIXED_NOW.minusSeconds(30), updated.getActiveWindowStartedAt());
+        assertEquals(Instant.parse("2026-02-11T12:00:00Z"), updated.getNextWindowAt());
+        assertTrue(updated.isEnabled());
+    }
+
+    @Test
+    void shouldFinalizeFailedWindowWhenRetryWouldCrossNextScheduleWindow() {
+        service.createSchedule(ScheduleEntry.ScheduleType.GOAL, TARGET_GOAL_1,
+                "0 * * * * *", -1);
+
+        ScheduleEntry entry = service.getSchedules().get(0);
+        String id = entry.getId();
+        entry.setNextExecutionAt(FIXED_NOW.minusSeconds(10));
 
         service.recordFailedAttempt(id);
 
         ScheduleEntry updated = service.findSchedule(id).orElseThrow();
         assertEquals(1, updated.getExecutionCount());
         assertEquals(FIXED_NOW, updated.getLastExecutedAt());
-        assertNotNull(updated.getNextExecutionAt());
-        assertTrue(updated.isEnabled());
+        assertEquals(0, updated.getRetryCount());
+        assertNull(updated.getActiveWindowStartedAt());
+        assertNull(updated.getNextWindowAt());
+        assertEquals(Instant.parse("2026-02-11T10:01:00Z"), updated.getNextExecutionAt());
+    }
+
+    @Test
+    void shouldPromoteExpiredRetryWindowWhenSchedulerResumesAfterDowntime() {
+        service.createSchedule(ScheduleEntry.ScheduleType.GOAL, TARGET_GOAL_1,
+                "0 * * * * *", -1);
+
+        ScheduleEntry entry = service.getSchedules().get(0);
+        entry.setNextExecutionAt(FIXED_NOW.minusSeconds(30));
+        entry.setRetryCount(1);
+        entry.setActiveWindowStartedAt(FIXED_NOW.minusSeconds(30));
+        entry.setNextWindowAt(FIXED_NOW);
+
+        List<ScheduleEntry> dueSchedules = service.getDueSchedules();
+
+        assertEquals(1, dueSchedules.size());
+        ScheduleEntry due = dueSchedules.getFirst();
+        assertEquals(0, due.getRetryCount());
+        assertEquals(FIXED_NOW, due.getActiveWindowStartedAt());
+        assertEquals(FIXED_NOW, due.getNextExecutionAt());
+        assertEquals(Instant.parse("2026-02-11T10:01:00Z"), due.getNextWindowAt());
+    }
+
+    @Test
+    void shouldBlockOtherScheduledTaskSchedulesWhileRetryWindowIsActive() {
+        service.createSchedule(ScheduleEntry.ScheduleType.SCHEDULED_TASK, "scheduled-task-1",
+                "0 * * * * *", -1);
+        service.createSchedule(ScheduleEntry.ScheduleType.SCHEDULED_TASK, "scheduled-task-1",
+                CRON_DAILY_NOON, -1);
+
+        ScheduleEntry retryOwner = service.getSchedules().get(0);
+        retryOwner.setRetryCount(1);
+        retryOwner.setActiveWindowStartedAt(FIXED_NOW.minusSeconds(30));
+        retryOwner.setNextWindowAt(Instant.parse("2026-02-11T10:01:00Z"));
+        retryOwner.setNextExecutionAt(FIXED_NOW.plusSeconds(30));
+
+        ScheduleEntry blocked = service.getSchedules().get(1);
+        blocked.setNextExecutionAt(FIXED_NOW.minusSeconds(5));
+
+        List<ScheduleEntry> dueSchedules = service.getDueSchedules();
+
+        assertTrue(dueSchedules.isEmpty());
     }
 
     @Test
@@ -402,6 +484,17 @@ class ScheduleServiceTest {
     void shouldReturnEmptyWhenNoSchedules() {
         assertTrue(service.getSchedules().isEmpty());
         assertTrue(service.getDueSchedules().isEmpty());
+    }
+
+    @Test
+    void shouldReturnDefensiveCopyOfSchedulesList() {
+        service.createSchedule(ScheduleEntry.ScheduleType.GOAL, TARGET_GOAL_1,
+                CRON_DAILY_9AM, -1);
+
+        List<ScheduleEntry> snapshot = service.getSchedules();
+        assertThrows(UnsupportedOperationException.class, snapshot::clear);
+
+        assertEquals(1, service.getSchedules().size());
     }
 
     @Test

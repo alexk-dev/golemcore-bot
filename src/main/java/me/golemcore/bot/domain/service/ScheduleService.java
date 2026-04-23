@@ -19,6 +19,7 @@ package me.golemcore.bot.domain.service;
  */
 
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -38,6 +39,11 @@ import me.golemcore.bot.port.outbound.SchedulePersistencePort;
  */
 @Slf4j
 public class ScheduleService {
+
+    private static final List<Duration> RETRY_BACKOFFS = List.of(
+            Duration.ofMinutes(1),
+            Duration.ofMinutes(5),
+            Duration.ofMinutes(15));
 
     private final SchedulePersistencePort schedulePersistencePort;
     private final ScheduleCronPort scheduleCronPort;
@@ -74,7 +80,7 @@ public class ScheduleService {
         return createSchedule(type, targetId, cronExpression, maxExecutions, clearContextBeforeRun, null);
     }
 
-    public ScheduleEntry createSchedule(ScheduleEntry.ScheduleType type, String targetId,
+    public synchronized ScheduleEntry createSchedule(ScheduleEntry.ScheduleType type, String targetId,
             String cronExpression, int maxExecutions, boolean clearContextBeforeRun,
             ScheduleReportConfig report) {
         String normalizedCron = normalizeCronExpression(cronExpression);
@@ -97,14 +103,14 @@ public class ScheduleService {
                 .nextExecutionAt(nextExecution)
                 .build();
 
-        List<ScheduleEntry> schedules = getSchedules();
+        List<ScheduleEntry> schedules = new ArrayList<>(getSchedules());
         schedules.add(entry);
         saveSchedules(schedules);
         log.info("[Schedule] Created {} schedule for target {}: {}", type, targetId, normalizedCron);
         return entry;
     }
 
-    public ScheduleEntry updateSchedule(
+    public synchronized ScheduleEntry updateSchedule(
             String id,
             ScheduleEntry.ScheduleType type,
             String targetId,
@@ -148,6 +154,9 @@ public class ScheduleService {
         entry.setMaxExecutions(maxExecutions);
         entry.setUpdatedAt(now);
         entry.setEnabled(enabled && !exhausted);
+        entry.setRetryCount(0);
+        entry.setActiveWindowStartedAt(null);
+        entry.setNextWindowAt(null);
         if (clearContextBeforeRun != null) {
             entry.setClearContextBeforeRun(clearContextBeforeRun);
         }
@@ -174,7 +183,7 @@ public class ScheduleService {
             schedulesCache = schedulePersistencePort.loadSchedules();
             schedulesCache.forEach(this::normalizeLoadedSchedule);
         }
-        return schedulesCache;
+        return List.copyOf(schedulesCache);
     }
 
     public synchronized void replaceSchedules(List<ScheduleEntry> schedules) {
@@ -183,20 +192,33 @@ public class ScheduleService {
         saveSchedules(normalizedSchedules);
     }
 
-    public Optional<ScheduleEntry> findSchedule(String id) {
+    public synchronized Optional<ScheduleEntry> findSchedule(String id) {
         return getSchedules().stream()
                 .filter(schedule -> schedule.getId().equals(id))
                 .findFirst();
     }
 
-    public List<ScheduleEntry> findSchedulesForTarget(String targetId) {
+    public synchronized List<ScheduleEntry> findSchedulesForTarget(String targetId) {
         return getSchedules().stream()
                 .filter(schedule -> schedule.getTargetId().equals(targetId))
                 .toList();
     }
 
-    public void deleteSchedule(String id) {
-        List<ScheduleEntry> schedules = getSchedules();
+    public synchronized boolean isScheduledTaskBlocked(String scheduledTaskId) {
+        if (StringValueSupport.isBlank(scheduledTaskId)) {
+            return false;
+        }
+        String normalizedTargetId = scheduledTaskId.trim();
+        return getSchedules().stream()
+                .filter(ScheduleEntry::isEnabled)
+                .filter(schedule -> !schedule.isExhausted())
+                .filter(schedule -> schedule.getType() == ScheduleEntry.ScheduleType.SCHEDULED_TASK)
+                .filter(schedule -> normalizedTargetId.equals(schedule.getTargetId()))
+                .anyMatch(schedule -> schedule.getActiveWindowStartedAt() != null);
+    }
+
+    public synchronized void deleteSchedule(String id) {
+        List<ScheduleEntry> schedules = new ArrayList<>(getSchedules());
         boolean removed = schedules.removeIf(schedule -> schedule.getId().equals(id));
         if (!removed) {
             throw new IllegalArgumentException("Schedule not found: " + id);
@@ -205,58 +227,151 @@ public class ScheduleService {
         log.info("[Schedule] Deleted schedule: {}", id);
     }
 
-    public List<ScheduleEntry> getDueSchedules() {
+    public synchronized List<ScheduleEntry> getDueSchedules() {
         Instant now = clock.instant();
-        return getSchedules().stream()
+        List<ScheduleEntry> schedules = getSchedules();
+        boolean changed = false;
+        for (ScheduleEntry schedule : schedules) {
+            changed |= normalizeExpiredRetryWindow(schedule, now);
+        }
+        if (changed) {
+            saveSchedules(schedules);
+        }
+        return schedules.stream()
                 .filter(ScheduleEntry::isEnabled)
                 .filter(schedule -> !schedule.isExhausted())
                 .filter(schedule -> schedule.getNextExecutionAt() != null
                         && !schedule.getNextExecutionAt().isAfter(now))
+                .filter(schedule -> !isBlockedByAnotherScheduledTaskWindow(schedule, schedules))
                 .toList();
     }
 
-    public void recordExecution(String id) {
-        recordAttempt(id);
+    public synchronized void recordExecution(String id) {
+        ScheduleEntry entry = findSchedule(id)
+                .orElseThrow(() -> new IllegalArgumentException("Schedule not found: " + id));
+        Instant now = clock.instant();
+        finalizeWindow(entry, now, computeNextExecution(entry.getCronExpression(), now));
+        saveSchedules(getSchedules());
     }
 
-    public void recordFailedAttempt(String id) {
-        recordAttempt(id);
+    public synchronized void recordFailedAttempt(String id) {
+        ScheduleEntry entry = findSchedule(id)
+                .orElseThrow(() -> new IllegalArgumentException("Schedule not found: " + id));
+
+        Instant now = clock.instant();
+        Instant windowStartedAt = resolveActiveWindowStartedAt(entry, now);
+        Instant nextWindowAt = resolveNextWindowAt(entry, windowStartedAt);
+        int retryCount = Math.max(0, entry.getRetryCount());
+
+        if (retryCount < RETRY_BACKOFFS.size()) {
+            Instant retryAt = now.plus(RETRY_BACKOFFS.get(retryCount));
+            if (retryAt.isBefore(nextWindowAt)) {
+                entry.setRetryCount(retryCount + 1);
+                entry.setActiveWindowStartedAt(windowStartedAt);
+                entry.setNextWindowAt(nextWindowAt);
+                entry.setNextExecutionAt(retryAt);
+                entry.setUpdatedAt(now);
+                saveSchedules(getSchedules());
+                log.warn("[Schedule] Retry {} for schedule {} scheduled at {}", retryCount + 1, id, retryAt);
+                return;
+            }
+        }
+
+        Instant nextExecutionAt = nextWindowAt.isAfter(now)
+                ? nextWindowAt
+                : computeNextExecution(entry.getCronExpression(), now);
+        finalizeWindow(entry, now, nextExecutionAt);
+        saveSchedules(getSchedules());
     }
 
-    public void disableSchedule(String id) {
+    public synchronized void disableSchedule(String id) {
         ScheduleEntry entry = findSchedule(id)
                 .orElseThrow(() -> new IllegalArgumentException("Schedule not found: " + id));
 
         Instant now = clock.instant();
         entry.setEnabled(false);
         entry.setNextExecutionAt(null);
+        entry.setRetryCount(0);
+        entry.setActiveWindowStartedAt(null);
+        entry.setNextWindowAt(null);
         entry.setUpdatedAt(now);
         saveSchedules(getSchedules());
         log.warn("[Schedule] Disabled schedule {}", id);
     }
 
-    private void recordAttempt(String id) {
-        ScheduleEntry entry = findSchedule(id)
-                .orElseThrow(() -> new IllegalArgumentException("Schedule not found: " + id));
-
-        Instant now = clock.instant();
+    private void finalizeWindow(ScheduleEntry entry, Instant now, Instant nextExecutionAt) {
         entry.setExecutionCount(entry.getExecutionCount() + 1);
         entry.setLastExecutedAt(now);
         entry.setUpdatedAt(now);
+        entry.setRetryCount(0);
+        entry.setActiveWindowStartedAt(null);
+        entry.setNextWindowAt(null);
 
         if (entry.isExhausted()) {
             entry.setEnabled(false);
             entry.setNextExecutionAt(null);
-            log.info("[Schedule] Schedule {} exhausted after {} executions", id, entry.getExecutionCount());
+            log.info("[Schedule] Schedule {} exhausted after {} executions", entry.getId(), entry.getExecutionCount());
         } else {
-            entry.setNextExecutionAt(computeNextExecution(entry.getCronExpression(), now));
+            entry.setNextExecutionAt(nextExecutionAt);
         }
-
-        saveSchedules(getSchedules());
     }
 
     String normalizeCronExpression(String input) {
         return scheduleCronPort.normalize(input);
+    }
+
+    private Instant resolveActiveWindowStartedAt(ScheduleEntry entry, Instant now) {
+        if (entry.getActiveWindowStartedAt() != null) {
+            return entry.getActiveWindowStartedAt();
+        }
+        if (entry.getNextExecutionAt() != null && !entry.getNextExecutionAt().isAfter(now)) {
+            return entry.getNextExecutionAt();
+        }
+        return now;
+    }
+
+    private Instant resolveNextWindowAt(ScheduleEntry entry, Instant windowStartedAt) {
+        if (entry.getNextWindowAt() != null) {
+            return entry.getNextWindowAt();
+        }
+        return computeNextExecution(entry.getCronExpression(), windowStartedAt);
+    }
+
+    private boolean normalizeExpiredRetryWindow(ScheduleEntry entry, Instant now) {
+        if (entry.getRetryCount() <= 0 || entry.getNextWindowAt() == null || entry.getCronExpression() == null) {
+            return false;
+        }
+        if (entry.getNextWindowAt().isAfter(now)) {
+            return false;
+        }
+        Instant promotedWindow = entry.getNextWindowAt();
+        entry.setRetryCount(0);
+        entry.setActiveWindowStartedAt(promotedWindow);
+        entry.setNextWindowAt(computeNextExecution(entry.getCronExpression(), promotedWindow));
+        entry.setNextExecutionAt(promotedWindow);
+        entry.setUpdatedAt(now);
+        return true;
+    }
+
+    private boolean isBlockedByAnotherScheduledTaskWindow(
+            ScheduleEntry candidate,
+            List<ScheduleEntry> schedules) {
+        if (candidate.getType() != ScheduleEntry.ScheduleType.SCHEDULED_TASK
+                || StringValueSupport.isBlank(candidate.getTargetId())) {
+            return false;
+        }
+        return schedules.stream()
+                .filter(ScheduleEntry::isEnabled)
+                .filter(schedule -> !schedule.isExhausted())
+                .filter(schedule -> schedule.getType() == ScheduleEntry.ScheduleType.SCHEDULED_TASK)
+                .filter(schedule -> candidate.getTargetId().equals(schedule.getTargetId()))
+                .filter(schedule -> schedule.getActiveWindowStartedAt() != null)
+                .min((left, right) -> {
+                    int byWindow = left.getActiveWindowStartedAt().compareTo(right.getActiveWindowStartedAt());
+                    return byWindow != 0 ? byWindow : left.getId().compareTo(right.getId());
+                })
+                .filter(owner -> !candidate.getId().equals(owner.getId()))
+                .isPresent();
     }
 
     Instant computeNextExecution(String cronExpression, Instant after) {
@@ -264,8 +379,9 @@ public class ScheduleService {
     }
 
     private void saveSchedules(List<ScheduleEntry> schedules) {
-        schedulePersistencePort.saveSchedules(schedules);
-        schedulesCache = schedules;
+        List<ScheduleEntry> persistedSchedules = new ArrayList<>(schedules);
+        schedulePersistencePort.saveSchedules(persistedSchedules);
+        schedulesCache = persistedSchedules;
     }
 
     private void normalizeLoadedSchedule(ScheduleEntry entry) {

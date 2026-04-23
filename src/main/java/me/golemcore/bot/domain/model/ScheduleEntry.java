@@ -53,10 +53,14 @@ public class ScheduleEntry {
     private int maxExecutions = -1;
 
     private int executionCount;
+    @Builder.Default
+    private int retryCount = 0;
     private Instant createdAt;
     private Instant updatedAt;
     private Instant lastExecutedAt;
     private Instant nextExecutionAt;
+    private Instant activeWindowStartedAt;
+    private Instant nextWindowAt;
 
     /**
      * Schedule target types.

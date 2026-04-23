@@ -3,16 +3,23 @@ package me.golemcore.bot.adapter.inbound.web.controller;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.time.Instant;
 import java.util.List;
+import me.golemcore.bot.auto.ScheduleDeliveryContext;
+import me.golemcore.bot.auto.ScheduledRunExecutor;
+import me.golemcore.bot.auto.ScheduledRunOutcome;
 import me.golemcore.bot.domain.model.ScheduleEntry;
 import me.golemcore.bot.domain.model.ScheduledTask;
 import me.golemcore.bot.domain.service.AutoModeService;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.ScheduleService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -23,13 +30,21 @@ class ScheduledTasksControllerTest {
 
     private AutoModeService autoModeService;
     private ScheduleService scheduleService;
+    private ScheduledRunExecutor scheduledRunExecutor;
+    private RuntimeConfigService runtimeConfigService;
     private ScheduledTasksController controller;
 
     @BeforeEach
     void setUp() {
         autoModeService = mock(AutoModeService.class);
         scheduleService = mock(ScheduleService.class);
-        controller = new ScheduledTasksController(autoModeService, scheduleService);
+        scheduledRunExecutor = mock(ScheduledRunExecutor.class);
+        runtimeConfigService = mock(RuntimeConfigService.class);
+        controller = new ScheduledTasksController(
+                autoModeService,
+                scheduleService,
+                scheduledRunExecutor,
+                runtimeConfigService);
         when(autoModeService.isFeatureEnabled()).thenReturn(true);
     }
 
@@ -74,19 +89,33 @@ class ScheduledTasksControllerTest {
                 "Read feeds",
                 "Summarize",
                 "coding",
-                true)).thenReturn(created);
+                true,
+                ScheduledTask.ExecutionMode.AGENT_PROMPT,
+                null,
+                null)).thenReturn(created);
 
         var response = controller.createScheduledTask(new ScheduledTasksController.CreateScheduledTaskRequest(
                 "Refresh inbox",
                 "Read feeds",
                 "Summarize",
+                null,
+                null,
+                null,
                 " Coding ",
                 true)).block();
 
         assertEquals(HttpStatus.CREATED, response.getStatusCode());
         assertEquals("scheduled-task-1", response.getBody().id());
         assertEquals("Refresh inbox", response.getBody().title());
-        verify(autoModeService).createScheduledTask("Refresh inbox", "Read feeds", "Summarize", "coding", true);
+        verify(autoModeService).createScheduledTask(
+                "Refresh inbox",
+                "Read feeds",
+                "Summarize",
+                "coding",
+                true,
+                ScheduledTask.ExecutionMode.AGENT_PROMPT,
+                null,
+                null);
     }
 
     @Test
@@ -99,6 +128,9 @@ class ScheduledTasksControllerTest {
                 null,
                 "Prompt",
                 null,
+                null,
+                null,
+                null,
                 null)).thenReturn(updated);
 
         var response = controller.updateScheduledTask(" scheduled-task-1 ",
@@ -107,12 +139,65 @@ class ScheduledTasksControllerTest {
                         null,
                         "Prompt",
                         null,
+                        null,
+                        null,
+                        null,
                         null))
                 .block();
 
         assertEquals(HttpStatus.OK, response.getStatusCode());
         assertEquals("Updated", response.getBody().title());
-        verify(autoModeService).updateScheduledTask("scheduled-task-1", "Updated", null, "Prompt", null, null);
+        verify(autoModeService).updateScheduledTask(
+                "scheduled-task-1",
+                "Updated",
+                null,
+                "Prompt",
+                null,
+                null,
+                null,
+                null,
+                null);
+    }
+
+    @Test
+    void createScheduledTaskShouldPassShellExecutionFields() {
+        ScheduledTask created = scheduledTask("scheduled-task-2", "Nightly cleanup",
+                Instant.parse("2026-01-02T00:00:00Z"));
+        created.setExecutionMode(ScheduledTask.ExecutionMode.SHELL_COMMAND);
+        created.setShellCommand("printf 'cleanup'");
+        created.setShellWorkingDirectory("jobs");
+        when(autoModeService.createScheduledTask(
+                "Nightly cleanup",
+                "Cleanup artifacts",
+                null,
+                null,
+                false,
+                ScheduledTask.ExecutionMode.SHELL_COMMAND,
+                "printf 'cleanup'",
+                "jobs")).thenReturn(created);
+
+        var response = controller.createScheduledTask(new ScheduledTasksController.CreateScheduledTaskRequest(
+                "Nightly cleanup",
+                "Cleanup artifacts",
+                null,
+                "shell-command",
+                "printf 'cleanup'",
+                "jobs",
+                null,
+                false)).block();
+
+        assertEquals(HttpStatus.CREATED, response.getStatusCode());
+        assertEquals("SHELL_COMMAND", response.getBody().executionMode());
+        assertEquals("printf 'cleanup'", response.getBody().shellCommand());
+        verify(autoModeService).createScheduledTask(
+                "Nightly cleanup",
+                "Cleanup artifacts",
+                null,
+                null,
+                false,
+                ScheduledTask.ExecutionMode.SHELL_COMMAND,
+                "printf 'cleanup'",
+                "jobs");
     }
 
     @Test
@@ -131,12 +216,79 @@ class ScheduledTasksControllerTest {
     }
 
     @Test
+    void runScheduledTaskNowShouldExecuteUsingScheduledRunExecutor() {
+        when(autoModeService.getScheduledTask("scheduled-task-1")).thenReturn(
+                java.util.Optional.of(scheduledTask("scheduled-task-1", "Nightly cleanup",
+                        Instant.parse("2026-01-02T00:00:00Z"))));
+        when(scheduleService.isScheduledTaskBlocked("scheduled-task-1")).thenReturn(false);
+        when(runtimeConfigService.getAutoTaskTimeLimitMinutes()).thenReturn(12);
+        when(scheduledRunExecutor.executeSchedule(any(ScheduleEntry.class), any(ScheduleDeliveryContext.class),
+                anyInt()))
+                .thenReturn(ScheduledRunOutcome.EXECUTED);
+
+        var response = controller.runScheduledTaskNow(" scheduled-task-1 ").block();
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertEquals("scheduled-task-1", response.getBody().scheduledTaskId());
+        assertEquals("EXECUTED", response.getBody().outcome());
+        verify(scheduledRunExecutor).executeSchedule(
+                any(ScheduleEntry.class),
+                any(ScheduleDeliveryContext.class),
+                anyInt());
+    }
+
+    @Test
+    void runScheduledTaskNowShouldRejectWhenTaskIsBlockedByRetryWindow() {
+        when(autoModeService.getScheduledTask("scheduled-task-1")).thenReturn(
+                java.util.Optional.of(scheduledTask("scheduled-task-1", "Nightly cleanup",
+                        Instant.parse("2026-01-02T00:00:00Z"))));
+        when(scheduleService.isScheduledTaskBlocked("scheduled-task-1")).thenReturn(true);
+
+        ResponseStatusException exception = assertThrows(
+                ResponseStatusException.class,
+                () -> controller.runScheduledTaskNow("scheduled-task-1").block());
+
+        assertEquals(HttpStatus.CONFLICT, exception.getStatusCode());
+        verifyNoInteractions(scheduledRunExecutor);
+    }
+
+    @Test
+    void runScheduledTaskNowShouldRejectBusyExecutorOutcome() {
+        when(autoModeService.getScheduledTask("scheduled-task-1")).thenReturn(
+                java.util.Optional.of(scheduledTask("scheduled-task-1", "Nightly cleanup",
+                        Instant.parse("2026-01-02T00:00:00Z"))));
+        when(scheduleService.isScheduledTaskBlocked("scheduled-task-1")).thenReturn(false);
+        when(runtimeConfigService.getAutoTaskTimeLimitMinutes()).thenReturn(12);
+        when(scheduledRunExecutor.executeSchedule(any(ScheduleEntry.class), any(ScheduleDeliveryContext.class),
+                anyInt()))
+                .thenReturn(ScheduledRunOutcome.SKIPPED_TASK_BUSY);
+
+        ResponseStatusException exception = assertThrows(
+                ResponseStatusException.class,
+                () -> controller.runScheduledTaskNow("scheduled-task-1").block());
+
+        assertEquals(HttpStatus.CONFLICT, exception.getStatusCode());
+    }
+
+    @Test
+    void runScheduledTaskNowShouldRejectUnknownTask() {
+        when(autoModeService.getScheduledTask("scheduled-task-404")).thenReturn(java.util.Optional.empty());
+
+        ResponseStatusException exception = assertThrows(
+                ResponseStatusException.class,
+                () -> controller.runScheduledTaskNow("scheduled-task-404").block());
+
+        assertEquals(HttpStatus.BAD_REQUEST, exception.getStatusCode());
+        verifyNoInteractions(scheduledRunExecutor);
+    }
+
+    @Test
     void shouldRejectDisabledFeatureNullBodiesInvalidTierAndBlankIds() {
         when(autoModeService.isFeatureEnabled()).thenReturn(false);
         ResponseStatusException disabled = assertThrows(
                 ResponseStatusException.class,
                 () -> controller.createScheduledTask(new ScheduledTasksController.CreateScheduledTaskRequest(
-                        "Title", null, null, null, null)));
+                        "Title", null, null, null, null, null, null, null)));
         assertEquals(HttpStatus.BAD_REQUEST, disabled.getStatusCode());
 
         when(autoModeService.isFeatureEnabled()).thenReturn(true);
@@ -144,11 +296,12 @@ class ScheduledTasksControllerTest {
         assertThrows(ResponseStatusException.class, () -> controller.updateScheduledTask("id", null));
         assertThrows(ResponseStatusException.class,
                 () -> controller.createScheduledTask(new ScheduledTasksController.CreateScheduledTaskRequest(
-                        "Title", null, null, "routing", null)));
+                        "Title", null, null, null, null, null, "routing", null)));
         assertThrows(ResponseStatusException.class,
                 () -> controller.updateScheduledTask(" ",
                         new ScheduledTasksController.UpdateScheduledTaskRequest(
-                                "Title", null, null, null, null)));
+                                "Title", null, null, null, null, null, null, null)));
+        assertThrows(ResponseStatusException.class, () -> controller.runScheduledTaskNow(" ").block());
     }
 
     private static ScheduledTask scheduledTask(String id, String title, Instant createdAt) {
@@ -157,6 +310,7 @@ class ScheduledTasksControllerTest {
                 .title(title)
                 .description("description")
                 .prompt("prompt")
+                .executionMode(ScheduledTask.ExecutionMode.AGENT_PROMPT)
                 .reflectionModelTier("coding")
                 .reflectionTierPriority(true)
                 .legacySourceType("TASK")

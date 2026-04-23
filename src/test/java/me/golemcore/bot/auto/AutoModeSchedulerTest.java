@@ -65,6 +65,7 @@ class AutoModeSchedulerTest {
     private SessionPort sessionPort;
     private SkillComponent skillComponent;
     private ScheduleReportSender reportSender;
+    private ScheduledTaskShellRunner scheduledTaskShellRunner;
     private AutoModeScheduler scheduler;
 
     private AutoModeScheduler createScheduler() {
@@ -78,7 +79,8 @@ class AutoModeSchedulerTest {
                 runtimeConfigService,
                 sessionPort,
                 scheduledRunMessageFactory,
-                reportSender);
+                reportSender,
+                scheduledTaskShellRunner);
         return new AutoModeScheduler(
                 autoModeService,
                 scheduleService,
@@ -122,6 +124,7 @@ class AutoModeSchedulerTest {
         when(runtimeConfigService.isAutoReflectionTierPriority()).thenReturn(false);
 
         reportSender = mock(ScheduleReportSender.class);
+        scheduledTaskShellRunner = mock(ScheduledTaskShellRunner.class);
 
         scheduler = createScheduler();
     }
@@ -144,6 +147,51 @@ class AutoModeSchedulerTest {
         scheduler.tick();
 
         verify(sessionRunCoordinator, never()).submit(any(Message.class));
+    }
+
+    @Test
+    void shouldReevaluateDueSchedulesAfterFailureBeforeRunningAnotherScheduleForSameTask() {
+        when(autoModeService.isAutoModeEnabled()).thenReturn(true);
+        ScheduledTask task = ScheduledTask.builder()
+                .id("scheduled-task-1")
+                .title("Nightly cleanup")
+                .executionMode(ScheduledTask.ExecutionMode.AGENT_PROMPT)
+                .prompt("cleanup")
+                .build();
+        when(autoModeService.getScheduledTask("scheduled-task-1")).thenReturn(Optional.of(task));
+        when(runtimeConfigService.isAutoReflectionEnabled()).thenReturn(false);
+
+        ScheduleEntry first = ScheduleEntry.builder()
+                .id("sched-1")
+                .type(ScheduleEntry.ScheduleType.SCHEDULED_TASK)
+                .targetId("scheduled-task-1")
+                .cronExpression(TEST_CRON)
+                .enabled(true)
+                .build();
+        ScheduleEntry second = ScheduleEntry.builder()
+                .id("sched-2")
+                .type(ScheduleEntry.ScheduleType.SCHEDULED_TASK)
+                .targetId("scheduled-task-1")
+                .cronExpression(TEST_CRON)
+                .enabled(true)
+                .build();
+        when(scheduleService.getDueSchedules())
+                .thenReturn(List.of(first, second))
+                .thenReturn(List.of());
+        when(sessionRunCoordinator.submit(any(Message.class))).thenAnswer(invocation -> {
+            Message message = invocation.getArgument(0);
+            message.getMetadata().put(ContextAttributes.AUTO_RUN_STATUS, "FAILED");
+            message.getMetadata().put(ContextAttributes.AUTO_RUN_FAILURE_SUMMARY, "boom");
+            message.getMetadata().put(ContextAttributes.AUTO_RUN_FAILURE_FINGERPRINT, "boom");
+            return CompletableFuture.completedFuture(null);
+        });
+
+        scheduler.tick();
+
+        verify(sessionRunCoordinator, times(1)).submit(any(Message.class));
+        verify(scheduleService).recordFailedAttempt("sched-1");
+        verify(scheduleService, never()).recordFailedAttempt("sched-2");
+        verify(scheduleService, times(2)).getDueSchedules();
     }
 
     @Test
@@ -945,6 +993,39 @@ class AutoModeSchedulerTest {
         verify(scheduleService).recordFailedAttempt("sched-failed-attempt");
         verify(scheduleService, never()).recordExecution("sched-failed-attempt");
         verify(scheduleService, never()).disableSchedule("sched-failed-attempt");
+    }
+
+    @Test
+    void shouldBackoffWhenScheduledRunFinishesWithFailedStatus() {
+        when(autoModeService.isAutoModeEnabled()).thenReturn(true);
+        when(autoModeService.getScheduledTask("scheduled-task-1")).thenReturn(Optional.of(ScheduledTask.builder()
+                .id("scheduled-task-1")
+                .title("Daily summary")
+                .prompt("Summarize status")
+                .build()));
+        when(runtimeConfigService.isAutoReflectionEnabled()).thenReturn(false);
+        when(sessionRunCoordinator.submit(any(Message.class))).thenAnswer(invocation -> {
+            Message message = invocation.getArgument(0);
+            message.getMetadata().put(ContextAttributes.AUTO_RUN_STATUS, "FAILED");
+            message.getMetadata().put(ContextAttributes.AUTO_RUN_FAILURE_SUMMARY, "boom");
+            message.getMetadata().put(ContextAttributes.AUTO_RUN_FAILURE_FINGERPRINT, "fp");
+            return CompletableFuture.completedFuture(null);
+        });
+
+        ScheduleEntry schedule = ScheduleEntry.builder()
+                .id("sched-failed-status")
+                .type(ScheduleEntry.ScheduleType.SCHEDULED_TASK)
+                .targetId("scheduled-task-1")
+                .cronExpression(TEST_CRON)
+                .enabled(true)
+                .build();
+        when(scheduleService.getDueSchedules()).thenReturn(List.of(schedule));
+
+        scheduler.tick();
+
+        verify(scheduleService).recordFailedAttempt("sched-failed-status");
+        verify(scheduleService, never()).recordExecution("sched-failed-status");
+        verify(scheduleService, never()).disableSchedule("sched-failed-status");
     }
 
     @Test

@@ -68,14 +68,18 @@ public class AutoModeService {
         this.fallbackSessionId = null;
     }
 
-    AutoModeService(StoragePort storagePort, ObjectMapper objectMapper, RuntimeConfigService runtimeConfigService) {
+    AutoModeService(
+            StoragePort storagePort,
+            ObjectMapper objectMapper,
+            RuntimeConfigService runtimeConfigService,
+            PersistentScheduledTaskService persistentScheduledTaskService) {
         this(
                 storagePort,
                 objectMapper,
                 runtimeConfigService,
                 createLegacySessionScopedGoalService(storagePort, objectMapper, runtimeConfigService),
                 new LegacySessionDiaryService(storagePort, objectMapper),
-                new PersistentScheduledTaskService(storagePort, objectMapper),
+                persistentScheduledTaskService,
                 "legacy-test-session");
     }
 
@@ -438,10 +442,52 @@ public class AutoModeService {
                 reflectionTierPriority);
     }
 
+    public ScheduledTask createScheduledTask(
+            String title,
+            String description,
+            String prompt,
+            String reflectionModelTier,
+            boolean reflectionTierPriority,
+            ScheduledTask.ExecutionMode executionMode,
+            String shellCommand,
+            String shellWorkingDirectory) {
+        return persistentScheduledTaskService.createScheduledTask(
+                title,
+                description,
+                prompt,
+                reflectionModelTier,
+                reflectionTierPriority,
+                executionMode,
+                shellCommand,
+                shellWorkingDirectory);
+    }
+
     public ScheduledTask updateScheduledTask(String scheduledTaskId, String title, String description, String prompt,
             String reflectionModelTier, Boolean reflectionTierPriority) {
         return persistentScheduledTaskService.updateScheduledTask(scheduledTaskId, title, description, prompt,
                 reflectionModelTier, reflectionTierPriority);
+    }
+
+    public ScheduledTask updateScheduledTask(
+            String scheduledTaskId,
+            String title,
+            String description,
+            String prompt,
+            String reflectionModelTier,
+            Boolean reflectionTierPriority,
+            ScheduledTask.ExecutionMode executionMode,
+            String shellCommand,
+            String shellWorkingDirectory) {
+        return persistentScheduledTaskService.updateScheduledTask(
+                scheduledTaskId,
+                title,
+                description,
+                prompt,
+                reflectionModelTier,
+                reflectionTierPriority,
+                executionMode,
+                shellCommand,
+                shellWorkingDirectory);
     }
 
     public void deleteScheduledTask(String scheduledTaskId) {

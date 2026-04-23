@@ -1,12 +1,20 @@
 package me.golemcore.bot.adapter.inbound.web.controller;
 
+import static me.golemcore.bot.adapter.inbound.web.controller.SelfEvolvingControllerSupport.blocking;
+
+import java.time.Instant;
 import java.util.Comparator;
 import java.util.List;
+import java.util.UUID;
 import lombok.RequiredArgsConstructor;
+import me.golemcore.bot.auto.ScheduleDeliveryContext;
+import me.golemcore.bot.auto.ScheduledRunExecutor;
+import me.golemcore.bot.auto.ScheduledRunOutcome;
 import me.golemcore.bot.domain.model.ModelTierCatalog;
 import me.golemcore.bot.domain.model.ScheduleEntry;
 import me.golemcore.bot.domain.model.ScheduledTask;
 import me.golemcore.bot.domain.service.AutoModeService;
+import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.ScheduleService;
 import me.golemcore.bot.domain.service.StringValueSupport;
 import org.springframework.http.HttpStatus;
@@ -31,6 +39,8 @@ public class ScheduledTasksController {
 
     private final AutoModeService autoModeService;
     private final ScheduleService scheduleService;
+    private final ScheduledRunExecutor scheduledRunExecutor;
+    private final RuntimeConfigService runtimeConfigService;
 
     @GetMapping
     public Mono<ResponseEntity<ScheduledTasksResponse>> listScheduledTasks() {
@@ -57,7 +67,10 @@ public class ScheduledTasksController {
                     request.description(),
                     request.prompt(),
                     normalizeOptionalReflectionModelTier(request.reflectionModelTier()),
-                    Boolean.TRUE.equals(request.reflectionTierPriority()));
+                    Boolean.TRUE.equals(request.reflectionTierPriority()),
+                    normalizeExecutionMode(request.executionMode()),
+                    request.shellCommand(),
+                    request.shellWorkingDirectory());
             return Mono.just(ResponseEntity.status(HttpStatus.CREATED).body(toDto(task)));
         } catch (IllegalArgumentException | IllegalStateException exception) {
             throw badRequest(exception.getMessage());
@@ -78,7 +91,10 @@ public class ScheduledTasksController {
                     request.description(),
                     request.prompt(),
                     normalizeOptionalReflectionModelTier(request.reflectionModelTier()),
-                    request.reflectionTierPriority());
+                    request.reflectionTierPriority(),
+                    normalizeOptionalExecutionMode(request.executionMode()),
+                    request.shellCommand(),
+                    request.shellWorkingDirectory());
             return Mono.just(ResponseEntity.ok(toDto(task)));
         } catch (IllegalArgumentException | IllegalStateException exception) {
             throw badRequest(exception.getMessage());
@@ -100,6 +116,32 @@ public class ScheduledTasksController {
         }
     }
 
+    @PostMapping("/{scheduledTaskId}/run")
+    public Mono<ResponseEntity<RunScheduledTaskResponse>> runScheduledTaskNow(@PathVariable String scheduledTaskId) {
+        return blocking(() -> {
+            requireFeatureEnabled();
+            try {
+                String normalizedId = requireId(scheduledTaskId, "scheduledTaskId");
+                if (autoModeService.getScheduledTask(normalizedId).isEmpty()) {
+                    throw badRequest("Scheduled task not found: " + normalizedId);
+                }
+                if (scheduleService.isScheduledTaskBlocked(normalizedId)) {
+                    throw conflict("Scheduled task is blocked by an active retry window: " + normalizedId);
+                }
+                ScheduledRunOutcome outcome = scheduledRunExecutor.executeSchedule(
+                        buildManualRunSchedule(normalizedId),
+                        ScheduleDeliveryContext.auto(),
+                        runtimeConfigService.getAutoTaskTimeLimitMinutes());
+                if (outcome == ScheduledRunOutcome.SKIPPED_TASK_BUSY) {
+                    throw conflict("Scheduled task is already running: " + normalizedId);
+                }
+                return ResponseEntity.ok(new RunScheduledTaskResponse(normalizedId, outcome.name()));
+            } catch (IllegalArgumentException exception) {
+                throw badRequest(exception.getMessage());
+            }
+        });
+    }
+
     private boolean hasLinkedSchedules(String scheduledTaskId) {
         return scheduleService.findSchedulesForTarget(scheduledTaskId).stream()
                 .anyMatch(schedule -> schedule.getType() == ScheduleEntry.ScheduleType.SCHEDULED_TASK);
@@ -111,12 +153,28 @@ public class ScheduledTasksController {
         }
     }
 
+    private ScheduleEntry buildManualRunSchedule(String scheduledTaskId) {
+        Instant now = Instant.now();
+        return ScheduleEntry.builder()
+                .id("manual-scheduled-task-" + UUID.randomUUID().toString().substring(0, 8))
+                .type(ScheduleEntry.ScheduleType.SCHEDULED_TASK)
+                .targetId(scheduledTaskId)
+                .enabled(true)
+                .clearContextBeforeRun(false)
+                .createdAt(now)
+                .updatedAt(now)
+                .build();
+    }
+
     private ScheduledTaskDto toDto(ScheduledTask task) {
         return new ScheduledTaskDto(
                 task.getId(),
                 task.getTitle(),
                 task.getDescription(),
                 task.getPrompt(),
+                task.getExecutionModeOrDefault().name(),
+                task.getShellCommand(),
+                task.getShellWorkingDirectory(),
                 task.getReflectionModelTier(),
                 task.isReflectionTierPriority(),
                 task.getLegacySourceType(),
@@ -134,6 +192,31 @@ public class ScheduledTasksController {
         return normalizedTier;
     }
 
+    private ScheduledTask.ExecutionMode normalizeExecutionMode(String executionMode) {
+        if (StringValueSupport.isBlank(executionMode)) {
+            return ScheduledTask.ExecutionMode.AGENT_PROMPT;
+        }
+        return parseExecutionMode(executionMode);
+    }
+
+    private ScheduledTask.ExecutionMode normalizeOptionalExecutionMode(String executionMode) {
+        if (StringValueSupport.isBlank(executionMode)) {
+            return null;
+        }
+        return parseExecutionMode(executionMode);
+    }
+
+    private ScheduledTask.ExecutionMode parseExecutionMode(String executionMode) {
+        String normalized = executionMode.trim().toUpperCase(java.util.Locale.ROOT)
+                .replace('-', '_')
+                .replace(' ', '_');
+        try {
+            return ScheduledTask.ExecutionMode.valueOf(normalized);
+        } catch (IllegalArgumentException exception) {
+            throw new IllegalArgumentException("executionMode must be AGENT_PROMPT or SHELL_COMMAND");
+        }
+    }
+
     private static String requireId(String value, String fieldName) {
         if (StringValueSupport.isBlank(value)) {
             throw badRequest(fieldName + " is required");
@@ -143,6 +226,10 @@ public class ScheduledTasksController {
 
     private static ResponseStatusException badRequest(String reason) {
         return new ResponseStatusException(HttpStatus.BAD_REQUEST, reason);
+    }
+
+    private static ResponseStatusException conflict(String reason) {
+        return new ResponseStatusException(HttpStatus.CONFLICT, reason);
     }
 
     public record ScheduledTasksResponse(
@@ -156,6 +243,9 @@ public class ScheduledTasksController {
             String title,
             String description,
             String prompt,
+            String executionMode,
+            String shellCommand,
+            String shellWorkingDirectory,
             String reflectionModelTier,
             boolean reflectionTierPriority,
             String legacySourceType,
@@ -166,6 +256,9 @@ public class ScheduledTasksController {
             String title,
             String description,
             String prompt,
+            String executionMode,
+            String shellCommand,
+            String shellWorkingDirectory,
             String reflectionModelTier,
             Boolean reflectionTierPriority) {
     }
@@ -174,10 +267,16 @@ public class ScheduledTasksController {
             String title,
             String description,
             String prompt,
+            String executionMode,
+            String shellCommand,
+            String shellWorkingDirectory,
             String reflectionModelTier,
             Boolean reflectionTierPriority) {
     }
 
     public record DeleteScheduledTaskResponse(String scheduledTaskId) {
+    }
+
+    public record RunScheduledTaskResponse(String scheduledTaskId, String outcome) {
     }
 }

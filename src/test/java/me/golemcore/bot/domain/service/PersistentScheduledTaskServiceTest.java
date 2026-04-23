@@ -18,13 +18,14 @@ import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import java.time.Instant;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import me.golemcore.bot.adapter.outbound.storage.JsonScheduledTaskPersistenceAdapter;
 import me.golemcore.bot.domain.model.AutoTask;
 import me.golemcore.bot.domain.model.Goal;
 import me.golemcore.bot.domain.model.ScheduledTask;
-import me.golemcore.bot.port.outbound.StoragePort;
 import org.mockito.ArgumentCaptor;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import me.golemcore.bot.port.outbound.StoragePort;
 
 class PersistentScheduledTaskServiceTest {
 
@@ -40,7 +41,8 @@ class PersistentScheduledTaskServiceTest {
                 .thenReturn(CompletableFuture.completedFuture(null));
 
         objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
-        service = new PersistentScheduledTaskService(storagePort, objectMapper);
+        service = new PersistentScheduledTaskService(
+                new JsonScheduledTaskPersistenceAdapter(storagePort, objectMapper));
     }
 
     @Test
@@ -201,6 +203,44 @@ class PersistentScheduledTaskServiceTest {
     }
 
     @Test
+    void shouldCreateAndUpdateShellScheduledTaskWithoutPromptReflectionEscalation() {
+        ScheduledTask created = service.createScheduledTask(
+                "Nightly cleanup",
+                "Remove stale artifacts",
+                null,
+                null,
+                false,
+                ScheduledTask.ExecutionMode.SHELL_COMMAND,
+                "printf 'cleanup'",
+                "jobs");
+
+        assertEquals(ScheduledTask.ExecutionMode.SHELL_COMMAND, created.getExecutionModeOrDefault());
+        assertEquals("printf 'cleanup'", created.getShellCommand());
+        assertEquals("jobs", created.getShellWorkingDirectory());
+
+        service.recordFailure(created.getId(), "exit 2", "shell_exit_2", null, 1);
+        ScheduledTask afterFailure = service.getScheduledTask(created.getId()).orElseThrow();
+        assertEquals(1, afterFailure.getConsecutiveFailureCount());
+        assertFalse(afterFailure.isReflectionRequired());
+
+        ScheduledTask updated = service.updateScheduledTask(
+                created.getId(),
+                "Nightly cleanup",
+                "Done",
+                "fallback prompt",
+                "deep",
+                true,
+                ScheduledTask.ExecutionMode.AGENT_PROMPT,
+                null,
+                null);
+
+        assertEquals(ScheduledTask.ExecutionMode.AGENT_PROMPT, updated.getExecutionModeOrDefault());
+        assertNull(updated.getShellCommand());
+        assertNull(updated.getShellWorkingDirectory());
+        assertEquals("fallback prompt", updated.getPrompt());
+    }
+
+    @Test
     void shouldLoadExistingTasksAndHandleStorageFailures() throws Exception {
         ScheduledTask existing = ScheduledTask.builder()
                 .id("scheduled-task-1")
@@ -217,8 +257,9 @@ class PersistentScheduledTaskServiceTest {
         when(failingStorage.getText(eq("auto"), eq("scheduled-tasks.json")))
                 .thenReturn(CompletableFuture.failedFuture(new RuntimeException("storage unavailable")));
         PersistentScheduledTaskService failingService = new PersistentScheduledTaskService(
-                failingStorage,
-                new ObjectMapper().registerModule(new JavaTimeModule()));
+                new JsonScheduledTaskPersistenceAdapter(
+                        failingStorage,
+                        new ObjectMapper().registerModule(new JavaTimeModule())));
 
         assertTrue(failingService.getScheduledTasks().isEmpty());
     }

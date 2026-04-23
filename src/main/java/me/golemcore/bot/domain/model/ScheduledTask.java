@@ -37,10 +37,18 @@ import lombok.NoArgsConstructor;
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class ScheduledTask {
 
+    public enum ExecutionMode {
+        AGENT_PROMPT, SHELL_COMMAND
+    }
+
     private String id;
     private String title;
     private String description;
     private String prompt;
+    @Builder.Default
+    private ExecutionMode executionMode = ExecutionMode.AGENT_PROMPT;
+    private String shellCommand;
+    private String shellWorkingDirectory;
     private String reflectionModelTier;
     private boolean reflectionTierPriority;
 
@@ -71,5 +79,15 @@ public class ScheduledTask {
             return basePrompt;
         }
         return basePrompt + "\n\nRecovery strategy from previous reflection:\n" + reflectionStrategy;
+    }
+
+    @JsonIgnore
+    public ExecutionMode getExecutionModeOrDefault() {
+        return executionMode != null ? executionMode : ExecutionMode.AGENT_PROMPT;
+    }
+
+    @JsonIgnore
+    public boolean isShellCommandMode() {
+        return getExecutionModeOrDefault() == ExecutionMode.SHELL_COMMAND;
     }
 }

@@ -22,6 +22,7 @@ import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.ScheduleEntry;
+import me.golemcore.bot.domain.model.ScheduledTask;
 import me.golemcore.bot.domain.service.AutoModeService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.SessionRunCoordinator;
@@ -29,8 +30,10 @@ import me.golemcore.bot.domain.service.StringValueSupport;
 import me.golemcore.bot.port.outbound.SessionPort;
 import org.springframework.stereotype.Component;
 
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -48,6 +51,8 @@ public class ScheduledRunExecutor {
     private final SessionPort sessionPort;
     private final ScheduledRunMessageFactory scheduledRunMessageFactory;
     private final ScheduleReportSender reportSender;
+    private final ScheduledTaskShellRunner scheduledTaskShellRunner;
+    private final java.util.Set<String> activeScheduledTaskIds = ConcurrentHashMap.newKeySet();
 
     public ScheduledRunExecutor(
             AutoModeService autoModeService,
@@ -55,13 +60,15 @@ public class ScheduledRunExecutor {
             RuntimeConfigService runtimeConfigService,
             SessionPort sessionPort,
             ScheduledRunMessageFactory scheduledRunMessageFactory,
-            ScheduleReportSender reportSender) {
+            ScheduleReportSender reportSender,
+            ScheduledTaskShellRunner scheduledTaskShellRunner) {
         this.autoModeService = autoModeService;
         this.sessionRunCoordinator = sessionRunCoordinator;
         this.runtimeConfigService = runtimeConfigService;
         this.sessionPort = sessionPort;
         this.scheduledRunMessageFactory = scheduledRunMessageFactory;
         this.reportSender = reportSender;
+        this.scheduledTaskShellRunner = scheduledTaskShellRunner;
     }
 
     public ScheduledRunOutcome executeSchedule(
@@ -77,8 +84,21 @@ public class ScheduledRunExecutor {
         ScheduleDeliveryContext effectiveDeliveryContext = deliveryContext != null
                 ? deliveryContext
                 : ScheduleDeliveryContext.auto();
+        String scheduledTaskId = StringValueSupport.isBlank(scheduleMessage.scheduledTaskId())
+                ? null
+                : scheduleMessage.scheduledTaskId();
+        if (scheduledTaskId != null && !activeScheduledTaskIds.add(scheduledTaskId)) {
+            log.info("[ScheduledRunExecutor] Scheduled task {} is already running; skipping schedule {}",
+                    scheduledTaskId, schedule.getId());
+            return ScheduledRunOutcome.SKIPPED_TASK_BUSY;
+        }
 
+        Optional<ScheduledTask> scheduledTask = resolveScheduledTask(scheduleMessage);
         try {
+            if (scheduledTask.filter(ScheduledTask::isShellCommandMode).isPresent()) {
+                return executeShellSchedule(scheduleMessage, schedule, scheduledTask.orElseThrow(), timeoutMinutes,
+                        deliveryContext);
+            }
             resetCompletedTaskIfNeeded(scheduleMessage);
             if (schedule.isClearContextBeforeRun()) {
                 clearSessionContext(
@@ -87,8 +107,9 @@ public class ScheduledRunExecutor {
                         schedule.getId());
             }
             log.info("[ScheduledRunExecutor] Processing schedule {}: {}", schedule.getId(), scheduleMessage.content());
-            submitAndAwait(scheduleMessage, schedule, timeoutMinutes, effectiveDeliveryContext, deliveryContext);
-            return ScheduledRunOutcome.EXECUTED;
+            boolean success = submitAndAwait(scheduleMessage, schedule, timeoutMinutes, effectiveDeliveryContext,
+                    deliveryContext);
+            return success ? ScheduledRunOutcome.EXECUTED : ScheduledRunOutcome.FAILED;
         } catch (TimeoutException e) {
             recordFailureAndMaybeReflectSafely(
                     scheduleMessage,
@@ -100,7 +121,7 @@ public class ScheduledRunExecutor {
                     null);
             log.error("[ScheduledRunExecutor] Schedule {} timed out after {} minutes", schedule.getId(),
                     timeoutMinutes);
-            return ScheduledRunOutcome.EXECUTED;
+            return ScheduledRunOutcome.FAILED;
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             recordFailureAndMaybeReflectSafely(
@@ -112,7 +133,7 @@ public class ScheduledRunExecutor {
                     "interrupted",
                     null);
             log.error("[ScheduledRunExecutor] Schedule {} interrupted: {}", schedule.getId(), e.getMessage(), e);
-            return ScheduledRunOutcome.EXECUTED;
+            return ScheduledRunOutcome.FAILED;
         } catch (ExecutionException e) {
             recordFailureAndMaybeReflectSafely(
                     scheduleMessage,
@@ -123,7 +144,7 @@ public class ScheduledRunExecutor {
                     "execution_exception",
                     null);
             log.error("[ScheduledRunExecutor] Failed to process schedule {}: {}", schedule.getId(), e.getMessage(), e);
-            return ScheduledRunOutcome.EXECUTED;
+            return ScheduledRunOutcome.FAILED;
         } catch (RuntimeException e) {
             recordFailureAndMaybeReflectSafely(
                     scheduleMessage,
@@ -134,6 +155,63 @@ public class ScheduledRunExecutor {
                     "runtime_exception",
                     null);
             log.error("[ScheduledRunExecutor] Schedule {} failed before run completion: {}", schedule.getId(),
+                    e.getMessage(), e);
+            return ScheduledRunOutcome.FAILED;
+        } finally {
+            if (scheduledTaskId != null) {
+                activeScheduledTaskIds.remove(scheduledTaskId);
+            }
+        }
+    }
+
+    private ScheduledRunOutcome executeShellSchedule(
+            ScheduledRunMessage scheduleMessage,
+            ScheduleEntry schedule,
+            ScheduledTask scheduledTask,
+            int timeoutMinutes,
+            ScheduleDeliveryContext reportFallbackDeliveryContext) {
+        try {
+            ScheduledTaskShellRunner.ShellRunResult result = scheduledTaskShellRunner.run(scheduledTask,
+                    timeoutMinutes);
+            String reportBody = result.reportBody();
+            if (result.success()) {
+                handleRunSuccess(scheduleMessage, null);
+                reportSender.sendReport(
+                        schedule,
+                        scheduledRunMessageFactory.buildReportHeader(scheduleMessage),
+                        reportBody,
+                        reportFallbackDeliveryContext);
+                return ScheduledRunOutcome.EXECUTED;
+            }
+
+            recordFailedRunState(scheduleMessage, result.summary(), result.fingerprint(), null);
+            reportSender.sendReport(
+                    schedule,
+                    scheduledRunMessageFactory.buildReportHeader(scheduleMessage),
+                    reportBody,
+                    reportFallbackDeliveryContext);
+            return ScheduledRunOutcome.FAILED;
+        } catch (TimeoutException e) {
+            recordFailedRunState(
+                    scheduleMessage,
+                    "Shell command timed out after " + timeoutMinutes + " minutes",
+                    "shell_timeout",
+                    null);
+            log.error("[ScheduledRunExecutor] Shell schedule {} timed out after {} minutes", schedule.getId(),
+                    timeoutMinutes);
+            return ScheduledRunOutcome.FAILED;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            recordFailedRunState(scheduleMessage, e.getMessage(), "shell_interrupted", null);
+            log.error("[ScheduledRunExecutor] Shell schedule {} interrupted: {}", schedule.getId(), e.getMessage(), e);
+            return ScheduledRunOutcome.FAILED;
+        } catch (ExecutionException e) {
+            recordFailedRunState(scheduleMessage, e.getMessage(), "shell_execution_exception", null);
+            log.error("[ScheduledRunExecutor] Shell schedule {} failed: {}", schedule.getId(), e.getMessage(), e);
+            return ScheduledRunOutcome.FAILED;
+        } catch (RuntimeException e) {
+            recordFailedRunState(scheduleMessage, e.getMessage(), "shell_runtime_exception", null);
+            log.error("[ScheduledRunExecutor] Shell schedule {} failed before completion: {}", schedule.getId(),
                     e.getMessage(), e);
             return ScheduledRunOutcome.FAILED;
         }
@@ -162,7 +240,7 @@ public class ScheduledRunExecutor {
         }
     }
 
-    private void submitAndAwait(
+    private boolean submitAndAwait(
             ScheduledRunMessage scheduleMessage,
             ScheduleEntry schedule,
             int timeoutMinutes,
@@ -195,12 +273,12 @@ public class ScheduledRunExecutor {
                     scheduledRunMessageFactory.buildReportHeader(scheduleMessage),
                     failureSummary != null ? failureSummary : assistantText,
                     reportFallbackDeliveryContext);
-            return;
+            return false;
         }
 
         if (scheduleMessage.reflectionActive()) {
             applyReflectionResult(scheduleMessage, assistantText);
-            return;
+            return true;
         }
 
         handleRunSuccess(scheduleMessage, activeSkillName);
@@ -209,6 +287,7 @@ public class ScheduledRunExecutor {
                 scheduledRunMessageFactory.buildReportHeader(scheduleMessage),
                 assistantText,
                 reportFallbackDeliveryContext);
+        return true;
     }
 
     private void recordFailureAndMaybeReflect(
@@ -386,5 +465,12 @@ public class ScheduledRunExecutor {
                 null);
         log.info("[ScheduledRunExecutor] Reset completed task {} to PENDING for scheduled re-run",
                 scheduleMessage.taskId());
+    }
+
+    private Optional<ScheduledTask> resolveScheduledTask(ScheduledRunMessage scheduleMessage) {
+        if (scheduleMessage == null || StringValueSupport.isBlank(scheduleMessage.scheduledTaskId())) {
+            return Optional.empty();
+        }
+        return autoModeService.getScheduledTask(scheduleMessage.scheduledTaskId());
     }
 }

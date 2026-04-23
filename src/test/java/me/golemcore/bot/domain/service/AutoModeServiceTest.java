@@ -1,5 +1,6 @@
 package me.golemcore.bot.domain.service;
 
+import me.golemcore.bot.adapter.outbound.storage.JsonScheduledTaskPersistenceAdapter;
 import me.golemcore.bot.domain.model.AutoTask;
 import me.golemcore.bot.domain.model.DiaryEntry;
 import me.golemcore.bot.domain.model.Goal;
@@ -68,7 +69,11 @@ class AutoModeServiceTest {
         when(storagePort.getText(anyString(), anyString()))
                 .thenReturn(CompletableFuture.completedFuture(null));
 
-        service = new AutoModeService(storagePort, objectMapper, runtimeConfigService);
+        service = new AutoModeService(
+                storagePort,
+                objectMapper,
+                runtimeConfigService,
+                new PersistentScheduledTaskService(new JsonScheduledTaskPersistenceAdapter(storagePort, objectMapper)));
     }
 
     @Test
