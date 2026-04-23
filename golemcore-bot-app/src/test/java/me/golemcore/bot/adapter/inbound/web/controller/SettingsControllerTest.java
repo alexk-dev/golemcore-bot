@@ -39,6 +39,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -144,6 +145,34 @@ class SettingsControllerTest {
                     assertEquals("UTC", body.getTimezone());
                     assertEquals("balanced", body.getModelTier());
                     assertEquals("general_chat", body.getMemoryPreset());
+                })
+                .verifyComplete();
+    }
+
+    @Test
+    void shouldReturnAvailableModelsGroupedByProvider() throws Exception {
+        when(modelSelectionService.getAvailableModelsGrouped()).thenReturn(Map.of(
+                "openai", List.of(new ModelSelectionService.AvailableModel(
+                        "openai/gpt-5.4",
+                        "openai",
+                        "GPT-5.4",
+                        true,
+                        List.of("low", "medium"),
+                        true,
+                        true))));
+        Method method = SettingsController.class.getMethod("getModels");
+        @SuppressWarnings("unchecked")
+        Mono<ResponseEntity<Map<String, ?>>> responseMono = (Mono<ResponseEntity<Map<String, ?>>>) method
+                .invoke(controller);
+
+        StepVerifier.create(responseMono)
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.OK, response.getStatusCode());
+                    Map<String, ?> body = response.getBody();
+                    assertNotNull(body);
+                    assertTrue(body.containsKey("openai"));
+                    assertTrue(body.get("openai").toString().contains("GPT-5.4"));
+                    assertTrue(body.get("openai").toString().contains("medium"));
                 })
                 .verifyComplete();
     }

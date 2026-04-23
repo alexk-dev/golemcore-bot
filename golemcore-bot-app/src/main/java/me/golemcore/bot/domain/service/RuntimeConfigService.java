@@ -141,7 +141,9 @@ public class RuntimeConfigService
     private static final boolean DEFAULT_MEMORY_RERANKING_ENABLED = true;
     private static final String DEFAULT_MEMORY_RERANKING_PROFILE = "balanced";
     private static final String DEFAULT_MEMORY_DIAGNOSTICS_VERBOSITY = "basic";
+    private static final int DEFAULT_TURN_MAX_SKILL_TRANSITIONS = 3;
     private static final int DEFAULT_TURN_MAX_LLM_CALLS = 200;
+    private static final int DEFAULT_TOOL_LOOP_MAX_LLM_CALLS = 20;
     private static final boolean DEFAULT_SESSION_RETENTION_ENABLED = true;
     private static final Duration DEFAULT_SESSION_RETENTION_MAX_AGE = Duration.ofDays(30);
     private static final Duration DEFAULT_SESSION_RETENTION_CLEANUP_INTERVAL = Duration.ofHours(24);
@@ -149,6 +151,7 @@ public class RuntimeConfigService
     private static final boolean DEFAULT_SESSION_RETENTION_PROTECT_PLANS = true;
     private static final boolean DEFAULT_SESSION_RETENTION_PROTECT_DELAYED_ACTIONS = true;
     private static final int DEFAULT_TURN_MAX_TOOL_EXECUTIONS = 500;
+    private static final int DEFAULT_TOOL_LOOP_MAX_TOOL_EXECUTIONS = 80;
     private static final Duration DEFAULT_TURN_DEADLINE = Duration.ofHours(1);
     private static final String DEFAULT_STT_PROVIDER = "golemcore/elevenlabs";
     private static final String DEFAULT_TTS_PROVIDER = "golemcore/elevenlabs";
@@ -1319,6 +1322,15 @@ public class RuntimeConfigService
 
     // ==================== Turn Budget ====================
 
+    public int getTurnMaxSkillTransitions() {
+        RuntimeConfig.TurnConfig turnConfig = getRuntimeConfig().getTurn();
+        if (turnConfig == null) {
+            return DEFAULT_TURN_MAX_SKILL_TRANSITIONS;
+        }
+        Integer val = turnConfig.getMaxSkillTransitions();
+        return val != null ? val : DEFAULT_TURN_MAX_SKILL_TRANSITIONS;
+    }
+
     public int getTurnMaxLlmCalls() {
         RuntimeConfig.TurnConfig turnConfig = getRuntimeConfig().getTurn();
         if (turnConfig == null) {
@@ -1335,6 +1347,22 @@ public class RuntimeConfigService
         }
         Integer val = turnConfig.getMaxToolExecutions();
         return val != null ? val : DEFAULT_TURN_MAX_TOOL_EXECUTIONS;
+    }
+
+    public int getToolLoopMaxLlmCalls() {
+        RuntimeConfig.ToolLoopConfig toolLoopConfig = getRuntimeConfig().getToolLoop();
+        if (toolLoopConfig != null && toolLoopConfig.getMaxLlmCalls() != null) {
+            return toolLoopConfig.getMaxLlmCalls();
+        }
+        return getTurnMaxLlmCalls();
+    }
+
+    public int getToolLoopMaxToolExecutions() {
+        RuntimeConfig.ToolLoopConfig toolLoopConfig = getRuntimeConfig().getToolLoop();
+        if (toolLoopConfig != null && toolLoopConfig.getMaxToolExecutions() != null) {
+            return toolLoopConfig.getMaxToolExecutions();
+        }
+        return getTurnMaxToolExecutions();
     }
 
     public Duration getTurnDeadline() {
@@ -1917,6 +1945,21 @@ public class RuntimeConfigService
         }
         if (cfg.getTurn() == null) {
             cfg.setTurn(new RuntimeConfig.TurnConfig());
+        }
+        if (cfg.getToolLoop() == null) {
+            cfg.setToolLoop(new RuntimeConfig.ToolLoopConfig());
+        }
+        Integer maxSkillTransitions = cfg.getTurn().getMaxSkillTransitions();
+        if (maxSkillTransitions == null || maxSkillTransitions < 1) {
+            cfg.getTurn().setMaxSkillTransitions(DEFAULT_TURN_MAX_SKILL_TRANSITIONS);
+        }
+        Integer toolLoopMaxLlmCalls = cfg.getToolLoop().getMaxLlmCalls();
+        if (toolLoopMaxLlmCalls == null || toolLoopMaxLlmCalls < 1) {
+            cfg.getToolLoop().setMaxLlmCalls(DEFAULT_TOOL_LOOP_MAX_LLM_CALLS);
+        }
+        Integer toolLoopMaxToolExecutions = cfg.getToolLoop().getMaxToolExecutions();
+        if (toolLoopMaxToolExecutions == null || toolLoopMaxToolExecutions < 1) {
+            cfg.getToolLoop().setMaxToolExecutions(DEFAULT_TOOL_LOOP_MAX_TOOL_EXECUTIONS);
         }
         if (cfg.getSessionRetention() == null) {
             cfg.setSessionRetention(new RuntimeConfig.SessionRetentionConfig());

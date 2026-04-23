@@ -125,6 +125,7 @@ public class RuntimeSettingsValidator {
             validateMemoryConfig(merged.getMemory());
         }
         validateCompactionConfig(merged.getCompaction());
+        validateToolLoopConfig(merged.getToolLoop());
         validateSessionRetentionConfig(merged.getSessionRetention());
         validateVoiceConfig(merged.getVoice());
         validateAndNormalizeModelRegistryConfig(merged.getModelRegistry());
@@ -241,6 +242,9 @@ public class RuntimeSettingsValidator {
         if (turnConfig.getMaxToolExecutions() != null && turnConfig.getMaxToolExecutions() < 1) {
             throw new IllegalArgumentException("turn.maxToolExecutions must be >= 1");
         }
+        if (turnConfig.getMaxSkillTransitions() != null && turnConfig.getMaxSkillTransitions() < 1) {
+            throw new IllegalArgumentException("turn.maxSkillTransitions must be >= 1");
+        }
         if (turnConfig.getDeadline() != null && !turnConfig.getDeadline().isBlank()) {
             try {
                 Duration deadline = Duration.parse(turnConfig.getDeadline().trim());
@@ -261,6 +265,18 @@ public class RuntimeSettingsValidator {
                 TURN_PROGRESS_SUMMARY_TIMEOUT_MS_MIN,
                 TURN_PROGRESS_SUMMARY_TIMEOUT_MS_MAX,
                 "turn.progressSummaryTimeoutMs");
+    }
+
+    public void validateToolLoopConfig(RuntimeConfig.ToolLoopConfig toolLoopConfig) {
+        if (toolLoopConfig == null) {
+            throw new IllegalArgumentException("toolLoop config is required");
+        }
+        if (toolLoopConfig.getMaxLlmCalls() != null && toolLoopConfig.getMaxLlmCalls() < 1) {
+            throw new IllegalArgumentException("toolLoop.maxLlmCalls must be >= 1");
+        }
+        if (toolLoopConfig.getMaxToolExecutions() != null && toolLoopConfig.getMaxToolExecutions() < 1) {
+            throw new IllegalArgumentException("toolLoop.maxToolExecutions must be >= 1");
+        }
     }
 
     public void validateMemoryConfig(RuntimeConfig.MemoryConfig memoryConfig) {

@@ -40,6 +40,8 @@ import me.golemcore.bot.domain.model.trace.TraceSpanKind;
 import me.golemcore.bot.domain.model.trace.TraceStatusCode;
 import me.golemcore.bot.domain.service.AutoRunContextSupport;
 import me.golemcore.bot.domain.service.HiveMetadataSupport;
+import me.golemcore.bot.domain.service.ContextHygieneService;
+import me.golemcore.bot.domain.service.DefaultContextHygieneService;
 import me.golemcore.bot.domain.service.MdcSupport;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.SessionIdentitySupport;
@@ -98,6 +100,7 @@ public class AgentLoop {
     private final LlmPort llmPort;
     private final Clock clock;
     private final TraceService traceService;
+    private final ContextHygieneService contextHygieneService;
     private final ChannelRuntimePort channelRuntimePort;
     private final ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
     private final ScheduledExecutorService typingExecutor = Executors.newSingleThreadScheduledExecutor(r -> {
@@ -126,6 +129,16 @@ public class AgentLoop {
             ChannelRuntimePort channelRuntimePort, RuntimeConfigService runtimeConfigService,
             UserPreferencesService preferencesService,
             LlmPort llmPort, Clock clock, TraceService traceService) {
+        this(sessionService, rateLimiter, systems, channelRuntimePort, runtimeConfigService,
+                preferencesService, llmPort, clock, traceService, new DefaultContextHygieneService());
+    }
+
+    public AgentLoop(SessionPort sessionService, RateLimitPort rateLimiter,
+            List<AgentSystem> systems,
+            ChannelRuntimePort channelRuntimePort, RuntimeConfigService runtimeConfigService,
+            UserPreferencesService preferencesService,
+            LlmPort llmPort, Clock clock, TraceService traceService,
+            ContextHygieneService contextHygieneService) {
         this.sessionService = sessionService;
         this.rateLimiter = rateLimiter;
         this.systems = systems;
@@ -135,6 +148,9 @@ public class AgentLoop {
         this.llmPort = llmPort;
         this.clock = clock;
         this.traceService = traceService;
+        this.contextHygieneService = contextHygieneService != null
+                ? contextHygieneService
+                : new DefaultContextHygieneService();
     }
 
     public AgentContext processMessage(Message message) {
@@ -180,7 +196,7 @@ public class AgentLoop {
             AgentContext context = AgentContext.builder()
                     .session(session)
                     .messages(buildContextMessages(session, message))
-                    .maxIterations(runtimeConfigService.getTurnMaxLlmCalls())
+                    .maxIterations(resolveMaxSkillTransitions())
                     .currentIteration(0)
                     .build();
             context.setTraceContext(rootTraceContext);
@@ -219,6 +235,7 @@ public class AgentLoop {
                 // already applied)
                 // on restart/crash.
                 try {
+                    contextHygieneService.beforePersist(context);
                     saveSessionWithTracing(session, context.getTraceContext() != null
                             ? context.getTraceContext()
                             : rootTraceContext);
@@ -558,6 +575,7 @@ public class AgentLoop {
                     }
                     emitTraceStateEvents(context, system.getName(), systemSpan, beforeTraceState);
                     finishChildSpan(context, systemSpan, TraceStatusCode.OK, null);
+                    contextHygieneService.afterSystem(context, system.getName());
                     log.debug("System '{}' completed in {}ms", system.getName(), clock.millis() - startMs);
                 } catch (Exception e) {
                     finishChildSpan(context, systemSpan, TraceStatusCode.ERROR, e.getMessage());
@@ -586,6 +604,7 @@ public class AgentLoop {
             // Clear transport contract from the previous iteration to avoid stale routing.
             context.setOutgoingResponse(null);
             context.getToolResults().clear();
+            contextHygieneService.afterOuterIteration(context);
         }
 
         if (reachedLimit) {
@@ -1137,6 +1156,14 @@ public class AgentLoop {
             return null;
         }
         return summary.trim().replaceAll("\\s+", " ").toLowerCase(Locale.ROOT);
+    }
+
+    private int resolveMaxSkillTransitions() {
+        int maxSkillTransitions = runtimeConfigService.getTurnMaxSkillTransitions();
+        if (maxSkillTransitions > 0) {
+            return maxSkillTransitions;
+        }
+        return runtimeConfigService.getTurnMaxLlmCalls();
     }
 
     private List<AgentSystem> getSortedSystems() {

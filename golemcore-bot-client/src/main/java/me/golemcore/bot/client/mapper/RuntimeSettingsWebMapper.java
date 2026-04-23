@@ -3,7 +3,6 @@ package me.golemcore.bot.client.mapper;
 import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.AutoModeConfigDto;
 import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.CompactionConfigDto;
 import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.HiveConfigDto;
-import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.RuntimeHiveConfigDto;
 import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.LlmConfigDto;
 import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.LlmProviderConfigDto;
 import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.McpCatalogEntryDto;
@@ -14,12 +13,14 @@ import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.PlanConfigDto
 import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.RateLimitConfigDto;
 import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.ResilienceConfigDto;
 import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.RuntimeConfigDto;
+import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.RuntimeHiveConfigDto;
 import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.SecurityConfigDto;
 import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.SessionRetentionConfigDto;
 import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.ShellEnvironmentVariableDto;
 import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.SkillsConfigDto;
 import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.TelemetryConfigDto;
 import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.ToolsConfigDto;
+import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.ToolLoopConfigDto;
 import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.TracingConfigDto;
 import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.TurnConfigDto;
 import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.UsageConfigDto;
@@ -96,6 +97,14 @@ public class RuntimeSettingsWebMapper {
 
     public RuntimeConfig.TurnConfig toTurnConfig(TurnConfigDto source) {
         return copy(source, new RuntimeConfig.TurnConfig());
+    }
+
+    public ToolLoopConfigDto toToolLoopConfigDto(RuntimeConfig.ToolLoopConfig source) {
+        return copy(source, new ToolLoopConfigDto());
+    }
+
+    public RuntimeConfig.ToolLoopConfig toToolLoopConfig(ToolLoopConfigDto source) {
+        return copy(source, new RuntimeConfig.ToolLoopConfig());
     }
 
     public SessionRetentionConfigDto toSessionRetentionConfigDto(RuntimeConfig.SessionRetentionConfig source) {
@@ -227,6 +236,7 @@ public class RuntimeSettingsWebMapper {
         target.setCompaction(source.getCompaction());
         target.setResilience(source.getResilience());
         target.setTurn(source.getTurn());
+        target.setToolLoop(source.getToolLoop());
         target.setSessionRetention(source.getSessionRetention());
         target.setMemory(source.getMemory());
         target.setSkills(source.getSkills());

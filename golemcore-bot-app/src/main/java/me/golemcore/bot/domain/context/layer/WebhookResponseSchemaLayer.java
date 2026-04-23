@@ -18,8 +18,9 @@
 
 package me.golemcore.bot.domain.context.layer;
 
-import me.golemcore.bot.domain.context.ContextLayer;
+import me.golemcore.bot.domain.context.ContextLayerLifecycle;
 import me.golemcore.bot.domain.context.ContextLayerResult;
+import me.golemcore.bot.domain.context.LayerCriticality;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.Message;
@@ -37,21 +38,20 @@ import me.golemcore.bot.domain.model.Message;
  * the original webhook request.
  * </p>
  */
-public class WebhookResponseSchemaLayer implements ContextLayer {
+public class WebhookResponseSchemaLayer extends AbstractContextLayer {
 
-    @Override
-    public String getName() {
-        return "webhook_response_schema";
-    }
-
-    @Override
-    public int getOrder() {
-        return 76;
+    public WebhookResponseSchemaLayer() {
+        super("webhook_response_schema", 76, REQUIRED_PRIORITY, ContextLayerLifecycle.TURN);
     }
 
     @Override
     public boolean appliesTo(AgentContext context) {
         return readSchemaText(context) != null;
+    }
+
+    @Override
+    public LayerCriticality getCriticality() {
+        return LayerCriticality.PINNED_UNTRIMMABLE;
     }
 
     /**
@@ -66,7 +66,7 @@ public class WebhookResponseSchemaLayer implements ContextLayer {
     public ContextLayerResult assemble(AgentContext context) {
         String schemaText = readSchemaText(context);
         if (schemaText == null) {
-            return ContextLayerResult.empty(getName());
+            return empty();
         }
 
         String content = ("# Webhook Response JSON Contract%n"
@@ -75,11 +75,7 @@ public class WebhookResponseSchemaLayer implements ContextLayer {
                 + "```json%n%s%n```")
                 .formatted(schemaText);
 
-        return ContextLayerResult.builder()
-                .layerName(getName())
-                .content(content)
-                .estimatedTokens(TokenEstimator.estimate(content))
-                .build();
+        return result(content);
     }
 
     /**

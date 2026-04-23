@@ -982,6 +982,7 @@ public class HiveEventBatchPublisher implements HiveEventPublishPort, SelfEvolvi
         case RETRY_FINISHED -> "Retry finished";
         case COMPACTION_STARTED -> "Compaction started";
         case COMPACTION_FINISHED -> "Compaction finished";
+        case CONTEXT_HYGIENE -> "Context hygiene projected";
         case TURN_INTERRUPT_REQUESTED -> "Interrupt requested";
         };
     }

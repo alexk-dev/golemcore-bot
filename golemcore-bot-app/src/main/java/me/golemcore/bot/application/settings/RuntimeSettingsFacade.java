@@ -259,6 +259,14 @@ public class RuntimeSettingsFacade {
         return runtimeConfigService.getRuntimeConfigForApi();
     }
 
+    public RuntimeConfig updateToolLoopConfig(RuntimeConfig.ToolLoopConfig toolLoopConfig) {
+        validator.validateToolLoopConfig(toolLoopConfig);
+        RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
+        config.setToolLoop(toolLoopConfig);
+        runtimeConfigService.updateRuntimeConfig(config);
+        return runtimeConfigService.getRuntimeConfigForApi();
+    }
+
     public RuntimeConfig updateMemoryConfig(RuntimeConfig.MemoryConfig memoryConfig) {
         validator.validateMemoryConfig(memoryConfig);
         RuntimeConfig config = runtimeConfigService.getRuntimeConfig();

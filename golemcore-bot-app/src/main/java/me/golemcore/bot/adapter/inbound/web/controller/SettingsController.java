@@ -3,13 +3,6 @@ package me.golemcore.bot.adapter.inbound.web.controller;
 import me.golemcore.bot.client.dto.PreferencesUpdateRequest;
 import me.golemcore.bot.client.dto.SettingsResponse;
 import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.AutoModeConfigDto;
-import me.golemcore.bot.client.dto.settings.SettingsWebDtos.AdvancedConfigRequest;
-import me.golemcore.bot.client.dto.settings.SettingsWebDtos.LlmProviderImportRequest;
-import me.golemcore.bot.client.dto.settings.SettingsWebDtos.LlmProviderImportResponse;
-import me.golemcore.bot.client.dto.settings.SettingsWebDtos.LlmProviderTestRequest;
-import me.golemcore.bot.client.dto.settings.SettingsWebDtos.LlmProviderTestResponse;
-import me.golemcore.bot.client.dto.settings.SettingsWebDtos.ModelDto;
-import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.RuntimeHiveConfigDto;
 import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.LlmConfigDto;
 import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.LlmProviderConfigDto;
 import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.McpCatalogEntryDto;
@@ -18,15 +11,23 @@ import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.MemoryConfigD
 import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.ModelRouterConfigDto;
 import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.PlanConfigDto;
 import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.RuntimeConfigDto;
+import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.RuntimeHiveConfigDto;
 import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.SessionRetentionConfigDto;
 import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.ShellEnvironmentVariableDto;
 import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.SkillsConfigDto;
 import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.TelemetryConfigDto;
 import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.ToolsConfigDto;
+import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.ToolLoopConfigDto;
 import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.TracingConfigDto;
 import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.TurnConfigDto;
 import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.UsageConfigDto;
 import me.golemcore.bot.client.dto.settings.RuntimeSettingsWebDtos.VoiceConfigDto;
+import me.golemcore.bot.client.dto.settings.SettingsWebDtos.AdvancedConfigRequest;
+import me.golemcore.bot.client.dto.settings.SettingsWebDtos.LlmProviderImportRequest;
+import me.golemcore.bot.client.dto.settings.SettingsWebDtos.LlmProviderImportResponse;
+import me.golemcore.bot.client.dto.settings.SettingsWebDtos.LlmProviderTestRequest;
+import me.golemcore.bot.client.dto.settings.SettingsWebDtos.LlmProviderTestResponse;
+import me.golemcore.bot.client.dto.settings.SettingsWebDtos.ModelDto;
 import me.golemcore.bot.client.mapper.RuntimeSettingsWebMapper;
 import me.golemcore.bot.application.models.ProviderModelImportService;
 import me.golemcore.bot.application.settings.RuntimeSettingsFacade;
@@ -314,6 +315,13 @@ public class SettingsController {
                 runtimeSettingsFacade.updateTurnConfig(runtimeSettingsWebMapper.toTurnConfig(turnConfig))));
     }
 
+    @PutMapping("/runtime/tool-loop")
+    public Mono<ResponseEntity<RuntimeConfigDto>> updateToolLoopConfig(
+            @RequestBody ToolLoopConfigDto toolLoopConfig) {
+        return runtimeConfigResponse(() -> runtimeSettingsWebMapper.toRuntimeConfigDto(
+                runtimeSettingsFacade.updateToolLoopConfig(runtimeSettingsWebMapper.toToolLoopConfig(toolLoopConfig))));
+    }
+
     @PutMapping("/runtime/memory")
     public Mono<ResponseEntity<RuntimeConfigDto>> updateMemoryConfig(
             @RequestBody MemoryConfigDto memoryConfig) {
@@ -524,6 +532,11 @@ public class SettingsController {
     public Mono<ResponseEntity<RuntimeConfigDto>> updateTurnConfig(RuntimeConfig.TurnConfig turnConfig) {
         return Mono.just(ResponseEntity
                 .ok(runtimeSettingsWebMapper.toRuntimeConfigDto(runtimeSettingsFacade.updateTurnConfig(turnConfig))));
+    }
+
+    public Mono<ResponseEntity<RuntimeConfigDto>> updateToolLoopConfig(RuntimeConfig.ToolLoopConfig toolLoopConfig) {
+        return runtimeConfigResponse(() -> runtimeSettingsWebMapper
+                .toRuntimeConfigDto(runtimeSettingsFacade.updateToolLoopConfig(toolLoopConfig)));
     }
 
     public Mono<ResponseEntity<RuntimeConfigDto>> updateMemoryConfig(RuntimeConfig.MemoryConfig memoryConfig) {

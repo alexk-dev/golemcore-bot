@@ -18,10 +18,9 @@ package me.golemcore.bot.domain.context.layer;
  * Contact: alex@kuleshov.tech
  */
 
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.component.MemoryComponent;
-import me.golemcore.bot.domain.context.ContextLayer;
+import me.golemcore.bot.domain.context.ContextLayerLifecycle;
 import me.golemcore.bot.domain.context.ContextLayerResult;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.ContextAttributes;
@@ -47,22 +46,20 @@ import java.util.List;
  * {@link ContextAttributes} and sets {@code memoryContext} on the
  * {@link AgentContext}.
  */
-@RequiredArgsConstructor
 @Slf4j
-public class MemoryLayer implements ContextLayer {
+public class MemoryLayer extends AbstractContextLayer {
 
     private final MemoryComponent memoryComponent;
     private final RuntimeConfigService runtimeConfigService;
     private final MemoryPresetService memoryPresetService;
 
-    @Override
-    public String getName() {
-        return "memory";
-    }
-
-    @Override
-    public int getOrder() {
-        return 30;
+    public MemoryLayer(MemoryComponent memoryComponent,
+            RuntimeConfigService runtimeConfigService,
+            MemoryPresetService memoryPresetService) {
+        super("memory", 30, 45, ContextLayerLifecycle.ON_DEMAND);
+        this.memoryComponent = memoryComponent;
+        this.runtimeConfigService = runtimeConfigService;
+        this.memoryPresetService = memoryPresetService;
     }
 
     @Override
@@ -74,7 +71,7 @@ public class MemoryLayer implements ContextLayer {
     public ContextLayerResult assemble(AgentContext context) {
         if (isMemoryDisabled(context)) {
             context.setMemoryContext("");
-            return ContextLayerResult.empty(getName());
+            return empty();
         }
         RuntimeConfig.MemoryConfig memoryConfig = resolveMemoryPresetConfig(context);
 
@@ -120,15 +117,11 @@ public class MemoryLayer implements ContextLayer {
         context.setMemoryContext(memoryContext);
 
         if (memoryContext.isBlank()) {
-            return ContextLayerResult.empty(getName());
+            return empty();
         }
 
         String content = "# Memory\n" + memoryContext;
-        return ContextLayerResult.builder()
-                .layerName(getName())
-                .content(content)
-                .estimatedTokens(TokenEstimator.estimate(content))
-                .build();
+        return result(content);
     }
 
     private String getLastUserMessageText(AgentContext context) {

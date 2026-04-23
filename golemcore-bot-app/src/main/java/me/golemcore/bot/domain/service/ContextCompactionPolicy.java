@@ -17,6 +17,9 @@ public class ContextCompactionPolicy {
     private static final String TRIGGER_MODE_TOKEN_THRESHOLD = "token_threshold";
     private static final double TOKEN_THRESHOLD_MODEL_MAX_SAFETY_RATIO = 0.8d;
     private static final double DEFAULT_RATIO_FALLBACK = 0.95d;
+    private static final double SYSTEM_PROMPT_BUDGET_RATIO = 0.35d;
+    private static final int SYSTEM_PROMPT_MIN_TOKENS = 1_500;
+    private static final int SYSTEM_PROMPT_MAX_TOKENS = 12_000;
 
     private final RuntimeConfigService runtimeConfigService;
     private final ModelSelectionService modelSelectionService;
@@ -96,6 +99,22 @@ public class ContextCompactionPolicy {
                     + "a size check. Configure one of the two to re-enable preflight compaction.");
         }
         return Integer.MAX_VALUE;
+    }
+
+    /**
+     * Budget used by ContextAssembler for the rendered system prompt. This keeps
+     * layered prompt content from consuming the entire provider request window
+     * before conversation history and tool schemas are added.
+     */
+    public int resolveSystemPromptThreshold(AgentContext context) {
+        int fullRequestThreshold = resolveFullRequestThreshold(context);
+        if (fullRequestThreshold == Integer.MAX_VALUE) {
+            return SYSTEM_PROMPT_MAX_TOKENS;
+        }
+        int proportionalBudget = saturatingToPositiveInt(
+                (long) Math.floor(fullRequestThreshold * SYSTEM_PROMPT_BUDGET_RATIO));
+        return Math.min(SYSTEM_PROMPT_MAX_TOKENS,
+                Math.max(SYSTEM_PROMPT_MIN_TOKENS, proportionalBudget));
     }
 
     private int resolveRegistryModelMax(AgentContext context) {

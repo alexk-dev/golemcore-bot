@@ -794,7 +794,7 @@ class ContextBuildingSystemPromptTest {
                 .messages(messages)
                 .build();
 
-        when(autoModeService.buildAutoContext()).thenReturn("# Goals\n- Build something");
+        when(autoModeService.buildAutoContext(null, null)).thenReturn("# Goals\n- Build something");
 
         system.process(ctx);
 
@@ -805,7 +805,7 @@ class ContextBuildingSystemPromptTest {
     @Test
     void shouldPreferSkillReflectionTierWhenTaskTierIsNotPriority() {
         when(promptSectionService.isEnabled()).thenReturn(false);
-        when(autoModeService.buildAutoContext()).thenReturn("# Goals\n- Recover");
+        when(autoModeService.buildAutoContext(null, null)).thenReturn("# Goals\n- Recover");
 
         Skill skill = Skill.builder()
                 .name("recovery-skill")
@@ -838,7 +838,7 @@ class ContextBuildingSystemPromptTest {
     @Test
     void shouldPreferTaskReflectionTierWhenMarkedPriority() {
         when(promptSectionService.isEnabled()).thenReturn(false);
-        when(autoModeService.buildAutoContext()).thenReturn("# Goals\n- Recover");
+        when(autoModeService.buildAutoContext(null, null)).thenReturn("# Goals\n- Recover");
 
         Skill skill = Skill.builder()
                 .name("recovery-skill")
@@ -870,7 +870,7 @@ class ContextBuildingSystemPromptTest {
     @Test
     void shouldPreferLastUsedSkillReflectionTierFromMetadata() {
         when(promptSectionService.isEnabled()).thenReturn(false);
-        when(autoModeService.buildAutoContext()).thenReturn("# Goals\n- Recover");
+        when(autoModeService.buildAutoContext(null, null)).thenReturn("# Goals\n- Recover");
 
         Skill skill = Skill.builder()
                 .name("reviewer-skill")
@@ -903,7 +903,7 @@ class ContextBuildingSystemPromptTest {
     @Test
     void shouldUseConfiguredReflectionOverrideWhenSkillHasNoReflectionTier() {
         when(promptSectionService.isEnabled()).thenReturn(false);
-        when(autoModeService.buildAutoContext()).thenReturn("# Goals\n- Recover");
+        when(autoModeService.buildAutoContext(null, null)).thenReturn("# Goals\n- Recover");
         when(modelSelectionService.resolveForTier(TIER_SMART))
                 .thenReturn(new ModelSelectionService.ModelSelection("gpt-5-smart", "high"));
 
@@ -930,7 +930,7 @@ class ContextBuildingSystemPromptTest {
     @Test
     void shouldFallbackToRuntimeReflectionTierWhenNoTaskOrSkillOverrideExists() {
         when(promptSectionService.isEnabled()).thenReturn(false);
-        when(autoModeService.buildAutoContext()).thenReturn("# Goals\n- Recover");
+        when(autoModeService.buildAutoContext(null, null)).thenReturn("# Goals\n- Recover");
         when(runtimeConfigService.getAutoReflectionModelTier()).thenReturn(TIER_DEEP);
         when(modelSelectionService.resolveForTier(TIER_DEEP))
                 .thenReturn(new ModelSelectionService.ModelSelection("gpt-5-deep", "max"));
@@ -957,7 +957,7 @@ class ContextBuildingSystemPromptTest {
     @Test
     void shouldFallbackToUserTierDuringReflectionWhenNothingElseIsConfigured() {
         when(promptSectionService.isEnabled()).thenReturn(false);
-        when(autoModeService.buildAutoContext()).thenReturn("# Goals\n- Recover");
+        when(autoModeService.buildAutoContext(null, null)).thenReturn("# Goals\n- Recover");
         when(runtimeConfigService.getAutoReflectionModelTier()).thenReturn(null);
         when(userPreferencesService.getPreferences()).thenReturn(UserPreferences.builder()
                 .modelTier(TIER_SMART)
@@ -983,7 +983,7 @@ class ContextBuildingSystemPromptTest {
     @Test
     void shouldClearResolvedTierMetadataWhenReflectionResolutionReturnsBlankReasoning() {
         when(promptSectionService.isEnabled()).thenReturn(false);
-        when(autoModeService.buildAutoContext()).thenReturn("# Goals\n- Recover");
+        when(autoModeService.buildAutoContext(null, null)).thenReturn("# Goals\n- Recover");
         when(modelSelectionService.resolveForTier(TIER_SMART))
                 .thenReturn(new ModelSelectionService.ModelSelection("gpt-5-smart", ""));
 
@@ -1010,7 +1010,7 @@ class ContextBuildingSystemPromptTest {
     @Test
     void shouldClearResolvedTierMetadataWhenReflectionResolutionFails() {
         when(promptSectionService.isEnabled()).thenReturn(false);
-        when(autoModeService.buildAutoContext()).thenReturn("# Goals\n- Recover");
+        when(autoModeService.buildAutoContext(null, null)).thenReturn("# Goals\n- Recover");
         when(modelSelectionService.resolveForTier(TIER_SMART))
                 .thenThrow(new IllegalStateException("missing tier mapping"));
 

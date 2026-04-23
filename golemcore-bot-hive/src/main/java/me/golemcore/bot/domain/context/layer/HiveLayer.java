@@ -19,7 +19,7 @@ package me.golemcore.bot.domain.context.layer;
  */
 
 import lombok.extern.slf4j.Slf4j;
-import me.golemcore.bot.domain.context.ContextLayer;
+import me.golemcore.bot.domain.context.ContextLayerLifecycle;
 import me.golemcore.bot.domain.context.ContextLayerResult;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.ChannelTypes;
@@ -36,16 +36,10 @@ import me.golemcore.bot.domain.model.hive.HiveRuntimeContracts;
  * structured board state transitions.
  */
 @Slf4j
-public class HiveLayer implements ContextLayer {
+public class HiveLayer extends AbstractContextLayer {
 
-    @Override
-    public String getName() {
-        return ChannelTypes.HIVE;
-    }
-
-    @Override
-    public int getOrder() {
-        return 75;
+    public HiveLayer() {
+        super(ChannelTypes.HIVE, 75, 90, ContextLayerLifecycle.TURN, true);
     }
 
     @Override
@@ -68,10 +62,6 @@ public class HiveLayer implements ContextLayer {
                 + HiveRuntimeContracts.SIGNAL_TYPE_WORK_STARTED
                 + "` and interruption-driven cancellation are emitted automatically.";
 
-        return ContextLayerResult.builder()
-                .layerName(getName())
-                .content(content)
-                .estimatedTokens(TokenEstimator.estimate(content))
-                .build();
+        return result(content);
     }
 }

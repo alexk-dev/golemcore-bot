@@ -15,6 +15,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class AutoModeLayerTest {
@@ -42,7 +43,7 @@ class AutoModeLayerTest {
 
     @Test
     void shouldRenderAutoContext() {
-        when(autoModeService.buildAutoContext()).thenReturn("# Goals\n- Fix bug #123");
+        when(autoModeService.buildAutoContext(null, null)).thenReturn("# Goals\n- Fix bug #123");
 
         Message autoMsg = Message.builder().role("user").content("task")
                 .metadata(Map.of(ContextAttributes.AUTO_MODE, true)).build();
@@ -58,7 +59,7 @@ class AutoModeLayerTest {
 
     @Test
     void shouldIncludeReflectionModeHeader() {
-        when(autoModeService.buildAutoContext()).thenReturn("# Goals\n- Retry");
+        when(autoModeService.buildAutoContext(null, null)).thenReturn("# Goals\n- Retry");
 
         Message autoMsg = Message.builder().role("user").content("reflect")
                 .metadata(Map.of(ContextAttributes.AUTO_MODE, true,
@@ -74,7 +75,7 @@ class AutoModeLayerTest {
 
     @Test
     void shouldIncludeGuidelinesEvenWhenAutoContextIsBlank() {
-        when(autoModeService.buildAutoContext()).thenReturn("");
+        when(autoModeService.buildAutoContext(null, null)).thenReturn("");
 
         Message autoMsg = Message.builder().role("user").content("task")
                 .metadata(Map.of(ContextAttributes.AUTO_MODE, true)).build();
@@ -84,6 +85,22 @@ class AutoModeLayerTest {
         assertTrue(result.hasContent());
         assertTrue(result.getContent().contains("Autonomous Execution Guidelines"));
         assertFalse(result.getContent().contains("# Goals"));
+    }
+
+    @Test
+    void shouldPassAutoGoalAndTaskIdsToContextBuilder() {
+        when(autoModeService.buildAutoContext("goal-1", "task-1")).thenReturn("# Goals\n- Scoped");
+
+        Message autoMsg = Message.builder().role("user").content("task")
+                .metadata(Map.of(ContextAttributes.AUTO_MODE, true)).build();
+        AgentContext context = AgentContext.builder().messages(List.of(autoMsg)).build();
+        context.setAttribute(ContextAttributes.AUTO_GOAL_ID, "goal-1");
+        context.setAttribute(ContextAttributes.AUTO_TASK_ID, "task-1");
+
+        ContextLayerResult result = layer.assemble(context);
+
+        assertTrue(result.getContent().contains("Scoped"));
+        verify(autoModeService).buildAutoContext("goal-1", "task-1");
     }
 
     @Test

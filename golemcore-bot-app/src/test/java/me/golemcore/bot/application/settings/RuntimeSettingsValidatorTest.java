@@ -152,7 +152,18 @@ class RuntimeSettingsValidatorTest {
         assertThrows(IllegalArgumentException.class, () -> validator.validateTurnConfig(
                 RuntimeConfig.TurnConfig.builder().maxToolExecutions(0).build()));
         assertThrows(IllegalArgumentException.class, () -> validator.validateTurnConfig(
+                RuntimeConfig.TurnConfig.builder().maxSkillTransitions(0).build()));
+        assertThrows(IllegalArgumentException.class, () -> validator.validateTurnConfig(
                 RuntimeConfig.TurnConfig.builder().deadline("PT0S").build()));
+    }
+
+    @Test
+    void shouldRejectInvalidToolLoopNumericConstraints() {
+        assertThrows(IllegalArgumentException.class, () -> validator.validateToolLoopConfig(null));
+        assertThrows(IllegalArgumentException.class, () -> validator.validateToolLoopConfig(
+                RuntimeConfig.ToolLoopConfig.builder().maxLlmCalls(0).build()));
+        assertThrows(IllegalArgumentException.class, () -> validator.validateToolLoopConfig(
+                RuntimeConfig.ToolLoopConfig.builder().maxToolExecutions(0).build()));
     }
 
     @Test

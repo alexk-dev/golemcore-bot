@@ -19,6 +19,7 @@ import me.golemcore.bot.domain.context.layer.WorkspaceInstructionsLayer;
 import me.golemcore.bot.domain.context.resolution.SkillResolver;
 import me.golemcore.bot.domain.context.resolution.TierResolver;
 import me.golemcore.bot.domain.service.AutoModeService;
+import me.golemcore.bot.domain.service.ContextCompactionPolicy;
 import me.golemcore.bot.domain.service.DelayedActionPolicyService;
 import me.golemcore.bot.domain.service.MemoryPresetService;
 import me.golemcore.bot.domain.service.ModelSelectionService;
@@ -117,7 +118,8 @@ public class ContextLayerConfiguration {
     ContextAssembler contextAssembler(SkillResolver skillResolver,
             TierResolver tierResolver,
             List<ContextLayer> layers,
-            PromptComposer promptComposer) {
-        return new ContextAssembler(skillResolver, tierResolver, layers, promptComposer);
+            PromptComposer promptComposer,
+            ContextCompactionPolicy contextCompactionPolicy) {
+        return new ContextAssembler(skillResolver, tierResolver, layers, promptComposer, contextCompactionPolicy);
     }
 }
