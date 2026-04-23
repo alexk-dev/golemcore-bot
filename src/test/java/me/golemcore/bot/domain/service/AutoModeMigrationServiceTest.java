@@ -2,6 +2,7 @@ package me.golemcore.bot.domain.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -144,6 +145,12 @@ class AutoModeMigrationServiceTest {
                 .targetId("missing")
                 .enabled(true)
                 .build();
+        ScheduleEntry missingTaskSchedule = ScheduleEntry.builder()
+                .id("sched-missing-task")
+                .type(ScheduleEntry.ScheduleType.TASK)
+                .targetId("missing-task")
+                .enabled(true)
+                .build();
         ScheduleEntry nullTypeSchedule = ScheduleEntry.builder()
                 .id("sched-null-type")
                 .targetId("goal-1")
@@ -155,6 +162,7 @@ class AutoModeMigrationServiceTest {
         schedules.add(taskSchedule);
         schedules.add(existingScheduledTaskSchedule);
         schedules.add(missingGoalSchedule);
+        schedules.add(missingTaskSchedule);
         schedules.add(nullTypeSchedule);
         when(schedulePersistencePort.loadSchedules()).thenReturn(schedules);
         when(sessionPort.listAll()).thenReturn(List.of(
@@ -179,6 +187,11 @@ class AutoModeMigrationServiceTest {
         assertFalse("task-1".equals(taskSchedule.getTargetId()));
         assertEquals("scheduled-task-existing", existingScheduledTaskSchedule.getTargetId());
         assertEquals(ScheduleEntry.ScheduleType.GOAL, missingGoalSchedule.getType());
+        assertFalse(missingGoalSchedule.isEnabled());
+        assertNull(missingGoalSchedule.getNextExecutionAt());
+        assertEquals(ScheduleEntry.ScheduleType.TASK, missingTaskSchedule.getType());
+        assertFalse(missingTaskSchedule.isEnabled());
+        assertNull(missingTaskSchedule.getNextExecutionAt());
         assertEquals(2, persistentScheduledTaskService.getScheduledTasks().size());
         verify(schedulePersistencePort).saveSchedules(schedules);
         verify(storagePort).putText(eq("auto"), eq("goals-session-migration.marker"), anyString());

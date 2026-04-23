@@ -223,11 +223,7 @@ public class AutoModeScheduler implements AutoExecutionStatusPort {
                             schedule,
                             deliveryContext.get(),
                             taskTimeLimitMinutes);
-                    if (outcome == ScheduledRunOutcome.EXECUTED) {
-                        scheduleService.recordExecution(schedule.getId());
-                    } else {
-                        log.warn("[AutoScheduler] Schedule {} was not executed: {}", schedule.getId(), outcome);
-                    }
+                    handleRunOutcome(schedule, outcome);
                 }
             } finally {
                 executing.set(false);
@@ -235,6 +231,20 @@ public class AutoModeScheduler implements AutoExecutionStatusPort {
         } catch (Exception e) {
             executing.set(false);
             log.error("[AutoScheduler] Tick failed: {}", e.getMessage(), e);
+        }
+    }
+
+    private void handleRunOutcome(ScheduleEntry schedule, ScheduledRunOutcome outcome) {
+        switch (outcome) {
+        case EXECUTED -> scheduleService.recordExecution(schedule.getId());
+        case SKIPPED_TARGET_MISSING -> {
+            scheduleService.disableSchedule(schedule.getId());
+            log.warn("[AutoScheduler] Disabled schedule {} after permanent skip: {}", schedule.getId(), outcome);
+        }
+        case FAILED -> {
+            scheduleService.recordFailedAttempt(schedule.getId());
+            log.warn("[AutoScheduler] Schedule {} failed; next execution was recalculated", schedule.getId());
+        }
         }
     }
 }

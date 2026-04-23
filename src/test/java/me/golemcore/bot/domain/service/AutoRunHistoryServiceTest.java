@@ -6,6 +6,7 @@ import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.Goal;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.ScheduleEntry;
+import me.golemcore.bot.domain.model.ScheduledTask;
 import me.golemcore.bot.port.outbound.SessionPort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -168,6 +169,56 @@ class AutoRunHistoryServiceTest {
 
         assertEquals(1, runs.size());
         assertEquals("FAILED", runs.get(0).status());
+    }
+
+    @Test
+    void shouldExposeScheduledTaskIdentityFromRunMetadata() {
+        ScheduledTask scheduledTask = ScheduledTask.builder()
+                .id("scheduled-task-1")
+                .title("Daily summary")
+                .build();
+        ScheduleEntry schedule = ScheduleEntry.builder()
+                .id("sched-scheduled-task")
+                .type(ScheduleEntry.ScheduleType.SCHEDULED_TASK)
+                .targetId("scheduled-task-1")
+                .cronExpression("* * * * *")
+                .build();
+
+        Message user = Message.builder()
+                .id("m1")
+                .role("user")
+                .content("start")
+                .timestamp(Instant.parse("2026-03-11T10:00:00Z"))
+                .metadata(Map.of(
+                        ContextAttributes.AUTO_MODE, true,
+                        ContextAttributes.AUTO_RUN_ID, "run-scheduled-task",
+                        ContextAttributes.AUTO_SCHEDULE_ID, "sched-scheduled-task",
+                        ContextAttributes.AUTO_SCHEDULED_TASK_ID, "scheduled-task-1"))
+                .build();
+        AgentSession session = AgentSession.builder()
+                .id("web:conv-scheduled-task")
+                .channelType("web")
+                .chatId("conv-scheduled-task")
+                .messages(List.of(user))
+                .build();
+
+        when(autoModeService.getGoals()).thenReturn(List.of());
+        when(autoModeService.getScheduledTasks()).thenReturn(List.of(scheduledTask));
+        when(scheduleService.getSchedules()).thenReturn(List.of(schedule));
+        when(sessionPort.listAll()).thenReturn(List.of(session));
+
+        AutoRunHistoryService.RunSummary summary = service
+                .listRuns("sched-scheduled-task", null, null, 10)
+                .getFirst();
+
+        assertEquals("scheduled-task-1", summary.scheduledTaskId());
+        assertEquals("Daily summary", summary.scheduledTaskLabel());
+        assertEquals("SCHEDULED_TASK", summary.scheduleTargetType());
+        assertEquals("Daily summary", summary.scheduleTargetLabel());
+
+        AutoRunHistoryService.RunDetail detail = service.getRun("run-scheduled-task").orElseThrow();
+        assertEquals("scheduled-task-1", detail.scheduledTaskId());
+        assertEquals("Daily summary", detail.scheduledTaskLabel());
     }
 
     @Test

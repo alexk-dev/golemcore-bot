@@ -917,6 +917,34 @@ class AutoModeSchedulerTest {
 
         verify(sessionRunCoordinator, never()).submit(any(Message.class));
         verify(scheduleService, never()).recordExecution("sched-goal-missing");
+        verify(scheduleService).disableSchedule("sched-goal-missing");
+    }
+
+    @Test
+    void shouldAdvanceFailedScheduleAttemptToAvoidRetryLoop() {
+        when(autoModeService.isAutoModeEnabled()).thenReturn(true);
+        when(autoModeService.getScheduledTask("scheduled-task-1")).thenReturn(Optional.of(ScheduledTask.builder()
+                .id("scheduled-task-1")
+                .title("Daily summary")
+                .prompt("Summarize status")
+                .build()));
+        when(sessionRunCoordinator.submit(any(Message.class)))
+                .thenThrow(new IllegalStateException("submit failed"));
+
+        ScheduleEntry schedule = ScheduleEntry.builder()
+                .id("sched-failed-attempt")
+                .type(ScheduleEntry.ScheduleType.SCHEDULED_TASK)
+                .targetId("scheduled-task-1")
+                .cronExpression(TEST_CRON)
+                .enabled(true)
+                .build();
+        when(scheduleService.getDueSchedules()).thenReturn(List.of(schedule));
+
+        scheduler.tick();
+
+        verify(scheduleService).recordFailedAttempt("sched-failed-attempt");
+        verify(scheduleService, never()).recordExecution("sched-failed-attempt");
+        verify(scheduleService, never()).disableSchedule("sched-failed-attempt");
     }
 
     @Test

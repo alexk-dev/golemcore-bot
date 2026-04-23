@@ -216,6 +216,26 @@ public class ScheduleService {
     }
 
     public void recordExecution(String id) {
+        recordAttempt(id);
+    }
+
+    public void recordFailedAttempt(String id) {
+        recordAttempt(id);
+    }
+
+    public void disableSchedule(String id) {
+        ScheduleEntry entry = findSchedule(id)
+                .orElseThrow(() -> new IllegalArgumentException("Schedule not found: " + id));
+
+        Instant now = clock.instant();
+        entry.setEnabled(false);
+        entry.setNextExecutionAt(null);
+        entry.setUpdatedAt(now);
+        saveSchedules(getSchedules());
+        log.warn("[Schedule] Disabled schedule {}", id);
+    }
+
+    private void recordAttempt(String id) {
         ScheduleEntry entry = findSchedule(id)
                 .orElseThrow(() -> new IllegalArgumentException("Schedule not found: " + id));
 

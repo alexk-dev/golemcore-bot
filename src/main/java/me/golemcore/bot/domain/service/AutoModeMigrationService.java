@@ -173,6 +173,7 @@ public class AutoModeMigrationService {
     private void migrateGoalSchedule(ScheduleEntry schedule, Map<String, Goal> goalById) {
         Goal goal = goalById.get(schedule.getTargetId());
         if (goal == null) {
+            disableUnresolvedLegacySchedule(schedule);
             return;
         }
         schedule.setType(ScheduleEntry.ScheduleType.SCHEDULED_TASK);
@@ -182,12 +183,21 @@ public class AutoModeMigrationService {
     private void migrateTaskSchedule(ScheduleEntry schedule, LegacyTargetIndex targetIndex) {
         AutoTask task = targetIndex.taskById().get(schedule.getTargetId());
         if (task == null) {
+            disableUnresolvedLegacySchedule(schedule);
             return;
         }
         schedule.setType(ScheduleEntry.ScheduleType.SCHEDULED_TASK);
         schedule.setTargetId(persistentScheduledTaskService.createFromLegacyTask(
                 targetIndex.taskGoalById().get(task.getId()),
                 task).getId());
+    }
+
+    private void disableUnresolvedLegacySchedule(ScheduleEntry schedule) {
+        schedule.setEnabled(false);
+        schedule.setNextExecutionAt(null);
+        schedule.setUpdatedAt(Instant.now());
+        log.warn("[AutoModeMigration] Disabled unresolved legacy {} schedule {} for target {}",
+                schedule.getType(), schedule.getId(), schedule.getTargetId());
     }
 
     private AgentSession findLatestTelegramOrWebSession() {

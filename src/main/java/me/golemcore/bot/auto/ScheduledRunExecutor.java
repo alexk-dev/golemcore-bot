@@ -77,20 +77,20 @@ public class ScheduledRunExecutor {
         ScheduleDeliveryContext effectiveDeliveryContext = deliveryContext != null
                 ? deliveryContext
                 : ScheduleDeliveryContext.auto();
-        resetCompletedTaskIfNeeded(scheduleMessage);
-        if (schedule.isClearContextBeforeRun()) {
-            clearSessionContext(
-                    effectiveDeliveryContext.channelType(),
-                    effectiveDeliveryContext.sessionChatId(),
-                    schedule.getId());
-        }
 
         try {
+            resetCompletedTaskIfNeeded(scheduleMessage);
+            if (schedule.isClearContextBeforeRun()) {
+                clearSessionContext(
+                        effectiveDeliveryContext.channelType(),
+                        effectiveDeliveryContext.sessionChatId(),
+                        schedule.getId());
+            }
             log.info("[ScheduledRunExecutor] Processing schedule {}: {}", schedule.getId(), scheduleMessage.content());
             submitAndAwait(scheduleMessage, schedule, timeoutMinutes, effectiveDeliveryContext, deliveryContext);
             return ScheduledRunOutcome.EXECUTED;
         } catch (TimeoutException e) {
-            recordFailureAndMaybeReflect(
+            recordFailureAndMaybeReflectSafely(
                     scheduleMessage,
                     schedule,
                     timeoutMinutes,
@@ -103,7 +103,7 @@ public class ScheduledRunExecutor {
             return ScheduledRunOutcome.EXECUTED;
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            recordFailureAndMaybeReflect(
+            recordFailureAndMaybeReflectSafely(
                     scheduleMessage,
                     schedule,
                     timeoutMinutes,
@@ -114,7 +114,7 @@ public class ScheduledRunExecutor {
             log.error("[ScheduledRunExecutor] Schedule {} interrupted: {}", schedule.getId(), e.getMessage(), e);
             return ScheduledRunOutcome.EXECUTED;
         } catch (ExecutionException e) {
-            recordFailureAndMaybeReflect(
+            recordFailureAndMaybeReflectSafely(
                     scheduleMessage,
                     schedule,
                     timeoutMinutes,
@@ -125,9 +125,40 @@ public class ScheduledRunExecutor {
             log.error("[ScheduledRunExecutor] Failed to process schedule {}: {}", schedule.getId(), e.getMessage(), e);
             return ScheduledRunOutcome.EXECUTED;
         } catch (RuntimeException e) {
+            recordFailureAndMaybeReflectSafely(
+                    scheduleMessage,
+                    schedule,
+                    timeoutMinutes,
+                    effectiveDeliveryContext,
+                    e.getMessage(),
+                    "runtime_exception",
+                    null);
             log.error("[ScheduledRunExecutor] Schedule {} failed before run completion: {}", schedule.getId(),
                     e.getMessage(), e);
             return ScheduledRunOutcome.FAILED;
+        }
+    }
+
+    private void recordFailureAndMaybeReflectSafely(
+            ScheduledRunMessage scheduleMessage,
+            ScheduleEntry schedule,
+            int timeoutMinutes,
+            ScheduleDeliveryContext deliveryContext,
+            String summary,
+            String fingerprint,
+            String activeSkillName) {
+        try {
+            recordFailureAndMaybeReflect(
+                    scheduleMessage,
+                    schedule,
+                    timeoutMinutes,
+                    deliveryContext,
+                    summary,
+                    fingerprint,
+                    activeSkillName);
+        } catch (RuntimeException e) {
+            log.warn("[ScheduledRunExecutor] Failed to record failed run state for schedule {}: {}",
+                    schedule.getId(), e.getMessage(), e);
         }
     }
 

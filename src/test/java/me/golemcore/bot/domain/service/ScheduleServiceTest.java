@@ -250,6 +250,38 @@ class ScheduleServiceTest {
     }
 
     @Test
+    void shouldRecordFailedAttemptAndUpdateNextRun() {
+        service.createSchedule(ScheduleEntry.ScheduleType.GOAL, TARGET_GOAL_1,
+                CRON_DAILY_NOON, -1);
+
+        ScheduleEntry entry = service.getSchedules().get(0);
+        String id = entry.getId();
+
+        service.recordFailedAttempt(id);
+
+        ScheduleEntry updated = service.findSchedule(id).orElseThrow();
+        assertEquals(1, updated.getExecutionCount());
+        assertEquals(FIXED_NOW, updated.getLastExecutedAt());
+        assertNotNull(updated.getNextExecutionAt());
+        assertTrue(updated.isEnabled());
+    }
+
+    @Test
+    void shouldDisableScheduleAndClearNextRun() {
+        service.createSchedule(ScheduleEntry.ScheduleType.GOAL, TARGET_GOAL_1,
+                CRON_DAILY_NOON, -1);
+
+        ScheduleEntry entry = service.getSchedules().get(0);
+
+        service.disableSchedule(entry.getId());
+
+        ScheduleEntry disabled = service.findSchedule(entry.getId()).orElseThrow();
+        assertFalse(disabled.isEnabled());
+        assertNull(disabled.getNextExecutionAt());
+        assertEquals(FIXED_NOW, disabled.getUpdatedAt());
+    }
+
+    @Test
     void shouldDeleteScheduleById() {
         service.createSchedule(ScheduleEntry.ScheduleType.GOAL, TARGET_GOAL_1,
                 CRON_DAILY_9AM, -1);

@@ -148,6 +148,8 @@ public class AutoRunHistoryService {
             String scheduleTargetType,
             String scheduleTargetId,
             String scheduleTargetLabel,
+            String scheduledTaskId,
+            String scheduledTaskLabel,
             String goalId,
             String goalLabel,
             String taskId,
@@ -168,6 +170,8 @@ public class AutoRunHistoryService {
             String scheduleTargetType,
             String scheduleTargetId,
             String scheduleTargetLabel,
+            String scheduledTaskId,
+            String scheduledTaskLabel,
             String goalId,
             String goalLabel,
             String taskId,
@@ -204,6 +208,8 @@ public class AutoRunHistoryService {
         private String scheduleTargetType;
         private String scheduleTargetId;
         private String scheduleTargetLabel;
+        private String scheduledTaskId;
+        private String scheduledTaskLabel;
         private String goalId;
         private String goalLabel;
         private String taskId;
@@ -241,6 +247,7 @@ public class AutoRunHistoryService {
                     scheduleTargetLabel = resolveScheduleTargetLabel(schedule, goalById, taskById, scheduledTaskById);
                 }
             }
+            captureScheduledTask(metadata, scheduleById, scheduledTaskById);
 
             String resolvedGoalId = AutoRunContextSupport.readMetadataString(metadata, ContextAttributes.AUTO_GOAL_ID);
             if (StringValueSupport.isBlank(goalId) && !StringValueSupport.isBlank(resolvedGoalId)) {
@@ -303,6 +310,8 @@ public class AutoRunHistoryService {
                     scheduleTargetType,
                     scheduleTargetId,
                     scheduleTargetLabel,
+                    scheduledTaskId,
+                    scheduledTaskLabel,
                     goalId,
                     goalLabel,
                     taskId,
@@ -324,6 +333,8 @@ public class AutoRunHistoryService {
                     scheduleTargetType,
                     scheduleTargetId,
                     scheduleTargetLabel,
+                    scheduledTaskId,
+                    scheduledTaskLabel,
                     goalId,
                     goalLabel,
                     taskId,
@@ -352,6 +363,29 @@ public class AutoRunHistoryService {
                 return "TOOL_OUTPUT";
             }
             return "STARTED";
+        }
+
+        private void captureScheduledTask(
+                Map<String, Object> metadata,
+                Map<String, ScheduleEntry> scheduleById,
+                Map<String, me.golemcore.bot.domain.model.ScheduledTask> scheduledTaskById) {
+            if (!StringValueSupport.isBlank(scheduledTaskId)) {
+                return;
+            }
+            String resolvedScheduledTaskId = AutoRunContextSupport.readMetadataString(metadata,
+                    ContextAttributes.AUTO_SCHEDULED_TASK_ID);
+            if (StringValueSupport.isBlank(resolvedScheduledTaskId)) {
+                ScheduleEntry schedule = !StringValueSupport.isBlank(scheduleId) ? scheduleById.get(scheduleId) : null;
+                if (schedule != null && schedule.getType() == ScheduleEntry.ScheduleType.SCHEDULED_TASK) {
+                    resolvedScheduledTaskId = schedule.getTargetId();
+                }
+            }
+            if (StringValueSupport.isBlank(resolvedScheduledTaskId)) {
+                return;
+            }
+            scheduledTaskId = resolvedScheduledTaskId;
+            me.golemcore.bot.domain.model.ScheduledTask task = scheduledTaskById.get(resolvedScheduledTaskId);
+            scheduledTaskLabel = task != null ? task.getTitle() : resolvedScheduledTaskId;
         }
 
         private static String resolveModel(Map<String, Object> metadata, String role) {
