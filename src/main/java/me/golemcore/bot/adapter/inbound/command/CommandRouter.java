@@ -68,7 +68,6 @@ public class CommandRouter implements CommandPort {
     private static final String CMD_HELP = "help";
     private static final String CMD_GOAL = "goal";
     private static final String CMD_PLAN = "plan";
-    private static final String CMD_PLANS = "plans";
     private static final String CMD_LATER = "later";
     private static final String CMD_STATUS = "status";
     private static final String SUBCMD_RESET = "reset";
@@ -92,7 +91,6 @@ public class CommandRouter implements CommandPort {
             "schedule",
             CMD_LATER,
             CMD_PLAN,
-            CMD_PLANS,
             "stop");
 
     private final SkillComponent skillComponent;
@@ -147,9 +145,7 @@ public class CommandRouter implements CommandPort {
             String transportChatId = resolveContextString(context, "transportChatId", chatId);
             boolean explicitSessionRouting = hasExplicitContextString(context, "sessionChatId")
                     || hasExplicitContextString(context, "conversationKey");
-            SessionIdentity sessionIdentity = explicitSessionRouting
-                    ? SessionIdentitySupport.resolveSessionIdentity(channelType, sessionChatId)
-                    : null;
+            SessionIdentity sessionIdentity = resolveSessionIdentity(channelType, conversationKey);
             String autoSessionChatId = explicitSessionRouting ? sessionChatId : transportChatId;
             log.debug("Executing command: /{} (session={})", command, sessionId);
 
@@ -172,7 +168,6 @@ public class CommandRouter implements CommandPort {
             case "schedule" -> automationCommandHandler.handleSchedule(args);
             case CMD_LATER -> automationCommandHandler.handleLater(args, channelType, conversationKey);
             case CMD_PLAN -> planCommandHandler.handlePlan(args, sessionIdentity, transportChatId);
-            case CMD_PLANS -> planCommandHandler.handlePlans(sessionIdentity);
             case "stop" -> handleStop(channelType, sessionChatId);
             default -> CommandResult.failure(msg("command.unknown", command));
             };
@@ -216,9 +211,7 @@ public class CommandRouter implements CommandPort {
             commands.add(new CommandDefinition("schedule", "Manage schedules", "/schedule [help]"));
         }
         if (planCommandHandler.isFeatureEnabled()) {
-            commands.add(new CommandDefinition(CMD_PLAN, "Plan work control",
-                    "/plan [on|off|done|status|approve|cancel|resume]"));
-            commands.add(new CommandDefinition(CMD_PLANS, "List plans", "/plans"));
+            commands.add(new CommandDefinition(CMD_PLAN, "Ephemeral plan mode", "/plan [on|off|done|status]"));
         }
         return commands;
     }
@@ -234,6 +227,13 @@ public class CommandRouter implements CommandPort {
     private boolean hasExplicitContextString(Map<String, Object> context, String key) {
         Object value = context.get(key);
         return value instanceof String && !((String) value).isBlank();
+    }
+
+    private SessionIdentity resolveSessionIdentity(String channelType, String conversationKey) {
+        if (channelType == null || channelType.isBlank() || conversationKey == null || conversationKey.isBlank()) {
+            return null;
+        }
+        return SessionIdentitySupport.resolveSessionIdentity(channelType, conversationKey);
     }
 
     private CommandResult handleStop(String channelType, String chatId) {

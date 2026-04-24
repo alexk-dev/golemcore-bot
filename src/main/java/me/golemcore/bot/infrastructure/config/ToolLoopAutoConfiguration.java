@@ -4,7 +4,7 @@ import me.golemcore.bot.domain.service.CompactionOrchestrationService;
 import me.golemcore.bot.domain.service.ContextCompactionPolicy;
 import me.golemcore.bot.domain.service.ContextTokenEstimator;
 import me.golemcore.bot.domain.service.ModelSelectionService;
-import me.golemcore.bot.domain.service.PlanService;
+import me.golemcore.bot.domain.service.PlanModeToolRestrictionService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.RuntimeEventService;
 import me.golemcore.bot.domain.service.TraceService;
@@ -89,7 +89,7 @@ public class ToolLoopAutoConfiguration {
     @Bean
     public ToolLoopSystem toolLoopSystem(LlmPort llmPort, ToolExecutorPort toolExecutorPort,
             HistoryWriter historyWriter, ConversationViewBuilder viewBuilder, ToolRuntimeSettingsPort settingsPort,
-            ModelSelectionService modelSelectionService, PlanService planService,
+            ModelSelectionService modelSelectionService,
             RuntimeConfigService runtimeConfigService,
             UsageTrackingPort usageTracker,
             TelemetryRollupPort telemetryRollupPort,
@@ -101,6 +101,7 @@ public class ToolLoopAutoConfiguration {
             TurnProgressService turnProgressService,
             TraceService traceService,
             ToolFailureRecoveryService toolFailureRecoveryService,
+            PlanModeToolRestrictionService planModeToolRestrictionService,
             LlmResilienceOrchestrator resilienceOrchestrator) {
         LlmPort tracked = new UsageTrackingLlmPortDecorator(llmPort, usageTracker, telemetryRollupPort);
         return DefaultToolLoopSystem.builder()
@@ -111,7 +112,6 @@ public class ToolLoopAutoConfiguration {
                 .turnSettings(settingsPort.turn())
                 .settings(settingsPort.toolLoop())
                 .modelSelectionService(modelSelectionService)
-                .planService(planService)
                 .runtimeConfigService(runtimeConfigService)
                 .compactionOrchestrationService(compactionOrchestrationService)
                 .contextTokenEstimator(contextTokenEstimator)
@@ -121,6 +121,7 @@ public class ToolLoopAutoConfiguration {
                 .turnProgressService(turnProgressService)
                 .traceService(traceService)
                 .toolFailureRecoveryService(toolFailureRecoveryService)
+                .planModeToolRestrictionService(planModeToolRestrictionService)
                 .resilienceOrchestrator(resilienceOrchestrator)
                 .clock(Clock.systemUTC())
                 .build();

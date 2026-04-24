@@ -71,8 +71,58 @@ function resolveTaskSchedules(
     });
 }
 
+function resolveUnlinkedSchedules(
+  schedules: SchedulerSchedule[],
+  scheduledTasks: SchedulerScheduledTask[],
+): SchedulerSchedule[] {
+  const scheduledTaskIds = new Set(scheduledTasks.map((task) => task.id));
+  return schedules
+    .filter((schedule) => (
+      schedule.type !== 'SCHEDULED_TASK' || !scheduledTaskIds.has(schedule.targetId)
+    ))
+    .sort((left, right) => {
+      const leftValue = left.nextExecutionAt ?? '9999-12-31T00:00:00Z';
+      const rightValue = right.nextExecutionAt ?? '9999-12-31T00:00:00Z';
+      return leftValue.localeCompare(rightValue);
+    });
+}
+
 function resolveStatusVariant(enabled: boolean): 'success' | 'secondary' {
   return enabled ? 'success' : 'secondary';
+}
+
+function resolveScheduleTarget(schedule: SchedulerSchedule): string {
+  return schedule.targetLabel.length > 0 ? schedule.targetLabel : schedule.targetId;
+}
+
+interface ScheduleActionButtonsProps {
+  schedule: SchedulerSchedule;
+  busy: boolean;
+  onViewLogs: (schedule: SchedulerSchedule) => void;
+  onEditSchedule: (schedule: SchedulerSchedule) => void;
+  onDeleteSchedule: (scheduleId: string) => void;
+}
+
+function ScheduleActionButtons({
+  schedule,
+  busy,
+  onViewLogs,
+  onEditSchedule,
+  onDeleteSchedule,
+}: ScheduleActionButtonsProps): ReactElement {
+  return (
+    <div className="d-flex gap-2 flex-wrap">
+      <Button type="button" size="sm" variant="secondary" disabled={busy} onClick={() => onViewLogs(schedule)}>
+        Logs
+      </Button>
+      <Button type="button" size="sm" variant="secondary" disabled={busy} onClick={() => onEditSchedule(schedule)}>
+        Edit
+      </Button>
+      <Button type="button" size="sm" variant="danger" disabled={busy} onClick={() => onDeleteSchedule(schedule.id)}>
+        Delete
+      </Button>
+    </div>
+  );
 }
 
 function renderScheduleSummary(
@@ -132,37 +182,73 @@ function ExpandedSchedulesRow({
           <div className="small text-body-secondary mb-2">
             Next: {formatNextExecution(schedule.nextExecutionAt)} · Runs: {schedule.executionCount} / {formatLimit(schedule.maxExecutions)}
           </div>
-          <div className="d-flex gap-2 flex-wrap">
-            <Button
-              type="button"
-              size="sm"
-              variant="secondary"
-              disabled={busy}
-              onClick={() => onViewLogs(schedule)}
-            >
-              Logs
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant="secondary"
-              disabled={busy}
-              onClick={() => onEditSchedule(schedule)}
-            >
-              Edit
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant="danger"
-              disabled={busy}
-              onClick={() => onDeleteSchedule(schedule.id)}
-            >
-              Delete
-            </Button>
-          </div>
+          <ScheduleActionButtons
+            schedule={schedule}
+            busy={busy}
+            onViewLogs={onViewLogs}
+            onEditSchedule={onEditSchedule}
+            onDeleteSchedule={onDeleteSchedule}
+          />
         </div>
       ))}
+    </div>
+  );
+}
+
+function UnlinkedSchedulesSection({
+  schedules,
+  busy,
+  onViewLogs,
+  onEditSchedule,
+  onDeleteSchedule,
+}: {
+  schedules: SchedulerSchedule[];
+  busy: boolean;
+  onViewLogs: (schedule: SchedulerSchedule) => void;
+  onEditSchedule: (schedule: SchedulerSchedule) => void;
+  onDeleteSchedule: (scheduleId: string) => void;
+}): ReactElement | null {
+  if (schedules.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="border-t border-border/80 p-3">
+      <div className="fw-semibold mb-2">Unlinked schedules</div>
+      <div className="d-flex flex-column gap-2">
+        {schedules.map((schedule) => (
+          <div
+            key={schedule.id}
+            className="rounded-lg border border-border/80 p-2"
+          >
+            <div className="d-flex align-items-center gap-2 flex-wrap mb-1">
+              <Badge bg={resolveStatusVariant(schedule.enabled)}>
+                {schedule.enabled ? 'Enabled' : 'Disabled'}
+              </Badge>
+              <Badge bg="secondary">{schedule.type}</Badge>
+              <span className="small text-body-secondary">
+                schedule <code>{schedule.id}</code>
+              </span>
+            </div>
+            <div className="small text-body-secondary">
+              Target: <strong>{resolveScheduleTarget(schedule)}</strong> <code>{schedule.targetId}</code>
+            </div>
+            <div className="small">
+              <code>{schedule.cronExpression}</code>
+            </div>
+            <div className="small text-body-secondary mb-2">
+              Next: {formatNextExecution(schedule.nextExecutionAt)} · Runs: {schedule.executionCount} / {formatLimit(schedule.maxExecutions)}
+            </div>
+            <ScheduleActionButtons
+              schedule={schedule}
+              busy={busy}
+              onViewLogs={onViewLogs}
+              onEditSchedule={onEditSchedule}
+              onDeleteSchedule={onDeleteSchedule}
+            />
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -182,6 +268,7 @@ export function ScheduledTaskListCard({
   onDeleteSchedule,
 }: ScheduledTaskListCardProps): ReactElement {
   const [expandedTaskIds, setExpandedTaskIds] = useState<string[]>([]);
+  const unlinkedSchedules = resolveUnlinkedSchedules(schedules, scheduledTasks);
 
   const toggleExpanded = (scheduledTaskId: string): void => {
     setExpandedTaskIds((current) => (
@@ -200,7 +287,7 @@ export function ScheduledTaskListCard({
         </Button>
       </Card.Header>
       <Card.Body className="p-0">
-        {scheduledTasks.length === 0 && (
+        {scheduledTasks.length === 0 && unlinkedSchedules.length === 0 && (
           <div className="p-3 text-body-secondary">
             No scheduled tasks yet.
           </div>
@@ -322,6 +409,14 @@ export function ScheduledTaskListCard({
             </tbody>
           </Table>
         )}
+
+        <UnlinkedSchedulesSection
+          schedules={unlinkedSchedules}
+          busy={busy}
+          onViewLogs={onViewLogs}
+          onEditSchedule={onEditSchedule}
+          onDeleteSchedule={onDeleteSchedule}
+        />
       </Card.Body>
     </Card>
   );

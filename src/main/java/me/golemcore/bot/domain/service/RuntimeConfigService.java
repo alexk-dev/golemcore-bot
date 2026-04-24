@@ -166,10 +166,6 @@ public class RuntimeConfigService {
     private static final boolean DEFAULT_MCP_ENABLED = true;
     private static final int DEFAULT_MCP_STARTUP_TIMEOUT = 30;
     private static final int DEFAULT_MCP_IDLE_TIMEOUT = 5;
-    private static final boolean DEFAULT_PLAN_ENABLED = false;
-    private static final int DEFAULT_PLAN_MAX_PLANS = 5;
-    private static final int DEFAULT_PLAN_MAX_STEPS_PER_PLAN = 50;
-    private static final boolean DEFAULT_PLAN_STOP_ON_FAILURE = true;
     private static final boolean DEFAULT_DELAYED_ACTIONS_ENABLED = true;
     private static final int DEFAULT_DELAYED_ACTIONS_TICK_SECONDS = 1;
     private static final int DEFAULT_DELAYED_ACTIONS_MAX_PENDING_PER_SESSION = 3;
@@ -865,39 +861,16 @@ public class RuntimeConfigService {
     // ==================== Plan ====================
 
     public boolean isPlanEnabled() {
-        RuntimeConfig.PlanConfig planConfig = getRuntimeConfig().getPlan();
-        if (planConfig == null) {
-            return DEFAULT_PLAN_ENABLED;
-        }
-        Boolean val = planConfig.getEnabled();
-        return val != null ? val : DEFAULT_PLAN_ENABLED;
-    }
-
-    public int getPlanMaxPlans() {
-        RuntimeConfig.PlanConfig planConfig = getRuntimeConfig().getPlan();
-        if (planConfig == null) {
-            return DEFAULT_PLAN_MAX_PLANS;
-        }
-        Integer val = planConfig.getMaxPlans();
-        return val != null ? val : DEFAULT_PLAN_MAX_PLANS;
-    }
-
-    public int getPlanMaxStepsPerPlan() {
-        RuntimeConfig.PlanConfig planConfig = getRuntimeConfig().getPlan();
-        if (planConfig == null) {
-            return DEFAULT_PLAN_MAX_STEPS_PER_PLAN;
-        }
-        Integer val = planConfig.getMaxStepsPerPlan();
-        return val != null ? val : DEFAULT_PLAN_MAX_STEPS_PER_PLAN;
+        return true;
     }
 
     public boolean isPlanStopOnFailure() {
+        return true;
+    }
+
+    public String getPlanModelTier() {
         RuntimeConfig.PlanConfig planConfig = getRuntimeConfig().getPlan();
-        if (planConfig == null) {
-            return DEFAULT_PLAN_STOP_ON_FAILURE;
-        }
-        Boolean val = planConfig.getStopOnFailure();
-        return val != null ? val : DEFAULT_PLAN_STOP_ON_FAILURE;
+        return planConfig != null ? normalizeOptionalModelTier(planConfig.getModelTier()) : null;
     }
 
     // ==================== Delayed Actions ====================
@@ -1886,6 +1859,10 @@ public class RuntimeConfigService {
         if (cfg.getAutoMode() == null) {
             cfg.setAutoMode(new RuntimeConfig.AutoModeConfig());
         }
+        if (cfg.getPlan() == null) {
+            cfg.setPlan(new RuntimeConfig.PlanConfig());
+        }
+        cfg.getPlan().setModelTier(normalizeOptionalModelTier(cfg.getPlan().getModelTier()));
         if (cfg.getAutoMode().getReflectionEnabled() == null) {
             cfg.getAutoMode().setReflectionEnabled(DEFAULT_AUTO_REFLECTION_ENABLED);
         }
@@ -2038,27 +2015,12 @@ public class RuntimeConfigService {
         if (cfg.getTelemetry() == null) {
             cfg.setTelemetry(new RuntimeConfig.TelemetryConfig());
         }
-        if (cfg.getPlan() == null) {
-            cfg.setPlan(new RuntimeConfig.PlanConfig());
-        }
         if (cfg.getResilience() == null) {
             cfg.setResilience(RuntimeConfig.ResilienceConfig.builder().build());
         }
         normalizeResilienceConfig(cfg.getResilience());
         if (cfg.getDelayedActions() == null) {
             cfg.setDelayedActions(new RuntimeConfig.DelayedActionsConfig());
-        }
-        if (cfg.getPlan().getEnabled() == null) {
-            cfg.getPlan().setEnabled(DEFAULT_PLAN_ENABLED);
-        }
-        if (cfg.getPlan().getMaxPlans() == null || cfg.getPlan().getMaxPlans() < 1) {
-            cfg.getPlan().setMaxPlans(DEFAULT_PLAN_MAX_PLANS);
-        }
-        if (cfg.getPlan().getMaxStepsPerPlan() == null || cfg.getPlan().getMaxStepsPerPlan() < 1) {
-            cfg.getPlan().setMaxStepsPerPlan(DEFAULT_PLAN_MAX_STEPS_PER_PLAN);
-        }
-        if (cfg.getPlan().getStopOnFailure() == null) {
-            cfg.getPlan().setStopOnFailure(DEFAULT_PLAN_STOP_ON_FAILURE);
         }
         if (cfg.getDelayedActions().getEnabled() == null) {
             cfg.getDelayedActions().setEnabled(DEFAULT_DELAYED_ACTIONS_ENABLED);
@@ -2454,6 +2416,14 @@ public class RuntimeConfigService {
     private String normalizeResilienceFallbackTier(String value) {
         String normalizedTierId = ModelTierCatalog.normalizeTierId(value);
         return ModelTierCatalog.isExplicitSelectableTier(normalizedTierId) ? normalizedTierId : "balanced";
+    }
+
+    private String normalizeOptionalModelTier(String value) {
+        String normalizedTierId = ModelTierCatalog.normalizeTierId(value);
+        if (normalizedTierId == null || "default".equals(normalizedTierId)) {
+            return null;
+        }
+        return normalizedTierId;
     }
 
     private String normalizeSelfEvolvingJudgeTier(String value, String defaultValue) {

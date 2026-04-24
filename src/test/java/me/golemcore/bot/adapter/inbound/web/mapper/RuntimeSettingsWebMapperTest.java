@@ -67,10 +67,10 @@ class RuntimeSettingsWebMapperTest {
         assertNotNull(mapper.toMcpConfig(new McpConfigDto()));
         assertNotNull(mapper.toMcpCatalogEntryDto(new RuntimeConfig.McpCatalogEntry()));
         assertNotNull(mapper.toMcpCatalogEntry(new McpCatalogEntryDto()));
+        assertNotNull(mapper.toPlanConfigDto(new RuntimeConfig.PlanConfig()));
+        assertNotNull(mapper.toPlanConfig(new PlanConfigDto()));
         assertNotNull(mapper.toHiveConfigDto(new RuntimeConfig.HiveConfig()));
         assertNotNull(mapper.toHiveConfig(new HiveConfigDto()));
-        assertNotNull(mapper.toPlanConfig(new PlanConfigDto()));
-        assertNotNull(mapper.toPlanConfigDto(new RuntimeConfig.PlanConfig()));
         assertNotNull(mapper.toAutoModeConfig(new AutoModeConfigDto()));
         assertNotNull(mapper.toAutoModeConfigDto(new RuntimeConfig.AutoModeConfig()));
         assertNotNull(mapper.toTracingConfig(new TracingConfigDto()));

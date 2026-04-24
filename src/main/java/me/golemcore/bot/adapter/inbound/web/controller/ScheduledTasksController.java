@@ -62,13 +62,15 @@ public class ScheduledTasksController {
             throw badRequest("Request body is required");
         }
         try {
+            ScheduledTask.ExecutionMode executionMode = normalizeExecutionMode(request.executionMode());
+            requireShellToolEnabledFor(executionMode);
             ScheduledTask task = autoModeService.createScheduledTask(
                     request.title(),
                     request.description(),
                     request.prompt(),
                     normalizeOptionalReflectionModelTier(request.reflectionModelTier()),
                     Boolean.TRUE.equals(request.reflectionTierPriority()),
-                    normalizeExecutionMode(request.executionMode()),
+                    executionMode,
                     request.shellCommand(),
                     request.shellWorkingDirectory());
             return Mono.just(ResponseEntity.status(HttpStatus.CREATED).body(toDto(task)));
@@ -85,6 +87,8 @@ public class ScheduledTasksController {
             throw badRequest("Request body is required");
         }
         try {
+            ScheduledTask.ExecutionMode executionMode = normalizeOptionalExecutionMode(request.executionMode());
+            requireShellToolEnabledFor(executionMode);
             ScheduledTask task = autoModeService.updateScheduledTask(
                     requireId(scheduledTaskId, "scheduledTaskId"),
                     request.title(),
@@ -92,7 +96,7 @@ public class ScheduledTasksController {
                     request.prompt(),
                     normalizeOptionalReflectionModelTier(request.reflectionModelTier()),
                     request.reflectionTierPriority(),
-                    normalizeOptionalExecutionMode(request.executionMode()),
+                    executionMode,
                     request.shellCommand(),
                     request.shellWorkingDirectory());
             return Mono.just(ResponseEntity.ok(toDto(task)));
@@ -122,9 +126,9 @@ public class ScheduledTasksController {
             requireFeatureEnabled();
             try {
                 String normalizedId = requireId(scheduledTaskId, "scheduledTaskId");
-                if (autoModeService.getScheduledTask(normalizedId).isEmpty()) {
-                    throw badRequest("Scheduled task not found: " + normalizedId);
-                }
+                ScheduledTask scheduledTask = autoModeService.getScheduledTask(normalizedId)
+                        .orElseThrow(() -> badRequest("Scheduled task not found: " + normalizedId));
+                requireShellToolEnabledFor(scheduledTask.getExecutionModeOrDefault());
                 if (scheduleService.isScheduledTaskBlocked(normalizedId)) {
                     throw conflict("Scheduled task is blocked by an active retry window: " + normalizedId);
                 }
@@ -214,6 +218,12 @@ public class ScheduledTasksController {
             return ScheduledTask.ExecutionMode.valueOf(normalized);
         } catch (IllegalArgumentException exception) {
             throw new IllegalArgumentException("executionMode must be AGENT_PROMPT or SHELL_COMMAND");
+        }
+    }
+
+    private void requireShellToolEnabledFor(ScheduledTask.ExecutionMode executionMode) {
+        if (executionMode == ScheduledTask.ExecutionMode.SHELL_COMMAND && !runtimeConfigService.isShellEnabled()) {
+            throw badRequest("Shell tool is disabled; enable shell before using SHELL_COMMAND tasks");
         }
     }
 

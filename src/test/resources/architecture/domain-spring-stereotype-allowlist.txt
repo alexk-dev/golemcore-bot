@@ -105,7 +105,6 @@ me.golemcore.bot.domain.service.MemoryService
 me.golemcore.bot.domain.service.MemoryWriteService
 me.golemcore.bot.domain.service.ModelSelectionService
 me.golemcore.bot.domain.service.PersistentScheduledTaskService
-me.golemcore.bot.domain.service.PlanExecutionService
 me.golemcore.bot.domain.service.PlanService
 me.golemcore.bot.domain.service.PluginConfigurationService
 me.golemcore.bot.domain.service.PromptSectionService

@@ -3,7 +3,6 @@ package me.golemcore.bot.plugin.runtime.api;
 import me.golemcore.plugin.api.runtime.ActiveSessionPointerService;
 import me.golemcore.plugin.api.runtime.AutoModeService;
 import me.golemcore.plugin.api.runtime.ModelSelectionService;
-import me.golemcore.plugin.api.runtime.PlanExecutionService;
 import me.golemcore.plugin.api.runtime.PluginConfigurationService;
 import me.golemcore.plugin.api.runtime.PlanService;
 import me.golemcore.plugin.api.runtime.RuntimeConfigService;
@@ -74,12 +73,6 @@ public class PluginRuntimeApiConfiguration {
     }
 
     @Bean
-    public PlanExecutionService pluginPlanExecutionService(
-            me.golemcore.bot.domain.service.PlanExecutionService delegate) {
-        return delegate::executePlan;
-    }
-
-    @Bean
     public PlanService pluginPlanService(
             me.golemcore.bot.domain.service.PlanService delegate,
             PluginRuntimeApiMapper mapper) {
@@ -114,7 +107,7 @@ public class PluginRuntimeApiConfiguration {
 
             @Override
             public void approvePlan(String planId) {
-                delegate.approvePlan(planId);
+                throw new UnsupportedOperationException("Plan approval is not supported by ephemeral plan mode");
             }
 
             @Override

@@ -36,7 +36,7 @@ class DashboardSecurityIntegrationTest extends GolemCoreBotIntegrationTestBase {
                 .expectStatus().isOk()
                 .expectBody()
                 .jsonPath("$.hive.enabled").exists()
-                .jsonPath("$.plan.enabled").exists();
+                .jsonPath("$.plan.modelTier").isEqualTo(null);
     }
 
     @Test

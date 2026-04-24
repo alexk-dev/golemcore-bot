@@ -10,6 +10,7 @@ import me.golemcore.bot.domain.service.ContextHygieneService;
 import me.golemcore.bot.domain.service.ContextTokenEstimator;
 import me.golemcore.bot.domain.service.DefaultContextHygieneService;
 import me.golemcore.bot.domain.service.ModelSelectionService;
+import me.golemcore.bot.domain.service.PlanModeToolRestrictionService;
 import me.golemcore.bot.domain.service.PlanService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.ScheduleService;
@@ -18,10 +19,8 @@ import me.golemcore.bot.domain.service.UpdateActivityGate;
 import me.golemcore.bot.domain.service.UpdateMaintenanceWindow;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.domain.system.AgentSystem;
-import me.golemcore.bot.domain.system.PlanFinalizationSystem;
 import me.golemcore.bot.port.outbound.ChannelRuntimePort;
 import me.golemcore.bot.port.outbound.LlmPort;
-import me.golemcore.bot.port.outbound.PlanReadyNotificationPort;
 import me.golemcore.bot.port.outbound.RateLimitPort;
 import me.golemcore.bot.port.outbound.ReleaseSourcePort;
 import me.golemcore.bot.port.outbound.ScheduleCronPort;
@@ -120,9 +119,7 @@ public class CoreLayerConfiguration {
     }
 
     @Bean
-    PlanFinalizationSystem planFinalizationSystem(
-            PlanService planService,
-            PlanReadyNotificationPort planReadyNotificationPort) {
-        return new PlanFinalizationSystem(planService, planReadyNotificationPort);
+    PlanModeToolRestrictionService planModeToolRestrictionService(PlanService planService) {
+        return new PlanModeToolRestrictionService(planService);
     }
 }

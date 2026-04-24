@@ -10,8 +10,8 @@ import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.
 import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.McpCatalogEntryDto;
 import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.McpConfigDto;
 import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.MemoryConfigDto;
-import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.PlanConfigDto;
 import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.ModelRouterConfigDto;
+import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.PlanConfigDto;
 import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.RateLimitConfigDto;
 import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.ResilienceConfigDto;
 import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.RuntimeConfigDto;
@@ -395,12 +395,6 @@ public class SettingsController {
                 runtimeSettingsFacade.updateHiveConfig(runtimeSettingsWebMapper.toHiveConfig(hiveConfig))));
     }
 
-    @PutMapping("/runtime/plan")
-    public Mono<ResponseEntity<RuntimeConfigDto>> updatePlanConfig(@RequestBody PlanConfigDto planConfig) {
-        return runtimeConfigResponse(() -> runtimeSettingsWebMapper.toRuntimeConfigDto(
-                runtimeSettingsFacade.updatePlanConfig(runtimeSettingsWebMapper.toPlanConfig(planConfig))));
-    }
-
     @PutMapping("/runtime/webhooks")
     public Mono<ResponseEntity<Void>> updateWebhooksConfig(@RequestBody UserPreferences.WebhookConfig webhookConfig) {
         return runtimeVoidResponse(() -> runtimeSettingsFacade.updateWebhooksConfig(webhookConfig));
@@ -410,6 +404,12 @@ public class SettingsController {
     public Mono<ResponseEntity<RuntimeConfigDto>> updateAutoConfig(@RequestBody AutoModeConfigDto autoConfig) {
         return runtimeConfigResponse(() -> runtimeSettingsWebMapper.toRuntimeConfigDto(
                 runtimeSettingsFacade.updateAutoConfig(runtimeSettingsWebMapper.toAutoModeConfig(autoConfig))));
+    }
+
+    @PutMapping("/runtime/plan")
+    public Mono<ResponseEntity<RuntimeConfigDto>> updatePlanConfig(@RequestBody PlanConfigDto planConfig) {
+        return runtimeConfigResponse(() -> runtimeSettingsWebMapper.toRuntimeConfigDto(
+                runtimeSettingsFacade.updatePlanConfig(runtimeSettingsWebMapper.toPlanConfig(planConfig))));
     }
 
     @PutMapping("/runtime/tracing")
@@ -530,14 +530,14 @@ public class SettingsController {
                 .toRuntimeConfigDto(runtimeSettingsFacade.updateHiveConfig(hiveConfig)));
     }
 
-    public Mono<ResponseEntity<RuntimeConfigDto>> updatePlanConfig(RuntimeConfig.PlanConfig planConfig) {
-        return runtimeConfigResponse(() -> runtimeSettingsWebMapper
-                .toRuntimeConfigDto(runtimeSettingsFacade.updatePlanConfig(planConfig)));
-    }
-
     public Mono<ResponseEntity<RuntimeConfigDto>> updateAutoConfig(RuntimeConfig.AutoModeConfig autoConfig) {
         return runtimeConfigResponse(() -> runtimeSettingsWebMapper
                 .toRuntimeConfigDto(runtimeSettingsFacade.updateAutoConfig(autoConfig)));
+    }
+
+    public Mono<ResponseEntity<RuntimeConfigDto>> updatePlanConfig(RuntimeConfig.PlanConfig planConfig) {
+        return runtimeConfigResponse(() -> runtimeSettingsWebMapper
+                .toRuntimeConfigDto(runtimeSettingsFacade.updatePlanConfig(planConfig)));
     }
 
     public Mono<ResponseEntity<RuntimeConfigDto>> updateTracingConfig(RuntimeConfig.TracingConfig tracingConfig) {

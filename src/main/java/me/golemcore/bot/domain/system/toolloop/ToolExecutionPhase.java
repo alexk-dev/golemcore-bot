@@ -26,11 +26,12 @@ import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.RuntimeEventType;
 import me.golemcore.bot.domain.model.ToolFailureKind;
-import me.golemcore.bot.domain.model.ToolResult;
+import me.golemcore.bot.domain.model.ToolNames;
 import me.golemcore.bot.domain.model.trace.TraceContext;
 import me.golemcore.bot.domain.model.trace.TraceSpanKind;
 import me.golemcore.bot.domain.model.trace.TraceStatusCode;
 import me.golemcore.bot.domain.service.MdcSupport;
+import me.golemcore.bot.domain.service.PlanModeToolRestrictionService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.RuntimeEventService;
 import me.golemcore.bot.domain.service.TraceMdcSupport;
@@ -43,6 +44,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 /**
@@ -54,7 +56,6 @@ import java.util.Map;
  * <ul>
  * <li>Iterates through tool calls, checking for user interrupts before
  * each</li>
- * <li>Intercepts plan-set-content tool calls as synthetic results</li>
  * <li>Delegates real tool execution to {@link ToolExecutorPort} with
  * tracing</li>
  * <li>Accumulates file changes and attachments on {@link TurnState}</li>
@@ -73,14 +74,13 @@ import java.util.Map;
  */
 class ToolExecutionPhase {
 
-    private static final String PLAN_SET_CONTENT_TOOL_NAME = "plan_set_content";
-
     private final ToolExecutorPort toolExecutor;
     private final ToolFailurePolicy failurePolicy;
     private final RuntimeEventService runtimeEventService;
     private final TurnProgressService turnProgressService;
     private final TraceService traceService;
     private final RuntimeConfigService runtimeConfigService;
+    private final PlanModeToolRestrictionService planModeToolRestrictionService;
     private final Clock clock;
     private final ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
 
@@ -103,6 +103,14 @@ class ToolExecutionPhase {
     ToolExecutionPhase(ToolExecutorPort toolExecutor, ToolFailurePolicy failurePolicy,
             RuntimeEventService runtimeEventService, TurnProgressService turnProgressService,
             TraceService traceService, RuntimeConfigService runtimeConfigService, Clock clock) {
+        this(toolExecutor, failurePolicy, runtimeEventService, turnProgressService, traceService,
+                runtimeConfigService, clock, null);
+    }
+
+    ToolExecutionPhase(ToolExecutorPort toolExecutor, ToolFailurePolicy failurePolicy,
+            RuntimeEventService runtimeEventService, TurnProgressService turnProgressService,
+            TraceService traceService, RuntimeConfigService runtimeConfigService, Clock clock,
+            PlanModeToolRestrictionService planModeToolRestrictionService) {
         this.toolExecutor = toolExecutor;
         this.failurePolicy = failurePolicy;
         this.runtimeEventService = runtimeEventService;
@@ -110,6 +118,7 @@ class ToolExecutionPhase {
         this.traceService = traceService;
         this.runtimeConfigService = runtimeConfigService;
         this.clock = clock;
+        this.planModeToolRestrictionService = planModeToolRestrictionService;
     }
 
     /**
@@ -154,6 +163,7 @@ class ToolExecutionPhase {
             LlmCallPhase llmCallPhase) {
         AgentContext context = turnState.getContext();
         List<Message.ToolCall> toolCalls = response.getToolCalls();
+        boolean planModeActiveAtBatchStart = isPlanModeActive(context);
 
         maybePublishIntent(context, response);
         historyWriter.appendAssistantToolCalls(context, response, toolCalls);
@@ -175,14 +185,17 @@ class ToolExecutionPhase {
                         historyWriter));
             }
 
-            // --- Plan intercept ---
-            if (PLAN_SET_CONTENT_TOOL_NAME.equals(toolCall.getName())) {
-                executePlanIntercept(context, toolCall, turnState, historyWriter);
-                continue;
-            }
-
             // --- Execute tool call ---
             ToolExecutionOutcome outcome = executeToolCall(context, toolCall, turnState, historyWriter);
+
+            if (shouldStopAfterPlanExit(planModeActiveAtBatchStart, toolCall, outcome)) {
+                llmCallPhase.applyAttachments(context, turnState.getAccumulatedAttachments());
+                llmCallPhase.emitRuntimeEvent(context, RuntimeEventType.TURN_FINISHED,
+                        llmCallPhase.eventPayload("reason", "plan_exit", "tool", outcome.toolName()));
+                return new ToolBatchOutcome.StopTurn(llmCallPhase.finishPlanModeTurn(context,
+                        response, toolCalls, turnState.getLlmCalls(), turnState.getToolExecutions(),
+                        historyWriter));
+            }
 
             // --- Evaluate failure policy ---
             if (outcome != null && outcome.toolResult() != null && !outcome.toolResult().isSuccess()) {
@@ -216,28 +229,17 @@ class ToolExecutionPhase {
         return new ToolBatchOutcome.Continue();
     }
 
-        // ==================== Plan intercept ====================
-
-        private void executePlanIntercept(AgentContext context, Message.ToolCall toolCall, TurnState turnState,
-                HistoryWriter historyWriter) {
-            context.setAttribute(ContextAttributes.PLAN_SET_CONTENT_REQUESTED, true);
-
-            String markdown = null;
-            if (toolCall.getArguments() != null
-                    && toolCall.getArguments().get("plan_markdown") instanceof String value) {
-                markdown = value;
+        private boolean shouldStopAfterPlanExit(boolean planModeActiveAtBatchStart, Message.ToolCall toolCall,
+                ToolExecutionOutcome outcome) {
+            if (!planModeActiveAtBatchStart || toolCall == null || outcome == null || outcome.toolResult() == null
+                    || !outcome.toolResult().isSuccess()) {
+                return false;
             }
-            if (markdown == null || markdown.isBlank()) {
-                markdown = "[Plan draft received]";
-            }
+            return ToolNames.PLAN_EXIT.equals(normalizeToolName(toolCall.getName()));
+        }
 
-            ToolExecutionOutcome synthetic = new ToolExecutionOutcome(
-                    toolCall.getId(), toolCall.getName(),
-                    ToolResult.success(markdown), markdown, true, null);
-            historyWriter.appendToolResult(context, synthetic);
-            context.addToolResult(toolCall.getId(), ToolResult.success(markdown));
-            recordToolProgress(context, toolCall, synthetic, 0L);
-            turnState.incrementToolExecutions();
+        private boolean isPlanModeActive(AgentContext context) {
+            return planModeToolRestrictionService != null && planModeToolRestrictionService.isPlanModeActive(context);
         }
 
         // ==================== Tool execution ====================
@@ -250,7 +252,12 @@ class ToolExecutionPhase {
                     eventPayload("toolCallId", toolCall.getId(), "tool", toolCall.getName()));
 
             Instant toolStarted = clock.instant();
-            ToolExecutionOutcome outcome = executeWithTracing(context, toolCall, turnState.getTracingConfig());
+            ToolExecutionOutcome outcome = planModeToolRestrictionService != null
+                    ? planModeToolRestrictionService.denialReason(context, toolCall)
+                            .map(reason -> ToolExecutionOutcome.synthetic(toolCall, ToolFailureKind.POLICY_DENIED,
+                                    reason))
+                            .orElseGet(() -> executeWithTracing(context, toolCall, turnState.getTracingConfig()))
+                    : executeWithTracing(context, toolCall, turnState.getTracingConfig());
             turnState.incrementToolExecutions();
             long toolDuration = Duration.between(toolStarted, clock.instant()).toMillis();
 
@@ -260,7 +267,9 @@ class ToolExecutionPhase {
                                     && outcome.toolResult().isSuccess(),
                             "durationMs", toolDuration));
 
-            captureFileChanges(toolCall, turnState.getTurnFileChanges());
+            if (outcome != null && outcome.toolResult() != null && outcome.toolResult().isSuccess()) {
+                captureFileChanges(toolCall, turnState.getTurnFileChanges());
+            }
             if (!turnState.getTurnFileChanges().isEmpty()) {
                 context.setAttribute(ContextAttributes.TURN_FILE_CHANGES,
                         new ArrayList<>(turnState.getTurnFileChanges()));
@@ -439,6 +448,10 @@ class ToolExecutionPhase {
                 return "tool_failure";
             }
             return "tool_stop";
+        }
+
+        private String normalizeToolName(String toolName) {
+            return toolName == null ? "" : toolName.trim().toLowerCase(Locale.ROOT);
         }
 
         private void maybePublishIntent(AgentContext context, LlmResponse response) {

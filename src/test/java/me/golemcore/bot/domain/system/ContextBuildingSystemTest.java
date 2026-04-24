@@ -15,15 +15,12 @@ import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.model.UserPreferences;
 import me.golemcore.bot.domain.service.DelayedActionPolicyService;
 import me.golemcore.bot.domain.service.ModelSelectionService;
-import me.golemcore.bot.domain.service.PlanService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.selfevolving.run.SelfEvolvingRunService;
 import me.golemcore.bot.domain.service.ToolCallExecutionService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.port.outbound.McpPort;
 import me.golemcore.bot.tools.HiveLifecycleSignalTool;
-import me.golemcore.bot.tools.PlanSetContentTool;
-import me.golemcore.bot.tools.PlanGetTool;
 import me.golemcore.bot.tools.ScheduleSessionActionTool;
 import org.junit.jupiter.api.Test;
 
@@ -43,47 +40,10 @@ import static org.mockito.Mockito.when;
 class ContextBuildingSystemTest {
 
     @Test
-    void shouldAdvertisePlanSetContentToolOnlyWhenPlanModeIsActive() {
-        SkillComponent skillComponent = mock(SkillComponent.class);
-        ToolCallExecutionService toolCallExecutionService = mock(ToolCallExecutionService.class);
-        McpPort mcpPort = mock(McpPort.class);
-        PlanService planService = mock(PlanService.class);
-        DelayedActionPolicyService delayedActionPolicyService = mock(DelayedActionPolicyService.class);
-
-        when(planService.isFeatureEnabled()).thenReturn(true);
-        PlanSetContentTool planFinalizeTool = new PlanSetContentTool(planService);
-        PlanGetTool planGetTool = new PlanGetTool(planService);
-        when(toolCallExecutionService.listTools()).thenReturn(List.of(planFinalizeTool, planGetTool));
-
-        ToolLayer toolLayer = new ToolLayer(toolCallExecutionService, mcpPort, planService, delayedActionPolicyService);
-        ContextAssembler assembler = buildAssembler(skillComponent, toolLayer);
-
-        ContextBuildingSystem system = new ContextBuildingSystem(assembler, null, null, null);
-
-        AgentContext context = AgentContext.builder().build();
-
-        // Case 1: plan mode OFF
-        when(planService.isPlanModeActive()).thenReturn(false);
-        system.process(context);
-        assertTrue(context.getAvailableTools().stream()
-                .noneMatch(t -> PlanSetContentTool.TOOL_NAME.equals(t.getName())
-                        || PlanGetTool.TOOL_NAME.equals(t.getName())));
-
-        // Case 2: plan mode ON
-        when(planService.isPlanModeActive()).thenReturn(true);
-        system.process(context);
-        assertTrue(context.getAvailableTools().stream()
-                .anyMatch(t -> PlanSetContentTool.TOOL_NAME.equals(t.getName())));
-        assertTrue(context.getAvailableTools().stream()
-                .anyMatch(t -> PlanGetTool.TOOL_NAME.equals(t.getName())));
-    }
-
-    @Test
     void shouldAdvertiseHiveLifecycleToolOnlyForHiveSessions() {
         SkillComponent skillComponent = mock(SkillComponent.class);
         ToolCallExecutionService toolCallExecutionService = mock(ToolCallExecutionService.class);
         McpPort mcpPort = mock(McpPort.class);
-        PlanService planService = mock(PlanService.class);
         DelayedActionPolicyService delayedActionPolicyService = mock(DelayedActionPolicyService.class);
         RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
         when(runtimeConfigService.isHiveSdlcLifecycleSignalEnabled()).thenReturn(true);
@@ -94,7 +54,7 @@ class ContextBuildingSystemTest {
                 Clock.systemUTC());
         when(toolCallExecutionService.listTools()).thenReturn(List.of(hiveLifecycleSignalTool));
 
-        ToolLayer toolLayer = new ToolLayer(toolCallExecutionService, mcpPort, planService, delayedActionPolicyService);
+        ToolLayer toolLayer = new ToolLayer(toolCallExecutionService, mcpPort, delayedActionPolicyService);
         ContextAssembler assembler = buildAssembler(skillComponent, toolLayer);
 
         ContextBuildingSystem system = new ContextBuildingSystem(assembler, null, null, null);
@@ -133,7 +93,6 @@ class ContextBuildingSystemTest {
         SkillComponent skillComponent = mock(SkillComponent.class);
         ToolCallExecutionService toolCallExecutionService = mock(ToolCallExecutionService.class);
         McpPort mcpPort = mock(McpPort.class);
-        PlanService planService = mock(PlanService.class);
         DelayedActionPolicyService delayedActionPolicyService = mock(DelayedActionPolicyService.class);
 
         ToolComponent delayedTool = mock(ToolComponent.class);
@@ -146,7 +105,7 @@ class ContextBuildingSystemTest {
         when(toolCallExecutionService.listTools()).thenReturn(List.of(delayedTool));
         when(delayedActionPolicyService.canScheduleActions("webhook")).thenReturn(false);
 
-        ToolLayer toolLayer = new ToolLayer(toolCallExecutionService, mcpPort, planService, delayedActionPolicyService);
+        ToolLayer toolLayer = new ToolLayer(toolCallExecutionService, mcpPort, delayedActionPolicyService);
         ContextAssembler assembler = buildAssembler(skillComponent, toolLayer);
 
         ContextBuildingSystem system = new ContextBuildingSystem(assembler, null, null, null);
@@ -169,7 +128,6 @@ class ContextBuildingSystemTest {
         SkillComponent skillComponent = mock(SkillComponent.class);
         ToolCallExecutionService toolCallExecutionService = mock(ToolCallExecutionService.class);
         McpPort mcpPort = mock(McpPort.class);
-        PlanService planService = mock(PlanService.class);
         DelayedActionPolicyService delayedActionPolicyService = mock(DelayedActionPolicyService.class);
 
         ToolComponent delayedTool = mock(ToolComponent.class);
@@ -182,7 +140,7 @@ class ContextBuildingSystemTest {
         when(toolCallExecutionService.listTools()).thenReturn(List.of(delayedTool));
         when(delayedActionPolicyService.canScheduleActions("web")).thenReturn(true);
 
-        ToolLayer toolLayer = new ToolLayer(toolCallExecutionService, mcpPort, planService, delayedActionPolicyService);
+        ToolLayer toolLayer = new ToolLayer(toolCallExecutionService, mcpPort, delayedActionPolicyService);
         ContextAssembler assembler = buildAssembler(skillComponent, toolLayer);
 
         ContextBuildingSystem system = new ContextBuildingSystem(assembler, null, null, null);

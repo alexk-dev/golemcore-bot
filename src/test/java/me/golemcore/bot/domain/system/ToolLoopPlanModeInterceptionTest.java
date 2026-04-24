@@ -7,7 +7,6 @@ import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.service.ContextCompactionPolicy;
 import me.golemcore.bot.domain.service.ModelSelectionService;
-import me.golemcore.bot.domain.service.PlanService;
 import me.golemcore.bot.domain.system.toolloop.DefaultHistoryWriter;
 import me.golemcore.bot.domain.system.toolloop.DefaultToolLoopSystem;
 import me.golemcore.bot.domain.system.toolloop.ToolExecutionOutcome;
@@ -31,7 +30,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -39,14 +37,12 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * Plan work no longer intercepts ordinary tools in ToolLoop. Only plan-specific
- * control tools are handled specially.
+ * Plan work no longer intercepts ordinary tools in ToolLoop.
  */
 class ToolLoopPlanModeInterceptionTest {
 
     private static final Instant NOW = Instant.parse("2026-01-01T12:00:00Z");
     private static final Instant DEADLINE = Instant.parse("2026-02-01T00:00:00Z");
-    private static final String PLAN_ID = "plan-123";
     private static final String CHANNEL_TYPE = "telegram";
     private static final String CHAT_ID = "chat1";
     private static final String TOOL_FILE_SYSTEM = "file_system";
@@ -104,10 +100,6 @@ class ToolLoopPlanModeInterceptionTest {
             return CompletableFuture.completedFuture(n == 1 ? firstResponse : finalResponse);
         });
 
-        PlanService planService = mock(PlanService.class);
-        when(planService.isPlanModeActive()).thenReturn(true);
-        when(planService.getActivePlanId()).thenReturn(PLAN_ID);
-
         ToolExecutorPort toolExecutor = mock(ToolExecutorPort.class);
         when(toolExecutor.execute(any(), any())).thenAnswer(inv -> {
             Message.ToolCall tc = inv.getArgument(1);
@@ -134,7 +126,6 @@ class ToolLoopPlanModeInterceptionTest {
                 .viewBuilder(new DefaultConversationViewBuilder(new FlatteningToolMessageMasker()))
                 .settings(me.golemcore.bot.support.TestPorts.toolLoop(settings))
                 .modelSelectionService(modelSelectionService)
-                .planService(planService)
                 .contextCompactionPolicy(new ContextCompactionPolicy(
                         mock(me.golemcore.bot.domain.service.RuntimeConfigService.class), modelSelectionService))
                 .clock(Clock.fixed(DEADLINE, ZoneOffset.UTC))
@@ -145,7 +136,6 @@ class ToolLoopPlanModeInterceptionTest {
         assertTrue(result.finalAnswerReady());
         assertEquals(2, result.llmCalls());
 
-        verify(planService, never()).addStep(anyString(), anyString(), any(), anyString());
         verify(toolExecutor, times(2)).execute(any(), any());
 
         long plannedCount = session.getMessages().stream()
@@ -189,10 +179,6 @@ class ToolLoopPlanModeInterceptionTest {
         when(llmPort.chat(any(LlmRequest.class)))
                 .thenReturn(CompletableFuture.completedFuture(finalResponse));
 
-        PlanService planService = mock(PlanService.class);
-        when(planService.isPlanModeActive()).thenReturn(true);
-        when(planService.getActivePlanId()).thenReturn(PLAN_ID);
-
         ToolExecutorPort toolExecutor = mock(ToolExecutorPort.class);
 
         DefaultHistoryWriter historyWriter = new DefaultHistoryWriter(Clock.fixed(NOW, ZoneOffset.UTC));
@@ -209,7 +195,6 @@ class ToolLoopPlanModeInterceptionTest {
                 .viewBuilder(new DefaultConversationViewBuilder(new FlatteningToolMessageMasker()))
                 .settings(me.golemcore.bot.support.TestPorts.toolLoop(settings))
                 .modelSelectionService(modelSelectionService)
-                .planService(planService)
                 .contextCompactionPolicy(new ContextCompactionPolicy(
                         mock(me.golemcore.bot.domain.service.RuntimeConfigService.class), modelSelectionService))
                 .clock(Clock.fixed(DEADLINE, ZoneOffset.UTC))
@@ -220,7 +205,6 @@ class ToolLoopPlanModeInterceptionTest {
         assertTrue(result.finalAnswerReady());
         assertEquals(1, result.llmCalls());
 
-        verify(planService, never()).addStep(anyString(), anyString(), any(), anyString());
         verify(toolExecutor, never()).execute(any(), any());
 
         Message lastMsg = session.getMessages().get(session.getMessages().size() - 1);

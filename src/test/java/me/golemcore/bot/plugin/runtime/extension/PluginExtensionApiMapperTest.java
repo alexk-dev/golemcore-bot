@@ -38,7 +38,7 @@ class PluginExtensionApiMapperTest {
                 .senderId("user-1")
                 .toolCalls(List.of(me.golemcore.plugin.api.extension.model.Message.ToolCall.builder()
                         .id("tool-1")
-                        .name("plan_get")
+                        .name("goal_list")
                         .arguments(arguments)
                         .build()))
                 .metadata(metadata)

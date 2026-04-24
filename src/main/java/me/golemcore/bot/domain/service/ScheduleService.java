@@ -120,7 +120,7 @@ public class ScheduleService {
         return updateSchedule(id, type, targetId, cronExpression, maxExecutions, enabled, null);
     }
 
-    public ScheduleEntry updateSchedule(
+    public synchronized ScheduleEntry updateSchedule(
             String id,
             ScheduleEntry.ScheduleType type,
             String targetId,
@@ -132,7 +132,7 @@ public class ScheduleService {
                 ScheduleReportConfigUpdate.noChange());
     }
 
-    public ScheduleEntry updateSchedule(
+    public synchronized ScheduleEntry updateSchedule(
             String id,
             ScheduleEntry.ScheduleType type,
             String targetId,

@@ -1334,14 +1334,7 @@ public class RuntimeConfig {
     @AllArgsConstructor
     @Builder
     public static class PlanConfig {
-        @Builder.Default
-        private Boolean enabled = false;
-        @Builder.Default
-        private Integer maxPlans = 5;
-        @Builder.Default
-        private Integer maxStepsPerPlan = 50;
-        @Builder.Default
-        private Boolean stopOnFailure = true;
+        private String modelTier;
     }
 
     @Data

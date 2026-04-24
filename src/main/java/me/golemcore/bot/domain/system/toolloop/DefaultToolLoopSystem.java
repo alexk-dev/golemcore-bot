@@ -26,7 +26,7 @@ import me.golemcore.bot.domain.service.CompactionOrchestrationService;
 import me.golemcore.bot.domain.service.ContextCompactionPolicy;
 import me.golemcore.bot.domain.service.ContextTokenEstimator;
 import me.golemcore.bot.domain.service.ModelSelectionService;
-import me.golemcore.bot.domain.service.PlanService;
+import me.golemcore.bot.domain.service.PlanModeToolRestrictionService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.RuntimeEventService;
 import me.golemcore.bot.domain.service.TraceRuntimeConfigSupport;
@@ -76,8 +76,6 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
     private final ToolRuntimeSettingsPort.ToolLoopSettings settings;
     private final RuntimeConfigService runtimeConfigService;
     private final RuntimeEventService runtimeEventService;
-    @SuppressWarnings("PMD.UnusedPrivateField")
-    private final PlanService planService;
     private final Clock clock;
 
     private final LlmCallPhase llmCallPhase;
@@ -89,7 +87,6 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
         this.settings = builder.settings;
         this.runtimeConfigService = builder.runtimeConfigService;
         this.runtimeEventService = builder.runtimeEventService;
-        this.planService = builder.planService;
         this.clock = builder.clock;
 
         ContextTokenEstimator contextTokenEstimator = builder.contextTokenEstimator != null
@@ -134,7 +131,8 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
         this.toolExecutionPhase = new ToolExecutionPhase(
                 builder.toolExecutor, failurePolicy, builder.runtimeEventService,
                 builder.turnProgressService, builder.traceService,
-                builder.runtimeConfigService, builder.clock);
+                builder.runtimeConfigService, builder.clock,
+                builder.planModeToolRestrictionService);
     }
 
     /**
@@ -356,7 +354,6 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
         private ToolRuntimeSettingsPort.TurnSettings turnSettings;
         private ToolRuntimeSettingsPort.ToolLoopSettings settings;
         private ModelSelectionService modelSelectionService;
-        private PlanService planService;
         private RuntimeConfigService runtimeConfigService;
         private CompactionOrchestrationService compactionOrchestrationService;
         private ContextTokenEstimator contextTokenEstimator;
@@ -366,6 +363,7 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
         private TurnProgressService turnProgressService;
         private TraceService traceService;
         private ToolFailureRecoveryService toolFailureRecoveryService;
+        private PlanModeToolRestrictionService planModeToolRestrictionService;
         private me.golemcore.bot.domain.system.toolloop.resilience.LlmResilienceOrchestrator resilienceOrchestrator;
         private Clock clock;
 
@@ -408,12 +406,6 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
         /** Sets the model selection service (required). */
         public Builder modelSelectionService(ModelSelectionService modelSelectionService) {
             this.modelSelectionService = modelSelectionService;
-            return this;
-        }
-
-        /** Sets the plan service (optional, reserved for future use). */
-        public Builder planService(PlanService planService) {
-            this.planService = planService;
             return this;
         }
 
@@ -477,6 +469,13 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
          */
         public Builder toolFailureRecoveryService(ToolFailureRecoveryService toolFailureRecoveryService) {
             this.toolFailureRecoveryService = toolFailureRecoveryService;
+            return this;
+        }
+
+        /** Sets the plan-mode tool restriction service (optional). */
+        public Builder planModeToolRestrictionService(
+                PlanModeToolRestrictionService planModeToolRestrictionService) {
+            this.planModeToolRestrictionService = planModeToolRestrictionService;
             return this;
         }
 

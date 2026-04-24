@@ -35,6 +35,7 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
@@ -532,20 +533,36 @@ public class ScheduledRunExecutor {
             ScheduleEntry schedule,
             ScheduleDeliveryContext deliveryContext,
             String runId) {
-        Message syntheticMessage = scheduledRunMessageFactory.buildSyntheticMessage(
-                scheduleMessage,
-                schedule,
-                deliveryContext,
-                runId);
-        if (syntheticMessage != null) {
+        try {
+            Message syntheticMessage = Objects.requireNonNull(
+                    scheduledRunMessageFactory.buildSyntheticMessage(
+                            scheduleMessage,
+                            schedule,
+                            deliveryContext,
+                            runId),
+                    "Synthetic scheduled-run message is required for shell history");
             return enrichSyntheticMessageForShellHistory(
                     syntheticMessage,
                     scheduleMessage,
                     schedule,
                     deliveryContext,
                     runId);
+        } catch (RuntimeException exception) { // NOSONAR - shell execution must not depend on history metadata
+            log.warn("[ScheduledRunExecutor] Failed to build synthetic shell history message for schedule {}: {}",
+                    schedule.getId(), exception.getMessage());
+            return buildFallbackSyntheticMessageForShellHistory(
+                    scheduleMessage,
+                    schedule,
+                    deliveryContext,
+                    runId);
         }
+    }
 
+    private Message buildFallbackSyntheticMessageForShellHistory(
+            ScheduledRunMessage scheduleMessage,
+            ScheduleEntry schedule,
+            ScheduleDeliveryContext deliveryContext,
+            String runId) {
         Map<String, Object> metadata = new LinkedHashMap<>();
         metadata.put(ContextAttributes.AUTO_MODE, true);
         metadata.put(ContextAttributes.AUTO_RUN_KIND, scheduleMessage.runKind().name());

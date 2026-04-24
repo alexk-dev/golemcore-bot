@@ -136,7 +136,7 @@ class ContextBuildingSystemPromptTest {
                 new MemoryLayer(memoryComponent, runtimeConfigService, new MemoryPresetService()),
                 new RagLayer(ragPort),
                 new SkillLayer(skillComponent, templateEngine),
-                new ToolLayer(toolCallExecutionService, mcpPort, planService, delayedActionPolicyService),
+                new ToolLayer(toolCallExecutionService, mcpPort, delayedActionPolicyService),
                 new TierAwarenessLayer(userPreferencesService),
                 new AutoModeLayer(autoModeService),
                 new PlanModeLayer(planService),

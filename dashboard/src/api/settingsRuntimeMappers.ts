@@ -46,6 +46,7 @@ export interface RuntimeConfigUiRecord extends UnknownRecord {
   llm?: { providers?: Record<string, UnknownRecord> } & UnknownRecord;
   tools?: UnknownRecord;
   voice?: UnknownRecord;
+  plan?: UnknownRecord;
   hive?: UnknownRecord;
   selfEvolving?: unknown;
   modelRegistry?: unknown;

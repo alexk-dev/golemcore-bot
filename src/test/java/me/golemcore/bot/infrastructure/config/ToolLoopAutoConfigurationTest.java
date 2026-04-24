@@ -4,7 +4,7 @@ import me.golemcore.bot.domain.service.CompactionOrchestrationService;
 import me.golemcore.bot.domain.service.ContextCompactionPolicy;
 import me.golemcore.bot.domain.service.ContextTokenEstimator;
 import me.golemcore.bot.domain.service.ModelSelectionService;
-import me.golemcore.bot.domain.service.PlanService;
+import me.golemcore.bot.domain.service.PlanModeToolRestrictionService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.RuntimeEventService;
 import me.golemcore.bot.domain.service.TraceService;
@@ -74,7 +74,6 @@ class ToolLoopAutoConfigurationTest {
         ConversationViewBuilder viewBuilder = mock(ConversationViewBuilder.class);
         BotProperties botProperties = new BotProperties();
         ModelSelectionService modelSelectionService = mock(ModelSelectionService.class);
-        PlanService planService = mock(PlanService.class);
         RuntimeConfigService runtimeConfigService = mock(RuntimeConfigService.class);
         UsageTrackingPort usageTrackingPort = mock(UsageTrackingPort.class);
         TelemetryRollupPort telemetryRollupStore = mock(TelemetryRollupPort.class);
@@ -94,7 +93,6 @@ class ToolLoopAutoConfigurationTest {
                 viewBuilder,
                 me.golemcore.bot.support.TestPorts.settings(botProperties),
                 modelSelectionService,
-                planService,
                 runtimeConfigService,
                 usageTrackingPort,
                 telemetryRollupStore,
@@ -106,6 +104,7 @@ class ToolLoopAutoConfigurationTest {
                 turnProgressService,
                 traceService,
                 toolFailureRecoveryService,
+                mock(PlanModeToolRestrictionService.class),
                 null);
 
         assertNotNull(system);

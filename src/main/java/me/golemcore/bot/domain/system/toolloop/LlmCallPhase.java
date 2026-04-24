@@ -284,18 +284,8 @@ class LlmCallPhase {
             List<Message.ToolCall> pendingToolCalls, String reason, int llmCalls, int toolExecutions,
             HistoryWriter historyWriter) {
         flushProgress(context, "turn_stop");
-        if (pendingToolCalls != null) {
-            for (Message.ToolCall toolCall : pendingToolCalls) {
-                if (context.getToolResults() != null && context.getToolResults().containsKey(toolCall.getId())) {
-                    continue;
-                }
-                ToolExecutionOutcome synthetic = ToolExecutionOutcome.synthetic(toolCall,
-                        me.golemcore.bot.domain.model.ToolFailureKind.EXECUTION_FAILED,
-                        "Tool loop stopped: " + reason);
-                context.addToolResult(synthetic.toolCallId(), synthetic.toolResult());
-                historyWriter.appendToolResult(context, synthetic);
-            }
-        }
+        writeSyntheticResultsForPendingTools(context, pendingToolCalls, "Tool loop stopped: " + reason,
+                historyWriter);
 
         String stopMessage = "Tool loop stopped: " + reason + ".";
         historyWriter.appendFinalAssistantAnswer(context, lastResponse, stopMessage);
@@ -308,6 +298,46 @@ class LlmCallPhase {
         clearProgress(context);
         return new ToolLoopTurnResult(context, true, llmCalls, toolExecutions);
     }
+
+    ToolLoopTurnResult finishPlanModeTurn(AgentContext context, LlmResponse lastResponse,
+            List<Message.ToolCall> pendingToolCalls, int llmCalls, int toolExecutions,
+            HistoryWriter historyWriter) {
+        flushProgress(context, "plan_exit");
+        writeSyntheticResultsForPendingTools(context, pendingToolCalls,
+                "Tool loop stopped: plan mode completed", historyWriter);
+
+        String responseContent = lastResponse != null ? lastResponse.getContent() : null;
+        String finalText = responseContent != null && !responseContent.isBlank()
+                ? responseContent
+                : "Plan mode completed.";
+        historyWriter.appendFinalAssistantAnswer(context, lastResponse, finalText);
+
+        LlmResponse cleanResponse = LlmResponse.builder()
+                .content(finalText)
+                .build();
+        context.setAttribute(ContextAttributes.LLM_RESPONSE, cleanResponse);
+        context.setAttribute(ContextAttributes.FINAL_ANSWER_READY, true);
+        clearProgress(context);
+        return new ToolLoopTurnResult(context, true, llmCalls, toolExecutions);
+    }
+
+            private void writeSyntheticResultsForPendingTools(AgentContext context,
+                    List<Message.ToolCall> pendingToolCalls,
+                    String reason, HistoryWriter historyWriter) {
+                if (pendingToolCalls == null) {
+                    return;
+                }
+                for (Message.ToolCall toolCall : pendingToolCalls) {
+                    if (context.getToolResults() != null && context.getToolResults().containsKey(toolCall.getId())) {
+                        continue;
+                    }
+                    ToolExecutionOutcome synthetic = ToolExecutionOutcome.synthetic(toolCall,
+                            me.golemcore.bot.domain.model.ToolFailureKind.EXECUTION_FAILED,
+                            reason);
+                    context.addToolResult(synthetic.toolCallId(), synthetic.toolResult());
+                    historyWriter.appendToolResult(context, synthetic);
+                }
+            }
 
             // ==================== Error handling ====================
 

@@ -346,20 +346,20 @@ export async function updateHiveConfig(config: HiveConfig): Promise<RuntimeConfi
   return toUiRuntimeConfig(data);
 }
 
-export async function updatePlanConfig(config: PlanConfig): Promise<RuntimeConfig> {
-  const { data } = await client.put<RuntimeConfigUiRecord>(
-    '/settings/runtime/plan',
-    config,
-    withSettingsSectionTelemetry('plan'),
-  );
-  return toUiRuntimeConfig(data);
-}
-
 export async function updateAutoConfig(config: AutoModeConfig): Promise<RuntimeConfig> {
   const { data } = await client.put<RuntimeConfigUiRecord>(
     '/settings/runtime/auto',
     config,
     withSettingsSectionTelemetry('auto'),
+  );
+  return toUiRuntimeConfig(data);
+}
+
+export async function updatePlanConfig(config: PlanConfig): Promise<RuntimeConfig> {
+  const { data } = await client.put<RuntimeConfigUiRecord>(
+    '/settings/runtime/plan',
+    config,
+    withSettingsSectionTelemetry('plan'),
   );
   return toUiRuntimeConfig(data);
 }

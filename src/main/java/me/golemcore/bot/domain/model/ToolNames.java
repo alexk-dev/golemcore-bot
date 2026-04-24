@@ -15,6 +15,9 @@ public final class ToolNames {
     public static final String SCHEDULE_SESSION_ACTION = "schedule_session_action";
     public static final String MEMORY = "memory";
     public static final String SHELL = "shell";
+    public static final String FILESYSTEM = "filesystem";
+    public static final String GOAL_MANAGEMENT = "goal_management";
+    public static final String PLAN_EXIT = "plan_exit";
 
     private ToolNames() {
     }

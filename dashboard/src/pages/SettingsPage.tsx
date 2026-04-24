@@ -192,8 +192,8 @@ export default function SettingsPage(): ReactElement {
           }}
         />
       )}
-      {staticSection === 'plan' && rc != null && <PlanModeTab config={rc.plan} />}
       {staticSection === 'auto' && rc != null && <AutoModeTab config={rc.autoMode} />}
+      {staticSection === 'plan' && rc != null && <PlanModeTab config={rc.plan} />}
       {staticSection === 'tracing' && rc != null && <TracingTab config={rc.tracing} />}
       {staticSection === 'updates' && <UpdatesTab />}
 

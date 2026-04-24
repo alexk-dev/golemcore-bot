@@ -11,7 +11,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class RuntimeSettingsHttpIntegrationTest extends GolemCoreBotIntegrationTestBase {
 
     @Test
-    void shouldPersistHivePlanAndSelfEvolvingSettingsThroughHttpApi() throws Exception {
+    void shouldPersistHiveAndSelfEvolvingSettingsThroughHttpApi() throws Exception {
         String accessToken = loginAndExtractAccessToken();
 
         authenticatedPut("/api/settings/runtime/hive", accessToken, """
@@ -31,33 +31,17 @@ class RuntimeSettingsHttpIntegrationTest extends GolemCoreBotIntegrationTestBase
                 .jsonPath("$.hive.serverUrl").isEqualTo("https://hive.example.com")
                 .jsonPath("$.hive.autoConnect").isEqualTo(true);
 
-        authenticatedPut("/api/settings/runtime/plan", accessToken, """
-                {
-                  "enabled": true,
-                  "maxPlans": 7,
-                  "maxStepsPerPlan": 80,
-                  "stopOnFailure": false
-                }
-                """)
-                .exchange()
-                .expectStatus().isOk()
-                .expectBody()
-                .jsonPath("$.plan.enabled").isEqualTo(true)
-                .jsonPath("$.plan.stopOnFailure").isEqualTo(false);
-
         JsonNode runtimeConfig = getRuntimeConfig(accessToken);
         assertTrue(runtimeConfig.path("hive").path("enabled").asBoolean());
-        assertTrue(runtimeConfig.path("plan").path("enabled").asBoolean());
+        assertTrue(runtimeConfig.path("plan").has("modelTier"));
+        assertTrue(runtimeConfig.path("plan").path("modelTier").isNull());
         assertTrue(runtimeConfig.path("selfEvolving").path("promotion").has("hiveApprovalPreferred"));
         assertTrue(runtimeConfig.path("selfEvolving").path("hive").has("publishInspectionProjection"));
         assertTrue(runtimeConfig.path("selfEvolving").path("hive").has("readonlyInspection"));
 
         JsonNode persistedHive = readPersistedPreferenceSection("hive.json");
-        JsonNode persistedPlan = readPersistedPreferenceSection("plan.json");
         assertEquals("https://hive.example.com", persistedHive.path("serverUrl").asText());
         assertTrue(persistedHive.path("autoConnect").asBoolean());
-        assertTrue(persistedPlan.path("enabled").asBoolean());
-        assertFalse(persistedPlan.path("stopOnFailure").asBoolean());
     }
 
     @Test

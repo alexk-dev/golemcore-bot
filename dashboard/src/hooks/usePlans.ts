@@ -8,13 +8,10 @@ import {
   type UseQueryResult,
 } from '@tanstack/react-query';
 import {
-  approvePlan,
-  cancelPlan,
   disablePlanMode,
   donePlanMode,
   enablePlanMode,
   getPlanControlState,
-  resumePlan,
   type PlanControlState,
 } from '../api/plans';
 import { extractErrorMessage } from '../utils/extractErrorMessage';
@@ -22,12 +19,6 @@ import { extractErrorMessage } from '../utils/extractErrorMessage';
 const PLAN_CONTROL_QUERY_KEY = 'plan-control-state';
 
 export interface EnablePlanModePayload {
-  sessionId: string;
-  modelTier?: string | null;
-}
-
-export interface PlanSessionActionPayload {
-  planId: string;
   sessionId: string;
 }
 
@@ -75,33 +66,6 @@ export function useDonePlanMode(): UseMutationResult<PlanControlState, unknown, 
     successMessage: 'Plan mode done',
     errorPrefix: 'Failed to finish plan mode',
     resolveSessionId: (sessionId) => sessionId,
-  });
-}
-
-export function useApprovePlan(): UseMutationResult<PlanControlState, unknown, PlanSessionActionPayload> {
-  return usePlanMutation<PlanSessionActionPayload>({
-    mutationFn: (variables) => approvePlan(variables.planId, variables.sessionId),
-    successMessage: 'Plan approved and execution started',
-    errorPrefix: 'Failed to approve plan',
-    resolveSessionId: (variables) => variables.sessionId,
-  });
-}
-
-export function useCancelPlan(): UseMutationResult<PlanControlState, unknown, PlanSessionActionPayload> {
-  return usePlanMutation<PlanSessionActionPayload>({
-    mutationFn: (variables) => cancelPlan(variables.planId, variables.sessionId),
-    successMessage: 'Plan cancelled',
-    errorPrefix: 'Failed to cancel plan',
-    resolveSessionId: (variables) => variables.sessionId,
-  });
-}
-
-export function useResumePlan(): UseMutationResult<PlanControlState, unknown, PlanSessionActionPayload> {
-  return usePlanMutation<PlanSessionActionPayload>({
-    mutationFn: (variables) => resumePlan(variables.planId, variables.sessionId),
-    successMessage: 'Plan resume requested',
-    errorPrefix: 'Failed to resume plan',
-    resolveSessionId: (variables) => variables.sessionId,
   });
 }
 

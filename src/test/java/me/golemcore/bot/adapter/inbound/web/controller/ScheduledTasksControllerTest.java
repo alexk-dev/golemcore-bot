@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -166,6 +167,7 @@ class ScheduledTasksControllerTest {
         created.setExecutionMode(ScheduledTask.ExecutionMode.SHELL_COMMAND);
         created.setShellCommand("printf 'cleanup'");
         created.setShellWorkingDirectory("jobs");
+        when(runtimeConfigService.isShellEnabled()).thenReturn(true);
         when(autoModeService.createScheduledTask(
                 "Nightly cleanup",
                 "Cleanup artifacts",
@@ -198,6 +200,28 @@ class ScheduledTasksControllerTest {
                 ScheduledTask.ExecutionMode.SHELL_COMMAND,
                 "printf 'cleanup'",
                 "jobs");
+    }
+
+    @Test
+    void createShellScheduledTaskShouldRejectWhenShellToolIsDisabled() {
+        when(runtimeConfigService.isShellEnabled()).thenReturn(false);
+
+        ResponseStatusException exception = assertThrows(
+                ResponseStatusException.class,
+                () -> controller.createScheduledTask(new ScheduledTasksController.CreateScheduledTaskRequest(
+                        "Nightly cleanup",
+                        "Cleanup artifacts",
+                        null,
+                        "SHELL_COMMAND",
+                        "printf 'cleanup'",
+                        "jobs",
+                        null,
+                        false)).block());
+
+        assertEquals(HttpStatus.BAD_REQUEST, exception.getStatusCode());
+        assertTrue(exception.getReason().contains("Shell tool is disabled"));
+        verify(autoModeService, never()).createScheduledTask(
+                any(), any(), any(), any(), anyBoolean(), any(), any(), any());
     }
 
     @Test
@@ -268,6 +292,24 @@ class ScheduledTasksControllerTest {
                 () -> controller.runScheduledTaskNow("scheduled-task-1").block());
 
         assertEquals(HttpStatus.CONFLICT, exception.getStatusCode());
+    }
+
+    @Test
+    void runShellScheduledTaskNowShouldRejectWhenShellToolIsDisabled() {
+        ScheduledTask shellTask = scheduledTask("scheduled-task-1", "Nightly cleanup",
+                Instant.parse("2026-01-02T00:00:00Z"));
+        shellTask.setExecutionMode(ScheduledTask.ExecutionMode.SHELL_COMMAND);
+        shellTask.setShellCommand("printf 'cleanup'");
+        when(autoModeService.getScheduledTask("scheduled-task-1")).thenReturn(java.util.Optional.of(shellTask));
+        when(runtimeConfigService.isShellEnabled()).thenReturn(false);
+
+        ResponseStatusException exception = assertThrows(
+                ResponseStatusException.class,
+                () -> controller.runScheduledTaskNow("scheduled-task-1").block());
+
+        assertEquals(HttpStatus.BAD_REQUEST, exception.getStatusCode());
+        assertTrue(exception.getReason().contains("Shell tool is disabled"));
+        verifyNoInteractions(scheduledRunExecutor);
     }
 
     @Test

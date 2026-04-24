@@ -27,8 +27,8 @@ import {
   updateMcpCatalogEntry,
   removeMcpCatalogEntry,
   updateHiveConfig,
-  updatePlanConfig,
   updateAutoConfig,
+  updatePlanConfig,
   updateTracingConfig,
   updateAdvancedConfig,
 } from '../api/settings';
@@ -51,8 +51,8 @@ import type {
   McpConfig,
   McpCatalogEntry,
   HiveConfig,
-  PlanConfig,
   AutoModeConfig,
+  PlanConfig,
   TracingConfig,
   RateLimitConfig,
   ResilienceConfig,
@@ -273,18 +273,18 @@ export function useUpdateHive(): UseMutationResult<Awaited<ReturnType<typeof upd
   });
 }
 
-export function useUpdatePlan(): UseMutationResult<Awaited<ReturnType<typeof updatePlanConfig>>, unknown, PlanConfig> {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (config: PlanConfig) => updatePlanConfig(config),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['runtime-config'] }),
-  });
-}
-
 export function useUpdateAuto(): UseMutationResult<Awaited<ReturnType<typeof updateAutoConfig>>, unknown, AutoModeConfig> {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (config: AutoModeConfig) => updateAutoConfig(config),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['runtime-config'] }),
+  });
+}
+
+export function useUpdatePlan(): UseMutationResult<Awaited<ReturnType<typeof updatePlanConfig>>, unknown, PlanConfig> {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (config: PlanConfig) => updatePlanConfig(config),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['runtime-config'] }),
   });
 }

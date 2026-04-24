@@ -456,6 +456,43 @@ class SettingsControllerTest {
     }
 
     @Test
+    void shouldNormalizePlanModeDefaultTierToNull() {
+        RuntimeConfig runtimeConfig = RuntimeConfig.builder()
+                .plan(RuntimeConfig.PlanConfig.builder().build())
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
+
+        RuntimeConfig.PlanConfig update = RuntimeConfig.PlanConfig.builder()
+                .modelTier("default")
+                .build();
+
+        StepVerifier.create(controller.updatePlanConfig(update))
+                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
+                .verifyComplete();
+
+        ArgumentCaptor<RuntimeConfig> captor = ArgumentCaptor.forClass(RuntimeConfig.class);
+        verify(runtimeConfigService).updateRuntimeConfig(captor.capture());
+        assertNull(captor.getValue().getPlan().getModelTier());
+    }
+
+    @Test
+    void shouldRejectPlanModeConfigWithUnknownTier() {
+        RuntimeConfig runtimeConfig = RuntimeConfig.builder()
+                .plan(RuntimeConfig.PlanConfig.builder().build())
+                .build();
+        when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
+
+        RuntimeConfig.PlanConfig update = RuntimeConfig.PlanConfig.builder()
+                .modelTier("turbo")
+                .build();
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> controller.updatePlanConfig(update));
+
+        assertTrue(error.getMessage().contains("plan.modelTier"));
+    }
+
+    @Test
     void shouldUpdateTracingConfigWhenValid() {
         RuntimeConfig runtimeConfig = RuntimeConfig.builder()
                 .tracing(RuntimeConfig.TracingConfig.builder().build())
@@ -2324,30 +2361,6 @@ class SettingsControllerTest {
     }
 
     @Test
-    void shouldUpdatePlanConfigWhenValid() {
-        RuntimeConfig runtimeConfig = RuntimeConfig.builder()
-                .plan(RuntimeConfig.PlanConfig.builder().build())
-                .build();
-        when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
-
-        RuntimeConfig.PlanConfig planConfig = RuntimeConfig.PlanConfig.builder()
-                .enabled(true)
-                .maxPlans(8)
-                .maxStepsPerPlan(120)
-                .stopOnFailure(false)
-                .build();
-
-        StepVerifier.create(controller.updatePlanConfig(planConfig))
-                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
-                .verifyComplete();
-
-        verify(runtimeConfigService).updateRuntimeConfig(runtimeConfig);
-        assertEquals(8, runtimeConfig.getPlan().getMaxPlans());
-        assertEquals(120, runtimeConfig.getPlan().getMaxStepsPerPlan());
-        assertEquals(Boolean.FALSE, runtimeConfig.getPlan().getStopOnFailure());
-    }
-
-    @Test
     void shouldUpdateTelemetryConfigWhenValid() {
         RuntimeConfig runtimeConfig = RuntimeConfig.builder()
                 .telemetry(RuntimeConfig.TelemetryConfig.builder().enabled(true).build())
@@ -2364,53 +2377,6 @@ class SettingsControllerTest {
 
         verify(runtimeConfigService).updateRuntimeConfig(runtimeConfig);
         assertEquals(Boolean.FALSE, runtimeConfig.getTelemetry().getEnabled());
-    }
-
-    @Test
-    void shouldRejectPlanConfigWhenMaxPlansOutOfRange() {
-        RuntimeConfig runtimeConfig = RuntimeConfig.builder()
-                .plan(RuntimeConfig.PlanConfig.builder().build())
-                .build();
-        when(runtimeConfigService.getRuntimeConfig()).thenReturn(runtimeConfig);
-
-        RuntimeConfig.PlanConfig planConfig = RuntimeConfig.PlanConfig.builder()
-                .enabled(true)
-                .maxPlans(0)
-                .build();
-
-        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
-                () -> controller.updatePlanConfig(planConfig));
-        assertTrue(error.getMessage().contains("plan.maxPlans"));
-    }
-
-    @Test
-    void shouldPreserveExistingPlanSectionDuringPartialRuntimeUpdate() {
-        RuntimeConfig current = RuntimeConfig.builder()
-                .plan(RuntimeConfig.PlanConfig.builder()
-                        .enabled(true)
-                        .maxPlans(9)
-                        .maxStepsPerPlan(70)
-                        .stopOnFailure(false)
-                        .build())
-                .turn(RuntimeConfig.TurnConfig.builder().maxLlmCalls(9).build())
-                .build();
-        when(runtimeConfigService.getRuntimeConfig()).thenReturn(current);
-
-        RuntimeConfig incoming = RuntimeConfig.builder()
-                .turn(RuntimeConfig.TurnConfig.builder().maxLlmCalls(12).build())
-                .build();
-
-        StepVerifier.create(controller.updateRuntimeConfig(incoming))
-                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
-                .verifyComplete();
-
-        ArgumentCaptor<RuntimeConfig> captor = ArgumentCaptor.forClass(RuntimeConfig.class);
-        verify(runtimeConfigService).updateRuntimeConfig(captor.capture());
-        RuntimeConfig saved = captor.getValue();
-        assertEquals(Boolean.TRUE, saved.getPlan().getEnabled());
-        assertEquals(9, saved.getPlan().getMaxPlans());
-        assertEquals(70, saved.getPlan().getMaxStepsPerPlan());
-        assertEquals(Boolean.FALSE, saved.getPlan().getStopOnFailure());
     }
 
     // ==================== MCP Catalog CRUD ====================
@@ -2790,7 +2756,6 @@ class SettingsControllerTest {
         when(facade.addMcpCatalogEntry(any(RuntimeConfig.McpCatalogEntry.class))).thenReturn(apiView);
         when(facade.updateMcpCatalogEntry(anyString(), any(RuntimeConfig.McpCatalogEntry.class))).thenReturn(apiView);
         when(facade.updateHiveConfig(any(RuntimeConfig.HiveConfig.class))).thenReturn(apiView);
-        when(facade.updatePlanConfig(any(RuntimeConfig.PlanConfig.class))).thenReturn(apiView);
         when(facade.updateAutoConfig(any(RuntimeConfig.AutoModeConfig.class))).thenReturn(apiView);
         when(facade.updateTracingConfig(any(RuntimeConfig.TracingConfig.class))).thenReturn(apiView);
         when(facade.updateAdvancedConfig(any(RuntimeConfig.RateLimitConfig.class),
@@ -2872,9 +2837,6 @@ class SettingsControllerTest {
                 .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
                 .verifyComplete();
         StepVerifier.create(dtoController.updateHiveConfig(new RuntimeSettingsWebDtos.HiveConfigDto()))
-                .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
-                .verifyComplete();
-        StepVerifier.create(dtoController.updatePlanConfig(new RuntimeSettingsWebDtos.PlanConfigDto()))
                 .assertNext(response -> assertEquals(HttpStatus.OK, response.getStatusCode()))
                 .verifyComplete();
         StepVerifier.create(dtoController.updateAutoConfig(new RuntimeSettingsWebDtos.AutoModeConfigDto()))

@@ -118,7 +118,7 @@ export default function UsageTab({ config, sessionRetention }: UsageTabProps): R
             />
             <Form.Check
               type="switch"
-              label={<>Protect sessions with plan mode data <HelpTip text="Keep sessions that still have collecting, ready, approved, or executing plans attached." /></>}
+              label={<>Protect active plan mode sessions <HelpTip text="Keep sessions that have active plan mode state in the current runtime." /></>}
               checked={retentionForm.protectSessionsWithPlans ?? true}
               onChange={(e) => setRetentionForm({ ...retentionForm, protectSessionsWithPlans: e.target.checked })}
             />

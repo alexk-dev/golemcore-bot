@@ -11,6 +11,8 @@ import me.golemcore.bot.port.outbound.StoragePort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
@@ -456,6 +458,32 @@ class ScheduleServiceTest {
                 true);
 
         assertTrue(updated.isClearContextBeforeRun());
+    }
+
+    @Test
+    void shouldSynchronizeScheduleUpdateOverloads() throws Exception {
+        Method reportUpdateOverload = ScheduleService.class.getDeclaredMethod(
+                "updateSchedule",
+                String.class,
+                ScheduleEntry.ScheduleType.class,
+                String.class,
+                String.class,
+                int.class,
+                boolean.class,
+                Boolean.class,
+                ScheduleReportConfigUpdate.class);
+        Method clearContextOverload = ScheduleService.class.getDeclaredMethod(
+                "updateSchedule",
+                String.class,
+                ScheduleEntry.ScheduleType.class,
+                String.class,
+                String.class,
+                int.class,
+                boolean.class,
+                Boolean.class);
+
+        assertTrue(Modifier.isSynchronized(reportUpdateOverload.getModifiers()));
+        assertTrue(Modifier.isSynchronized(clearContextOverload.getModifiers()));
     }
 
     @Test

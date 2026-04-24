@@ -10,11 +10,11 @@ import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
-import java.util.concurrent.CompletableFuture;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -278,16 +278,6 @@ class PluginRuntimeApiConfigurationTest {
         assertEquals("openai/gpt-5.1", selection.model());
         assertEquals("high", selection.reasoning());
 
-        me.golemcore.bot.domain.service.PlanExecutionService planExecutionDelegate = mock(
-                me.golemcore.bot.domain.service.PlanExecutionService.class);
-        CompletableFuture<Void> execution = CompletableFuture.completedFuture(null);
-        when(planExecutionDelegate.executePlan("plan-1")).thenReturn(execution);
-
-        me.golemcore.plugin.api.runtime.PlanExecutionService planExecutionService = configuration
-                .pluginPlanExecutionService(planExecutionDelegate);
-        assertNotNull(planExecutionService.executePlan("plan-1"));
-        verify(planExecutionDelegate).executePlan("plan-1");
-
         me.golemcore.bot.domain.service.PlanService planDelegate = mock(
                 me.golemcore.bot.domain.service.PlanService.class);
         me.golemcore.bot.domain.model.SessionIdentity hostIdentity = new me.golemcore.bot.domain.model.SessionIdentity(
@@ -310,11 +300,10 @@ class PluginRuntimeApiConfigurationTest {
         planService.activatePlanMode(pluginIdentity, "transport-1", "balanced");
         planService.deactivatePlanMode(pluginIdentity);
         assertEquals("plan-1", planService.getPlan("plan-1").orElseThrow().getId());
-        planService.approvePlan("plan-1");
+        assertThrows(UnsupportedOperationException.class, () -> planService.approvePlan("plan-1"));
         planService.cancelPlan("plan-1");
         verify(planDelegate).activatePlanMode(hostIdentity, "transport-1", "balanced");
         verify(planDelegate).deactivatePlanMode(hostIdentity);
-        verify(planDelegate).approvePlan("plan-1");
         verify(planDelegate).cancelPlan("plan-1");
 
         me.golemcore.bot.domain.service.PluginConfigurationService pluginConfigDelegate = mock(
