@@ -35,7 +35,6 @@ class SessionScopedGoalServiceTest {
         goalStorageService = mock(SessionGoalStorageService.class);
         runtimeConfigService = mock(RuntimeConfigService.class);
         diaryService = mock(SessionDiaryService.class);
-        when(runtimeConfigService.getAutoMaxGoals()).thenReturn(5);
         when(runtimeConfigService.getAutoReflectionFailureThreshold()).thenReturn(2);
         service = new SessionScopedGoalService(goalStorageService, runtimeConfigService, diaryService);
     }
@@ -162,6 +161,44 @@ class SessionScopedGoalServiceTest {
         assertTrue(entries.stream().anyMatch(entry -> "Goal deleted: goal-1".equals(entry.getContent())
                 && entry.getType() == DiaryEntry.DiaryType.DECISION));
         verify(goalStorageService, atLeastOnce()).saveGoals(eq(SESSION_ID), any());
+    }
+
+    @Test
+    void createGoalShouldNotLimitActiveGoalCount() {
+        List<Goal> goals = new ArrayList<>();
+        for (int i = 0; i < 5; i++) {
+            goals.add(goal("goal-" + i, "Goal " + i, Instant.parse("2026-01-01T00:00:00Z")));
+        }
+        when(goalStorageService.loadGoals(SESSION_ID)).thenReturn(goals);
+
+        Goal created = service.createGoal(SESSION_ID, "Goal 6", null, null, null, false);
+
+        assertEquals("Goal 6", created.getTitle());
+        assertEquals(6, goals.size());
+        verify(goalStorageService).saveGoals(eq(SESSION_ID), any());
+    }
+
+    @Test
+    void createTaskShouldNotLimitTaskCountPerGoal() {
+        Goal goal = goal("goal-1", "Release", Instant.parse("2026-01-01T00:00:00Z"));
+        for (int i = 1; i <= 20; i++) {
+            goal.getTasks().add(AutoTask.builder()
+                    .id("task-" + i)
+                    .goalId("goal-1")
+                    .title("Task " + i)
+                    .status(AutoTask.TaskStatus.PENDING)
+                    .order(i)
+                    .build());
+        }
+        when(goalStorageService.loadGoals(SESSION_ID)).thenReturn(new ArrayList<>(List.of(goal)));
+
+        AutoTask created = service.createTask(SESSION_ID, "goal-1", "Task 21", null, null, null, false,
+                AutoTask.TaskStatus.PENDING);
+
+        assertEquals("Task 21", created.getTitle());
+        assertEquals(21, goal.getTasks().size());
+        assertEquals(21, created.getOrder());
+        verify(goalStorageService).saveGoals(eq(SESSION_ID), any());
     }
 
     private static Goal goal(String id, String title, Instant createdAt) {

@@ -50,7 +50,6 @@ public class SessionScopedGoalService {
     private static final String INBOX_GOAL_ID = "inbox";
     private static final String INBOX_GOAL_TITLE = "Inbox";
     private static final String INBOX_GOAL_DESCRIPTION = "System container for standalone tasks";
-    private static final int MAX_TASKS_PER_GOAL = 20;
     private static final int AUTO_CONTEXT_MAX_OTHER_GOALS = 3;
     private static final int AUTO_CONTEXT_DIARY_LOOKBACK = 20;
     private static final int AUTO_CONTEXT_MAX_DIARY_ENTRIES = 4;
@@ -65,14 +64,6 @@ public class SessionScopedGoalService {
     public Goal createGoal(String sessionId, String title, String description, String prompt,
             String reflectionModelTier, boolean reflectionTierPriority) {
         List<Goal> goals = getGoals(sessionId);
-        long activeCount = goals.stream()
-                .filter(goal -> !isInboxGoal(goal))
-                .filter(goal -> goal.getStatus() == Goal.GoalStatus.ACTIVE)
-                .count();
-        if (activeCount >= runtimeConfigService.getAutoMaxGoals()) {
-            throw new IllegalStateException("Maximum active goals reached: " + runtimeConfigService.getAutoMaxGoals());
-        }
-
         Instant now = Instant.now();
         Goal goal = Goal.builder()
                 .id(UUID.randomUUID().toString())
@@ -101,14 +92,6 @@ public class SessionScopedGoalService {
         }
 
         Goal.GoalStatus resolvedStatus = status != null ? status : goal.getStatus();
-        long activeCount = goals.stream()
-                .filter(item -> !goalId.equals(item.getId()))
-                .filter(item -> !isInboxGoal(item))
-                .filter(item -> item.getStatus() == Goal.GoalStatus.ACTIVE)
-                .count();
-        if (resolvedStatus == Goal.GoalStatus.ACTIVE && activeCount >= runtimeConfigService.getAutoMaxGoals()) {
-            throw new IllegalStateException("Maximum active goals reached: " + runtimeConfigService.getAutoMaxGoals());
-        }
 
         goal.setTitle(requireTitle(title, "Goal title is required"));
         goal.setDescription(normalizeOptionalValue(description));
@@ -152,7 +135,6 @@ public class SessionScopedGoalService {
         List<Goal> goals = getGoals(sessionId);
         Goal goal = findGoal(goals, goalId)
                 .orElseThrow(() -> new IllegalArgumentException(GOAL_NOT_FOUND + goalId));
-        validateTaskCapacity(goal);
 
         Instant now = Instant.now();
         AutoTask task = AutoTask.builder()
@@ -179,7 +161,6 @@ public class SessionScopedGoalService {
             String reflectionModelTier, Boolean reflectionTierPriority, AutoTask.TaskStatus status) {
         List<Goal> goals = getGoals(sessionId);
         Goal targetGoal = resolveTaskGoal(sessionId, goals, goalId);
-        validateTaskCapacity(targetGoal);
 
         Instant now = Instant.now();
         AutoTask task = AutoTask.builder()
@@ -885,12 +866,6 @@ public class SessionScopedGoalService {
             }
         }
         return Optional.empty();
-    }
-
-    private void validateTaskCapacity(Goal goal) {
-        if (goal.getTasks().size() >= MAX_TASKS_PER_GOAL) {
-            throw new IllegalStateException("Maximum tasks per goal reached: " + MAX_TASKS_PER_GOAL);
-        }
     }
 
     private int nextTaskOrder(Goal goal) {

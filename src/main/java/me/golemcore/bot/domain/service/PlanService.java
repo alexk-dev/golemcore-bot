@@ -273,9 +273,25 @@ public class PlanService {
         }
     }
 
+    public String peekExecutionContext() {
+        return buildExecutionContext(legacyExecutionPlanFilePath);
+    }
+
+    public String peekExecutionContext(SessionIdentity sessionIdentity) {
+        SessionIdentity normalized = normalizeSessionIdentityOrNull(sessionIdentity);
+        if (normalized == null) {
+            return null;
+        }
+        String planFilePath;
+        synchronized (executionPlanFileBySession) {
+            planFilePath = executionPlanFileBySession.get(normalized.asKey());
+        }
+        return buildExecutionContext(planFilePath);
+    }
+
     public String consumeExecutionContext() {
         String planFilePath = legacyExecutionPlanFilePath;
-        legacyExecutionPlanFilePath = null;
+        legacyExecutionPlanFilePath = NO_ACTIVE_PLAN_ID;
         return buildExecutionContext(planFilePath);
     }
 
@@ -345,7 +361,8 @@ public class PlanService {
                 "- Use session goals/tasks when durable tracking, task status, diary/history, or follow-up automation is needed.",
                 "- Do not rely on separate plan storage tools; Plan Mode has no separate plan storage.",
                 "- Ask a clarifying question when requirements or tradeoffs are still ambiguous.",
-                "- When the plan is ready, call `plan_exit` as the final tool call for the turn.")
+                "- When the plan is ready, call `plan_exit` as the final tool call for the turn.",
+                "- Include the complete user-visible plan in the `plan_markdown` argument of `plan_exit`.")
                 .trim();
     }
 

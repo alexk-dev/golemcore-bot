@@ -2,8 +2,8 @@ package me.golemcore.bot.domain.system.toolloop;
 
 import me.golemcore.bot.domain.model.Attachment;
 import me.golemcore.bot.domain.model.Message;
-import me.golemcore.bot.domain.model.ToolResult;
 import me.golemcore.bot.domain.model.ToolFailureKind;
+import me.golemcore.bot.domain.model.ToolResult;
 
 /**
  * Result of a single tool execution (real or synthetic).

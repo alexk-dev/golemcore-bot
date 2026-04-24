@@ -68,7 +68,8 @@ public class PlanModeLayer extends AbstractContextLayer {
             context.setAttribute(ContextAttributes.PLAN_MODE_ACTIVE, true);
         }
 
-        String planContext = resolvePlanContext(sessionIdentity, planModeActive);
+        boolean pendingExecutionContext = !planModeActive && hasPendingExecutionContext(sessionIdentity);
+        String planContext = resolvePlanContext(sessionIdentity, planModeActive, pendingExecutionContext);
 
         // Apply plan model tier override if applicable
         Optional<Plan> activePlan = sessionIdentity != null
@@ -78,6 +79,9 @@ public class PlanModeLayer extends AbstractContextLayer {
 
         if (planContext == null || planContext.isBlank()) {
             return empty();
+        }
+        if (pendingExecutionContext) {
+            context.setAttribute(ContextAttributes.PLAN_EXECUTION_CONTEXT_PENDING, true);
         }
 
         return result(planContext);
@@ -120,16 +124,26 @@ public class PlanModeLayer extends AbstractContextLayer {
         return planService.isPlanModeActive();
     }
 
-    private String resolvePlanContext(SessionIdentity sessionIdentity, boolean planModeActive) {
+    private boolean hasPendingExecutionContext(SessionIdentity sessionIdentity) {
+        if (sessionIdentity != null) {
+            return planService.hasPendingExecutionContext(sessionIdentity);
+        }
+        return planService.hasPendingExecutionContext();
+    }
+
+    private String resolvePlanContext(
+            SessionIdentity sessionIdentity,
+            boolean planModeActive,
+            boolean pendingExecutionContext) {
         if (sessionIdentity != null) {
             if (planModeActive) {
                 return planService.buildPlanContext(sessionIdentity);
             }
-            return planService.consumeExecutionContext(sessionIdentity);
+            return pendingExecutionContext ? planService.peekExecutionContext(sessionIdentity) : null;
         }
         if (planModeActive) {
             return planService.buildPlanContext();
         }
-        return planService.consumeExecutionContext();
+        return pendingExecutionContext ? planService.peekExecutionContext() : null;
     }
 }

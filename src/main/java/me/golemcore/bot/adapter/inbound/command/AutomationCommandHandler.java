@@ -157,9 +157,6 @@ class AutomationCommandHandler {
         if (outcome instanceof AutomationCommandService.GoalCreated created) {
             return CommandPort.CommandResult.success(msg("command.goal.created", created.goal().getTitle()));
         }
-        if (outcome instanceof AutomationCommandService.GoalLimitReached limitReached) {
-            return CommandPort.CommandResult.failure(msg("command.goal.limit", limitReached.maxGoals()));
-        }
         return CommandPort.CommandResult.success(msg("command.goals.empty"));
     }
 

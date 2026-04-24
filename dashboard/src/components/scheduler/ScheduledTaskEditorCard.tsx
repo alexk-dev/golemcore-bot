@@ -288,10 +288,10 @@ export function ScheduledTaskEditorContent({
               value={form.shellWorkingDirectory}
               onChange={onFieldChange('shellWorkingDirectory')}
               disabled={!featureEnabled}
-              placeholder="/workspace/project"
+              placeholder="services/api"
             />
             <Form.Text className="text-body-secondary">
-              Optional. Uses the default process directory when empty.
+              Optional. Relative to the shell workspace; empty uses the shell workspace root.
             </Form.Text>
           </Form.Group>
         </>
@@ -328,6 +328,7 @@ interface ScheduledTaskEditorState {
   form: ScheduledTaskEditorFormState;
   isEditing: boolean;
   setForm: Dispatch<SetStateAction<ScheduledTaskEditorFormState>>;
+  resetForm: () => void;
   handleFieldChange: (
     field: keyof ScheduledTaskEditorFormState,
   ) => (
@@ -367,6 +368,7 @@ export function useScheduledTaskEditorState(
     form,
     isEditing,
     setForm,
+    resetForm: () => setForm(createInitialFormState(task)),
     handleFieldChange,
     handleExecutionModeChange,
     setReflectionTierPriority: (checked) => setForm((current) => ({

@@ -59,17 +59,17 @@ class AutomationCommandServiceTest {
     }
 
     @Test
-    void createGoalShouldTranslateConfiguredGoalLimit() {
+    void createGoalShouldCreateWithoutConfiguredGoalLimitTranslation() {
         when(autoModeService.isFeatureEnabled()).thenReturn(true);
-        when(runtimeConfigService.getAutoMaxGoals()).thenReturn(3);
-        when(autoModeService.createGoal("Ship release", null)).thenThrow(new IllegalStateException("full"));
+        Goal goal = Goal.builder().id("goal-1").title("Ship release").build();
+        when(autoModeService.createGoal("Ship release", null)).thenReturn(goal);
 
         AutomationCommandService.GoalCreationOutcome outcome = service.createGoal("Ship release");
 
-        AutomationCommandService.GoalLimitReached limit = assertInstanceOf(
-                AutomationCommandService.GoalLimitReached.class,
+        AutomationCommandService.GoalCreated created = assertInstanceOf(
+                AutomationCommandService.GoalCreated.class,
                 outcome);
-        assertEquals(3, limit.maxGoals());
+        assertEquals(goal, created.goal());
     }
 
     @Test

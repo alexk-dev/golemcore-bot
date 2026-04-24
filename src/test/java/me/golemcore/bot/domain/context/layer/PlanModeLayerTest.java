@@ -19,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -151,19 +152,22 @@ class PlanModeLayerTest {
     }
 
     @Test
-    void shouldRenderAndConsumeExecutionContextWhenPlanModeIsDone() {
+    void shouldRenderPendingExecutionContextWithoutConsumingIt() {
         AgentContext context = AgentContext.builder()
                 .session(AgentSession.builder().channelType("web").chatId("chat-1").build())
                 .build();
         when(planService.isPlanModeActive(org.mockito.ArgumentMatchers.any())).thenReturn(false);
-        when(planService.consumeExecutionContext(org.mockito.ArgumentMatchers.any()))
+        when(planService.hasPendingExecutionContext(org.mockito.ArgumentMatchers.any())).thenReturn(true);
+        when(planService.peekExecutionContext(org.mockito.ArgumentMatchers.any()))
                 .thenReturn("Plan mode has ended. Execute from `.golemcore/plans/plan.md`.");
 
         ContextLayerResult result = layer.assemble(context);
 
         assertTrue(result.hasContent());
         assertTrue(result.getContent().contains("Plan mode has ended"));
-        verify(planService).consumeExecutionContext(org.mockito.ArgumentMatchers.any());
+        assertEquals(Boolean.TRUE, context.getAttribute(ContextAttributes.PLAN_EXECUTION_CONTEXT_PENDING));
+        verify(planService).peekExecutionContext(org.mockito.ArgumentMatchers.any());
+        verify(planService, never()).consumeExecutionContext(org.mockito.ArgumentMatchers.any());
     }
 
     @Test
@@ -172,7 +176,8 @@ class PlanModeLayerTest {
                 .session(AgentSession.builder().channelType("web").chatId("chat-1").build())
                 .build();
         when(planService.isPlanModeActive(org.mockito.ArgumentMatchers.any())).thenReturn(false);
-        when(planService.consumeExecutionContext(org.mockito.ArgumentMatchers.any()))
+        when(planService.hasPendingExecutionContext(org.mockito.ArgumentMatchers.any())).thenReturn(true);
+        when(planService.peekExecutionContext(org.mockito.ArgumentMatchers.any()))
                 .thenReturn("Plan mode has ended. Execute from `.golemcore/plans/plan.md`.");
 
         ContextLayerResult result = layer.assemble(context);

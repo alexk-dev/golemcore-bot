@@ -30,6 +30,8 @@ import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.OutgoingResponse;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.RuntimeEventType;
+import me.golemcore.bot.domain.model.ToolFailureKind;
+import me.golemcore.bot.domain.model.ToolNames;
 import me.golemcore.bot.domain.model.TurnLimitReason;
 import me.golemcore.bot.domain.model.trace.TraceContext;
 import me.golemcore.bot.domain.model.trace.TraceSpanKind;
@@ -72,6 +74,7 @@ class LlmCallPhase {
 
     private static final Logger log = LoggerFactory.getLogger(LlmCallPhase.class);
     private static final int EMPTY_FINAL_RESPONSE_MAX_RETRIES = 2;
+    private static final String PLAN_MARKDOWN_ARGUMENT = "plan_markdown";
 
     private final LlmPort llmPort;
     private final ConversationViewBuilder viewBuilder;
@@ -306,10 +309,14 @@ class LlmCallPhase {
         writeSyntheticResultsForPendingTools(context, pendingToolCalls,
                 "Tool loop stopped: plan mode completed", historyWriter);
 
+        String planMarkdown = resolvePlanExitMarkdown(pendingToolCalls);
         String responseContent = lastResponse != null ? lastResponse.getContent() : null;
-        String finalText = responseContent != null && !responseContent.isBlank()
-                ? responseContent
-                : "Plan mode completed.";
+        String finalText = planMarkdown != null && !planMarkdown.isBlank()
+                ? planMarkdown
+                : responseContent;
+        if (finalText == null || finalText.isBlank()) {
+            finalText = "Plan mode completed.";
+        }
         historyWriter.appendFinalAssistantAnswer(context, lastResponse, finalText);
 
         LlmResponse cleanResponse = LlmResponse.builder()
@@ -321,6 +328,23 @@ class LlmCallPhase {
         return new ToolLoopTurnResult(context, true, llmCalls, toolExecutions);
     }
 
+            private String resolvePlanExitMarkdown(List<Message.ToolCall> toolCalls) {
+                if (toolCalls == null) {
+                    return null;
+                }
+                for (Message.ToolCall toolCall : toolCalls) {
+                    if (toolCall == null || !ToolNames.PLAN_EXIT.equals(toolCall.getName())) {
+                        continue;
+                    }
+                    Map<String, Object> arguments = toolCall.getArguments();
+                    Object planMarkdown = arguments != null ? arguments.get(PLAN_MARKDOWN_ARGUMENT) : null;
+                    if (planMarkdown instanceof String planText && !planText.isBlank()) {
+                        return planText;
+                    }
+                }
+                return null;
+            }
+
             private void writeSyntheticResultsForPendingTools(AgentContext context,
                     List<Message.ToolCall> pendingToolCalls,
                     String reason, HistoryWriter historyWriter) {
@@ -331,8 +355,9 @@ class LlmCallPhase {
                     if (context.getToolResults() != null && context.getToolResults().containsKey(toolCall.getId())) {
                         continue;
                     }
-                    ToolExecutionOutcome synthetic = ToolExecutionOutcome.synthetic(toolCall,
-                            me.golemcore.bot.domain.model.ToolFailureKind.EXECUTION_FAILED,
+                    ToolExecutionOutcome synthetic = ToolExecutionOutcome.synthetic(
+                            toolCall,
+                            ToolFailureKind.EXECUTION_FAILED,
                             reason);
                     context.addToolResult(synthetic.toolCallId(), synthetic.toolResult());
                     historyWriter.appendToolResult(context, synthetic);

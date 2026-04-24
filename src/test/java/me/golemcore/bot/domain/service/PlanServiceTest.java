@@ -106,6 +106,7 @@ class PlanServiceTest {
         assertTrue(context.contains("ephemeral"));
         assertTrue(context.contains(planFilePath));
         assertTrue(context.contains("plan_exit"));
+        assertTrue(context.contains("plan_markdown"));
         assertTrue(context.contains("Use session goals/tasks"));
         assertTrue(context.contains("no separate plan storage"));
         assertFalse(context.contains("Filesystem access is limited"));
@@ -141,6 +142,21 @@ class PlanServiceTest {
         assertTrue(context.contains("if it exists"));
         assertFalse(service.hasPendingExecutionContext(SESSION));
         assertNull(service.consumeExecutionContext(SESSION));
+    }
+
+    @Test
+    void shouldPeekExecutionReminderWithoutConsumingIt() {
+        service.activatePlanMode(SESSION, "transport-chat", null);
+        String planFilePath = service.getActivePlanFilePath(SESSION).orElseThrow();
+        service.completePlanMode(SESSION);
+
+        String context = service.peekExecutionContext(SESSION);
+
+        assertNotNull(context);
+        assertTrue(context.contains(planFilePath));
+        assertTrue(service.hasPendingExecutionContext(SESSION));
+        assertNotNull(service.consumeExecutionContext(SESSION));
+        assertFalse(service.hasPendingExecutionContext(SESSION));
     }
 
     @Test

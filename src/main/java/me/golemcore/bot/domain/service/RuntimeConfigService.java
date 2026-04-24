@@ -85,7 +85,6 @@ public class RuntimeConfigService {
     private static final int DEFAULT_TOOL_CONFIRMATION_TIMEOUT_SECONDS = 60;
     private static final int DEFAULT_AUTO_TICK_INTERVAL_SECONDS = 30;
     private static final int DEFAULT_AUTO_TIMEOUT_MINUTES = 10;
-    private static final int DEFAULT_AUTO_MAX_GOALS = 3;
     private static final String DEFAULT_AUTO_MODEL_TIER = "default";
     private static final boolean DEFAULT_AUTO_REFLECTION_ENABLED = true;
     private static final int DEFAULT_AUTO_REFLECTION_FAILURE_THRESHOLD = 2;
@@ -1034,11 +1033,6 @@ public class RuntimeConfigService {
     public boolean isAutoStartEnabled() {
         Boolean val = getRuntimeConfig().getAutoMode().getAutoStart();
         return val != null ? val : true;
-    }
-
-    public int getAutoMaxGoals() {
-        Integer val = getRuntimeConfig().getAutoMode().getMaxGoals();
-        return val != null ? val : DEFAULT_AUTO_MAX_GOALS;
     }
 
     public String getAutoModelTier() {

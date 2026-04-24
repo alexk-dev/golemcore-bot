@@ -153,14 +153,11 @@ class AutomationCommandHandlerTest {
                 .thenReturn(new AutomationCommandService.DiaryOverview(List.of(entry)));
         when(automationCommandService.createGoal("session-1", "New goal"))
                 .thenReturn(new AutomationCommandService.GoalCreated(Goal.builder().title("New goal").build()));
-        when(automationCommandService.createGoal("session-1", "Too many"))
-                .thenReturn(new AutomationCommandService.GoalLimitReached(3));
 
         CommandPort.CommandResult goals = handler.handleGoals("session-1");
         CommandPort.CommandResult tasks = handler.handleTasks("session-1");
         CommandPort.CommandResult diary = handler.handleDiary(List.of("bad-count"), "session-1");
         CommandPort.CommandResult created = handler.handleGoal(List.of("New", "goal"), "session-1");
-        CommandPort.CommandResult limited = handler.handleGoal(List.of("Too", "many"), "session-1");
 
         assertTrue(goals.output().contains("Session PR"));
         assertTrue(goals.output().contains("PAUSED"));
@@ -169,8 +166,6 @@ class AutomationCommandHandlerTest {
         assertTrue(tasks.output().contains("[-] Skip"));
         assertTrue(diary.output().contains("Session note"));
         assertEquals("command.goal.created New goal", created.output());
-        assertFalse(limited.success());
-        assertEquals("command.goal.limit 3", limited.output());
     }
 
     @Test

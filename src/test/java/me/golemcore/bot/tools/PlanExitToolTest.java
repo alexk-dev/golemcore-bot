@@ -1,6 +1,7 @@
 package me.golemcore.bot.tools;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.time.Clock;
@@ -45,19 +46,44 @@ class PlanExitToolTest {
     @Test
     void shouldExposePlanExitDefinition() {
         assertTrue(tool.isEnabled());
-        assertTrue(tool.getDefinition().getName().equals(ToolNames.PLAN_EXIT));
+        assertEquals(ToolNames.PLAN_EXIT, tool.getDefinition().getName());
         assertTrue(tool.getDefinition().getDescription().contains("Finish"));
+        assertTrue(tool.getDefinition().getInputSchema().toString().contains("plan_markdown"));
     }
 
     @Test
     void shouldFinishActivePlanModeAndPrepareNextTurnContext() {
         planService.activatePlanMode(SESSION, "chat-1", null);
 
-        ToolResult result = tool.execute(Map.of()).join();
+        ToolResult result = tool.execute(Map.of("plan_markdown", "1. Inspect\n2. Implement")).join();
 
         assertTrue(result.isSuccess(), result.getError());
         assertFalse(planService.isPlanModeActive(SESSION));
         assertTrue(planService.hasPendingExecutionContext(SESSION));
+    }
+
+    @Test
+    void shouldRejectBlankPlanMarkdownWithoutLeavingPlanMode() {
+        planService.activatePlanMode(SESSION, "chat-1", null);
+
+        ToolResult result = tool.execute(Map.of("plan_markdown", " ")).join();
+
+        assertFalse(result.isSuccess());
+        assertTrue(result.getError().contains("plan_markdown"));
+        assertTrue(planService.isPlanModeActive(SESSION));
+        assertFalse(planService.hasPendingExecutionContext(SESSION));
+    }
+
+    @Test
+    void shouldRejectMissingPlanMarkdownWithoutLeavingPlanMode() {
+        planService.activatePlanMode(SESSION, "chat-1", null);
+
+        ToolResult result = tool.execute(Map.of()).join();
+
+        assertFalse(result.isSuccess());
+        assertTrue(result.getError().contains("plan_markdown"));
+        assertTrue(planService.isPlanModeActive(SESSION));
+        assertFalse(planService.hasPendingExecutionContext(SESSION));
     }
 
     @Test

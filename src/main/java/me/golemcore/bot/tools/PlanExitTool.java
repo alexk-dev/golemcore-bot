@@ -29,8 +29,14 @@ public class PlanExitTool implements ToolComponent {
     public ToolDefinition getDefinition() {
         return ToolDefinition.builder()
                 .name(ToolNames.PLAN_EXIT)
-                .description("Finish Plan Mode after the final plan has been written or explained.")
-                .inputSchema(Map.of("type", "object", "properties", Map.of()))
+                .description("Finish Plan Mode after the final user-visible plan is ready.")
+                .inputSchema(Map.of(
+                        "type", "object",
+                        "properties", Map.of(
+                                "plan_markdown", Map.of(
+                                        "type", "string",
+                                        "description", "The final plan to show to the user before execution.")),
+                        "required", java.util.List.of("plan_markdown")))
                 .build();
     }
 
@@ -49,10 +55,16 @@ public class PlanExitTool implements ToolComponent {
             if (!planService.isPlanModeActive(sessionIdentity)) {
                 return completedFailure();
             }
+            if (readPlanMarkdown(parameters) == null) {
+                return completedPlanMarkdownFailure();
+            }
             planService.completePlanMode(sessionIdentity);
         } else {
             if (!planService.isPlanModeActive()) {
                 return completedFailure();
+            }
+            if (readPlanMarkdown(parameters) == null) {
+                return completedPlanMarkdownFailure();
             }
             planService.completePlanMode();
         }
@@ -60,7 +72,22 @@ public class PlanExitTool implements ToolComponent {
                 "Plan mode has ended. Wait for the user before executing the plan."));
     }
 
+    private String readPlanMarkdown(Map<String, Object> parameters) {
+        if (parameters == null) {
+            return null;
+        }
+        Object value = parameters.get("plan_markdown");
+        if (!(value instanceof String text) || text.isBlank()) {
+            return null;
+        }
+        return text;
+    }
+
     private CompletableFuture<ToolResult> completedFailure() {
         return CompletableFuture.completedFuture(ToolResult.failure("Plan mode is not active"));
+    }
+
+    private CompletableFuture<ToolResult> completedPlanMarkdownFailure() {
+        return CompletableFuture.completedFuture(ToolResult.failure("plan_markdown is required"));
     }
 }

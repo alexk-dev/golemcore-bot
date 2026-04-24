@@ -110,14 +110,10 @@ public class AutomationCommandService {
         if (description == null || description.isBlank()) {
             return new GoalDescriptionRequired();
         }
-        try {
-            Goal goal = isBlank(sessionId)
-                    ? autoModeService.createGoal(description, null)
-                    : autoModeService.createGoal(sessionId, description, null, null, null, false);
-            return new GoalCreated(goal);
-        } catch (IllegalStateException exception) {
-            return new GoalLimitReached(runtimeConfigService.getAutoMaxGoals());
-        }
+        Goal goal = isBlank(sessionId)
+                ? autoModeService.createGoal(description, null)
+                : autoModeService.createGoal(sessionId, description, null, null, null, false);
+        return new GoalCreated(goal);
     }
 
     public GoalCreationOutcome createGoal(String description) {
@@ -127,12 +123,8 @@ public class AutomationCommandService {
         if (description == null || description.isBlank()) {
             return new GoalDescriptionRequired();
         }
-        try {
-            Goal goal = autoModeService.createGoal(description, null);
-            return new GoalCreated(goal);
-        } catch (IllegalStateException exception) {
-            return new GoalLimitReached(runtimeConfigService.getAutoMaxGoals());
-        }
+        Goal goal = autoModeService.createGoal(description, null);
+        return new GoalCreated(goal);
     }
 
     public TasksOutcome getTasks(String sessionId) {
@@ -306,8 +298,7 @@ public class AutomationCommandService {
             public sealed
 
             interface GoalCreationOutcome
-            permits AutoFeatureUnavailable, GoalDescriptionRequired, GoalCreated,
-            GoalLimitReached
+            permits AutoFeatureUnavailable, GoalDescriptionRequired, GoalCreated
             {
                 }
 
@@ -372,9 +363,6 @@ public class AutomationCommandService {
     }
 
     public record GoalCreated(Goal goal) implements GoalCreationOutcome {
-    }
-
-    public record GoalLimitReached(int maxGoals) implements GoalCreationOutcome {
     }
 
     public record EmptyTasks() implements TasksOutcome {

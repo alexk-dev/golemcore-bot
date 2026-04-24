@@ -252,6 +252,42 @@ class ScheduleServiceTest {
     }
 
     @Test
+    void shouldCoalesceMissedWindowsAfterLongRunningExecution() {
+        service.createSchedule(ScheduleEntry.ScheduleType.SCHEDULED_TASK, "scheduled-task-1",
+                "0 * * * * *", -1);
+
+        ScheduleEntry entry = service.getSchedules().get(0);
+        String id = entry.getId();
+        entry.setNextExecutionAt(Instant.parse("2026-02-11T09:58:00Z"));
+
+        service.recordExecution(id);
+
+        ScheduleEntry updated = service.findSchedule(id).orElseThrow();
+        assertEquals(1, updated.getExecutionCount());
+        assertEquals(FIXED_NOW, updated.getLastExecutedAt());
+        assertEquals(Instant.parse("2026-02-11T10:01:00Z"), updated.getNextExecutionAt());
+        assertTrue(updated.isEnabled());
+    }
+
+    @Test
+    void shouldCoalesceDeepMissedBacklogAfterSchedulerDowntime() {
+        service.createSchedule(ScheduleEntry.ScheduleType.SCHEDULED_TASK, "scheduled-task-1",
+                "0 * * * * *", -1);
+
+        ScheduleEntry entry = service.getSchedules().get(0);
+        String id = entry.getId();
+        entry.setNextExecutionAt(Instant.parse("2026-02-11T09:00:00Z"));
+
+        service.recordExecution(id);
+
+        ScheduleEntry updated = service.findSchedule(id).orElseThrow();
+        assertEquals(1, updated.getExecutionCount());
+        assertEquals(FIXED_NOW, updated.getLastExecutedAt());
+        assertEquals(Instant.parse("2026-02-11T10:01:00Z"), updated.getNextExecutionAt());
+        assertTrue(updated.isEnabled());
+    }
+
+    @Test
     void shouldDisableExhaustedScheduleAfterExecution() {
         service.createSchedule(ScheduleEntry.ScheduleType.TASK, "task-1",
                 CRON_DAILY_NOON, 1);
@@ -305,7 +341,28 @@ class ScheduleServiceTest {
         assertEquals(0, updated.getRetryCount());
         assertNull(updated.getActiveWindowStartedAt());
         assertNull(updated.getNextWindowAt());
+        assertEquals(Instant.parse("2026-02-11T10:00:00Z"), updated.getNextExecutionAt());
+    }
+
+    @Test
+    void shouldCoalesceMissedWindowsAfterLongRunningFailedExecution() {
+        service.createSchedule(ScheduleEntry.ScheduleType.SCHEDULED_TASK, "scheduled-task-1",
+                "0 * * * * *", -1);
+
+        ScheduleEntry entry = service.getSchedules().get(0);
+        String id = entry.getId();
+        entry.setNextExecutionAt(Instant.parse("2026-02-11T09:58:00Z"));
+
+        service.recordFailedAttempt(id);
+
+        ScheduleEntry updated = service.findSchedule(id).orElseThrow();
+        assertEquals(1, updated.getExecutionCount());
+        assertEquals(FIXED_NOW, updated.getLastExecutedAt());
+        assertEquals(0, updated.getRetryCount());
+        assertNull(updated.getActiveWindowStartedAt());
+        assertNull(updated.getNextWindowAt());
         assertEquals(Instant.parse("2026-02-11T10:01:00Z"), updated.getNextExecutionAt());
+        assertTrue(updated.isEnabled());
     }
 
     @Test

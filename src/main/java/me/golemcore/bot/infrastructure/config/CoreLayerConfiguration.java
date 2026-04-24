@@ -19,6 +19,7 @@ import me.golemcore.bot.domain.service.UpdateActivityGate;
 import me.golemcore.bot.domain.service.UpdateMaintenanceWindow;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.domain.system.AgentSystem;
+import me.golemcore.bot.domain.system.PlanExecutionContextCleanupSystem;
 import me.golemcore.bot.port.outbound.ChannelRuntimePort;
 import me.golemcore.bot.port.outbound.LlmPort;
 import me.golemcore.bot.port.outbound.RateLimitPort;
@@ -121,5 +122,10 @@ public class CoreLayerConfiguration {
     @Bean
     PlanModeToolRestrictionService planModeToolRestrictionService(PlanService planService) {
         return new PlanModeToolRestrictionService(planService);
+    }
+
+    @Bean
+    PlanExecutionContextCleanupSystem planExecutionContextCleanupSystem(PlanService planService) {
+        return new PlanExecutionContextCleanupSystem(planService);
     }
 }

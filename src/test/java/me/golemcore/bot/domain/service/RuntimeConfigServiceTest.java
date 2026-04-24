@@ -646,7 +646,6 @@ class RuntimeConfigServiceTest {
         assertTrue(service.isAutoModeEnabled());
         assertEquals(30, service.getAutoTickIntervalSeconds());
         assertEquals(10, service.getAutoTaskTimeLimitMinutes());
-        assertEquals(3, service.getAutoMaxGoals());
         assertEquals("default", service.getAutoModelTier());
     }
 
@@ -1706,6 +1705,21 @@ class RuntimeConfigServiceTest {
                 .modelTier("deep")
                 .build();
         persistedSections.put("plan.json", objectMapper.writeValueAsString(plan));
+
+        assertEquals("deep", service.getPlanModelTier());
+    }
+
+    @Test
+    void shouldLoadPlanTierFromLegacyPlanConfigWithRemovedFields() {
+        persistedSections.put("plan.json", """
+                {
+                  "enabled": false,
+                  "maxPlans": 1,
+                  "maxStepsPerPlan": 2,
+                  "stopOnFailure": false,
+                  "modelTier": "deep"
+                }
+                """);
 
         assertEquals("deep", service.getPlanModelTier());
     }

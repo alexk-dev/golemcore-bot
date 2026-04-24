@@ -250,7 +250,12 @@ public class ScheduleService {
         ScheduleEntry entry = findSchedule(id)
                 .orElseThrow(() -> new IllegalArgumentException("Schedule not found: " + id));
         Instant now = clock.instant();
-        finalizeWindow(entry, now, computeNextExecution(entry.getCronExpression(), now));
+        Instant completedWindowStartedAt = resolveActiveWindowStartedAt(entry, now);
+        Instant nextExecutionAt = coalescePastNextExecution(
+                entry.getCronExpression(),
+                computeNextExecution(entry.getCronExpression(), completedWindowStartedAt),
+                now);
+        finalizeWindow(entry, now, nextExecutionAt);
         saveSchedules(getSchedules());
     }
 
@@ -277,10 +282,7 @@ public class ScheduleService {
             }
         }
 
-        Instant nextExecutionAt = nextWindowAt.isAfter(now)
-                ? nextWindowAt
-                : computeNextExecution(entry.getCronExpression(), now);
-        finalizeWindow(entry, now, nextExecutionAt);
+        finalizeWindow(entry, now, coalescePastNextExecution(entry.getCronExpression(), nextWindowAt, now));
         saveSchedules(getSchedules());
     }
 
@@ -335,6 +337,13 @@ public class ScheduleService {
             return entry.getNextWindowAt();
         }
         return computeNextExecution(entry.getCronExpression(), windowStartedAt);
+    }
+
+    private Instant coalescePastNextExecution(String cronExpression, Instant candidate, Instant now) {
+        if (candidate != null && candidate.isBefore(now)) {
+            return computeNextExecution(cronExpression, now);
+        }
+        return candidate;
     }
 
     private boolean normalizeExpiredRetryWindow(ScheduleEntry entry, Instant now) {

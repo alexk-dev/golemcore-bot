@@ -185,6 +185,9 @@ public final class ContextAttributes {
     /** Boolean - plan mode is active for the current session. */
     public static final String PLAN_MODE_ACTIVE = "plan.mode.active";
 
+    /** Boolean - pending post-plan execution context was injected this turn. */
+    public static final String PLAN_EXECUTION_CONTEXT_PENDING = "plan.execution.context.pending";
+
     /** String - plan ID that needs user approval before execution. */
     public static final String PLAN_APPROVAL_NEEDED = "plan.approval.needed";
 

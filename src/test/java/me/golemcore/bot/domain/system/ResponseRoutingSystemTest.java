@@ -128,6 +128,39 @@ class ResponseRoutingSystemTest {
     }
 
     @Test
+    void shouldRouteAutoModeContextProbeWhenItIsNotAScheduledRun() {
+        AgentContext context = createContext();
+        context.setMessages(List.of(Message.builder()
+                .role(ROLE_USER)
+                .content("context probe")
+                .metadata(Map.of(ContextAttributes.AUTO_MODE, true))
+                .build()));
+        context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, OutgoingResponse.textOnly(CONTENT_RESPONSE));
+
+        system.process(context);
+
+        verify(channelPort).sendMessage(eq(CHAT_ID), eq(CONTENT_RESPONSE), any());
+    }
+
+    @Test
+    void shouldSkipRoutingForExternallyReportedScheduledAutoRun() {
+        AgentContext context = createContext();
+        context.setMessages(List.of(Message.builder()
+                .role(ROLE_USER)
+                .content("scheduled")
+                .metadata(Map.of(
+                        ContextAttributes.AUTO_MODE, true,
+                        ContextAttributes.AUTO_RUN_ID, "run-1",
+                        ContextAttributes.AUTO_SCHEDULE_ID, "schedule-1"))
+                .build()));
+        context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, OutgoingResponse.textOnly(CONTENT_RESPONSE));
+
+        system.process(context);
+
+        verify(channelPort, never()).sendMessage(eq(CHAT_ID), eq(CONTENT_RESPONSE), any());
+    }
+
+    @Test
     void shouldRecordOutboundSpanWithSnapshot() {
         AgentContext context = createContext();
         TraceContext traceContext = traceService.startRootTrace(
@@ -353,7 +386,7 @@ class ResponseRoutingSystemTest {
     // ===== Auto mode =====
 
     @Test
-    void autoModeMessageDoesNotSend() {
+    void scheduledAutoModeMessageDoesNotSend() {
         AgentContext context = createContext();
         context.setAttribute(ContextAttributes.OUTGOING_RESPONSE, OutgoingResponse.textOnly("auto response"));
 
@@ -361,7 +394,10 @@ class ResponseRoutingSystemTest {
                 .role(ROLE_USER)
                 .content("auto task")
                 .timestamp(Instant.now())
-                .metadata(Map.of("auto.mode", true))
+                .metadata(Map.of(
+                        ContextAttributes.AUTO_MODE, true,
+                        ContextAttributes.AUTO_RUN_ID, "run-1",
+                        ContextAttributes.AUTO_SCHEDULE_ID, "schedule-1"))
                 .build();
         context.getMessages().add(autoMsg);
 

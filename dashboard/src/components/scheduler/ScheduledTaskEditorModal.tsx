@@ -125,6 +125,7 @@ export function ScheduledTaskEditorModal({
     setActiveTab('task');
     setCreateInitialSchedule(false);
     scheduleForm.reset();
+    taskEditor.resetForm();
     onHide();
   };
 

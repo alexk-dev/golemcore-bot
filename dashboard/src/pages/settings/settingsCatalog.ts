@@ -33,7 +33,7 @@ export const SETTINGS_SECTIONS = [
   { key: 'mcp', title: 'MCP', description: 'MCP server catalog and runtime defaults', icon: FiTool },
   { key: 'hive', title: 'Hive', description: 'Hive control-plane integration and managed join settings', icon: FiLink },
   { key: 'self-evolving', title: 'Self-Evolving', description: 'Judge tiers, promotion workflow, and benchmark harvesting', icon: FiActivity },
-  { key: 'auto', title: 'Auto Mode', description: 'Autonomous run behavior and constraints', icon: FiPlayCircle },
+  { key: 'auto', title: 'Auto Mode', description: 'Autonomous run behavior and execution', icon: FiPlayCircle },
   { key: 'plan', title: 'Plan Mode', description: 'Planning tier override', icon: FiPlayCircle },
   { key: 'tracing', title: 'Tracing', description: 'Request traces, payload snapshots, and session budgets', icon: FiActivity },
   { key: 'updates', title: 'Updates', description: 'Check and install latest patch update', icon: FiRefreshCw },

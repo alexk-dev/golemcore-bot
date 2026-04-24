@@ -197,6 +197,80 @@ class ToolExecutionPhaseTest {
         verify(historyWriter).appendFinalAssistantAnswer(eq(turnState.getContext()), eq(response), eq(planText));
     }
 
+    @Test
+    void execute_shouldUsePlanExitPlanMarkdownWhenAssistantContentIsBlank() {
+        SessionIdentity sessionIdentity = new SessionIdentity("web", "chat-1");
+        planService.activatePlanMode(sessionIdentity, "chat-1", null);
+        ToolExecutionPhase phase = new ToolExecutionPhase(toolExecutor, failurePolicy, null, null, null, null,
+                clock, planModeToolRestrictionService);
+        TurnState turnState = buildTurnState();
+        String planText = """
+                # Plan
+                1. Inspect the code path.
+                2. Wait for approval before changing files.
+                """.trim();
+        Message.ToolCall planExitCall = Message.ToolCall.builder()
+                .id("tc-plan-exit")
+                .name(ToolNames.PLAN_EXIT)
+                .arguments(Map.of("plan_markdown", planText))
+                .build();
+        LlmResponse response = LlmResponse.builder()
+                .content(" ")
+                .toolCalls(java.util.List.of(planExitCall))
+                .build();
+        turnState.getContext().setAttribute(ContextAttributes.LLM_RESPONSE, response);
+        ToolExecutionOutcome planExitOutcome = new ToolExecutionOutcome(
+                "tc-plan-exit", ToolNames.PLAN_EXIT, ToolResult.success("done"), "done", false, null);
+        when(toolExecutor.execute(turnState.getContext(), planExitCall)).thenAnswer(invocation -> {
+            planService.completePlanMode(sessionIdentity);
+            return planExitOutcome;
+        });
+
+        ToolExecutionPhase.ToolBatchOutcome outcome = phase.execute(turnState, response, historyWriter, llmCallPhase);
+
+        assertInstanceOf(ToolExecutionPhase.ToolBatchOutcome.StopTurn.class, outcome);
+        LlmResponse finalResponse = turnState.getContext().getAttribute(ContextAttributes.LLM_RESPONSE);
+        assertEquals(planText, finalResponse.getContent());
+        verify(historyWriter).appendFinalAssistantAnswer(eq(turnState.getContext()), eq(response), eq(planText));
+    }
+
+    @Test
+    void execute_shouldPreferPlanExitPlanMarkdownOverAssistantContent() {
+        SessionIdentity sessionIdentity = new SessionIdentity("web", "chat-1");
+        planService.activatePlanMode(sessionIdentity, "chat-1", null);
+        ToolExecutionPhase phase = new ToolExecutionPhase(toolExecutor, failurePolicy, null, null, null, null,
+                clock, planModeToolRestrictionService);
+        TurnState turnState = buildTurnState();
+        String planText = """
+                # Plan
+                1. Inspect the implementation.
+                2. Ask for approval before making changes.
+                """.trim();
+        Message.ToolCall planExitCall = Message.ToolCall.builder()
+                .id("tc-plan-exit")
+                .name(ToolNames.PLAN_EXIT)
+                .arguments(Map.of("plan_markdown", planText))
+                .build();
+        LlmResponse response = LlmResponse.builder()
+                .content("The plan is done.")
+                .toolCalls(java.util.List.of(planExitCall))
+                .build();
+        turnState.getContext().setAttribute(ContextAttributes.LLM_RESPONSE, response);
+        ToolExecutionOutcome planExitOutcome = new ToolExecutionOutcome(
+                "tc-plan-exit", ToolNames.PLAN_EXIT, ToolResult.success("done"), "done", false, null);
+        when(toolExecutor.execute(turnState.getContext(), planExitCall)).thenAnswer(invocation -> {
+            planService.completePlanMode(sessionIdentity);
+            return planExitOutcome;
+        });
+
+        ToolExecutionPhase.ToolBatchOutcome outcome = phase.execute(turnState, response, historyWriter, llmCallPhase);
+
+        assertInstanceOf(ToolExecutionPhase.ToolBatchOutcome.StopTurn.class, outcome);
+        LlmResponse finalResponse = turnState.getContext().getAttribute(ContextAttributes.LLM_RESPONSE);
+        assertEquals(planText, finalResponse.getContent());
+        verify(historyWriter).appendFinalAssistantAnswer(eq(turnState.getContext()), eq(response), eq(planText));
+    }
+
     private TurnState buildTurnState() {
         AgentSession session = AgentSession.builder()
                 .id("sess-1")

@@ -51,6 +51,8 @@ describe('ScheduledTaskEditorCard', () => {
 
     expect(html).toContain('Command');
     expect(html).toContain('Working directory');
+    expect(html).toContain('Optional. Relative to the shell workspace; empty uses the shell workspace root.');
+    expect(html).not.toContain('/workspace/project');
     expect(html).not.toContain('Reflection tier');
   });
 });

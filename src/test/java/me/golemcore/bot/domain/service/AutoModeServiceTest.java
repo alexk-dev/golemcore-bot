@@ -55,7 +55,6 @@ class AutoModeServiceTest {
 
         runtimeConfigService = mock(RuntimeConfigService.class);
         when(runtimeConfigService.isAutoModeEnabled()).thenReturn(true);
-        when(runtimeConfigService.getAutoMaxGoals()).thenReturn(3);
         when(runtimeConfigService.getAutoReflectionFailureThreshold()).thenReturn(2);
         when(runtimeConfigService.getAutoReflectionModelTier()).thenReturn("deep");
         when(runtimeConfigService.isAutoReflectionTierPriority()).thenReturn(false);
@@ -107,9 +106,7 @@ class AutoModeServiceTest {
     }
 
     @Test
-    void createGoalShouldIgnoreInboxWhenCountingActiveGoalLimit() throws Exception {
-        when(runtimeConfigService.getAutoMaxGoals()).thenReturn(1);
-
+    void createGoalShouldCreateAlongsideInboxGoal() throws Exception {
         Goal inbox = Goal.builder()
                 .id("inbox")
                 .title("Inbox")
@@ -128,7 +125,7 @@ class AutoModeServiceTest {
     }
 
     @Test
-    void createGoalThrowsWhenMaxActiveGoalsReached() throws Exception {
+    void createGoalShouldNotLimitActiveGoalCount() throws Exception {
         List<Goal> existingGoals = new ArrayList<>();
         for (int i = 0; i < 3; i++) {
             existingGoals.add(Goal.builder()
@@ -143,8 +140,10 @@ class AutoModeServiceTest {
         when(storagePort.getText(AUTO_DIR, GOALS_FILE))
                 .thenReturn(CompletableFuture.completedFuture(goalsJson));
 
-        assertThrows(IllegalStateException.class,
-                () -> service.createGoal("One too many", "Should fail"));
+        Goal created = service.createGoal("One more", "Should be allowed");
+
+        assertEquals("One more", created.getTitle());
+        verify(storagePort).putText(eq(AUTO_DIR), eq(GOALS_FILE), contains("One more"));
     }
 
     @Test
@@ -200,7 +199,7 @@ class AutoModeServiceTest {
     }
 
     @Test
-    void addTaskThrowsWhenMaxTasksPerGoalReached() throws Exception {
+    void addTaskShouldNotLimitTaskCountPerGoal() throws Exception {
         List<AutoTask> tasks = new ArrayList<>();
         for (int i = 0; i < 20; i++) {
             tasks.add(AutoTask.builder()
@@ -223,8 +222,10 @@ class AutoModeServiceTest {
         when(storagePort.getText(AUTO_DIR, GOALS_FILE))
                 .thenReturn(CompletableFuture.completedFuture(goalsJson));
 
-        assertThrows(IllegalStateException.class,
-                () -> service.addTask(GOAL_ID, "Too many", "Should fail", 21));
+        AutoTask created = service.addTask(GOAL_ID, "Task 21", "Should be allowed", 21);
+
+        assertEquals("Task 21", created.getTitle());
+        verify(storagePort).putText(eq(AUTO_DIR), eq(GOALS_FILE), contains("Task 21"));
     }
 
     @Test

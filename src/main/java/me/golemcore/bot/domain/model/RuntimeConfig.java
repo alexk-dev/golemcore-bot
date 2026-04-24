@@ -649,12 +649,12 @@ public class RuntimeConfig {
     @NoArgsConstructor
     @AllArgsConstructor
     @Builder
+    @JsonIgnoreProperties(ignoreUnknown = true)
     public static class AutoModeConfig {
         private Boolean enabled;
         private Integer tickIntervalSeconds;
         private Integer taskTimeLimitMinutes;
         private Boolean autoStart;
-        private Integer maxGoals;
         private String modelTier;
         @Builder.Default
         private Boolean reflectionEnabled = true;
@@ -1333,6 +1333,7 @@ public class RuntimeConfig {
     @NoArgsConstructor
     @AllArgsConstructor
     @Builder
+    @JsonIgnoreProperties(ignoreUnknown = true)
     public static class PlanConfig {
         private String modelTier;
     }

@@ -540,17 +540,6 @@ class CommandRouterTest {
         assertTrue(result.output().contains("command.goals.empty"));
     }
 
-    @Test
-    void goalLimitExceeded() throws Exception {
-        when(autoModeService.isFeatureEnabled()).thenReturn(true);
-        when(autoModeService.createGoal(anyString(), any()))
-                .thenThrow(new IllegalStateException("Max goals reached"));
-
-        CommandPort.CommandResult result = router.execute(CMD_GOAL, List.of("Another", CMD_GOAL), CTX).get();
-        assertFalse(result.success());
-        assertTrue(result.output().contains("command.goal.limit"));
-    }
-
     // ===== Tasks command =====
 
     @Test
