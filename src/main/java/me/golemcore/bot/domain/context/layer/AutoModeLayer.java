@@ -22,9 +22,12 @@ import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.context.ContextLayerLifecycle;
 import me.golemcore.bot.domain.context.ContextLayerResult;
 import me.golemcore.bot.domain.model.AgentContext;
+import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.Message;
+import me.golemcore.bot.domain.model.SessionIdentity;
 import me.golemcore.bot.domain.service.AutoModeService;
+import me.golemcore.bot.domain.service.SessionIdentitySupport;
 
 /**
  * Injects autonomous execution context (goals, tasks, diary) when the current
@@ -87,9 +90,12 @@ public class AutoModeLayer extends AbstractContextLayer {
 
     private void appendAutoContext(StringBuilder sb, AgentContext context) {
         try {
-            String autoContext = autoModeService.buildAutoContext(
-                    context.getAttribute(ContextAttributes.AUTO_GOAL_ID),
-                    context.getAttribute(ContextAttributes.AUTO_TASK_ID));
+            String sessionId = resolveSessionId(context);
+            String requestedGoalId = context.getAttribute(ContextAttributes.AUTO_GOAL_ID);
+            String requestedTaskId = context.getAttribute(ContextAttributes.AUTO_TASK_ID);
+            String autoContext = sessionId != null
+                    ? autoModeService.buildAutoContext(sessionId, requestedGoalId, requestedTaskId)
+                    : autoModeService.buildAutoContext(requestedGoalId, requestedTaskId);
             if (autoContext != null && !autoContext.isBlank()) {
                 sb.append(autoContext);
             }
@@ -97,6 +103,21 @@ public class AutoModeLayer extends AbstractContextLayer {
             log.debug("[AutoModeLayer] Auto goal context unavailable; keeping autonomous guidelines only",
                     exception);
         }
+    }
+
+    private String resolveSessionId(AgentContext context) {
+        if (context == null) {
+            return null;
+        }
+        AgentSession session = context.getSession();
+        if (session == null) {
+            return null;
+        }
+        if (session.getId() != null && !session.getId().isBlank()) {
+            return session.getId();
+        }
+        SessionIdentity sessionIdentity = SessionIdentitySupport.resolveSessionIdentity(session);
+        return sessionIdentity != null ? sessionIdentity.asKey() : null;
     }
 
     private boolean isAutoReflectionContext(AgentContext context) {

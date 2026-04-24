@@ -402,6 +402,10 @@ public class AutoModeService {
         return sessionScopedGoalService.buildAutoContext(requireCurrentSessionId(), requestedGoalId, requestedTaskId);
     }
 
+    public String buildAutoContext(String sessionId, String requestedGoalId, String requestedTaskId) {
+        return sessionScopedGoalService.buildAutoContext(sessionId, requestedGoalId, requestedTaskId);
+    }
+
     public void loadState() {
         try {
             String json = storagePort.getText("auto", "state.json").join();
