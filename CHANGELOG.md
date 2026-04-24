@@ -6,6 +6,12 @@ All notable changes to this project will be documented in this file. See [conven
 - (**auto**) add configurable session retention cleanup for persisted chat sessions
 
 - - -
+## v0.70.0 - 2026-04-24
+#### Features
+- add native app-image launcher distribution (#172) - (b7c2a11) - GolemCore AI Agent #1
+
+- - -
+
 ## v0.12.0 - 2026-02-25
 #### Features
 - (**browser**) fetch Playwright driver bundle from Maven at runtime (#117) - (2121f20) - Alex Kuleshov
