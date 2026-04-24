@@ -472,6 +472,25 @@ class OutgoingResponsePreparationSystemTest {
     }
 
     @Test
+    void shouldKeepVoiceOnlyResponseWhenVoicePrefixContentIsBlankButToolQueuedVoice() {
+        AgentContext context = buildContext();
+        context.setAttribute(ContextAttributes.LLM_RESPONSE,
+                LlmResponse.builder().content(VOICE_PREFIX + "   ").build());
+        context.setAttribute(ContextAttributes.FINAL_ANSWER_READY, true);
+        context.setVoiceRequested(true);
+        context.setVoiceText("Custom voice text from tool");
+
+        AgentContext result = system.process(context);
+
+        OutgoingResponse outgoing = result.getAttribute(ContextAttributes.OUTGOING_RESPONSE);
+        assertNotNull(outgoing);
+        assertNull(outgoing.getText());
+        assertTrue(outgoing.isVoiceRequested());
+        assertEquals("Custom voice text from tool", outgoing.getVoiceText());
+        assertNull(result.getAttribute(ContextAttributes.LLM_ERROR));
+    }
+
+    @Test
     void shouldHandleVoicePrefixWithLeadingWhitespace() {
         AgentContext context = buildContext();
         context.setAttribute(ContextAttributes.LLM_RESPONSE,

@@ -174,7 +174,16 @@ public class OutgoingResponsePreparationSystem implements AgentSystem {
                 setOutgoingResponse(context, outgoing);
                 return context;
             }
-            // Prefix with blank content after stripping — nothing to send.
+            // Prefix with blank content after stripping: preserve tool-queued voice-only
+            // responses.
+            if (hasVoice) {
+                OutgoingResponse outgoing = OutgoingResponse.builder()
+                        .text(null)
+                        .voiceRequested(true)
+                        .voiceText(voiceText)
+                        .build();
+                setOutgoingResponse(context, outgoing);
+            }
             return context;
         }
 
