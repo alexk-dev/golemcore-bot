@@ -52,6 +52,15 @@ class DashboardSecurityConfigTest {
     }
 
     @Test
+    void healthEndpointShouldBypassDashboardJwtRequirement() {
+        webTestClient.get()
+                .uri("/api/system/health")
+                .exchange()
+                .expectStatus().isOk()
+                .expectBody(String.class).isEqualTo("ok");
+    }
+
+    @Test
     void genericApiShouldStillRequireDashboardJwt() {
         webTestClient.get()
                 .uri("/api/secured/test")
@@ -82,6 +91,11 @@ class DashboardSecurityConfigTest {
 
         @GetMapping("/api/secured/test")
         Mono<String> secured() {
+            return Mono.just("ok");
+        }
+
+        @GetMapping("/api/system/health")
+        Mono<String> health() {
             return Mono.just("ok");
         }
     }

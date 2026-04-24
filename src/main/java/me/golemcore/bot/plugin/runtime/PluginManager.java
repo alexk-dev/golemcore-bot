@@ -48,8 +48,6 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.jar.JarFile;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 /**
  * Loads plugin JARs into isolated child Spring contexts and registers exposed
@@ -63,8 +61,6 @@ public class PluginManager {
     private static final ObjectMapper PLUGIN_MANIFEST_MAPPER = new ObjectMapper(new YAMLFactory());
     private static final String PLUGIN_MANIFEST_PATH = "META-INF/golemcore/plugin.yaml";
     private static final int HOST_PLUGIN_API_VERSION = 1;
-    private static final Pattern SEMVER_PATTERN = Pattern.compile(
-            "^(\\d+)\\.(\\d+)(?:\\.(\\d+))?(?:-([0-9A-Za-z.-]+))?$");
 
     private final BotProperties botProperties;
     private final ConfigurableApplicationContext applicationContext;
@@ -397,7 +393,9 @@ public class PluginManager {
                 return;
             }
 
-            int versionComparison = compareVersions(descriptor.getVersion(), existing.descriptor().getVersion());
+            int versionComparison = PluginVersionSupport.compareVersions(
+                    descriptor.getVersion(),
+                    existing.descriptor().getVersion());
             if (versionComparison > 0) {
                 log.debug("[Plugins] Selecting newer artifact for {}: {} -> {}",
                         descriptor.getId(), existing.jarPath(), jarPath);
@@ -582,7 +580,7 @@ public class PluginManager {
             return;
         }
         String engineVersion = resolveEngineVersion();
-        if (!matchesVersionConstraint(engineVersion, engineConstraint)) {
+        if (!PluginVersionSupport.matchesVersionConstraint(engineVersion, engineConstraint)) {
             throw new IllegalArgumentException(
                     "Plugin " + descriptor.getId() + " requires engineVersion " + engineConstraint
                             + ", current engine is " + engineVersion);
@@ -593,118 +591,6 @@ public class PluginManager {
         BuildProperties buildProperties = buildPropertiesProvider.getIfAvailable();
         String version = buildProperties != null ? buildProperties.getVersion() : null;
         return PluginVersionSupport.normalizeHostVersion(version != null ? version : "0.0.0-SNAPSHOT");
-    }
-
-    private boolean matchesVersionConstraint(String version, String constraint) {
-        if (constraint == null || constraint.isBlank()) {
-            return true;
-        }
-        for (String token : constraint.trim().split("\\s+")) {
-            if (token.isBlank()) {
-                continue;
-            }
-            String normalizedToken = token;
-            if (normalizedToken.endsWith(">")) {
-                normalizedToken = normalizedToken.substring(0, normalizedToken.length() - 1);
-            }
-            String operator = extractOperator(normalizedToken);
-            String expectedVersion = normalizedToken.substring(operator.length());
-            int comparison = compareVersions(version, expectedVersion);
-            boolean matches = switch (operator) {
-            case ">=" -> comparison >= 0;
-            case ">" -> comparison > 0;
-            case "<=" -> comparison <= 0;
-            case "<" -> comparison < 0;
-            case "=" -> comparison == 0;
-            default -> throw new IllegalArgumentException("Unsupported engineVersion constraint: " + token);
-            };
-            if (!matches) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    private String extractOperator(String token) {
-        if (token.startsWith(">=") || token.startsWith("<=")) {
-            return token.substring(0, 2);
-        }
-        if (token.startsWith(">") || token.startsWith("<") || token.startsWith("=")) {
-            return token.substring(0, 1);
-        }
-        throw new IllegalArgumentException("Constraint token must start with comparison operator: " + token);
-    }
-
-    private int compareVersions(String left, String right) {
-        SemVer leftVersion = parseSemVer(left);
-        SemVer rightVersion = parseSemVer(right);
-        int mainComparison = Integer.compare(leftVersion.major(), rightVersion.major());
-        if (mainComparison != 0) {
-            return mainComparison;
-        }
-        int minorComparison = Integer.compare(leftVersion.minor(), rightVersion.minor());
-        if (minorComparison != 0) {
-            return minorComparison;
-        }
-        int patchComparison = Integer.compare(leftVersion.patch(), rightVersion.patch());
-        if (patchComparison != 0) {
-            return patchComparison;
-        }
-        if (leftVersion.preRelease() == null && rightVersion.preRelease() == null) {
-            return 0;
-        }
-        if (leftVersion.preRelease() == null) {
-            return 1;
-        }
-        if (rightVersion.preRelease() == null) {
-            return -1;
-        }
-        return comparePreRelease(leftVersion.preRelease(), rightVersion.preRelease());
-    }
-
-    private int comparePreRelease(String left, String right) {
-        String[] leftParts = left.split("\\.");
-        String[] rightParts = right.split("\\.");
-        int length = Math.max(leftParts.length, rightParts.length);
-        for (int i = 0; i < length; i++) {
-            if (i >= leftParts.length) {
-                return -1;
-            }
-            if (i >= rightParts.length) {
-                return 1;
-            }
-            String leftPart = leftParts[i];
-            String rightPart = rightParts[i];
-            boolean leftNumeric = leftPart.chars().allMatch(Character::isDigit);
-            boolean rightNumeric = rightPart.chars().allMatch(Character::isDigit);
-            if (leftNumeric && rightNumeric) {
-                int comparison = Integer.compare(Integer.parseInt(leftPart), Integer.parseInt(rightPart));
-                if (comparison != 0) {
-                    return comparison;
-                }
-                continue;
-            }
-            if (leftNumeric != rightNumeric) {
-                return leftNumeric ? -1 : 1;
-            }
-            int comparison = leftPart.compareTo(rightPart);
-            if (comparison != 0) {
-                return comparison;
-            }
-        }
-        return 0;
-    }
-
-    private SemVer parseSemVer(String version) {
-        Matcher matcher = SEMVER_PATTERN.matcher(version);
-        if (!matcher.matches()) {
-            throw new IllegalArgumentException("Invalid SemVer: " + version);
-        }
-        return new SemVer(
-                Integer.parseInt(matcher.group(1)),
-                Integer.parseInt(matcher.group(2)),
-                matcher.group(3) != null ? Integer.parseInt(matcher.group(3)) : 0,
-                matcher.group(4));
     }
 
     private String normalizePluginId(String pluginId) {
@@ -750,9 +636,6 @@ public class PluginManager {
             List<ToolComponent> tools,
             List<PluginSettingsContributor> settingsContributors,
             List<TelegramWebhookUpdateConsumer> telegramWebhookUpdateConsumers) {
-    }
-
-    private record SemVer(int major, int minor, int patch, String preRelease) {
     }
 
 }

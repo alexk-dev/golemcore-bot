@@ -3,27 +3,339 @@ package me.golemcore.bot.launcher;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Properties;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertIterableEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+/**
+ * Covers launcher restart behavior, staged update selection, bundled runtime
+ * discovery, and picocli-based native launcher argument parsing.
+ */
 class RuntimeLauncherTest {
 
     @Test
     void shouldLaunchBundledRuntimeWhenCurrentMarkerIsMissing(@TempDir Path tempDir) {
         RecordingProcessStarter processStarter = new RecordingProcessStarter(List.of(0));
-        RuntimeLauncher launcher = createLauncher(tempDir, processStarter);
+        RuntimeLauncher launcher = createLauncher(tempDir, processStarter, null, null, Map.of());
 
-        int exitCode = launcher.run(new String[0]);
+        int exitCode = launcher.run(webCommand());
+
+        assertEquals(0, exitCode);
+        assertEquals(List.of(
+                "java",
+                "-cp",
+                "@/app/jib-classpath-file",
+                "me.golemcore.bot.BotApplication"), processStarter.commands().getFirst());
+    }
+
+    @Test
+    void shouldLaunchBundledRuntimeJarWhenResolverProvidesOne(@TempDir Path tempDir) throws Exception {
+        Path bundledJar = tempDir.resolve("bot-bundled.jar");
+        Files.writeString(bundledJar, "payload", StandardCharsets.UTF_8);
+        RecordingProcessStarter processStarter = new RecordingProcessStarter(List.of(0));
+        RuntimeLauncher launcher = createLauncher(tempDir, processStarter, null, bundledJar, Map.of());
+
+        int exitCode = launcher.run(webCommand("--spring.profiles.active=prod"));
+
+        assertEquals(0, exitCode);
+        assertEquals(List.of(
+                "java",
+                "-jar",
+                bundledJar.toAbsolutePath().normalize().toString(),
+                "--spring.profiles.active=prod"), processStarter.commands().getFirst());
+    }
+
+    @Test
+    void shouldForwardServerPortSystemPropertyToBundledRuntime(@TempDir Path tempDir) throws Exception {
+        Path bundledJar = tempDir.resolve("bot-bundled.jar");
+        Files.writeString(bundledJar, "payload", StandardCharsets.UTF_8);
+        RecordingProcessStarter processStarter = new RecordingProcessStarter(List.of(0));
+        RuntimeLauncher launcher = createLauncher(
+                Map.of("UPDATE_PATH", tempDir.toString()),
+                processStarter,
+                new NoOpLauncherOutput(),
+                null,
+                bundledJar,
+                Map.of("server.port", "9090"));
+
+        int exitCode = launcher.run(webCommand());
+
+        assertEquals(0, exitCode);
+        assertEquals(List.of(
+                "java",
+                "-Dserver.port=9090",
+                "-jar",
+                bundledJar.toAbsolutePath().normalize().toString()), processStarter.commands().getFirst());
+    }
+
+    @Test
+    void shouldForwardSpringProfileSystemPropertyToBundledRuntime(@TempDir Path tempDir) throws Exception {
+        Path bundledJar = tempDir.resolve("bot-bundled.jar");
+        Files.writeString(bundledJar, "payload", StandardCharsets.UTF_8);
+        RecordingProcessStarter processStarter = new RecordingProcessStarter(List.of(0));
+        RuntimeLauncher launcher = createLauncher(
+                Map.of("UPDATE_PATH", tempDir.toString()),
+                processStarter,
+                new NoOpLauncherOutput(),
+                null,
+                bundledJar,
+                Map.of(RuntimeLauncher.SPRING_PROFILES_ACTIVE_PROPERTY, "prod"));
+
+        int exitCode = launcher.run(webCommand());
+
+        assertEquals(0, exitCode);
+        assertEquals(List.of(
+                "java",
+                "-Dspring.profiles.active=prod",
+                "-jar",
+                bundledJar.toAbsolutePath().normalize().toString()), processStarter.commands().getFirst());
+    }
+
+    @Test
+    void shouldForwardSystemPropertyArgumentsToBundledRuntime(@TempDir Path tempDir) throws Exception {
+        Path bundledJar = tempDir.resolve("bot-bundled.jar");
+        Files.writeString(bundledJar, "payload", StandardCharsets.UTF_8);
+        RecordingProcessStarter processStarter = new RecordingProcessStarter(List.of(0));
+        RuntimeLauncher launcher = createLauncher(
+                Map.of("UPDATE_PATH", tempDir.toString()),
+                processStarter,
+                new NoOpLauncherOutput(),
+                null,
+                bundledJar,
+                Map.of());
+
+        int exitCode = launcher.run(webCommand(
+                "-Dserver.port=9191",
+                "-Dspring.profiles.active=prod",
+                "--spring.main.web-application-type=none"));
+
+        assertEquals(0, exitCode);
+        assertEquals(List.of(
+                "java",
+                "-Dserver.port=9191",
+                "-Dspring.profiles.active=prod",
+                "-jar",
+                bundledJar.toAbsolutePath().normalize().toString(),
+                "--spring.main.web-application-type=none"), processStarter.commands().getFirst());
+    }
+
+    @Test
+    void shouldForwardPicocliJavaOptionsAndLauncherServerPort(@TempDir Path tempDir) throws Exception {
+        Path bundledJar = tempDir.resolve("bot-bundled.jar");
+        Files.writeString(bundledJar, "payload", StandardCharsets.UTF_8);
+        RecordingProcessStarter processStarter = new RecordingProcessStarter(List.of(0));
+        RuntimeLauncher launcher = createLauncher(
+                Map.of("UPDATE_PATH", tempDir.toString()),
+                processStarter,
+                new NoOpLauncherOutput(),
+                null,
+                bundledJar,
+                Map.of());
+
+        int exitCode = launcher.run(webCommand(
+                "-J=-Xmx512m",
+                "--port=9191",
+                "--spring.main.web-application-type=none"));
+
+        assertEquals(0, exitCode);
+        assertEquals(List.of(
+                "java",
+                "-Xmx512m",
+                "-Dserver.port=9191",
+                "-jar",
+                bundledJar.toAbsolutePath().normalize().toString(),
+                "--spring.main.web-application-type=none"), processStarter.commands().getFirst());
+    }
+
+    @Test
+    void shouldForwardWebPortAndHostnameAsSystemProperties(@TempDir Path tempDir) throws Exception {
+        Path bundledJar = tempDir.resolve("bot-bundled.jar");
+        Files.writeString(bundledJar, "payload", StandardCharsets.UTF_8);
+        RecordingProcessStarter processStarter = new RecordingProcessStarter(List.of(0));
+        RuntimeLauncher launcher = createLauncher(
+                Map.of("UPDATE_PATH", tempDir.toString()),
+                processStarter,
+                new NoOpLauncherOutput(),
+                null,
+                bundledJar,
+                Map.of());
+
+        int exitCode = launcher.run(webCommand("--port=8080", "--hostname=0.0.0.0"));
+
+        assertEquals(0, exitCode);
+        assertEquals(List.of(
+                "java",
+                "-Dserver.port=8080",
+                "-Dserver.address=0.0.0.0",
+                "-jar",
+                bundledJar.toAbsolutePath().normalize().toString()), processStarter.commands().getFirst());
+    }
+
+    @Test
+    void shouldForwardLauncherStorageAndUpdatesOptionsAsSystemProperties(@TempDir Path tempDir) throws Exception {
+        Path bundledJar = tempDir.resolve("bot-bundled.jar");
+        Path storagePath = tempDir.resolve("workspace");
+        Path updatesPath = tempDir.resolve("updates");
+        Files.writeString(bundledJar, "payload", StandardCharsets.UTF_8);
+        RecordingProcessStarter processStarter = new RecordingProcessStarter(List.of(0));
+        RuntimeLauncher launcher = createLauncher(
+                Map.of(),
+                processStarter,
+                new NoOpLauncherOutput(),
+                null,
+                bundledJar,
+                Map.of());
+
+        int exitCode = launcher.run(webCommand(
+                "--storage-path=" + storagePath,
+                "--updates-path=" + updatesPath));
+
+        assertEquals(0, exitCode);
+        assertEquals(List.of(
+                "java",
+                "-Dbot.storage.local.base-path=" + storagePath.toAbsolutePath().normalize(),
+                "-Dbot.update.updates-path=" + updatesPath.toAbsolutePath().normalize(),
+                "-jar",
+                bundledJar.toAbsolutePath().normalize().toString()), processStarter.commands().getFirst());
+    }
+
+    @Test
+    void shouldNotDuplicateForwardedServerPortWhenPassedAsApplicationArgument(@TempDir Path tempDir) throws Exception {
+        Path bundledJar = tempDir.resolve("bot-bundled.jar");
+        Files.writeString(bundledJar, "payload", StandardCharsets.UTF_8);
+        RecordingProcessStarter processStarter = new RecordingProcessStarter(List.of(0));
+        RuntimeLauncher launcher = createLauncher(
+                Map.of("UPDATE_PATH", tempDir.toString()),
+                processStarter,
+                new NoOpLauncherOutput(),
+                null,
+                bundledJar,
+                Map.of("server.port", "9090"));
+
+        int exitCode = launcher.run(webCommand("--server.port=9191"));
+
+        assertEquals(0, exitCode);
+        assertEquals(List.of(
+                "java",
+                "-Dserver.port=9191",
+                "-jar",
+                bundledJar.toAbsolutePath().normalize().toString()), processStarter.commands().getFirst());
+    }
+
+    @Test
+    void shouldUseExplicitBundledJarOption(@TempDir Path tempDir) throws Exception {
+        Path bundledJar = tempDir.resolve("configured.jar");
+        Files.writeString(bundledJar, "payload", StandardCharsets.UTF_8);
+        RecordingProcessStarter processStarter = new RecordingProcessStarter(List.of(0));
+        RuntimeLauncher launcher = createLauncher(
+                Map.of("UPDATE_PATH", tempDir.toString()),
+                processStarter,
+                new NoOpLauncherOutput(),
+                null,
+                null,
+                Map.of());
+
+        int exitCode = launcher.run(webCommand("--bundled-jar=" + bundledJar));
+
+        assertEquals(0, exitCode);
+        assertEquals(List.of(
+                "java",
+                "-jar",
+                bundledJar.toAbsolutePath().normalize().toString()), processStarter.commands().getFirst());
+    }
+
+    @Test
+    void shouldResolveSiblingBundledRuntimeJarWhenResolverPointsToAppImageDirectory(@TempDir Path tempDir)
+            throws Exception {
+        Path appDir = tempDir.resolve("app");
+        Files.createDirectories(appDir);
+        Path bundledJar = appDir.resolve("bot-0.4.2.jar");
+        Files.writeString(bundledJar, "payload", StandardCharsets.UTF_8);
+        RecordingProcessStarter processStarter = new RecordingProcessStarter(List.of(0));
+        RuntimeLauncher launcher = createLauncher(tempDir, processStarter, null, appDir, Map.of());
+
+        int exitCode = launcher.run(webCommand());
+
+        assertEquals(0, exitCode);
+        assertEquals(List.of(
+                "java",
+                "-jar",
+                bundledJar.toAbsolutePath().normalize().toString()), processStarter.commands().getFirst());
+    }
+
+    @Test
+    void shouldResolveBundledRuntimeJarFromAppImageLibRuntimeDirectory(@TempDir Path tempDir)
+            throws Exception {
+        Path appDir = tempDir.resolve("app-image");
+        Path libRuntimeDir = appDir.resolve("lib").resolve("runtime");
+        Files.createDirectories(libRuntimeDir);
+        Path bundledJar = libRuntimeDir.resolve("bot-0.4.2.jar");
+        Files.writeString(bundledJar, "payload", StandardCharsets.UTF_8);
+        Path launcherJar = appDir.resolve("lib").resolve("app").resolve("golemcore-bot-launcher.jar");
+        Files.createDirectories(launcherJar.getParent());
+        Files.writeString(launcherJar, "launcher", StandardCharsets.UTF_8);
+
+        RecordingProcessStarter processStarter = new RecordingProcessStarter(List.of(0));
+        RuntimeLauncher launcher = createLauncher(tempDir, processStarter, null, launcherJar, Map.of());
+
+        int exitCode = launcher.run(webCommand());
+
+        assertEquals(0, exitCode);
+        assertEquals(List.of(
+                "java",
+                "-jar",
+                bundledJar.toAbsolutePath().normalize().toString()), processStarter.commands().getFirst());
+    }
+
+    @Test
+    void shouldPreferBundledRuntimeJarFromEnvironment(@TempDir Path tempDir) throws Exception {
+        Path bundledJar = tempDir.resolve("from-env.jar");
+        Files.writeString(bundledJar, "payload", StandardCharsets.UTF_8);
+        RecordingProcessStarter processStarter = new RecordingProcessStarter(List.of(0));
+        RuntimeLauncher launcher = createLauncher(
+                Map.of(
+                        "UPDATE_PATH", tempDir.toString(),
+                        "GOLEMCORE_BUNDLED_JAR", bundledJar.toString()),
+                processStarter,
+                new NoOpLauncherOutput(),
+                null,
+                null,
+                Map.of());
+
+        int exitCode = launcher.run(webCommand());
+
+        assertEquals(0, exitCode);
+        assertEquals(List.of(
+                "java",
+                "-jar",
+                bundledJar.toAbsolutePath().normalize().toString()), processStarter.commands().getFirst());
+    }
+
+    @Test
+    void shouldIgnoreNonJarBundledRuntimeAndFallbackToClasspath(@TempDir Path tempDir) throws Exception {
+        Path bundledFile = tempDir.resolve("runtime.txt");
+        Files.writeString(bundledFile, "payload", StandardCharsets.UTF_8);
+        RecordingProcessStarter processStarter = new RecordingProcessStarter(List.of(0));
+        RuntimeLauncher launcher = createLauncher(tempDir, processStarter, null, bundledFile, Map.of());
+
+        int exitCode = launcher.run(webCommand());
 
         assertEquals(0, exitCode);
         assertEquals(List.of(
@@ -44,7 +356,7 @@ class RuntimeLauncherTest {
         RecordingProcessStarter processStarter = new RecordingProcessStarter(List.of(0));
         RuntimeLauncher launcher = createLauncher(tempDir, processStarter, "0.4.2");
 
-        int exitCode = launcher.run(new String[0]);
+        int exitCode = launcher.run(webCommand());
 
         assertEquals(0, exitCode);
         assertEquals(List.of(
@@ -52,6 +364,42 @@ class RuntimeLauncherTest {
                 "-cp",
                 "@/app/jib-classpath-file",
                 "me.golemcore.bot.BotApplication"), processStarter.commands().getFirst());
+    }
+
+    @Test
+    void shouldLaunchBundledRuntimeJarWhenBundledJarVersionIsNewerThanCurrentMarker(@TempDir Path tempDir)
+            throws Exception {
+        Path jarsDir = tempDir.resolve("jars");
+        Files.createDirectories(jarsDir);
+        Path currentJar = jarsDir.resolve("bot-0.1.0-exec.jar");
+        Files.writeString(currentJar, "payload", StandardCharsets.UTF_8);
+        Files.writeString(tempDir.resolve("current.txt"), currentJar.getFileName() + "\n", StandardCharsets.UTF_8);
+
+        Path bundledJar = tempDir.resolve("bundled").resolve("bot-0.2.0-exec.jar");
+        Files.createDirectories(bundledJar.getParent());
+        Files.writeString(bundledJar, "payload", StandardCharsets.UTF_8);
+
+        RecordingProcessStarter processStarter = new RecordingProcessStarter(List.of(0));
+        CapturingLauncherOutput output = new CapturingLauncherOutput();
+        RuntimeLauncher launcher = createLauncher(
+                Map.of("UPDATE_PATH", tempDir.toString()),
+                processStarter,
+                output,
+                bundledJar,
+                null,
+                Map.of(),
+                "dev");
+
+        int exitCode = launcher.run(webCommand());
+
+        assertEquals(0, exitCode);
+        assertEquals(List.of(
+                "java",
+                "-jar",
+                bundledJar.toAbsolutePath().normalize().toString()), processStarter.commands().getFirst());
+        assertTrue(output.infoMessages().stream()
+                .anyMatch(message -> message.contains(
+                        "Ignoring current marker because bundled runtime 0.2.0 is newer than 0.1.0")));
     }
 
     @Test
@@ -65,7 +413,7 @@ class RuntimeLauncherTest {
         RecordingProcessStarter processStarter = new RecordingProcessStarter(List.of(0));
         RuntimeLauncher launcher = createLauncher(tempDir, processStarter, "0.4.2");
 
-        int exitCode = launcher.run(new String[] { "--spring.profiles.active=prod" });
+        int exitCode = launcher.run(webCommand("--spring.profiles.active=prod"));
 
         assertEquals(0, exitCode);
         assertEquals(List.of(
@@ -86,7 +434,7 @@ class RuntimeLauncherTest {
         RecordingProcessStarter processStarter = new RecordingProcessStarter(List.of(0));
         RuntimeLauncher launcher = createLauncher(tempDir, processStarter, "0.4.2");
 
-        int exitCode = launcher.run(new String[] { "--spring.profiles.active=prod" });
+        int exitCode = launcher.run(webCommand("--spring.profiles.active=prod"));
 
         assertEquals(0, exitCode);
         assertEquals(List.of(
@@ -103,7 +451,7 @@ class RuntimeLauncherTest {
         RecordingProcessStarter processStarter = new RecordingProcessStarter(List.of(0));
         RuntimeLauncher launcher = createLauncher(tempDir, processStarter);
 
-        int exitCode = launcher.run(new String[0]);
+        int exitCode = launcher.run(webCommand());
 
         assertEquals(0, exitCode);
         assertEquals(List.of(
@@ -121,7 +469,7 @@ class RuntimeLauncherTest {
         CapturingLauncherOutput output = new CapturingLauncherOutput();
         RuntimeLauncher launcher = createLauncher(Map.of("UPDATE_PATH", tempDir.toString()), processStarter, output);
 
-        int exitCode = launcher.run(new String[0]);
+        int exitCode = launcher.run(webCommand());
 
         assertEquals(0, exitCode);
         assertTrue(
@@ -139,7 +487,7 @@ class RuntimeLauncherTest {
         RecordingProcessStarter processStarter = new RecordingProcessStarter(List.of(0));
         RuntimeLauncher launcher = createLauncher(tempDir, processStarter, "dev");
 
-        int exitCode = launcher.run(new String[0]);
+        int exitCode = launcher.run(webCommand());
 
         assertEquals(0, exitCode);
         assertEquals(List.of(
@@ -159,7 +507,7 @@ class RuntimeLauncherTest {
         RecordingProcessStarter processStarter = new RecordingProcessStarter(List.of(0));
         RuntimeLauncher launcher = createLauncher(tempDir, processStarter, "0.4.2");
 
-        int exitCode = launcher.run(new String[0]);
+        int exitCode = launcher.run(webCommand());
 
         assertEquals(0, exitCode);
         assertEquals(List.of(
@@ -170,40 +518,34 @@ class RuntimeLauncherTest {
 
     @Test
     void shouldPreferSystemPropertyUpdatePathWhenArgumentIsMissing(@TempDir Path tempDir) {
-        String previousValue = System.getProperty(RuntimeLauncher.UPDATE_PATH_PROPERTY);
         Path systemUpdatesDir = tempDir.resolve("system-updates");
-        System.setProperty(RuntimeLauncher.UPDATE_PATH_PROPERTY, systemUpdatesDir.toString());
-        try {
-            RuntimeLauncher launcher = createLauncher(
-                    Map.of("UPDATE_PATH", tempDir.resolve("env-updates").toString()),
-                    new RecordingProcessStarter(List.of(0)),
-                    new NoOpLauncherOutput());
+        RuntimeLauncher launcher = createLauncher(
+                Map.of("UPDATE_PATH", tempDir.resolve("env-updates").toString()),
+                new RecordingProcessStarter(List.of(0)),
+                new NoOpLauncherOutput(),
+                null,
+                null,
+                Map.of(RuntimeLauncher.UPDATE_PATH_PROPERTY, systemUpdatesDir.toString()));
 
-            Path updatesDir = launcher.resolveUpdatesDir(new String[0]);
+        Path updatesDir = launcher.resolveUpdatesDir(webCommand());
 
-            assertEquals(systemUpdatesDir.toAbsolutePath().normalize(), updatesDir);
-        } finally {
-            restoreSystemProperty(RuntimeLauncher.UPDATE_PATH_PROPERTY, previousValue);
-        }
+        assertEquals(systemUpdatesDir.toAbsolutePath().normalize(), updatesDir);
     }
 
     @Test
     void shouldPreferSystemPropertyStoragePathWhenUpdatePathIsMissing(@TempDir Path tempDir) {
-        String previousValue = System.getProperty(RuntimeLauncher.STORAGE_PATH_PROPERTY);
         Path storagePath = tempDir.resolve("system-workspace");
-        System.setProperty(RuntimeLauncher.STORAGE_PATH_PROPERTY, storagePath.toString());
-        try {
-            RuntimeLauncher launcher = createLauncher(
-                    Map.of(),
-                    new RecordingProcessStarter(List.of(0)),
-                    new NoOpLauncherOutput());
+        RuntimeLauncher launcher = createLauncher(
+                Map.of(),
+                new RecordingProcessStarter(List.of(0)),
+                new NoOpLauncherOutput(),
+                null,
+                null,
+                Map.of(RuntimeLauncher.STORAGE_PATH_PROPERTY, storagePath.toString()));
 
-            Path updatesDir = launcher.resolveUpdatesDir(new String[0]);
+        Path updatesDir = launcher.resolveUpdatesDir(webCommand());
 
-            assertEquals(storagePath.resolve("updates").toAbsolutePath().normalize(), updatesDir);
-        } finally {
-            restoreSystemProperty(RuntimeLauncher.STORAGE_PATH_PROPERTY, previousValue);
-        }
+        assertEquals(storagePath.resolve("updates").toAbsolutePath().normalize(), updatesDir);
     }
 
     @Test
@@ -216,7 +558,7 @@ class RuntimeLauncherTest {
                     new RecordingProcessStarter(List.of(0)),
                     new NoOpLauncherOutput());
 
-            Path updatesDir = launcher.resolveUpdatesDir(new String[] { "--bot.update.updates-path=~/custom-updates" });
+            Path updatesDir = launcher.resolveUpdatesDir(webCommand("--bot.update.updates-path=~/custom-updates"));
 
             assertEquals(tempDir.resolve("custom-updates").toAbsolutePath().normalize(), updatesDir);
         } finally {
@@ -234,7 +576,7 @@ class RuntimeLauncherTest {
                     new RecordingProcessStarter(List.of(0)),
                     new NoOpLauncherOutput());
 
-            Path updatesDir = launcher.resolveUpdatesDir(new String[0]);
+            Path updatesDir = launcher.resolveUpdatesDir(webCommand());
 
             assertEquals(tempDir.resolve("workspace-root").resolve("updates").toAbsolutePath().normalize(), updatesDir);
         } finally {
@@ -245,9 +587,9 @@ class RuntimeLauncherTest {
     @Test
     void shouldRestartIntoUpdatedJarAfterExitCode42(@TempDir Path tempDir) {
         RestartingProcessStarter processStarter = new RestartingProcessStarter(tempDir);
-        RuntimeLauncher launcher = createLauncher(tempDir, processStarter);
+        RuntimeLauncher launcher = createLauncher(tempDir, processStarter, null, null, Map.of());
 
-        int exitCode = launcher.run(new String[0]);
+        int exitCode = launcher.run(webCommand());
 
         assertEquals(0, exitCode);
         assertEquals(2, processStarter.commands().size());
@@ -270,9 +612,10 @@ class RuntimeLauncherTest {
 
         RecordingProcessStarter processStarter = new RecordingProcessStarter(List.of(0));
         CapturingLauncherOutput output = new CapturingLauncherOutput();
-        RuntimeLauncher launcher = createLauncher(Map.of("UPDATE_PATH", tempDir.toString()), processStarter, output);
+        RuntimeLauncher launcher = createLauncher(Map.of("UPDATE_PATH", tempDir.toString()), processStarter, output,
+                null, null, Map.of());
 
-        int exitCode = launcher.run(new String[0]);
+        int exitCode = launcher.run(webCommand());
 
         assertEquals(0, exitCode);
         assertEquals(List.of(
@@ -289,9 +632,10 @@ class RuntimeLauncherTest {
 
         RecordingProcessStarter processStarter = new RecordingProcessStarter(List.of(0));
         CapturingLauncherOutput output = new CapturingLauncherOutput();
-        RuntimeLauncher launcher = createLauncher(Map.of("UPDATE_PATH", tempDir.toString()), processStarter, output);
+        RuntimeLauncher launcher = createLauncher(Map.of("UPDATE_PATH", tempDir.toString()), processStarter, output,
+                null, null, Map.of());
 
-        int exitCode = launcher.run(new String[0]);
+        int exitCode = launcher.run(webCommand());
 
         assertEquals(0, exitCode);
         assertEquals(List.of(
@@ -312,11 +656,12 @@ class RuntimeLauncherTest {
                         "UPDATE_PATH", envUpdatesDir.toString(),
                         "STORAGE_PATH", tempDir.resolve("workspace").toString()),
                 new RecordingProcessStarter(List.of(0)),
-                new NoOpLauncherOutput());
+                new NoOpLauncherOutput(),
+                null,
+                null,
+                Map.of());
 
-        Path updatesDir = launcher.resolveUpdatesDir(new String[] {
-                "--bot.update.updates-path=" + argUpdatesDir
-        });
+        Path updatesDir = launcher.resolveUpdatesDir(webCommand("--updates-path=" + argUpdatesDir));
 
         assertEquals(argUpdatesDir.toAbsolutePath().normalize(), updatesDir);
     }
@@ -327,11 +672,158 @@ class RuntimeLauncherTest {
         RuntimeLauncher launcher = createLauncher(
                 Map.of("STORAGE_PATH", storagePath.toString()),
                 new RecordingProcessStarter(List.of(0)),
-                new NoOpLauncherOutput());
+                new NoOpLauncherOutput(),
+                null,
+                null,
+                Map.of());
 
-        Path updatesDir = launcher.resolveUpdatesDir(new String[0]);
+        Path updatesDir = launcher.resolveUpdatesDir(webCommand());
 
         assertEquals(storagePath.resolve("updates").toAbsolutePath().normalize(), updatesDir);
+    }
+
+    @Test
+    void shouldParsePicocliLauncherArguments() {
+        RuntimeLauncher launcher = createLauncher(
+                Map.of(),
+                new RecordingProcessStarter(List.of(0)),
+                new NoOpLauncherOutput(),
+                null,
+                null,
+                Map.of());
+
+        ParseOutcome parseOutcome = launcher.parseArguments(new String[] {
+                "--storage-path=/srv/workspace",
+                "--bundled-jar=/opt/bot.jar",
+                "web",
+                "--updates-path=/srv/updates",
+                "--port",
+                "9090",
+                "--hostname",
+                "0.0.0.0",
+                "-J=-Xmx512m",
+                "-Dspring.profiles.active=prod",
+                "-Dfeature.enabled",
+                "-Dfeature.empty=",
+                "--spring.main.banner-mode=off"
+        });
+
+        assertFalse(parseOutcome.shouldExit());
+        LauncherArguments launcherArguments = parseOutcome.launcherArguments();
+        assertNotNull(launcherArguments);
+        assertEquals("/srv/workspace", launcherArguments.storagePath());
+        assertEquals("/srv/updates", launcherArguments.updatesPath());
+        assertEquals("/opt/bot.jar", launcherArguments.bundledJar());
+        assertEquals("9090", launcherArguments.serverPort());
+        assertEquals("0.0.0.0", launcherArguments.serverAddress());
+        assertIterableEquals(List.of(
+                "-Xmx512m",
+                "-Dspring.profiles.active=prod",
+                "-Dfeature.enabled",
+                "-Dfeature.empty="),
+                launcherArguments.explicitJavaOptions());
+        assertIterableEquals(List.of("--spring.main.banner-mode=off"), launcherArguments.applicationArguments());
+    }
+
+    @Test
+    void shouldRequireCommandBeforeStartingRuntime() {
+        CapturingLauncherOutput output = new CapturingLauncherOutput();
+        RecordingProcessStarter processStarter = new RecordingProcessStarter(List.of(0));
+        RuntimeLauncher launcher = createLauncher(
+                Map.of(),
+                processStarter,
+                output,
+                null,
+                null,
+                Map.of());
+
+        int exitCode = launcher.run(new String[0]);
+
+        assertEquals(RuntimeLauncher.CLI_ERROR_EXIT_CODE, exitCode);
+        assertTrue(processStarter.commands().isEmpty());
+        assertTrue(output.errorMessages().stream()
+                .anyMatch(message -> message.contains("Missing command")));
+    }
+
+    @Test
+    void legacyEntrypointShouldDefaultToWebCommand() {
+        assertArrayEquals(new String[] { "web" }, RuntimeLauncher.legacyEntrypointArguments(new String[0]));
+        assertArrayEquals(new String[] { "web", "--server.port=9090" },
+                RuntimeLauncher.legacyEntrypointArguments(new String[] { "--server.port=9090" }));
+        assertArrayEquals(new String[] { "web", "--port=8080" },
+                RuntimeLauncher.legacyEntrypointArguments(new String[] { "web", "--port=8080" }));
+    }
+
+    @Test
+    void shouldCaptureInfoOutputWhenVersionRequested() {
+        CapturingLauncherOutput output = new CapturingLauncherOutput();
+        RuntimeLauncher launcher = createLauncher(
+                Map.of(),
+                new RecordingProcessStarter(List.of(0)),
+                output,
+                null,
+                null,
+                Map.of());
+
+        ParseOutcome parseOutcome = launcher.parseArguments(new String[] { "--version" });
+
+        assertTrue(parseOutcome.shouldExit());
+        assertEquals(0, parseOutcome.exitCode());
+        assertTrue(output.infoMessages().stream()
+                .anyMatch(message -> message.contains("golemcore-bot native launcher")));
+    }
+
+    @Test
+    void shouldReturnZeroWhenUsageHelpRequested() {
+        RuntimeLauncher launcher = createLauncher(
+                Map.of(),
+                new RecordingProcessStarter(List.of(0)),
+                new NoOpLauncherOutput(),
+                null,
+                null,
+                Map.of());
+
+        ParseOutcome parseOutcome = launcher.parseArguments(new String[] { "--help" });
+
+        assertTrue(parseOutcome.shouldExit());
+        assertEquals(0, parseOutcome.exitCode());
+    }
+
+    @Test
+    void shouldReturnZeroWhenWebUsageHelpRequested() {
+        RuntimeLauncher launcher = createLauncher(
+                Map.of(),
+                new RecordingProcessStarter(List.of(0)),
+                new NoOpLauncherOutput(),
+                null,
+                null,
+                Map.of());
+
+        ParseOutcome parseOutcome = launcher.parseArguments(new String[] { "web", "--help" });
+
+        assertTrue(parseOutcome.shouldExit());
+        assertEquals(0, parseOutcome.exitCode());
+    }
+
+    @Test
+    void shouldPassThroughUnknownArgumentsToSpringRuntime() {
+        RuntimeLauncher launcher = createLauncher(
+                Map.of(),
+                new RecordingProcessStarter(List.of(0)),
+                new NoOpLauncherOutput(),
+                null,
+                null,
+                Map.of());
+
+        ParseOutcome parseOutcome = launcher.parseArguments(new String[] {
+                "web",
+                "--unknown-launcher-flag",
+                "value"
+        });
+
+        assertFalse(parseOutcome.shouldExit());
+        assertIterableEquals(List.of("--unknown-launcher-flag", "value"),
+                parseOutcome.launcherArguments().applicationArguments());
     }
 
     @Test
@@ -340,9 +832,12 @@ class RuntimeLauncherTest {
         RuntimeLauncher launcher = createLauncher(
                 Map.of("UPDATE_PATH", tempDir.toString()),
                 new FailingProcessStarter(new IOException("boom")),
-                output);
+                output,
+                null,
+                null,
+                Map.of());
 
-        int exitCode = launcher.run(new String[0]);
+        int exitCode = launcher.run(webCommand());
 
         assertEquals(1, exitCode);
         assertTrue(output.errorMessages().contains("Failed to start runtime: boom"));
@@ -355,10 +850,13 @@ class RuntimeLauncherTest {
         RuntimeLauncher launcher = createLauncher(
                 Map.of("UPDATE_PATH", tempDir.toString()),
                 new SingleChildProcessStarter(childProcess),
-                output);
+                output,
+                null,
+                null,
+                Map.of());
 
         try {
-            int exitCode = launcher.run(new String[0]);
+            int exitCode = launcher.run(webCommand());
 
             assertEquals(1, exitCode);
             assertTrue(childProcess.isDestroyed());
@@ -371,7 +869,7 @@ class RuntimeLauncherTest {
 
     @Test
     void shouldReadRuntimeVersionFromContextClassLoaderWhenResourceExists() {
-        RuntimeLauncher.RuntimeVersionReader reader = new RuntimeLauncher.ClasspathRuntimeVersionReader();
+        RuntimeVersionReader reader = new ClasspathRuntimeVersionReader();
         ClassLoader previousClassLoader = Thread.currentThread().getContextClassLoader();
         Thread.currentThread().setContextClassLoader(new SingleResourceClassLoader("build.version=1.2.3\n"));
         try {
@@ -383,7 +881,7 @@ class RuntimeLauncherTest {
 
     @Test
     void shouldReturnBundledBuildVersionWhenContextClassLoaderDoesNotProvideBuildInfo() {
-        RuntimeLauncher.RuntimeVersionReader reader = new RuntimeLauncher.ClasspathRuntimeVersionReader();
+        RuntimeVersionReader reader = new ClasspathRuntimeVersionReader();
         ClassLoader previousClassLoader = Thread.currentThread().getContextClassLoader();
         Thread.currentThread().setContextClassLoader(new EmptyResourceClassLoader());
         try {
@@ -395,7 +893,7 @@ class RuntimeLauncherTest {
 
     @Test
     void shouldReturnDevWhenBuildInfoContainsBlankVersion() {
-        RuntimeLauncher.RuntimeVersionReader reader = new RuntimeLauncher.ClasspathRuntimeVersionReader();
+        RuntimeVersionReader reader = new ClasspathRuntimeVersionReader();
         ClassLoader previousClassLoader = Thread.currentThread().getContextClassLoader();
         Thread.currentThread().setContextClassLoader(new SingleResourceClassLoader("build.version=   \n"));
         try {
@@ -403,6 +901,91 @@ class RuntimeLauncherTest {
         } finally {
             Thread.currentThread().setContextClassLoader(previousClassLoader);
         }
+    }
+
+    @Test
+    @SuppressWarnings("PMD.CloseResource")
+    void shouldWriteLauncherDiagnosticsToConsoleStreams() {
+        ByteArrayOutputStream standardOutput = new ByteArrayOutputStream();
+        ByteArrayOutputStream errorOutput = new ByteArrayOutputStream();
+        PrintStream previousOut = System.out;
+        PrintStream previousErr = System.err;
+
+        try (PrintStream out = new PrintStream(standardOutput, true, StandardCharsets.UTF_8);
+                PrintStream err = new PrintStream(errorOutput, true, StandardCharsets.UTF_8)) {
+            System.setOut(out);
+            System.setErr(err);
+
+            LauncherOutput output = new ConsoleLauncherOutput();
+            output.info("ready");
+            output.error("failed");
+
+            assertEquals("[launcher] ready" + System.lineSeparator(), standardOutput.toString(StandardCharsets.UTF_8));
+            assertEquals("[launcher] failed" + System.lineSeparator(), errorOutput.toString(StandardCharsets.UTF_8));
+        } finally {
+            System.setOut(previousOut);
+            System.setErr(previousErr);
+        }
+    }
+
+    @Test
+    void shouldReadCurrentProcessPropertiesAndEnvironment() {
+        String propertyName = "golemcore.launcher.test.property";
+        String previousValue = System.getProperty(propertyName);
+        try {
+            System.setProperty(propertyName, "configured");
+
+            assertEquals("configured", new SystemPropertyReader().get(propertyName));
+            assertEquals(
+                    System.getenv("GOLEMCORE_LAUNCHER_TEST_ENV_THAT_SHOULD_NOT_EXIST"),
+                    new SystemEnvironmentReader().get("GOLEMCORE_LAUNCHER_TEST_ENV_THAT_SHOULD_NOT_EXIST"));
+        } finally {
+            restoreSystemProperty(propertyName, previousValue);
+        }
+    }
+
+    @Test
+    void shouldPreferConfiguredJavaCommandProperty(@TempDir Path tempDir) {
+        Path javaCommand = tempDir.resolve("runtime").resolve("bin").resolve("java");
+
+        String resolvedCommand = RuntimeLauncher.resolveJavaCommand(
+                new MapEnvironmentReader(Map.of(RuntimeLauncher.JAVA_COMMAND_ENV, "java-from-env")),
+                new MapPropertyReader(Map.of(RuntimeLauncher.JAVA_COMMAND_PROPERTY, javaCommand.toString())));
+
+        assertEquals(javaCommand.toAbsolutePath().normalize().toString(), resolvedCommand);
+    }
+
+    @Test
+    void shouldUseConfiguredJavaCommandEnvironmentWhenPropertyIsMissing() {
+        String resolvedCommand = RuntimeLauncher.resolveJavaCommand(
+                new MapEnvironmentReader(Map.of(RuntimeLauncher.JAVA_COMMAND_ENV, "custom-java")),
+                new MapPropertyReader(Map.of()));
+
+        assertEquals("custom-java", resolvedCommand);
+    }
+
+    @Test
+    void shouldResolveDefaultBundledRuntimeCodeSource() {
+        Path resolvedLocation = new DefaultBundledRuntimeResolver().resolve();
+
+        assertNotNull(resolvedLocation);
+        assertTrue(resolvedLocation.isAbsolute());
+    }
+
+    @Test
+    void shouldWrapJvmProcessAsChildProcess() throws Exception {
+        Process process = new ProcessBuilder(javaExecutable(), "-version").start();
+        ChildProcess childProcess = new ProcessChildProcess(process);
+
+        assertEquals(0, childProcess.waitFor());
+        childProcess.destroy();
+    }
+
+    private static String[] webCommand(String... args) {
+        List<String> command = new ArrayList<>();
+        command.add("web");
+        command.addAll(List.of(args));
+        return command.toArray(String[]::new);
     }
 
     private static String expectedSystemBuildVersion() {
@@ -423,36 +1006,95 @@ class RuntimeLauncherTest {
         return RuntimeLauncher.BUILD_INFO_RESOURCE;
     }
 
+    private static String javaExecutable() {
+        String executableName = System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("win")
+                ? "java.exe"
+                : "java";
+        Path candidate = Path.of(System.getProperty("java.home"), "bin", executableName);
+        return Files.isRegularFile(candidate) ? candidate.toAbsolutePath().normalize().toString() : executableName;
+    }
+
     private RuntimeLauncher createLauncher(Path updatesDir, RecordingProcessStarter processStarter) {
         return createLauncher(updatesDir, processStarter, "0.4.2");
     }
 
     private RuntimeLauncher createLauncher(Path updatesDir, RecordingProcessStarter processStarter,
             String runtimeVersion) {
+        return createLauncher(updatesDir, processStarter, null, null, Map.of(), runtimeVersion);
+    }
+
+    /**
+     * Creates a launcher that uses an isolated updates directory with optional
+     * bundled runtime overrides.
+     */
+    private RuntimeLauncher createLauncher(
+            Path updatesDir,
+            RecordingProcessStarter processStarter,
+            Path configuredBundledJar,
+            Path resolvedBundledJar,
+            Map<String, String> properties) {
+        return createLauncher(updatesDir, processStarter, configuredBundledJar, resolvedBundledJar, properties,
+                "0.4.2");
+    }
+
+    private RuntimeLauncher createLauncher(
+            Path updatesDir,
+            RecordingProcessStarter processStarter,
+            Path configuredBundledJar,
+            Path resolvedBundledJar,
+            Map<String, String> properties,
+            String runtimeVersion) {
         return createLauncher(
                 Map.of("UPDATE_PATH", updatesDir.toString()),
                 processStarter,
                 new NoOpLauncherOutput(),
+                configuredBundledJar,
+                resolvedBundledJar,
+                properties,
                 runtimeVersion);
     }
 
+    /**
+     * Creates a launcher wired to deterministic test doubles for environment,
+     * system properties, process startup, and bundled runtime discovery.
+     */
     private RuntimeLauncher createLauncher(
             Map<String, String> environment,
-            RuntimeLauncher.ProcessStarter processStarter,
-            RuntimeLauncher.LauncherOutput output) {
-        return createLauncher(environment, processStarter, output, "0.4.2");
+            ProcessStarter processStarter,
+            LauncherOutput output) {
+        return createLauncher(environment, processStarter, output, null, null, Map.of(), "0.4.2");
     }
 
     private RuntimeLauncher createLauncher(
             Map<String, String> environment,
-            RuntimeLauncher.ProcessStarter processStarter,
-            RuntimeLauncher.LauncherOutput output,
+            ProcessStarter processStarter,
+            LauncherOutput output,
+            Path configuredBundledJar,
+            Path resolvedBundledJar,
+            Map<String, String> properties) {
+        return createLauncher(environment, processStarter, output, configuredBundledJar, resolvedBundledJar, properties,
+                "0.4.2");
+    }
+
+    private RuntimeLauncher createLauncher(
+            Map<String, String> environment,
+            ProcessStarter processStarter,
+            LauncherOutput output,
+            Path configuredBundledJar,
+            Path resolvedBundledJar,
+            Map<String, String> properties,
             String runtimeVersion) {
+        Map<String, String> effectiveEnvironment = new HashMap<>(environment);
+        if (configuredBundledJar != null) {
+            effectiveEnvironment.put("GOLEMCORE_BUNDLED_JAR", configuredBundledJar.toString());
+        }
         return new RuntimeLauncher(
                 "java",
                 processStarter,
-                new MapEnvironmentReader(environment),
+                new MapEnvironmentReader(effectiveEnvironment),
+                new MapPropertyReader(properties),
                 output,
+                new FixedBundledRuntimeResolver(resolvedBundledJar),
                 new FixedRuntimeVersionReader(runtimeVersion));
     }
 
@@ -464,7 +1106,11 @@ class RuntimeLauncherTest {
         System.setProperty(key, value);
     }
 
-    private static class RecordingProcessStarter implements RuntimeLauncher.ProcessStarter {
+    /**
+     * Records every command sent to the child process and replays configured exit
+     * codes in sequence.
+     */
+    private static class RecordingProcessStarter implements ProcessStarter {
 
         private final List<Integer> exitCodes;
         private final List<List<String>> recordedCommands = new ArrayList<>();
@@ -475,7 +1121,7 @@ class RuntimeLauncherTest {
         }
 
         @Override
-        public RuntimeLauncher.ChildProcess start(List<String> command) throws IOException {
+        public ChildProcess start(List<String> command) throws IOException {
             recordedCommands.add(List.copyOf(command));
             int exitCode = exitCodes.get(cursor);
             cursor++;
@@ -487,6 +1133,10 @@ class RuntimeLauncherTest {
         }
     }
 
+    /**
+     * Simulates a self-update by writing the staged jar marker after the first
+     * launcher cycle returns the restart exit code.
+     */
     private static final class RestartingProcessStarter extends RecordingProcessStarter {
 
         private final Path updatesDir;
@@ -497,8 +1147,8 @@ class RuntimeLauncherTest {
         }
 
         @Override
-        public RuntimeLauncher.ChildProcess start(List<String> command) throws IOException {
-            RuntimeLauncher.ChildProcess childProcess = super.start(command);
+        public ChildProcess start(List<String> command) throws IOException {
+            ChildProcess childProcess = super.start(command);
             if (commands().size() == 1) {
                 Path jarsDir = updatesDir.resolve("jars");
                 Files.createDirectories(jarsDir);
@@ -509,7 +1159,10 @@ class RuntimeLauncherTest {
         }
     }
 
-    private static final class FixedExitChildProcess implements RuntimeLauncher.ChildProcess {
+    /**
+     * Returns a fixed exit code without spawning a real process.
+     */
+    private static final class FixedExitChildProcess implements ChildProcess {
 
         private final int exitCode;
 
@@ -524,25 +1177,31 @@ class RuntimeLauncherTest {
 
         @Override
         public void destroy() {
-            // nothing to destroy in tests
+            // Nothing to destroy in tests because no external process exists.
         }
     }
 
-    private static final class SingleChildProcessStarter implements RuntimeLauncher.ProcessStarter {
+    /**
+     * Always returns the same child process instance.
+     */
+    private static final class SingleChildProcessStarter implements ProcessStarter {
 
-        private final RuntimeLauncher.ChildProcess childProcess;
+        private final ChildProcess childProcess;
 
-        private SingleChildProcessStarter(RuntimeLauncher.ChildProcess childProcess) {
+        private SingleChildProcessStarter(ChildProcess childProcess) {
             this.childProcess = childProcess;
         }
 
         @Override
-        public RuntimeLauncher.ChildProcess start(List<String> command) {
+        public ChildProcess start(List<String> command) {
             return childProcess;
         }
     }
 
-    private static final class FailingProcessStarter implements RuntimeLauncher.ProcessStarter {
+    /**
+     * Fails immediately when the launcher tries to spawn a child process.
+     */
+    private static final class FailingProcessStarter implements ProcessStarter {
 
         private final IOException failure;
 
@@ -551,12 +1210,16 @@ class RuntimeLauncherTest {
         }
 
         @Override
-        public RuntimeLauncher.ChildProcess start(List<String> command) throws IOException {
+        public ChildProcess start(List<String> command) throws IOException {
             throw failure;
         }
     }
 
-    private static final class InterruptingChildProcess implements RuntimeLauncher.ChildProcess {
+    /**
+     * Simulates an interrupted wait so the launcher can prove it destroys the child
+     * process and preserves the interrupt flag.
+     */
+    private static final class InterruptingChildProcess implements ChildProcess {
 
         private boolean destroyed;
 
@@ -575,7 +1238,10 @@ class RuntimeLauncherTest {
         }
     }
 
-    private static final class MapEnvironmentReader implements RuntimeLauncher.EnvironmentReader {
+    /**
+     * In-memory environment source for deterministic tests.
+     */
+    private static final class MapEnvironmentReader implements EnvironmentReader {
 
         private final Map<String, String> values;
 
@@ -589,7 +1255,24 @@ class RuntimeLauncherTest {
         }
     }
 
-    private static final class FixedRuntimeVersionReader implements RuntimeLauncher.RuntimeVersionReader {
+    /**
+     * In-memory system property source for deterministic tests.
+     */
+    private static final class MapPropertyReader implements PropertyReader {
+
+        private final Map<String, String> values;
+
+        private MapPropertyReader(Map<String, String> values) {
+            this.values = values;
+        }
+
+        @Override
+        public String get(String name) {
+            return values.get(name);
+        }
+    }
+
+    private static final class FixedRuntimeVersionReader implements RuntimeVersionReader {
 
         private final String version;
 
@@ -603,26 +1286,33 @@ class RuntimeLauncherTest {
         }
     }
 
-    private static final class NoOpLauncherOutput implements RuntimeLauncher.LauncherOutput {
+    /**
+     * Discards launcher logs when the test does not assert on them.
+     */
+    private static final class NoOpLauncherOutput implements LauncherOutput {
 
         @Override
         public void info(String message) {
-            // ignore launcher logs in unit tests
+            // Intentionally ignored to keep successful test output quiet.
         }
 
         @Override
         public void error(String message) {
-            // ignore launcher logs in unit tests
+            // Intentionally ignored to keep successful test output quiet.
         }
     }
 
-    private static final class CapturingLauncherOutput implements RuntimeLauncher.LauncherOutput {
+    /**
+     * Collects launcher output for assertion-friendly verification.
+     */
+    private static final class CapturingLauncherOutput implements LauncherOutput {
 
+        private final List<String> capturedInfoMessages = new ArrayList<>();
         private final List<String> capturedErrorMessages = new ArrayList<>();
 
         @Override
         public void info(String message) {
-            // ignore info-level launcher logs in assertions
+            capturedInfoMessages.add(message);
         }
 
         @Override
@@ -630,8 +1320,30 @@ class RuntimeLauncherTest {
             capturedErrorMessages.add(message);
         }
 
+        private List<String> infoMessages() {
+            return capturedInfoMessages;
+        }
+
         private List<String> errorMessages() {
             return capturedErrorMessages;
+        }
+    }
+
+    /**
+     * Returns a fixed code-source location so bundled runtime discovery can be
+     * tested without relying on the real test JVM layout.
+     */
+    private static final class FixedBundledRuntimeResolver implements BundledRuntimeResolver {
+
+        private final Path bundledJar;
+
+        private FixedBundledRuntimeResolver(Path bundledJar) {
+            this.bundledJar = bundledJar;
+        }
+
+        @Override
+        public Path resolve() {
+            return bundledJar;
         }
     }
 
