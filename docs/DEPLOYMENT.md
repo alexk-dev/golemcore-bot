@@ -7,7 +7,8 @@ Production deployment guide for GolemCore Bot.
 1. **Docker** — Containerized deployment (recommended)
 2. **Docker Compose** — Multi-container orchestration (recommended for production)
 3. **JAR** — Standalone Java application (development/testing)
-4. **systemd** — Linux service for JAR deployment
+4. **Native app-image** — Local desktop/server bundle built with `jpackage`
+5. **systemd** — Linux service for JAR deployment
 
 ---
 
@@ -40,6 +41,21 @@ docker run -d \
 
 # Configure LLM providers and Telegram in the dashboard:
 # http://localhost:8080/dashboard
+#
+# Health probe:
+# curl http://localhost:8080/api/system/health
+```
+
+The image starts the web runtime by default. If an existing deployment overrides Docker CMD with Spring Boot args, that remains supported:
+
+```bash
+docker run -d \
+  --name golemcore-bot \
+  -e STORAGE_PATH=/app/workspace \
+  -e TOOLS_WORKSPACE=/app/sandbox \
+  -p 9090:9090 \
+  golemcore-bot:latest \
+  --server.port=9090
 ```
 
 ### Docker Compose
@@ -110,7 +126,23 @@ docker-compose up -d
 ./mvnw clean package -DskipTests
 ```
 
-### 2. Create systemd Service
+### 2. Run directly
+
+```bash
+java -jar target/bot-<version>-exec.jar
+```
+
+This uses the standard Spring Boot executable jar.
+
+To override the HTTP port:
+
+```bash
+java -jar target/bot-<version>-exec.jar --server.port=9090
+# or
+java -Dserver.port=9090 -jar target/bot-<version>-exec.jar
+```
+
+### 3. Create systemd Service
 
 `/etc/systemd/system/golemcore-bot.service`:
 
@@ -139,7 +171,7 @@ EnvironmentFile=/opt/golemcore-bot/.env
 WantedBy=multi-user.target
 ```
 
-### 3. Install
+### 4. Install
 
 ```bash
 # Create user
@@ -150,7 +182,7 @@ sudo mkdir -p /opt/golemcore-bot
 sudo chown golemcore:golemcore /opt/golemcore-bot
 
 # Copy JAR
-sudo cp target/golemcore-bot-0.1.0-SNAPSHOT.jar /opt/golemcore-bot/golemcore-bot.jar
+sudo cp target/bot-<version>-exec.jar /opt/golemcore-bot/golemcore-bot.jar
 
 # Create .env file
 sudo nano /opt/golemcore-bot/.env
@@ -167,6 +199,99 @@ sudo journalctl -u golemcore-bot -f
 
 ---
 
+## Native app-image Deployment
+
+This mode is intended for **local machine installs** or lightweight server deployments where you want a bundled launcher instead of invoking `java -jar` manually.
+
+### Build the archive
+
+```bash
+./mvnw clean package -DskipTests -DskipGitHooks=true
+npx golemcore-bot-local-build-native-dist
+```
+
+Output:
+
+```text
+target/native-dist/golemcore-bot-<version>-<platform>-<arch>.tar.gz
+```
+
+### Extract and run
+
+```bash
+mkdir -p /opt/golemcore-bot-native
+tar -xzf target/native-dist/golemcore-bot-<version>-<platform>-<arch>.tar.gz -C /opt/golemcore-bot-native
+/opt/golemcore-bot-native/golemcore-bot/bin/golemcore-bot web
+```
+
+The app-image includes a Java runtime, so the extracted binary can run on a machine without a separately installed Java.
+
+### Inspect launcher help
+
+The native launcher uses picocli, so operators can inspect its own documented parameters directly:
+
+```bash
+/opt/golemcore-bot-native/golemcore-bot/bin/golemcore-bot --help
+```
+
+Launcher-specific options include:
+
+- `web`
+- `web --port=<port>`
+- `web --hostname=<address>`
+- `--storage-path=<path>`
+- `--updates-path=<path>`
+- `--bundled-jar=<path>`
+- `web -J=<jvm-option>` / `web --java-option=<jvm-option>`
+
+The native package starts the Spring runtime with the `prod` profile by default.
+
+### Override launcher-managed runtime parameters
+
+The native launcher converts its own options into runtime JVM/system properties.
+
+Examples:
+
+```bash
+/opt/golemcore-bot-native/golemcore-bot/bin/golemcore-bot web --port=8080 --hostname=0.0.0.0
+/opt/golemcore-bot-native/golemcore-bot/bin/golemcore-bot web -J=-Xmx1g --port=9090
+/opt/golemcore-bot-native/golemcore-bot/bin/golemcore-bot --storage-path=/srv/golemcore/workspace web --updates-path=/srv/golemcore/updates
+```
+
+### Forward Spring Boot arguments unchanged
+
+Unknown arguments still flow to Spring Boot as application arguments, so existing runtime flags continue to work:
+
+```bash
+/opt/golemcore-bot-native/golemcore-bot/bin/golemcore-bot web --server.port=9090
+/opt/golemcore-bot-native/golemcore-bot/bin/golemcore-bot web --spring.main.banner-mode=off
+/opt/golemcore-bot-native/golemcore-bot/bin/golemcore-bot web -Dlogging.level.root=INFO
+```
+
+If you want to make the handoff explicit, use `--`:
+
+```bash
+/opt/golemcore-bot-native/golemcore-bot/bin/golemcore-bot web --port=9090 -- --spring.main.banner-mode=off
+```
+
+### How the launcher behaves
+
+The native bundle wraps the strict CLI launcher entrypoint, which resolves runtime in this order:
+
+1. staged update selected by `updates/current.txt`
+2. bundled runtime jar from the app-image under `lib/runtime/`
+3. legacy Jib/classpath fallback
+
+If the bundled runtime jar is newer than the staged `updates/current.txt` runtime, the launcher ignores the stale staged runtime and starts the bundled jar. That means installing a newer native bundle can recover from an older persisted update while keeping the documented launcher CLI.
+
+### Notes
+
+- `jpackage` from JDK 25 is required to build the app-image.
+- The generated archive is platform-specific.
+- The release workflow attaches these native archives to GitHub Releases together with the executable JAR.
+- The native launcher CLI is implemented with `picocli`.
+
+---
 
 ## Environment Variables (Production)
 

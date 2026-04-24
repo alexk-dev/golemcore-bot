@@ -1,31 +1,41 @@
 package me.golemcore.bot.launcher;
 
 import java.io.IOException;
-import java.io.InputStream;
-import java.nio.charset.StandardCharsets;
+import java.io.PrintWriter;
+import java.io.StringWriter;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
-import java.util.Properties;
-import me.golemcore.bot.domain.service.RuntimeVersionSupport;
+
+import me.golemcore.bot.runtime.RuntimeVersionSupport;
+import picocli.CommandLine;
 
 /**
  * Supervises the actual bot runtime so self-update can restart into a staged
  * jar instead of relaunching the immutable container classpath.
  *
  * <p>
- * The launcher decides between the bundled image runtime and a persisted
- * self-updated jar before Spring starts. This is the critical decision point
- * that allows a newly pulled container image to take over from an older
- * persisted runtime when appropriate.
- * </p>
+ * The launcher always evaluates the best available runtime source in this
+ * order:
+ * <ol>
+ * <li>a staged jar selected by {@code updates/current.txt}, unless the bundled
+ * runtime is strictly newer</li>
+ * <li>a bundled runtime jar shipped next to the launcher or image</li>
+ * <li>the image classpath produced by the container build</li>
+ * </ol>
+ *
+ * <p>
+ * {@link RuntimeCliLauncher} exposes the strict picocli CLI entrypoint. This
+ * class keeps the legacy main entrypoint used by older Docker images and
+ * defaults it to the {@code web} command before launching the same runtime
+ * loop.
  */
 public final class RuntimeLauncher {
 
     static final int RESTART_EXIT_CODE = 42;
+    static final int CLI_ERROR_EXIT_CODE = 2;
     static final String APPLICATION_MAIN_CLASS = "me.golemcore.bot.BotApplication";
     static final String CURRENT_MARKER_NAME = "current.txt";
     static final String JARS_DIR_NAME = "jars";
@@ -34,70 +44,135 @@ public final class RuntimeLauncher {
     static final String STORAGE_PATH_PROPERTY = "bot.storage.local.base-path";
     static final String UPDATE_PATH_ENV = "UPDATE_PATH";
     static final String UPDATE_PATH_PROPERTY = "bot.update.updates-path";
+    static final String BUNDLED_JAR_ENV = "GOLEMCORE_BUNDLED_JAR";
+    static final String BUNDLED_JAR_PROPERTY = "golemcore.launcher.bundled-jar";
+    static final String JAVA_COMMAND_ENV = "GOLEMCORE_JAVA_COMMAND";
+    static final String JAVA_COMMAND_PROPERTY = "golemcore.launcher.java-command";
+    static final String SERVER_PORT_PROPERTY = "server.port";
+    static final String SERVER_ADDRESS_PROPERTY = "server.address";
+    static final String SPRING_PROFILES_ACTIVE_PROPERTY = "spring.profiles.active";
     static final String BUILD_INFO_RESOURCE = "META-INF/build-info.properties";
 
     private final String javaCommand;
     private final ProcessStarter processStarter;
-    private final EnvironmentReader environmentReader;
     private final LauncherOutput output;
-    private final RuntimeVersionReader runtimeVersionReader;
-    private final RuntimeVersionSupport runtimeVersionSupport;
+    private final CurrentRuntimeResolver currentRuntimeResolver;
+    private final BundledRuntimeLocator bundledRuntimeLocator;
+    private final ForwardedJavaOptionsResolver javaOptionsResolver;
 
     public RuntimeLauncher() {
         this(resolveJavaCommand(), new DefaultProcessStarter(), new SystemEnvironmentReader(),
-                new ConsoleLauncherOutput(), new ClasspathRuntimeVersionReader(), new RuntimeVersionSupport());
+                new SystemPropertyReader(), new ConsoleLauncherOutput(), new DefaultBundledRuntimeResolver(),
+                new ClasspathRuntimeVersionReader(), new RuntimeVersionSupport());
+    }
+
+    @SuppressWarnings("java:S107")
+    RuntimeLauncher(
+            String javaCommand,
+            ProcessStarter processStarter,
+            EnvironmentReader environmentReader,
+            PropertyReader propertyReader,
+            LauncherOutput output,
+            BundledRuntimeResolver bundledRuntimeResolver) {
+        this(javaCommand, processStarter, environmentReader, propertyReader, output, bundledRuntimeResolver,
+                new ClasspathRuntimeVersionReader(), new RuntimeVersionSupport());
     }
 
     RuntimeLauncher(
             String javaCommand,
             ProcessStarter processStarter,
             EnvironmentReader environmentReader,
-            LauncherOutput output) {
-        this(javaCommand, processStarter, environmentReader, output, new ClasspathRuntimeVersionReader(),
-                new RuntimeVersionSupport());
+            PropertyReader propertyReader,
+            LauncherOutput output,
+            BundledRuntimeResolver bundledRuntimeResolver,
+            RuntimeVersionReader runtimeVersionReader) {
+        this(javaCommand, processStarter, environmentReader, propertyReader, output, bundledRuntimeResolver,
+                runtimeVersionReader, new RuntimeVersionSupport());
     }
 
     RuntimeLauncher(
             String javaCommand,
             ProcessStarter processStarter,
             EnvironmentReader environmentReader,
+            PropertyReader propertyReader,
             LauncherOutput output,
             RuntimeVersionReader runtimeVersionReader) {
-        this(javaCommand, processStarter, environmentReader, output, runtimeVersionReader, new RuntimeVersionSupport());
+        this(javaCommand, processStarter, environmentReader, propertyReader, output,
+                new DefaultBundledRuntimeResolver(), runtimeVersionReader, new RuntimeVersionSupport());
     }
 
     RuntimeLauncher(
             String javaCommand,
             ProcessStarter processStarter,
             EnvironmentReader environmentReader,
+            PropertyReader propertyReader,
             LauncherOutput output,
+            BundledRuntimeResolver bundledRuntimeResolver,
             RuntimeVersionReader runtimeVersionReader,
             RuntimeVersionSupport runtimeVersionSupport) {
         this.javaCommand = javaCommand;
         this.processStarter = processStarter;
-        this.environmentReader = environmentReader;
         this.output = output;
-        this.runtimeVersionReader = runtimeVersionReader;
-        this.runtimeVersionSupport = runtimeVersionSupport;
+        this.currentRuntimeResolver = new CurrentRuntimeResolver(
+                environmentReader,
+                propertyReader,
+                output,
+                runtimeVersionReader,
+                runtimeVersionSupport);
+        this.bundledRuntimeLocator = new BundledRuntimeLocator(
+                environmentReader,
+                propertyReader,
+                output,
+                bundledRuntimeResolver);
+        this.javaOptionsResolver = new ForwardedJavaOptionsResolver(propertyReader);
     }
 
     public static void main(String[] args) {
         RuntimeLauncher launcher = new RuntimeLauncher();
-        int exitCode = launcher.run(args);
+        int exitCode = launcher.run(legacyEntrypointArguments(args));
         if (exitCode != 0) {
             System.exit(exitCode);
         }
     }
 
+    static String[] legacyEntrypointArguments(String[] args) {
+        if (args != null && args.length > 0 && "web".equals(args[0])) {
+            return args;
+        }
+        String[] normalizedArgs = new String[(args == null ? 0 : args.length) + 1];
+        normalizedArgs[0] = "web";
+        if (args != null && args.length > 0) {
+            System.arraycopy(args, 0, normalizedArgs, 1, args.length);
+        }
+        return normalizedArgs;
+    }
+
+    /**
+     * Runs the launcher loop until the child runtime exits normally.
+     *
+     * <p>
+     * When the child returns {@link #RESTART_EXIT_CODE}, the loop resolves the
+     * runtime source again so newly staged jars become active immediately.
+     *
+     * @param args
+     *            original launcher arguments
+     * @return final child exit code or {@code 1} when the launcher itself fails
+     */
     int run(String[] args) {
+        ParseOutcome parseOutcome = parseArguments(args);
+        if (parseOutcome.shouldExit()) {
+            return parseOutcome.exitCode();
+        }
+
+        LauncherArguments launcherArguments = parseOutcome.launcherArguments();
         while (true) {
-            LaunchCommand launchCommand = resolveLaunchCommand(args);
+            LaunchCommand launchCommand = resolveLaunchCommand(launcherArguments);
             ChildProcess childProcess;
             try {
                 output.info("Starting " + launchCommand.description());
                 childProcess = processStarter.start(launchCommand.command());
             } catch (IOException e) {
-                output.error("Failed to start runtime: " + safeMessage(e));
+                output.error("Failed to start runtime: " + LauncherText.safeMessage(e));
                 return 1;
             }
 
@@ -125,152 +200,151 @@ public final class RuntimeLauncher {
         }
     }
 
+    /**
+     * Parses launcher-specific command-line options with picocli while leaving
+     * unknown arguments untouched for Spring Boot.
+     *
+     * @param args
+     *            original launcher arguments
+     * @return parse outcome containing either normalized launcher arguments or an
+     *         exit decision for help / parse failures
+     */
+    ParseOutcome parseArguments(String[] args) {
+        LauncherCliArguments cliArguments = new LauncherCliArguments();
+        CommandLine commandLine = createCommandLine(cliArguments);
+        CommandLine.ParseResult parseResult;
+        try {
+            parseResult = commandLine.parseArgs(args);
+        } catch (CommandLine.ParameterException e) {
+            output.error(e.getMessage());
+            emitUsage(e.getCommandLine(), true);
+            return ParseOutcome.exit(CLI_ERROR_EXIT_CODE);
+        }
+
+        CommandLine.ParseResult usageHelpRequest = findUsageHelpRequest(parseResult);
+        if (usageHelpRequest != null) {
+            emitUsage(usageHelpRequest.commandSpec().commandLine(), false);
+            return ParseOutcome.exit(0);
+        }
+        if (isVersionHelpRequested(parseResult)) {
+            emitVersion();
+            return ParseOutcome.exit(0);
+        }
+        if (parseResult.subcommand() == null) {
+            output.error("Missing command. Use `golemcore-bot web` to start the web runtime.");
+            emitUsage(commandLine, true);
+            return ParseOutcome.exit(CLI_ERROR_EXIT_CODE);
+        }
+        return ParseOutcome.success(cliArguments.toLauncherArguments());
+    }
+
+    private CommandLine.ParseResult findUsageHelpRequest(CommandLine.ParseResult parseResult) {
+        CommandLine.ParseResult current = parseResult;
+        while (current != null) {
+            if (current.isUsageHelpRequested()) {
+                return current;
+            }
+            current = current.subcommand();
+        }
+        return null;
+    }
+
+    private boolean isVersionHelpRequested(CommandLine.ParseResult parseResult) {
+        CommandLine.ParseResult current = parseResult;
+        while (current != null) {
+            if (current.isVersionHelpRequested()) {
+                return true;
+            }
+            current = current.subcommand();
+        }
+        return false;
+    }
+
+    /**
+     * Builds the exact child-process command for the current launcher cycle.
+     *
+     * <p>
+     * The launcher prefers a staged update, then an explicitly or implicitly
+     * discovered bundled jar, and only falls back to the image classpath when no
+     * jar-based runtime is available.
+     *
+     * @param args
+     *            original launcher arguments
+     * @return immutable launch command description
+     */
     LaunchCommand resolveLaunchCommand(String[] args) {
-        Path currentJar = resolveCurrentJar(args);
+        return resolveLaunchCommand(parseArguments(args).launcherArguments());
+    }
+
+    private LaunchCommand resolveLaunchCommand(LauncherArguments launcherArguments) {
+        Path bundledJar = bundledRuntimeLocator.resolve(launcherArguments);
+        Path currentJar = currentRuntimeResolver.resolveCurrentJar(launcherArguments, bundledJar);
         List<String> command = new ArrayList<>();
         command.add(javaCommand);
+        command.addAll(javaOptionsResolver.resolve(launcherArguments));
 
         if (currentJar != null) {
             command.add("-jar");
             command.add(currentJar.toString());
-            command.addAll(Arrays.asList(args));
+            command.addAll(launcherArguments.applicationArguments());
             return new LaunchCommand(List.copyOf(command), "updated runtime " + currentJar);
+        }
+
+        if (bundledJar != null) {
+            command.add("-jar");
+            command.add(bundledJar.toString());
+            command.addAll(launcherArguments.applicationArguments());
+            return new LaunchCommand(List.copyOf(command), "bundled runtime jar " + bundledJar);
         }
 
         command.add("-cp");
         command.add("@" + JIB_CLASSPATH_FILE);
         command.add(APPLICATION_MAIN_CLASS);
-        command.addAll(Arrays.asList(args));
+        command.addAll(launcherArguments.applicationArguments());
         return new LaunchCommand(List.copyOf(command), "bundled runtime from image classpath");
     }
 
     /**
-     * Resolve the persisted current runtime jar, if any.
+     * Resolves the staged runtime jar pointed to by {@code current.txt}.
      *
-     * <p>
-     * The marker is validated defensively before any comparison happens so a
-     * damaged or tampered persisted state cannot redirect startup outside the
-     * updates directory.
-     * </p>
+     * @param args
+     *            original launcher arguments
+     * @return staged runtime jar path, or {@code null} when no valid staged jar
+     *         exists
      */
     Path resolveCurrentJar(String[] args) {
-        Path updatesDir = resolveUpdatesDir(args);
-        Path markerPath = updatesDir.resolve(CURRENT_MARKER_NAME);
-        if (!Files.isRegularFile(markerPath)) {
-            return null;
-        }
-
-        try {
-            String assetName = Files.readString(markerPath, StandardCharsets.UTF_8).trim();
-            if (assetName.isBlank()) {
-                return null;
-            }
-            if (assetName.contains("/") || assetName.contains("\\") || assetName.contains("..")) {
-                output.error("Ignoring invalid current marker asset name: " + assetName);
-                return null;
-            }
-
-            Path jarsDir = updatesDir.resolve(JARS_DIR_NAME).toAbsolutePath().normalize();
-            Path jarPath = jarsDir.resolve(assetName).toAbsolutePath().normalize();
-            if (!jarPath.startsWith(jarsDir)) {
-                output.error("Ignoring current marker outside updates directory: " + jarPath);
-                return null;
-            }
-            if (!Files.isRegularFile(jarPath)) {
-                output.error("Current marker points to a missing jar: " + jarPath);
-                return null;
-            }
-            if (isBundledRuntimeNewer(assetName)) {
-                return null;
-            }
-            return jarPath;
-        } catch (IOException e) {
-            output.error("Failed to read current marker: " + safeMessage(e));
-            return null;
-        }
-    }
-
-    Path resolveUpdatesDir(String[] args) {
-        String configuredUpdatesPath = firstNonBlank(
-                extractPropertyArg(args, UPDATE_PATH_PROPERTY),
-                System.getProperty(UPDATE_PATH_PROPERTY),
-                environmentReader.get(UPDATE_PATH_ENV));
-        if (configuredUpdatesPath != null) {
-            return normalizePath(configuredUpdatesPath);
-        }
-
-        String storageBasePath = firstNonBlank(
-                extractPropertyArg(args, STORAGE_PATH_PROPERTY),
-                System.getProperty(STORAGE_PATH_PROPERTY),
-                environmentReader.get(STORAGE_PATH_ENV));
-        if (storageBasePath != null) {
-            return normalizePath(storageBasePath).resolve("updates").normalize();
-        }
-
-        return Path.of(System.getProperty("user.home"), ".golemcore", "workspace", "updates")
-                .toAbsolutePath()
-                .normalize();
+        return currentRuntimeResolver.resolveCurrentJar(parseArguments(args).launcherArguments());
     }
 
     /**
-     * Decide whether the bundled runtime should override the persisted current jar.
+     * Resolves the updates directory using the same precedence as the runtime.
      *
-     * <p>
-     * Variant A is intentionally preserved here: equal versions keep using the
-     * persisted jar, so only a strictly newer bundled image suppresses the current
-     * marker.
-     * </p>
+     * @param args
+     *            original launcher arguments
+     * @return normalized updates directory path
      */
-    private boolean isBundledRuntimeNewer(String assetName) {
-        String bundledVersion = runtimeVersionSupport.normalizeVersion(runtimeVersionReader.currentVersion());
-        String currentJarVersion = runtimeVersionSupport.extractVersionFromAssetName(assetName);
-        if (bundledVersion == null || currentJarVersion == null) {
-            return false;
-        }
-        if (!runtimeVersionSupport.isSemanticVersion(bundledVersion)
-                || !runtimeVersionSupport.isSemanticVersion(currentJarVersion)) {
-            return false;
-        }
-
-        // Variant A: equal versions keep using the persisted current jar.
-        boolean bundledIsNewer = runtimeVersionSupport.compareVersions(bundledVersion, currentJarVersion) > 0;
-        if (bundledIsNewer) {
-            output.info("Ignoring current marker because bundled runtime " + bundledVersion
-                    + " is newer than " + currentJarVersion);
-        }
-        return bundledIsNewer;
+    Path resolveUpdatesDir(String[] args) {
+        return currentRuntimeResolver.resolveUpdatesDir(parseArguments(args).launcherArguments());
     }
 
-    private static Path normalizePath(String value) {
-        String expanded = value;
-        if (expanded.startsWith("~/")) {
-            expanded = System.getProperty("user.home") + expanded.substring(1);
-        }
-        expanded = expanded.replace("${user.home}", System.getProperty("user.home"));
-        return Path.of(expanded).toAbsolutePath().normalize();
+    /**
+     * Resolves a bundled runtime jar shipped with the launcher itself.
+     *
+     * @return bundled runtime jar path, or {@code null} when the launcher should
+     *         use classpath mode
+     */
+    Path resolveBundledJar() {
+        return bundledRuntimeLocator.resolve(LauncherArguments.empty());
     }
 
-    private static String extractPropertyArg(String[] args, String propertyName) {
-        String prefix = "--" + propertyName + "=";
-        for (String arg : args) {
-            if (arg.startsWith(prefix)) {
-                String value = arg.substring(prefix.length()).trim();
-                return value.isBlank() ? null : value;
-            }
+    static String resolveJavaCommand(EnvironmentReader environmentReader, PropertyReader propertyReader) {
+        String configuredJavaCommand = LauncherText.firstNonBlank(
+                propertyReader.get(JAVA_COMMAND_PROPERTY),
+                environmentReader.get(JAVA_COMMAND_ENV));
+        if (configuredJavaCommand != null) {
+            return normalizeConfiguredJavaCommand(configuredJavaCommand);
         }
-        return null;
-    }
 
-    private static String firstNonBlank(String... values) {
-        for (String value : values) {
-            if (value != null && !value.isBlank()) {
-                return value;
-            }
-        }
-        return null;
-    }
-
-    private static String resolveJavaCommand() {
         String executableName = isWindows() ? "java.exe" : "java";
         Path candidate = Path.of(System.getProperty("java.home"), "bin", executableName);
         if (Files.isRegularFile(candidate)) {
@@ -279,18 +353,30 @@ public final class RuntimeLauncher {
         return executableName;
     }
 
+    private static String resolveJavaCommand() {
+        return resolveJavaCommand(new SystemEnvironmentReader(), new SystemPropertyReader());
+    }
+
+    private static String normalizeConfiguredJavaCommand(String configuredJavaCommand) {
+        if (configuredJavaCommand.contains("/") || configuredJavaCommand.contains("\\")
+                || configuredJavaCommand.startsWith("~")) {
+            return LauncherPaths.normalizePath(configuredJavaCommand).toString();
+        }
+        return configuredJavaCommand;
+    }
+
     private static boolean isWindows() {
         String osName = System.getProperty("os.name", "");
         return osName.toLowerCase(Locale.ROOT).contains("win");
     }
 
-    private static String safeMessage(Throwable throwable) {
-        if (throwable == null || throwable.getMessage() == null || throwable.getMessage().isBlank()) {
-            return "unknown error";
-        }
-        return throwable.getMessage();
-    }
-
+    /**
+     * Removes the per-run shutdown hook once the child process has finished so
+     * repeated restarts do not accumulate stale hooks.
+     *
+     * @param shutdownHook
+     *            hook installed for the current child process
+     */
     private void removeShutdownHook(Thread shutdownHook) {
         try {
             Runtime.getRuntime().removeShutdownHook(shutdownHook);
@@ -299,122 +385,42 @@ public final class RuntimeLauncher {
         }
     }
 
-    record LaunchCommand(List<String> command, String description) {
+    private CommandLine createCommandLine(LauncherCliArguments cliArguments) {
+        CommandLine commandLine = new CommandLine(cliArguments);
+        commandLine.addSubcommand("web", cliArguments.webCommand());
+        commandLine.setUnmatchedArgumentsAllowed(true);
+        commandLine.getSubcommands().values()
+                .forEach(subcommand -> subcommand.setUnmatchedArgumentsAllowed(true));
+        return commandLine;
     }
 
-    interface ProcessStarter {
-        ChildProcess start(List<String> command) throws IOException;
+    private void emitUsage(CommandLine commandLine, boolean error) {
+        StringWriter stringWriter = new StringWriter();
+        PrintWriter printWriter = new PrintWriter(stringWriter);
+        commandLine.usage(printWriter);
+        printWriter.flush();
+        emitCommandLineOutput(stringWriter.toString(), error);
     }
 
-    interface ChildProcess {
-        int waitFor() throws InterruptedException;
-
-        void destroy();
-    }
-
-    interface EnvironmentReader {
-        String get(String name);
-    }
-
-    interface LauncherOutput {
-        void info(String message);
-
-        void error(String message);
-    }
-
-    interface RuntimeVersionReader {
-        String currentVersion();
-    }
-
-    private static final class DefaultProcessStarter implements ProcessStarter {
-
-        @Override
-        public ChildProcess start(List<String> command) throws IOException {
-            Process process = new ProcessBuilder(command)
-                    .inheritIO()
-                    .start();
-            return new ProcessChildProcess(process);
+    private void emitVersion() {
+        RuntimeLauncherVersionProvider versionProvider = new RuntimeLauncherVersionProvider();
+        for (String line : versionProvider.getVersion()) {
+            output.info(line);
         }
     }
 
-    private static final class ProcessChildProcess implements ChildProcess {
-
-        private final Process process;
-
-        private ProcessChildProcess(Process process) {
-            this.process = process;
-        }
-
-        @Override
-        public int waitFor() throws InterruptedException {
-            return process.waitFor();
-        }
-
-        @Override
-        public void destroy() {
-            if (process.isAlive()) {
-                process.destroy();
+    private void emitCommandLineOutput(String text, boolean error) {
+        String normalizedText = text.replace("\r\n", "\n");
+        String[] lines = normalizedText.split("\n", -1);
+        for (int index = 0; index < lines.length; index++) {
+            if (index == lines.length - 1 && lines[index].isEmpty()) {
+                continue;
             }
-        }
-    }
-
-    private static final class SystemEnvironmentReader implements EnvironmentReader {
-
-        @Override
-        public String get(String name) {
-            return System.getenv(name);
-        }
-    }
-
-    private static final class ConsoleLauncherOutput implements LauncherOutput {
-
-        @Override
-        public void info(String message) {
-            System.out.println("[launcher] " + message);
-        }
-
-        @Override
-        public void error(String message) {
-            System.err.println("[launcher] " + message);
-        }
-    }
-
-    /**
-     * Reads the version baked into the bundled image runtime.
-     *
-     * <p>
-     * The context class loader is preferred to satisfy PMD and to work in
-     * environments where the launcher class loader is not the one that sees the
-     * build-info resource. A system-classloader fallback keeps the lookup stable
-     * when no context loader is set.
-     * </p>
-     */
-    static final class ClasspathRuntimeVersionReader implements RuntimeVersionReader {
-
-        @Override
-        public String currentVersion() {
-            try (InputStream inputStream = readBuildInfo()) {
-                if (inputStream == null) {
-                    return "dev";
-                }
-                Properties properties = new Properties();
-                properties.load(inputStream);
-                String version = properties.getProperty("build.version");
-                return version == null || version.isBlank() ? "dev" : version;
-            } catch (IOException ignored) {
-                return "dev";
+            if (error) {
+                output.error(lines[index]);
+            } else {
+                output.info(lines[index]);
             }
-        }
-
-        private InputStream readBuildInfo() {
-            ClassLoader contextClassLoader = Thread.currentThread().getContextClassLoader();
-            if (contextClassLoader != null) {
-                InputStream contextStream = contextClassLoader.getResourceAsStream(BUILD_INFO_RESOURCE);
-                if (contextStream != null) {
-                    return contextStream;
-                }
-            }
-            return ClassLoader.getSystemResourceAsStream(BUILD_INFO_RESOURCE);
         }
     }
 }

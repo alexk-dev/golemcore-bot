@@ -1,11 +1,12 @@
 # Quick Start Guide
 
-Get GolemCore Bot running quickly (Docker or JAR) and configure it via the web dashboard.
+Get GolemCore Bot running quickly (Docker, JAR, or local native bundle) and configure it via the web dashboard.
 
 ## Prerequisites
 
 - 🐳 Docker (recommended) OR ☕ Java 25+ with Maven 3.x
 - 🧩 Optional for local dashboard frontend development: Node.js 20.19+ and npm 10+
+- 🧰 For native app-image packaging: JDK 25 with `jpackage`
 
 ## Method 1: Docker (Recommended)
 
@@ -33,6 +34,9 @@ docker run -d \
   golemcore-bot:latest
 
 docker logs -f golemcore-bot
+
+# Health probe:
+curl http://localhost:8080/api/system/health
 ```
 
 Why the extra Docker flags?
@@ -91,6 +95,110 @@ Optional next steps outside Settings:
 
 - `Skills -> Marketplace` to install standalone skills or packs from a local `golemcore-skills` checkout, a direct `registry/` path, or the default remote repository
 
+## Method 2: Executable JAR
+
+```bash
+git clone https://github.com/alexk-dev/golemcore-bot.git
+cd golemcore-bot
+./mvnw clean package -DskipTests
+java -jar target/bot-<version>-exec.jar
+```
+
+To start on a different port:
+
+```bash
+java -jar target/bot-<version>-exec.jar --server.port=9090
+# or
+java -Dserver.port=9090 -jar target/bot-<version>-exec.jar
+```
+
+Then open the dashboard at `http://localhost:9090/dashboard` and configure providers.
+
+## Method 3: Local native app-image bundle
+
+Use this when you want a local launcher bundle instead of running `java -jar` directly.
+
+### 1. Build the bundle
+
+```bash
+git clone https://github.com/alexk-dev/golemcore-bot.git
+cd golemcore-bot
+./mvnw clean package -DskipTests -DskipGitHooks=true
+npx golemcore-bot-local-build-native-dist
+```
+
+This creates:
+
+```text
+target/native-dist/golemcore-bot-<version>-<platform>-<arch>.tar.gz
+```
+
+### 2. Extract and run
+
+```bash
+mkdir -p /tmp/golemcore-bot-local
+tar -xzf target/native-dist/golemcore-bot-<version>-<platform>-<arch>.tar.gz -C /tmp/golemcore-bot-local
+/tmp/golemcore-bot-local/golemcore-bot/bin/golemcore-bot web
+```
+
+The native app-image includes its own Java runtime, so this extracted binary does not require Java to be installed on the machine.
+
+### 3. Inspect launcher help
+
+The native launcher is picocli-based, so it has first-class CLI help:
+
+```bash
+/tmp/golemcore-bot-local/golemcore-bot/bin/golemcore-bot --help
+```
+
+This documents launcher-only flags such as:
+
+- `web`
+- `web --port=<port>`
+- `web --hostname=<address>`
+- `--storage-path=<path>`
+- `--updates-path=<path>`
+- `--bundled-jar=<path>`
+- `web -J=<jvm-option>` / `web --java-option=<jvm-option>`
+
+The native package starts the Spring runtime with the `prod` profile by default.
+
+### 4. Override launcher-managed runtime parameters
+
+The launcher converts its own options into runtime JVM/system properties.
+
+```bash
+/tmp/golemcore-bot-local/golemcore-bot/bin/golemcore-bot web --port=8080 --hostname=0.0.0.0
+/tmp/golemcore-bot-local/golemcore-bot/bin/golemcore-bot web -J=-Xmx1g --port=9090
+/tmp/golemcore-bot-local/golemcore-bot/bin/golemcore-bot --storage-path=/srv/golemcore/workspace web --updates-path=/srv/golemcore/updates
+```
+
+### 5. Forward Spring Boot arguments unchanged
+
+Unknown arguments are forwarded to Spring Boot, so standard application arguments still work:
+
+```bash
+/tmp/golemcore-bot-local/golemcore-bot/bin/golemcore-bot web --server.port=9090
+/tmp/golemcore-bot-local/golemcore-bot/bin/golemcore-bot web --spring.main.banner-mode=off
+/tmp/golemcore-bot-local/golemcore-bot/bin/golemcore-bot web -Dlogging.level.root=INFO
+```
+
+If you want to make the separation explicit, use `--`:
+
+```bash
+/tmp/golemcore-bot-local/golemcore-bot/bin/golemcore-bot web --port=9090 -- --spring.main.banner-mode=off
+```
+
+### 6. What the launcher does
+
+The local launcher uses the strict CLI entrypoint and starts runtime in this order:
+
+1. staged jar selected through `updates/current.txt`, unless the bundled runtime jar is newer
+2. bundled runtime jar from the app-image
+3. legacy Jib/classpath fallback
+
+So the existing self-update flow still works for native local bundles, now with documented launcher parameters.
+
 ## Your First Conversation
 
 Use the dashboard chat UI.
@@ -106,17 +214,6 @@ Enable Telegram in dashboard Settings (stored in runtime config):
 - Add users to the allowlist (or use invite-only mode)
 
 After saving settings, restart Telegram from the dashboard (or restart the container).
-
-## Method 2: JAR (Alternative)
-
-```bash
-git clone https://github.com/alexk-dev/golemcore-bot.git
-cd golemcore-bot
-./mvnw clean package -DskipTests
-java -jar target/golemcore-bot-0.1.0-SNAPSHOT.jar
-```
-
-Then open the dashboard at `http://localhost:8080/dashboard` and configure providers.
 
 ## Optional: Run Dashboard Frontend Locally
 

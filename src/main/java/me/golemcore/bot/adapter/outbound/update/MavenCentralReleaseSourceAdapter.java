@@ -41,6 +41,8 @@ public class MavenCentralReleaseSourceAdapter implements ReleaseSourcePort {
     private static final String GROUP_ID = "me.golemcore";
     private static final String ARTIFACT_ID = "bot";
     private static final String GROUP_PATH = GROUP_ID.replace('.', '/');
+    private static final String EXEC_JAR_SUFFIX = "-exec.jar";
+    private static final String EXEC_JAR_SHA1_SUFFIX = EXEC_JAR_SUFFIX + ".sha1";
     private static final String USER_AGENT = "golemcore-bot-updater";
     private static final Duration API_TIMEOUT = Duration.ofSeconds(30);
     private static final Duration DOWNLOAD_TIMEOUT = Duration.ofMinutes(5);
@@ -90,10 +92,10 @@ public class MavenCentralReleaseSourceAdapter implements ReleaseSourcePort {
 
         long timestamp = doc.path("timestamp").asLong(0);
         Instant publishedAt = timestamp > 0 ? Instant.ofEpochMilli(timestamp) : null;
-        String assetName = ARTIFACT_ID + "-" + latestVersion + ".jar";
+        String assetName = ARTIFACT_ID + "-" + latestVersion + EXEC_JAR_SUFFIX;
 
-        String downloadUrl = buildArtifactUrl(latestVersion, ".jar");
-        String checksumUrl = buildArtifactUrl(latestVersion, ".jar.sha1");
+        String downloadUrl = buildArtifactUrl(latestVersion, EXEC_JAR_SUFFIX);
+        String checksumUrl = buildArtifactUrl(latestVersion, EXEC_JAR_SHA1_SUFFIX);
 
         return Optional.of(AvailableRelease.builder()
                 .version(latestVersion)
@@ -110,7 +112,7 @@ public class MavenCentralReleaseSourceAdapter implements ReleaseSourcePort {
     public InputStream downloadAsset(AvailableRelease release) throws IOException, InterruptedException {
         String url = release.getDownloadUrl();
         if (url == null || url.isBlank()) {
-            url = buildArtifactUrl(release.getVersion(), ".jar");
+            url = buildArtifactUrl(release.getVersion(), EXEC_JAR_SUFFIX);
         }
 
         requireTrustedUri(URI.create(url));
@@ -134,7 +136,7 @@ public class MavenCentralReleaseSourceAdapter implements ReleaseSourcePort {
     public ChecksumInfo downloadChecksum(AvailableRelease release) throws IOException, InterruptedException {
         String url = release.getChecksumUrl();
         if (url == null || url.isBlank()) {
-            url = buildArtifactUrl(release.getVersion(), ".jar.sha1");
+            url = buildArtifactUrl(release.getVersion(), EXEC_JAR_SHA1_SUFFIX);
         }
 
         requireTrustedUri(URI.create(url));

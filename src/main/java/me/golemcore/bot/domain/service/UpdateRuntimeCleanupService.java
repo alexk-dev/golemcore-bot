@@ -9,6 +9,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.port.outbound.UpdateSettingsPort;
 import me.golemcore.bot.port.outbound.WorkspaceFilePort;
+import me.golemcore.bot.runtime.RuntimeVersionSupport;
 import org.springframework.stereotype.Service;
 
 /**

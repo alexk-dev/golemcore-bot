@@ -1,0 +1,12 @@
+{
+  "name": "golemcore-bot-local-distribution",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Local app-image packaging helpers for GolemCore Bot",
+  "scripts": {
+    "build:native-dist": "./bin/golemcore-bot-local-build-native-dist"
+  },
+  "bin": {
+    "golemcore-bot-local-build-native-dist": "./bin/golemcore-bot-local-build-native-dist"
+  }
+}

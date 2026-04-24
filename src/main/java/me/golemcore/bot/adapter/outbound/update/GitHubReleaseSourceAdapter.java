@@ -47,7 +47,7 @@ public class GitHubReleaseSourceAdapter implements ReleaseSourcePort {
     private static final String GITHUB_USERCONTENT_SUFFIX = ".githubusercontent.com";
     private static final String RELEASE_REPOSITORY = "alexk-dev/golemcore-bot";
     private static final String RELEASE_ASSET_API_PATH = "/repos/" + RELEASE_REPOSITORY + "/releases/assets/";
-    private static final String RELEASE_ASSET_PATTERN = "bot-*.jar";
+    private static final String RELEASE_ASSET_PATTERN = "bot-*-exec.jar";
     private static final String SHA256_FILE_NAME = "sha256sums.txt";
     private static final String USER_AGENT = "golemcore-bot-updater";
     private static final Duration API_TIMEOUT = Duration.ofSeconds(30);

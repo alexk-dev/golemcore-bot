@@ -17,9 +17,12 @@ class PluginVersionSupportTest {
     }
 
     @Test
-    void shouldMatchCompoundVersionConstraints() {
+    void shouldMatchOnlyMinimumVersionConstraints() {
         assertTrue(PluginVersionSupport.matchesVersionConstraint("1.2.3", ">=1.0.0 <2.0.0"));
-        assertFalse(PluginVersionSupport.matchesVersionConstraint("2.0.0", ">=1.0.0 <2.0.0"));
+        assertTrue(PluginVersionSupport.matchesVersionConstraint("2.0.0", ">=1.0.0 <2.0.0"));
+        assertTrue(PluginVersionSupport.matchesVersionConstraint("2.0.0", "=1.0.0"));
+        assertTrue(PluginVersionSupport.matchesVersionConstraint("2.0.0", "<1.0.0"));
+        assertFalse(PluginVersionSupport.matchesVersionConstraint("0.9.9", ">=1.0.0 <2.0.0"));
     }
 
     @Test
