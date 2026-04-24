@@ -15,10 +15,12 @@ class NativeLauncherConfigurationTest {
     private static final String STRICT_CLI_ENTRYPOINT = "me.golemcore.bot.launcher.RuntimeCliLauncher";
     private static final String LEGACY_ENTRYPOINT = "me.golemcore.bot.launcher.RuntimeLauncher";
     private static final Pattern LAUNCHER_MAIN_CLASS = Pattern.compile("(?m)^LAUNCHER_MAIN_CLASS=\"([^\"]+)\"$");
+    private static final Path NATIVE_DISTRIBUTION_SCRIPT = Path.of("..", ".github", "scripts",
+            "build-native-distribution.sh");
 
     @Test
     void native_distribution_should_package_strict_cli_entrypoint_explicitly() throws Exception {
-        String script = Files.readString(Path.of(".github/scripts/build-native-distribution.sh"));
+        String script = Files.readString(NATIVE_DISTRIBUTION_SCRIPT);
         Matcher matcher = LAUNCHER_MAIN_CLASS.matcher(script);
 
         assertTrue(matcher.find(), "Native distribution script must define LAUNCHER_MAIN_CLASS");

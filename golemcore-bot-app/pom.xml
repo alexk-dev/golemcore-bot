@@ -463,6 +463,9 @@
                             <arg>@/app/jib-classpath-file</arg>
                             <arg>me.golemcore.bot.launcher.RuntimeLauncher</arg>
                         </entrypoint>
+                        <args>
+                            <arg>web</arg>
+                        </args>
                         <environment>
                             <JAVA_TOOL_OPTIONS>-XX:+UseG1GC -XX:MaxRAMPercentage=75.0</JAVA_TOOL_OPTIONS>
                         </environment>
