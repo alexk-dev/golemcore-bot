@@ -273,13 +273,13 @@ class AgentLoopContextWindowExternalE2ETest {
         String response = responseFuture.get(intEnv("AGENTLOOP_E2E_TIMEOUT_SECONDS", DEFAULT_TIMEOUT_SECONDS),
                 TimeUnit.SECONDS);
         assertNotNull(response);
-        assertTrue(response.contains(marker), () -> "Expected response to contain marker " + marker
-                + ", actual response: " + response);
+        assertFalse(response.isBlank(), "plan/auto context E2E should complete with a user-visible response");
 
         String requestPayload = latestLlmRequestPayload(sessionId);
         JsonNode request = objectMapper.readTree(requestPayload);
         String systemPrompt = request.path("systemPrompt").asText();
 
+        assertMessagesContain(request.path("messages"), marker, requestPayload);
         assertTrue(systemPrompt.contains("# Plan Mode"), systemPrompt);
         assertTrue(systemPrompt.contains("Plan mode is ACTIVE"), systemPrompt);
         assertTrue(systemPrompt.contains("Use session goals/tasks"), systemPrompt);
@@ -648,6 +648,19 @@ class AgentLoopContextWindowExternalE2ETest {
             assertFalse(containsToolName(tools, disabledToolName),
                     () -> "disabled tool should not be advertised: " + disabledToolName);
         }
+    }
+
+    private void assertMessagesContain(JsonNode messages, String marker, String requestPayload) {
+        assertTrue(messages.isArray(), requestPayload);
+        boolean found = false;
+        for (JsonNode message : messages) {
+            if (message.toString().contains(marker)) {
+                found = true;
+                break;
+            }
+        }
+        assertTrue(found, () -> "Expected provider request messages to contain marker " + marker
+                + ", request payload: " + requestPayload);
     }
 
     private boolean containsToolName(JsonNode tools, String name) {
