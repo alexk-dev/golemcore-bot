@@ -4,11 +4,14 @@ import me.golemcore.plugin.api.runtime.ActiveSessionPointerService;
 import me.golemcore.plugin.api.runtime.AutoModeService;
 import me.golemcore.plugin.api.runtime.ModelSelectionService;
 import me.golemcore.plugin.api.runtime.PluginConfigurationService;
+import me.golemcore.plugin.api.runtime.PlanExecutionService;
 import me.golemcore.plugin.api.runtime.PlanService;
 import me.golemcore.plugin.api.runtime.RuntimeConfigService;
 import me.golemcore.plugin.api.runtime.UserPreferencesService;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+
+import java.util.concurrent.CompletableFuture;
 
 /**
  * Exposes engine delegates under the isolated plugin runtime API namespace.
@@ -115,6 +118,12 @@ public class PluginRuntimeApiConfiguration {
                 delegate.cancelPlan(planId);
             }
         };
+    }
+
+    @Bean
+    public PlanExecutionService pluginPlanExecutionService() {
+        return planId -> CompletableFuture.failedFuture(new UnsupportedOperationException(
+                "Plan execution is not supported by ephemeral plan mode: " + planId));
     }
 
     @Bean

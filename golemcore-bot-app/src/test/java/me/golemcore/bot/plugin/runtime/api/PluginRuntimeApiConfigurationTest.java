@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.CompletionException;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -304,6 +305,12 @@ class PluginRuntimeApiConfigurationTest {
         verify(planDelegate).activatePlanMode(hostIdentity, "transport-1", "balanced");
         verify(planDelegate).deactivatePlanMode(hostIdentity);
         verify(planDelegate).cancelPlan("plan-1");
+
+        me.golemcore.plugin.api.runtime.PlanExecutionService planExecutionService = configuration
+                .pluginPlanExecutionService();
+        CompletionException executionException = assertThrows(CompletionException.class,
+                () -> planExecutionService.executePlan("plan-1").join());
+        assertTrue(executionException.getCause() instanceof UnsupportedOperationException);
 
         me.golemcore.bot.domain.service.PluginConfigurationService pluginConfigDelegate = mock(
                 me.golemcore.bot.domain.service.PluginConfigurationService.class);

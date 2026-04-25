@@ -43,4 +43,20 @@ class ApplicationSmokeTest {
     void contextLoads() {
         assertNotNull(context);
     }
+
+    @Test
+    void pluginRuntimeApiBeansAreExposed() {
+        assertNotNull(context.getBean(me.golemcore.plugin.api.runtime.ActiveSessionPointerService.class));
+        assertNotNull(context.getBean(me.golemcore.plugin.api.runtime.AutoModeService.class));
+        assertNotNull(context.getBean(me.golemcore.plugin.api.runtime.ModelSelectionService.class));
+        assertNotNull(context.getBean(me.golemcore.plugin.api.runtime.PlanExecutionService.class));
+        assertNotNull(context.getBean(me.golemcore.plugin.api.runtime.PlanService.class));
+        assertNotNull(context.getBean(me.golemcore.plugin.api.runtime.PluginConfigurationService.class));
+        assertNotNull(context.getBean(me.golemcore.plugin.api.runtime.RagIngestionService.class));
+        assertNotNull(context.getBean(me.golemcore.plugin.api.runtime.RagProviderDiscoveryService.class));
+        assertNotNull(context.getBean(me.golemcore.plugin.api.runtime.RuntimeConfigService.class));
+        assertNotNull(context.getBean(me.golemcore.plugin.api.runtime.UserPreferencesService.class));
+        assertNotNull(context.getBean(me.golemcore.plugin.api.runtime.i18n.MessageService.class));
+        assertNotNull(context.getBean(me.golemcore.plugin.api.runtime.security.AllowlistValidator.class));
+    }
 }
