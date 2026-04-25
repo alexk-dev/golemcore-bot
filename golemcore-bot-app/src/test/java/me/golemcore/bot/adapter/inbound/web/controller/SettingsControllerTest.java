@@ -487,10 +487,12 @@ class SettingsControllerTest {
                 .modelTier("turbo")
                 .build();
 
-        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
-                () -> controller.updatePlanConfig(update));
-
-        assertTrue(error.getMessage().contains("plan.modelTier"));
+        StepVerifier.create(controller.updatePlanConfig(update))
+                .expectErrorSatisfies(error -> {
+                    assertTrue(error instanceof ResponseStatusException);
+                    assertTrue(error.getMessage().contains("plan.modelTier"));
+                })
+                .verify();
     }
 
     @Test
