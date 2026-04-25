@@ -42,16 +42,16 @@ This document proposes a new **session-scoped delayed actions** subsystem that p
 
 The current codebase already provides most of the primitives needed for a clean design:
 
-- [`SessionRunCoordinator.submit(...)`](../src/main/java/me/golemcore/bot/domain/service/SessionRunCoordinator.java) already routes synthetic messages through the same per-session queue as user traffic.
-- [`InternalTurnService`](../src/main/java/me/golemcore/bot/domain/service/InternalTurnService.java) already shows the pattern for invisible internal messages with metadata.
-- [`SessionIdentitySupport`](../src/main/java/me/golemcore/bot/domain/service/SessionIdentitySupport.java) already resolves logical conversation identity and transport chat identity.
-- [`ChannelPort`](../src/main/java/me/golemcore/bot/port/inbound/ChannelPort.java) already supports proactive outbound delivery.
-- [`UserPreferences`](../src/main/java/me/golemcore/bot/domain/model/UserPreferences.java) already contains `notificationsEnabled` and `timezone`.
+- [`SessionRunCoordinator.submit(...)`](../golemcore-bot-app/src/main/java/me/golemcore/bot/domain/service/SessionRunCoordinator.java) already routes synthetic messages through the same per-session queue as user traffic.
+- [`InternalTurnService`](../golemcore-bot-app/src/main/java/me/golemcore/bot/domain/service/InternalTurnService.java) already shows the pattern for invisible internal messages with metadata.
+- [`SessionIdentitySupport`](../golemcore-bot-app/src/main/java/me/golemcore/bot/domain/service/SessionIdentitySupport.java) already resolves logical conversation identity and transport chat identity.
+- [`ChannelPort`](../golemcore-bot-contracts/src/main/java/me/golemcore/bot/port/channel/ChannelPort.java) already supports proactive outbound delivery.
+- [`UserPreferences`](../golemcore-bot-contracts/src/main/java/me/golemcore/bot/domain/model/UserPreferences.java) already contains `notificationsEnabled` and `timezone`.
 
 Two existing components should **not** be reused as the primary implementation:
 
-- [`AutoModeScheduler`](../src/main/java/me/golemcore/bot/auto/AutoModeScheduler.java) is focused on cron-driven auto mode and currently keeps a single global channel registration.
-- [`ScheduleService`](../src/main/java/me/golemcore/bot/domain/service/ScheduleService.java) is a cron registry for goal/task automation, not a one-shot per-session wake-up service.
+- [`AutoModeScheduler`](../golemcore-bot-app/src/main/java/me/golemcore/bot/auto/AutoModeScheduler.java) is focused on cron-driven auto mode and currently keeps a single global channel registration.
+- [`ScheduleService`](../golemcore-bot-app/src/main/java/me/golemcore/bot/domain/service/ScheduleService.java) is a cron registry for goal/task automation, not a one-shot per-session wake-up service.
 
 ## User-Facing Scenarios
 
@@ -436,7 +436,7 @@ For requests like "in 5 minutes", the scheduler tool should prefer `delaySeconds
 
 ### Absolute local time
 
-For requests like "tomorrow at 6 PM", the runtime should resolve the timestamp using the user's preferred timezone from [`UserPreferences.timezone`](../src/main/java/me/golemcore/bot/domain/model/UserPreferences.java).
+For requests like "tomorrow at 6 PM", the runtime should resolve the timestamp using the user's preferred timezone from [`UserPreferences.timezone`](../golemcore-bot-contracts/src/main/java/me/golemcore/bot/domain/model/UserPreferences.java).
 
 ### Confirmation copy
 
@@ -519,7 +519,7 @@ Recommended rule:
 
 - allow passive delayed work
 - allow active non-destructive delayed work
-- do not silently bypass [`ToolConfirmationPolicy`](../src/main/java/me/golemcore/bot/domain/service/ToolConfirmationPolicy.java)
+- do not silently bypass [`ToolConfirmationPolicy`](../golemcore-bot-app/src/main/java/me/golemcore/bot/domain/service/ToolConfirmationPolicy.java)
 
 If a delayed internal turn later attempts a confirmation-gated tool call and no live confirmation path exists, the turn should stop and send a follow-up asking the user to confirm explicitly.
 

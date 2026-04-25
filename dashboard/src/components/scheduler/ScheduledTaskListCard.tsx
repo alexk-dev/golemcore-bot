@@ -231,7 +231,7 @@ function UnlinkedSchedulesSection({
               </span>
             </div>
             <div className="small text-body-secondary">
-              Target: <strong>{resolveScheduleTarget(schedule)}</strong> <code>{schedule.targetId}</code>
+              Target: <strong>{resolveScheduleTarget(schedule)}</strong>
             </div>
             <div className="small">
               <code>{schedule.cronExpression}</code>
@@ -321,10 +321,6 @@ export function ScheduledTaskListCard({
                               Migrated {task.legacySourceType.toLowerCase()}
                             </Badge>
                           )}
-                        </div>
-
-                        <div className="small text-body-secondary mb-2">
-                          scheduled task <code>{task.id}</code>
                         </div>
 
                         {renderTextBlock('Details', task.description)}

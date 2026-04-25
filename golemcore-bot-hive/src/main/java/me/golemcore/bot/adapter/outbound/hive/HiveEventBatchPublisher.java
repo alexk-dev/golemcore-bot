@@ -1,0 +1,1116 @@
+package me.golemcore.bot.adapter.outbound.hive;
+
+/*
+ * Copyright 2026 Aleksei Kuleshov
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ * Contact: alex@kuleshov.tech
+ */
+
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.UUID;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import me.golemcore.bot.domain.model.ContextAttributes;
+import me.golemcore.bot.domain.model.HiveControlCommandEnvelope;
+import me.golemcore.bot.domain.model.HiveInspectionResponse;
+import me.golemcore.bot.domain.model.HiveSessionState;
+import me.golemcore.bot.domain.model.ProgressUpdate;
+import me.golemcore.bot.domain.model.RuntimeEvent;
+import me.golemcore.bot.domain.model.RuntimeEventType;
+import me.golemcore.bot.domain.model.selfevolving.BenchmarkCampaign;
+import me.golemcore.bot.domain.model.selfevolving.EvolutionCandidate;
+import me.golemcore.bot.domain.model.selfevolving.RunRecord;
+import me.golemcore.bot.domain.model.selfevolving.RunVerdict;
+import me.golemcore.bot.domain.model.selfevolving.VerdictEvidenceRef;
+import me.golemcore.bot.domain.model.selfevolving.artifact.ArtifactCatalogEntry;
+import me.golemcore.bot.domain.model.selfevolving.artifact.ArtifactCompareEvidenceProjection;
+import me.golemcore.bot.domain.model.selfevolving.artifact.ArtifactLineageProjection;
+import me.golemcore.bot.domain.model.selfevolving.artifact.ArtifactNormalizedRevisionProjection;
+import me.golemcore.bot.domain.model.selfevolving.artifact.ArtifactRevisionDiffProjection;
+import me.golemcore.bot.domain.model.selfevolving.artifact.ArtifactRevisionEvidenceProjection;
+import me.golemcore.bot.domain.model.selfevolving.artifact.ArtifactTransitionDiffProjection;
+import me.golemcore.bot.domain.model.selfevolving.artifact.ArtifactTransitionEvidenceProjection;
+import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchResult;
+import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchStatus;
+import me.golemcore.bot.domain.model.hive.HiveEvidenceRef;
+import me.golemcore.bot.domain.model.hive.HiveLifecycleSignalRequest;
+import me.golemcore.bot.domain.model.hive.HiveRuntimeContracts;
+import me.golemcore.bot.domain.service.HiveMetadataSupport;
+import me.golemcore.bot.port.outbound.HiveEventPublishPort;
+import me.golemcore.bot.port.outbound.SelfEvolvingProjectionPublishPort;
+import me.golemcore.bot.domain.service.HiveSessionStateStore;
+import org.springframework.stereotype.Component;
+
+@Component
+@RequiredArgsConstructor
+@Slf4j
+public class HiveEventBatchPublisher implements HiveEventPublishPort, SelfEvolvingProjectionPublishPort {
+
+    private static final Integer SCHEMA_VERSION = 1;
+    private static final int SUMMARY_MAX_LENGTH = 240;
+
+    private final HiveSessionStateStore hiveSessionStateStore;
+    private final HiveApiClient hiveApiClient;
+    private final HiveEventOutboxService hiveEventOutboxService;
+    private final ObjectMapper objectMapper;
+
+    @Override
+    public void publishCommandAcknowledged(HiveControlCommandEnvelope envelope) {
+        if (envelope == null || isBlank(envelope.getThreadId()) || isBlank(envelope.getCommandId())) {
+            return;
+        }
+        HiveEventContext context = new HiveEventContext(
+                envelope.getThreadId(),
+                envelope.getCardId(),
+                envelope.getCommandId(),
+                envelope.getRunId(),
+                envelope.getGolemId());
+        HiveEventPayload event = buildRuntimeEvent(
+                context,
+                HiveRuntimeContracts.RUNTIME_EVENT_TYPE_COMMAND_ACKNOWLEDGED,
+                buildAcknowledgementSummary(envelope.getEventType()),
+                envelope.getBody(),
+                null,
+                null,
+                null,
+                envelope.getCreatedAt());
+        publishBatch(List.of(event));
+    }
+
+    @Override
+    public void publishInspectionResponse(HiveInspectionResponse response) {
+        if (response == null || isBlank(response.threadId()) || isBlank(response.requestId())) {
+            return;
+        }
+        HiveEventPayload event = HiveEventPayload.builder()
+                .schemaVersion(SCHEMA_VERSION)
+                .eventType(HiveRuntimeContracts.EVENT_TYPE_INSPECTION_RESPONSE)
+                .threadId(response.threadId())
+                .cardId(response.cardId())
+                .commandId(null)
+                .requestId(response.requestId())
+                .runId(response.runId())
+                .golemId(response.golemId())
+                .operation(response.operation())
+                .success(response.success())
+                .errorCode(response.errorCode())
+                .errorMessage(response.errorMessage())
+                .payload(response.payload())
+                .createdAt(response.createdAt() != null ? response.createdAt() : Instant.now())
+                .build();
+        publishBatch(List.of(event));
+    }
+
+    @Override
+    public void publishRuntimeEvents(List<RuntimeEvent> runtimeEvents, Map<String, Object> metadata) {
+        if (runtimeEvents == null || runtimeEvents.isEmpty()) {
+            return;
+        }
+        HiveEventContext eventContext = resolveEventContext(null, metadata);
+        if (eventContext == null || isBlank(eventContext.threadId())) {
+            return;
+        }
+
+        List<HiveEventPayload> events = new ArrayList<>();
+        for (RuntimeEvent runtimeEvent : runtimeEvents) {
+            String mappedType = mapRuntimeEventType(runtimeEvent);
+            if (mappedType == null) {
+                HiveEventPayload lifecycleSignalOnly = buildLifecycleSignalFromRuntimeEvent(eventContext, runtimeEvent);
+                if (lifecycleSignalOnly != null) {
+                    events.add(lifecycleSignalOnly);
+                }
+                continue;
+            }
+            Map<String, Object> payload = runtimeEvent.payload() != null
+                    ? runtimeEvent.payload()
+                    : Map.of();
+            events.add(buildRuntimeEvent(
+                    eventContext,
+                    mappedType,
+                    buildRuntimeSummary(runtimeEvent),
+                    serializeDetails(payload),
+                    null,
+                    null,
+                    null,
+                    runtimeEvent.timestamp()));
+            HiveEventPayload lifecycleSignal = buildLifecycleSignalFromRuntimeEvent(eventContext, runtimeEvent);
+            if (lifecycleSignal != null) {
+                events.add(lifecycleSignal);
+            }
+        }
+        publishBatch(events);
+    }
+
+    @Override
+    public void publishLifecycleSignal(HiveLifecycleSignalRequest request, Map<String, Object> metadata) {
+        if (request == null) {
+            return;
+        }
+        HiveEventContext eventContext = resolveEventContext(null, metadata);
+        HiveEventPayload payload = buildLifecycleSignal(eventContext, request);
+        if (payload == null) {
+            return;
+        }
+        publishBatch(List.of(payload));
+    }
+
+    @Override
+    public void publishThreadMessage(String threadId, String content, Map<String, Object> metadata) {
+        if (isBlank(threadId) || isBlank(content)) {
+            return;
+        }
+        HiveEventContext eventContext = resolveEventContext(threadId, metadata);
+        if (eventContext == null || isBlank(eventContext.threadId())) {
+            return;
+        }
+
+        List<HiveEventPayload> events = new ArrayList<>();
+        events.add(buildRuntimeEvent(
+                eventContext,
+                HiveRuntimeContracts.RUNTIME_EVENT_TYPE_THREAD_MESSAGE,
+                summarize(content),
+                content,
+                null,
+                null,
+                null,
+                Instant.now()));
+
+        HiveEventPayload usageEvent = buildUsageEvent(eventContext, metadata);
+        if (usageEvent != null) {
+            events.add(usageEvent);
+        }
+        publishBatch(events);
+    }
+
+    @Override
+    public void publishProgressUpdate(String threadId, ProgressUpdate update) {
+        if (isBlank(threadId) || update == null) {
+            return;
+        }
+        HiveEventContext eventContext = resolveEventContext(threadId, update.metadata());
+        if (eventContext == null || isBlank(eventContext.threadId())) {
+            return;
+        }
+        HiveEventPayload event = buildRuntimeEvent(
+                eventContext,
+                HiveRuntimeContracts.RUNTIME_EVENT_TYPE_RUN_PROGRESS,
+                firstNonBlank(update.text(), "Progress update"),
+                serializeDetails(stripHiveMetadata(update.metadata())),
+                null,
+                null,
+                null,
+                Instant.now());
+        publishBatch(List.of(event));
+    }
+
+    public HiveEventPayload buildSelfEvolvingRunProjection(RunRecord runRecord, RunVerdict verdict) {
+        if (runRecord == null) {
+            throw new IllegalArgumentException("Run record is required");
+        }
+        String golemId = firstNonBlank(runRecord.getGolemId(), resolveSessionGolemId());
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("id", runRecord.getId());
+        payload.put("golemId", golemId);
+        payload.put("sessionId", runRecord.getSessionId());
+        payload.put("traceId", runRecord.getTraceId());
+        payload.put("artifactBundleId", runRecord.getArtifactBundleId());
+        payload.put("status", runRecord.getStatus());
+        payload.put("outcomeStatus", verdict != null ? verdict.getOutcomeStatus() : null);
+        payload.put("processStatus", verdict != null ? verdict.getProcessStatus() : null);
+        payload.put("promotionRecommendation", verdict != null ? verdict.getPromotionRecommendation() : null);
+        payload.put("outcomeSummary", verdict != null ? verdict.getOutcomeSummary() : null);
+        payload.put("processSummary", verdict != null ? verdict.getProcessSummary() : null);
+        payload.put("confidence", verdict != null ? verdict.getConfidence() : null);
+        payload.put("processFindings", verdict != null ? verdict.getProcessFindings() : List.of());
+        payload.put("startedAt", runRecord.getStartedAt());
+        payload.put("completedAt", runRecord.getCompletedAt());
+        return HiveEventPayload.builder()
+                .schemaVersion(SCHEMA_VERSION)
+                .eventType(HiveRuntimeContracts.EVENT_TYPE_SELF_EVOLVING_RUN_UPSERTED)
+                .golemId(golemId)
+                .runId(runRecord.getId())
+                .summary(verdict != null ? firstNonBlank(verdict.getOutcomeSummary(), "SelfEvolving run updated")
+                        : "SelfEvolving run updated")
+                .evidenceRefs(toHiveEvidenceRefs(verdict))
+                .payload(payload)
+                .createdAt(runRecord.getCompletedAt() != null ? runRecord.getCompletedAt() : Instant.now())
+                .build();
+    }
+
+    public HiveEventPayload buildSelfEvolvingCandidateProjection(String golemId, EvolutionCandidate candidate) {
+        if (candidate == null) {
+            throw new IllegalArgumentException("Candidate is required");
+        }
+        String resolvedGolemId = firstNonBlank(golemId, resolveSessionGolemId());
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("id", candidate.getId());
+        payload.put("goal", candidate.getGoal());
+        payload.put("artifactType", candidate.getArtifactType());
+        payload.put("status", candidate.getStatus());
+        payload.put("riskLevel", candidate.getRiskLevel());
+        payload.put("expectedImpact", candidate.getExpectedImpact());
+        payload.put("sourceRunIds", candidate.getSourceRunIds());
+        return HiveEventPayload.builder()
+                .schemaVersion(SCHEMA_VERSION)
+                .eventType(HiveRuntimeContracts.EVENT_TYPE_SELF_EVOLVING_CANDIDATE_UPSERTED)
+                .golemId(resolvedGolemId)
+                .runId(candidate.getSourceRunIds() != null && !candidate.getSourceRunIds().isEmpty()
+                        ? candidate.getSourceRunIds().getFirst()
+                        : null)
+                .summary(firstNonBlank(candidate.getExpectedImpact(), "SelfEvolving candidate updated"))
+                .payload(payload)
+                .createdAt(Instant.now())
+                .build();
+    }
+
+    public HiveEventPayload buildSelfEvolvingCampaignProjection(String golemId, BenchmarkCampaign campaign) {
+        if (campaign == null) {
+            throw new IllegalArgumentException("Campaign is required");
+        }
+        String resolvedGolemId = firstNonBlank(golemId, resolveSessionGolemId());
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("id", campaign.getId());
+        payload.put("golemId", resolvedGolemId);
+        payload.put("suiteId", campaign.getSuiteId());
+        payload.put("baselineBundleId", campaign.getBaselineBundleId());
+        payload.put("candidateBundleId", campaign.getCandidateBundleId());
+        payload.put("status", campaign.getStatus());
+        payload.put("runIds", campaign.getRunIds());
+        payload.put("startedAt", campaign.getStartedAt());
+        payload.put("completedAt", campaign.getCompletedAt());
+        return HiveEventPayload.builder()
+                .schemaVersion(SCHEMA_VERSION)
+                .eventType(HiveRuntimeContracts.EVENT_TYPE_SELF_EVOLVING_CAMPAIGN_UPSERTED)
+                .golemId(resolvedGolemId)
+                .runId(campaign.getRunIds() != null && !campaign.getRunIds().isEmpty() ? campaign.getRunIds().getFirst()
+                        : null)
+                .summary(firstNonBlank(campaign.getStatus(), "SelfEvolving benchmark campaign updated"))
+                .payload(payload)
+                .createdAt(campaign.getCompletedAt() != null ? campaign.getCompletedAt()
+                        : campaign.getStartedAt() != null ? campaign.getStartedAt() : Instant.now())
+                .build();
+    }
+
+    public HiveEventPayload buildSelfEvolvingArtifactCatalogProjection(String golemId, ArtifactCatalogEntry entry) {
+        if (entry == null) {
+            throw new IllegalArgumentException("Artifact catalog entry is required");
+        }
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("artifactStreamId", entry.getArtifactStreamId());
+        payload.put("originArtifactStreamId", entry.getOriginArtifactStreamId());
+        payload.put("artifactKey", entry.getArtifactKey());
+        payload.put("artifactAliases", entry.getArtifactAliases());
+        payload.put("artifactType", entry.getArtifactType());
+        payload.put("artifactSubtype", entry.getArtifactSubtype());
+        payload.put("displayName", entry.getDisplayName());
+        payload.put("latestRevisionId", entry.getLatestRevisionId());
+        payload.put("activeRevisionId", entry.getActiveRevisionId());
+        payload.put("latestCandidateRevisionId", entry.getLatestCandidateRevisionId());
+        payload.put("currentLifecycleState", entry.getCurrentLifecycleState());
+        payload.put("currentRolloutStage", entry.getCurrentRolloutStage());
+        payload.put("hasRegression", entry.getHasRegression());
+        payload.put("hasPendingApproval", entry.getHasPendingApproval());
+        payload.put("campaignCount", entry.getCampaignCount());
+        payload.put("projectionSchemaVersion", entry.getProjectionSchemaVersion());
+        payload.put("sourceBotVersion", resolveSourceBotVersion());
+        payload.put("projectedAt", entry.getProjectedAt());
+        payload.put("updatedAt", entry.getUpdatedAt());
+        return buildArtifactEvent(
+                HiveRuntimeContracts.EVENT_TYPE_SELF_EVOLVING_ARTIFACT_UPSERTED,
+                golemId,
+                entry.getArtifactKey(),
+                payload,
+                entry.getProjectedAt());
+    }
+
+    public HiveEventPayload buildSelfEvolvingArtifactNormalizedRevisionProjection(
+            String golemId,
+            ArtifactNormalizedRevisionProjection projection) {
+        if (projection == null) {
+            throw new IllegalArgumentException("Normalized revision projection is required");
+        }
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("artifactStreamId", projection.getArtifactStreamId());
+        payload.put("contentRevisionId", projection.getContentRevisionId());
+        payload.put("normalizationSchemaVersion", projection.getNormalizationSchemaVersion());
+        payload.put("normalizedContent", projection.getNormalizedContent());
+        payload.put("normalizedHash", projection.getNormalizedHash());
+        payload.put("semanticSections", projection.getSemanticSections());
+        payload.put("sourceBotVersion", resolveSourceBotVersion());
+        payload.put("projectedAt", projection.getProjectedAt());
+        return buildArtifactEvent(
+                HiveRuntimeContracts.EVENT_TYPE_SELF_EVOLVING_ARTIFACT_NORMALIZED_REVISION_UPSERTED,
+                golemId,
+                projection.getArtifactStreamId(),
+                payload,
+                projection.getProjectedAt());
+    }
+
+    public HiveEventPayload buildSelfEvolvingArtifactLineageProjection(String golemId,
+            ArtifactLineageProjection projection) {
+        if (projection == null) {
+            throw new IllegalArgumentException("Artifact lineage projection is required");
+        }
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("artifactStreamId", projection.getArtifactStreamId());
+        payload.put("originArtifactStreamId", projection.getOriginArtifactStreamId());
+        payload.put("artifactKey", projection.getArtifactKey());
+        payload.put("nodes", projection.getNodes());
+        payload.put("edges", projection.getEdges());
+        payload.put("railOrder", projection.getRailOrder());
+        payload.put("branches", projection.getBranches());
+        payload.put("defaultSelectedNodeId", projection.getDefaultSelectedNodeId());
+        payload.put("defaultSelectedRevisionId", projection.getDefaultSelectedRevisionId());
+        payload.put("projectionSchemaVersion", projection.getProjectionSchemaVersion());
+        payload.put("sourceBotVersion", resolveSourceBotVersion());
+        payload.put("projectedAt", projection.getProjectedAt());
+        return buildArtifactEvent(
+                HiveRuntimeContracts.EVENT_TYPE_SELF_EVOLVING_ARTIFACT_LINEAGE_UPSERTED,
+                golemId,
+                projection.getArtifactKey(),
+                payload,
+                projection.getProjectedAt());
+    }
+
+    public HiveEventPayload buildSelfEvolvingArtifactRevisionDiffProjection(
+            String golemId,
+            ArtifactRevisionDiffProjection projection) {
+        if (projection == null) {
+            throw new IllegalArgumentException("Artifact revision diff projection is required");
+        }
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("payloadKind", "revision");
+        payload.put("artifactStreamId", projection.getArtifactStreamId());
+        payload.put("artifactKey", projection.getArtifactKey());
+        payload.put("fromRevisionId", projection.getFromRevisionId());
+        payload.put("toRevisionId", projection.getToRevisionId());
+        payload.put("summary", projection.getSummary());
+        payload.put("semanticSections", projection.getSemanticSections());
+        payload.put("rawPatch", projection.getRawPatch());
+        payload.put("changedFields", projection.getChangedFields());
+        payload.put("riskSignals", projection.getRiskSignals());
+        payload.put("impactSummary", projection.getImpactSummary());
+        payload.put("projectionSchemaVersion", projection.getProjectionSchemaVersion());
+        payload.put("sourceBotVersion", resolveSourceBotVersion());
+        payload.put("projectedAt", projection.getProjectedAt());
+        return buildArtifactEvent(
+                HiveRuntimeContracts.EVENT_TYPE_SELF_EVOLVING_ARTIFACT_DIFF_UPSERTED,
+                golemId,
+                projection.getArtifactKey(),
+                payload,
+                projection.getProjectedAt());
+    }
+
+    public HiveEventPayload buildSelfEvolvingArtifactTransitionDiffProjection(
+            String golemId,
+            ArtifactTransitionDiffProjection projection) {
+        if (projection == null) {
+            throw new IllegalArgumentException("Artifact transition diff projection is required");
+        }
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("payloadKind", "transition");
+        payload.put("artifactStreamId", projection.getArtifactStreamId());
+        payload.put("artifactKey", projection.getArtifactKey());
+        payload.put("fromNodeId", projection.getFromNodeId());
+        payload.put("toNodeId", projection.getToNodeId());
+        payload.put("fromRevisionId", projection.getFromRevisionId());
+        payload.put("toRevisionId", projection.getToRevisionId());
+        payload.put("fromRolloutStage", projection.getFromRolloutStage());
+        payload.put("toRolloutStage", projection.getToRolloutStage());
+        payload.put("contentChanged", projection.isContentChanged());
+        payload.put("summary", projection.getSummary());
+        payload.put("impactSummary", projection.getImpactSummary());
+        payload.put("projectionSchemaVersion", projection.getProjectionSchemaVersion());
+        payload.put("sourceBotVersion", resolveSourceBotVersion());
+        payload.put("projectedAt", projection.getProjectedAt());
+        return buildArtifactEvent(
+                HiveRuntimeContracts.EVENT_TYPE_SELF_EVOLVING_ARTIFACT_DIFF_UPSERTED,
+                golemId,
+                projection.getArtifactKey(),
+                payload,
+                projection.getProjectedAt());
+    }
+
+    public HiveEventPayload buildSelfEvolvingArtifactEvidenceProjection(
+            String golemId,
+            String payloadKind,
+            ArtifactRevisionEvidenceProjection projection) {
+        if (projection == null) {
+            throw new IllegalArgumentException("Artifact revision evidence projection is required");
+        }
+        return buildSelfEvolvingArtifactEvidencePayload(
+                golemId,
+                payloadKind,
+                projection.getArtifactStreamId(),
+                projection.getArtifactKey(),
+                projection.getRevisionId(),
+                null,
+                null,
+                null,
+                null,
+                projection.getRunIds(),
+                projection.getTraceIds(),
+                projection.getSpanIds(),
+                projection.getCampaignIds(),
+                projection.getPromotionDecisionIds(),
+                projection.getApprovalRequestIds(),
+                projection.getFindings(),
+                projection.getProjectionSchemaVersion(),
+                projection.getProjectedAt());
+    }
+
+    public HiveEventPayload buildSelfEvolvingArtifactEvidenceProjection(
+            String golemId,
+            String payloadKind,
+            ArtifactCompareEvidenceProjection projection) {
+        if (projection == null) {
+            throw new IllegalArgumentException("Artifact compare evidence projection is required");
+        }
+        return buildSelfEvolvingArtifactEvidencePayload(
+                golemId,
+                payloadKind,
+                projection.getArtifactStreamId(),
+                projection.getArtifactKey(),
+                null,
+                projection.getFromRevisionId(),
+                projection.getToRevisionId(),
+                null,
+                null,
+                projection.getRunIds(),
+                projection.getTraceIds(),
+                projection.getSpanIds(),
+                projection.getCampaignIds(),
+                projection.getPromotionDecisionIds(),
+                projection.getApprovalRequestIds(),
+                projection.getFindings(),
+                projection.getProjectionSchemaVersion(),
+                projection.getProjectedAt());
+    }
+
+    public HiveEventPayload buildSelfEvolvingArtifactEvidenceProjection(
+            String golemId,
+            String payloadKind,
+            ArtifactTransitionEvidenceProjection projection) {
+        if (projection == null) {
+            throw new IllegalArgumentException("Artifact transition evidence projection is required");
+        }
+        return buildSelfEvolvingArtifactEvidencePayload(
+                golemId,
+                payloadKind,
+                projection.getArtifactStreamId(),
+                projection.getArtifactKey(),
+                null,
+                projection.getFromRevisionId(),
+                projection.getToRevisionId(),
+                projection.getFromNodeId(),
+                projection.getToNodeId(),
+                projection.getRunIds(),
+                projection.getTraceIds(),
+                projection.getSpanIds(),
+                projection.getCampaignIds(),
+                projection.getPromotionDecisionIds(),
+                projection.getApprovalRequestIds(),
+                projection.getFindings(),
+                projection.getProjectionSchemaVersion(),
+                projection.getProjectedAt());
+    }
+
+    @Override
+    public void publishSelfEvolvingArtifactProjection(String golemId, ArtifactCatalogEntry artifact) {
+        publishBatch(List.of(buildSelfEvolvingArtifactCatalogProjection(golemId, artifact)));
+    }
+
+    @Override
+    public void publishSelfEvolvingArtifactNormalizedRevisionProjection(String golemId,
+            ArtifactNormalizedRevisionProjection projection) {
+        publishBatch(List.of(buildSelfEvolvingArtifactNormalizedRevisionProjection(golemId, projection)));
+    }
+
+    @Override
+    public void publishSelfEvolvingArtifactLineageProjection(String golemId, ArtifactLineageProjection projection) {
+        publishBatch(List.of(buildSelfEvolvingArtifactLineageProjection(golemId, projection)));
+    }
+
+    @Override
+    public void publishSelfEvolvingArtifactRevisionDiffProjection(String golemId,
+            ArtifactRevisionDiffProjection projection) {
+        publishBatch(List.of(buildSelfEvolvingArtifactRevisionDiffProjection(golemId, projection)));
+    }
+
+    @Override
+    public void publishSelfEvolvingArtifactTransitionDiffProjection(String golemId,
+            ArtifactTransitionDiffProjection projection) {
+        publishBatch(List.of(buildSelfEvolvingArtifactTransitionDiffProjection(golemId, projection)));
+    }
+
+    @Override
+    public void publishSelfEvolvingArtifactRevisionEvidenceProjection(String golemId,
+            ArtifactRevisionEvidenceProjection projection) {
+        publishBatch(List.of(buildSelfEvolvingArtifactEvidenceProjection(golemId, "revision", projection)));
+    }
+
+    @Override
+    public void publishSelfEvolvingArtifactTransitionEvidenceProjection(String golemId,
+            ArtifactTransitionEvidenceProjection projection) {
+        publishBatch(List.of(buildSelfEvolvingArtifactEvidenceProjection(golemId, "transition", projection)));
+    }
+
+    @Override
+    public void publishSelfEvolvingArtifactCompareEvidenceProjection(String golemId,
+            ArtifactCompareEvidenceProjection projection) {
+        publishBatch(List.of(buildSelfEvolvingArtifactEvidenceProjection(golemId, "compare", projection)));
+    }
+
+    @Override
+    public void publishSelfEvolvingProjection(
+            RunRecord runRecord,
+            RunVerdict verdict,
+            List<EvolutionCandidate> candidates) {
+        List<HiveEventPayload> events = new ArrayList<>();
+        events.add(buildSelfEvolvingRunProjection(runRecord, verdict));
+        if (candidates != null) {
+            for (EvolutionCandidate candidate : candidates) {
+                events.add(buildSelfEvolvingCandidateProjection(runRecord != null ? runRecord.getGolemId() : null,
+                        candidate));
+            }
+        }
+        publishBatch(events);
+    }
+
+    @Override
+    public void publishSelfEvolvingCampaignProjection(String golemId, BenchmarkCampaign campaign) {
+        publishBatch(List.of(buildSelfEvolvingCampaignProjection(golemId, campaign)));
+    }
+
+    @Override
+    public void publishSelfEvolvingTacticCatalogProjection(List<TacticSearchResult> tactics) {
+        if (tactics == null || tactics.isEmpty()) {
+            return;
+        }
+        List<HiveEventPayload> events = new ArrayList<>();
+        for (TacticSearchResult tactic : tactics) {
+            events.add(buildSelfEvolvingTacticProjection(null, null, tactic));
+        }
+        publishBatch(events);
+    }
+
+    @Override
+    public void publishSelfEvolvingTacticSearchProjection(String query, TacticSearchStatus status,
+            List<TacticSearchResult> results) {
+        List<HiveEventPayload> events = new ArrayList<>();
+        events.add(buildSelfEvolvingTacticSearchStatusProjection(null, query, status));
+        if (results != null) {
+            for (TacticSearchResult result : results) {
+                events.add(buildSelfEvolvingTacticProjection(null, query, result));
+            }
+        }
+        publishBatch(events);
+    }
+
+    private HiveEventPayload buildSelfEvolvingArtifactEvidencePayload(
+            String golemId,
+            String payloadKind,
+            String artifactStreamId,
+            String artifactKey,
+            String revisionId,
+            String fromRevisionId,
+            String toRevisionId,
+            String fromNodeId,
+            String toNodeId,
+            List<String> runIds,
+            List<String> traceIds,
+            List<String> spanIds,
+            List<String> campaignIds,
+            List<String> promotionDecisionIds,
+            List<String> approvalRequestIds,
+            List<String> findings,
+            Integer projectionSchemaVersion,
+            Instant projectedAt) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("payloadKind", payloadKind);
+        payload.put("artifactStreamId", artifactStreamId);
+        payload.put("artifactKey", artifactKey);
+        payload.put("revisionId", revisionId);
+        payload.put("fromRevisionId", fromRevisionId);
+        payload.put("toRevisionId", toRevisionId);
+        payload.put("fromNodeId", fromNodeId);
+        payload.put("toNodeId", toNodeId);
+        payload.put("runIds", runIds != null ? runIds : List.of());
+        payload.put("traceIds", traceIds != null ? traceIds : List.of());
+        payload.put("spanIds", spanIds != null ? spanIds : List.of());
+        payload.put("campaignIds", campaignIds != null ? campaignIds : List.of());
+        payload.put("promotionDecisionIds", promotionDecisionIds != null ? promotionDecisionIds : List.of());
+        payload.put("approvalRequestIds", approvalRequestIds != null ? approvalRequestIds : List.of());
+        payload.put("findings", findings != null ? findings : List.of());
+        payload.put("projectionSchemaVersion", projectionSchemaVersion);
+        payload.put("sourceBotVersion", resolveSourceBotVersion());
+        payload.put("projectedAt", projectedAt);
+        return buildArtifactEvent(
+                HiveRuntimeContracts.EVENT_TYPE_SELF_EVOLVING_ARTIFACT_EVIDENCE_UPSERTED,
+                golemId,
+                artifactKey,
+                payload,
+                projectedAt);
+    }
+
+    private HiveEventPayload buildSelfEvolvingTacticProjection(
+            String golemId,
+            String query,
+            TacticSearchResult tactic) {
+        Map<String, Object> payload = objectMapper.convertValue(tactic, Map.class);
+        if (query == null || query.isBlank()) {
+            payload.remove("score");
+            payload.remove("recencyScore");
+            payload.remove("golemLocalUsageSuccess");
+            payload.remove("explanation");
+            payload.remove("searchQuery");
+        } else {
+            payload.put("searchQuery", query);
+        }
+        return buildArtifactEvent(
+                HiveRuntimeContracts.EVENT_TYPE_SELF_EVOLVING_TACTIC_UPSERTED,
+                golemId,
+                tactic.getArtifactKey(),
+                payload,
+                tactic.getUpdatedAt() != null ? tactic.getUpdatedAt() : Instant.now());
+    }
+
+    private HiveEventPayload buildSelfEvolvingTacticSearchStatusProjection(
+            String golemId,
+            String query,
+            TacticSearchStatus status) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("query", query);
+        payload.put("mode", status != null ? status.getMode() : null);
+        payload.put("reason", status != null ? status.getReason() : null);
+        payload.put("degraded", status != null ? status.getDegraded() : null);
+        payload.put("searchUpdatedAt", status != null ? status.getUpdatedAt() : null);
+        return buildArtifactEvent(
+                HiveRuntimeContracts.EVENT_TYPE_SELF_EVOLVING_TACTIC_SEARCH_STATUS_UPSERTED,
+                golemId,
+                query,
+                payload,
+                status != null && status.getUpdatedAt() != null ? status.getUpdatedAt() : Instant.now());
+    }
+
+    private HiveEventPayload buildArtifactEvent(
+            String eventType,
+            String golemId,
+            String summarySeed,
+            Map<String, Object> payload,
+            Instant createdAt) {
+        String resolvedGolemId = firstNonBlank(golemId, resolveSessionGolemId());
+        return HiveEventPayload.builder()
+                .schemaVersion(SCHEMA_VERSION)
+                .eventType(eventType)
+                .golemId(resolvedGolemId)
+                .summary(firstNonBlank(summarySeed, eventType))
+                .payload(payload)
+                .createdAt(createdAt != null ? createdAt : Instant.now())
+                .build();
+    }
+
+    private String resolveSourceBotVersion() {
+        return firstNonBlank(System.getProperty("golemcore.bot.version"), "dev");
+    }
+
+    private HiveEventPayload buildUsageEvent(HiveEventContext context, Map<String, Object> metadata) {
+        if (metadata == null || metadata.isEmpty()) {
+            return null;
+        }
+        Long inputTokens = extractLong(metadata.get("inputTokens"));
+        Long outputTokens = extractLong(metadata.get("outputTokens"));
+        Long accumulatedCostMicros = extractLong(metadata.get("accumulatedCostMicros"));
+        if (inputTokens == null && outputTokens == null && accumulatedCostMicros == null) {
+            return null;
+        }
+        Map<String, Object> usageDetails = new LinkedHashMap<>();
+        if (inputTokens != null) {
+            usageDetails.put("inputTokens", inputTokens);
+        }
+        if (outputTokens != null) {
+            usageDetails.put("outputTokens", outputTokens);
+        }
+        if (accumulatedCostMicros != null) {
+            usageDetails.put("accumulatedCostMicros", accumulatedCostMicros);
+        }
+        return buildRuntimeEvent(
+                context,
+                HiveRuntimeContracts.RUNTIME_EVENT_TYPE_USAGE_REPORTED,
+                "Usage updated",
+                serializeDetails(usageDetails),
+                inputTokens,
+                outputTokens,
+                accumulatedCostMicros,
+                Instant.now());
+    }
+
+    private HiveEventPayload buildRuntimeEvent(
+            HiveEventContext context,
+            String runtimeEventType,
+            String summary,
+            String details,
+            Long inputTokens,
+            Long outputTokens,
+            Long accumulatedCostMicros,
+            Instant createdAt) {
+        return HiveEventPayload.builder()
+                .schemaVersion(SCHEMA_VERSION)
+                .eventType(HiveRuntimeContracts.EVENT_TYPE_RUNTIME_EVENT)
+                .runtimeEventType(runtimeEventType)
+                .threadId(context.threadId())
+                .cardId(context.cardId())
+                .commandId(context.commandId())
+                .runId(context.runId())
+                .golemId(context.golemId())
+                .summary(summary)
+                .details(details)
+                .inputTokens(inputTokens)
+                .outputTokens(outputTokens)
+                .accumulatedCostMicros(accumulatedCostMicros)
+                .createdAt(createdAt != null ? createdAt : Instant.now())
+                .build();
+    }
+
+    private HiveEventPayload buildLifecycleSignal(
+            HiveEventContext context,
+            HiveLifecycleSignalRequest request) {
+        if (context == null || isBlank(context.threadId()) || isBlank(context.cardId()) || request == null
+                || isBlank(request.signalType())) {
+            return null;
+        }
+        return HiveEventPayload.builder()
+                .schemaVersion(SCHEMA_VERSION)
+                .eventType(HiveRuntimeContracts.EVENT_TYPE_CARD_LIFECYCLE_SIGNAL)
+                .signalId(generateSignalId())
+                .threadId(context.threadId())
+                .cardId(context.cardId())
+                .commandId(context.commandId())
+                .runId(context.runId())
+                .golemId(context.golemId())
+                .signalType(request.signalType())
+                .summary(firstNonBlank(request.summary(), defaultLifecycleSummary(request.signalType())))
+                .details(request.details())
+                .blockerCode(request.blockerCode())
+                .evidenceRefs(request.evidenceRefs())
+                .createdAt(request.createdAt() != null ? request.createdAt() : Instant.now())
+                .build();
+    }
+
+    private HiveEventPayload buildLifecycleSignalFromRuntimeEvent(
+            HiveEventContext context,
+            RuntimeEvent runtimeEvent) {
+        HiveLifecycleSignalRequest request = mapLifecycleSignal(runtimeEvent);
+        if (request == null) {
+            return null;
+        }
+        return buildLifecycleSignal(context, request);
+    }
+
+    private HiveEventContext resolveEventContext(String fallbackThreadId, Map<String, Object> metadata) {
+        String threadId = firstNonBlank(
+                readMetadataString(metadata, ContextAttributes.HIVE_THREAD_ID),
+                fallbackThreadId);
+        if (isBlank(threadId)) {
+            return null;
+        }
+        Optional<HiveSessionState> sessionStateOptional = hiveSessionStateStore.load();
+        String golemId = readMetadataString(metadata, ContextAttributes.HIVE_GOLEM_ID);
+        if (isBlank(golemId) && sessionStateOptional.isPresent()) {
+            golemId = sessionStateOptional.get().getGolemId();
+        }
+        return new HiveEventContext(
+                threadId,
+                readMetadataString(metadata, ContextAttributes.HIVE_CARD_ID),
+                readMetadataString(metadata, ContextAttributes.HIVE_COMMAND_ID),
+                readMetadataString(metadata, ContextAttributes.HIVE_RUN_ID),
+                golemId);
+    }
+
+    private String resolveSessionGolemId() {
+        Optional<HiveSessionState> sessionStateOptional = hiveSessionStateStore.load();
+        if (sessionStateOptional.isEmpty()) {
+            return null;
+        }
+        return sessionStateOptional.get().getGolemId();
+    }
+
+    private List<HiveEvidenceRef> toHiveEvidenceRefs(RunVerdict verdict) {
+        if (verdict == null || verdict.getEvidenceRefs() == null || verdict.getEvidenceRefs().isEmpty()) {
+            return List.of();
+        }
+        return verdict.getEvidenceRefs().stream()
+                .map(this::toHiveEvidenceRef)
+                .toList();
+    }
+
+    private HiveEvidenceRef toHiveEvidenceRef(VerdictEvidenceRef evidenceRef) {
+        String ref = firstNonBlank(
+                evidenceRef.getSnapshotId(),
+                firstNonBlank(evidenceRef.getSpanId(), evidenceRef.getTraceId()));
+        String kind = evidenceRef.getSnapshotId() != null ? "trace_snapshot"
+                : evidenceRef.getSpanId() != null ? "trace_span" : "trace";
+        return new HiveEvidenceRef(kind, ref);
+    }
+
+    private void publishBatch(List<HiveEventPayload> events) {
+        if (events == null || events.isEmpty()) {
+            return;
+        }
+        Optional<HiveSessionState> sessionStateOptional = hiveSessionStateStore.load();
+        if (sessionStateOptional.isEmpty()) {
+            throw new IllegalStateException("Hive session is not available");
+        }
+        HiveSessionState sessionState = sessionStateOptional.get();
+        if (isBlank(sessionState.getServerUrl()) || isBlank(sessionState.getGolemId())
+                || isBlank(sessionState.getAccessToken())) {
+            throw new IllegalStateException("Hive session is incomplete");
+        }
+        hiveEventOutboxService.enqueue(sessionState, events);
+        hiveEventOutboxService.flush(sessionState, hiveApiClientSender());
+    }
+
+    private HiveEventOutboxService.BatchSender hiveApiClientSender() {
+        return (serverUrl, golemId, accessToken, events) -> hiveApiClient.publishEventsBatch(
+                serverUrl,
+                golemId,
+                accessToken,
+                events);
+    }
+
+    private String mapRuntimeEventType(RuntimeEvent runtimeEvent) {
+        if (runtimeEvent == null || runtimeEvent.type() == null) {
+            return null;
+        }
+        if (runtimeEvent.type() == RuntimeEventType.TURN_STARTED) {
+            return HiveRuntimeContracts.RUNTIME_EVENT_TYPE_RUN_STARTED;
+        }
+        if (runtimeEvent.type() == RuntimeEventType.TURN_FINISHED) {
+            String reason = extractRuntimeReason(runtimeEvent.payload());
+            return HiveRuntimeContracts.USER_INTERRUPT_REASON.equals(reason)
+                    ? HiveRuntimeContracts.RUNTIME_EVENT_TYPE_RUN_CANCELLED
+                    : HiveRuntimeContracts.RUNTIME_EVENT_TYPE_RUN_COMPLETED;
+        }
+        if (runtimeEvent.type() == RuntimeEventType.TURN_FAILED) {
+            return HiveRuntimeContracts.RUNTIME_EVENT_TYPE_RUN_FAILED;
+        }
+        if (runtimeEvent.type() == RuntimeEventType.TURN_INTERRUPT_REQUESTED) {
+            return null;
+        }
+        return HiveRuntimeContracts.RUNTIME_EVENT_TYPE_RUN_PROGRESS;
+    }
+
+    private HiveLifecycleSignalRequest mapLifecycleSignal(RuntimeEvent runtimeEvent) {
+        if (runtimeEvent == null || runtimeEvent.type() == null) {
+            return null;
+        }
+        Map<String, Object> payload = runtimeEvent.payload() != null ? runtimeEvent.payload() : Map.of();
+        if (runtimeEvent.type() == RuntimeEventType.TURN_STARTED) {
+            return new HiveLifecycleSignalRequest(
+                    HiveRuntimeContracts.SIGNAL_TYPE_WORK_STARTED,
+                    "Work started",
+                    null,
+                    null,
+                    List.of(),
+                    runtimeEvent.timestamp());
+        }
+        if (runtimeEvent.type() == RuntimeEventType.TURN_FAILED) {
+            return new HiveLifecycleSignalRequest(
+                    HiveRuntimeContracts.SIGNAL_TYPE_WORK_FAILED,
+                    buildFailureLifecycleSummary(payload),
+                    serializeDetails(payload),
+                    null,
+                    List.of(),
+                    runtimeEvent.timestamp());
+        }
+        if (runtimeEvent.type() == RuntimeEventType.TURN_FINISHED
+                && HiveRuntimeContracts.USER_INTERRUPT_REASON.equals(extractRuntimeReason(payload))) {
+            return new HiveLifecycleSignalRequest(
+                    HiveRuntimeContracts.SIGNAL_TYPE_WORK_CANCELLED,
+                    "Work cancelled",
+                    serializeDetails(payload),
+                    null,
+                    List.of(),
+                    runtimeEvent.timestamp());
+        }
+        return null;
+    }
+
+    private String buildRuntimeSummary(RuntimeEvent runtimeEvent) {
+        if (runtimeEvent == null || runtimeEvent.type() == null) {
+            return "Runtime event";
+        }
+        Map<String, Object> payload = runtimeEvent.payload() != null ? runtimeEvent.payload() : Map.of();
+        return switch (runtimeEvent.type()) {
+        case TURN_STARTED -> "Run started";
+        case TURN_FINISHED -> {
+            String reason = extractRuntimeReason(payload);
+            yield reason != null ? "Run finished: " + reason : "Run finished";
+        }
+        case TURN_FAILED -> {
+            String reason = extractRuntimeReason(payload);
+            String code = readMetadataString(payload, "code");
+            yield firstNonBlank(
+                    reason != null ? "Run failed: " + reason : null,
+                    code != null ? "Run failed: " + code : null,
+                    "Run failed");
+        }
+        case LLM_STARTED -> "LLM request started";
+        case LLM_FINISHED -> "LLM request finished";
+        case TOOL_STARTED -> "Tool started: " + firstNonBlank(readMetadataString(payload, "tool"), "tool");
+        case TOOL_FINISHED -> "Tool finished: " + firstNonBlank(readMetadataString(payload, "tool"), "tool");
+        case RETRY_STARTED -> "Retry started";
+        case RETRY_FINISHED -> "Retry finished";
+        case COMPACTION_STARTED -> "Compaction started";
+        case COMPACTION_FINISHED -> "Compaction finished";
+        case CONTEXT_HYGIENE -> "Context hygiene projected";
+        case TURN_INTERRUPT_REQUESTED -> "Interrupt requested";
+        };
+    }
+
+    private String buildFailureLifecycleSummary(Map<String, Object> payload) {
+        String reason = extractRuntimeReason(payload);
+        String code = readMetadataString(payload, "code");
+        return firstNonBlank(
+                reason != null ? "Work failed: " + reason : null,
+                code != null ? "Work failed: " + code : null,
+                "Work failed");
+    }
+
+    private String buildAcknowledgementSummary(String eventType) {
+        if (HiveRuntimeContracts.CONTROL_EVENT_TYPE_STOP.equals(eventType)
+                || HiveRuntimeContracts.CONTROL_EVENT_TYPE_CANCEL.equals(eventType)) {
+            return "Stop request acknowledged by bot";
+        }
+        return "Command acknowledged by bot";
+    }
+
+    private String defaultLifecycleSummary(String signalType) {
+        if (isBlank(signalType)) {
+            return "Lifecycle signal";
+        }
+        return switch (signalType) {
+        case HiveRuntimeContracts.SIGNAL_TYPE_WORK_STARTED -> "Work started";
+        case HiveRuntimeContracts.SIGNAL_TYPE_PROGRESS_REPORTED -> "Progress reported";
+        case HiveRuntimeContracts.SIGNAL_TYPE_BLOCKER_RAISED -> "Blocker raised";
+        case HiveRuntimeContracts.SIGNAL_TYPE_BLOCKER_CLEARED -> "Blocker cleared";
+        case HiveRuntimeContracts.SIGNAL_TYPE_REVIEW_REQUESTED -> "Review requested";
+        case HiveRuntimeContracts.SIGNAL_TYPE_WORK_COMPLETED -> "Work completed";
+        case HiveRuntimeContracts.SIGNAL_TYPE_WORK_FAILED -> "Work failed";
+        case HiveRuntimeContracts.SIGNAL_TYPE_WORK_CANCELLED -> "Work cancelled";
+        default -> "Lifecycle signal";
+        };
+    }
+
+    private String generateSignalId() {
+        return "sig_" + UUID.randomUUID().toString().replace("-", "");
+    }
+
+    private String extractRuntimeReason(Map<String, Object> payload) {
+        return firstNonBlank(readMetadataString(payload, "reason"), readMetadataString(payload, "limit"));
+    }
+
+    private Map<String, Object> stripHiveMetadata(Map<String, Object> metadata) {
+        return HiveMetadataSupport.stripHiveMetadata(metadata);
+    }
+
+    private String serializeDetails(Map<String, Object> payload) {
+        if (payload == null || payload.isEmpty()) {
+            return null;
+        }
+        Map<String, Object> safePayload = new LinkedHashMap<>();
+        for (Map.Entry<String, Object> entry : payload.entrySet()) {
+            if (entry.getValue() != null) {
+                safePayload.put(entry.getKey(), entry.getValue());
+            }
+        }
+        if (safePayload.isEmpty()) {
+            return null;
+        }
+        try {
+            return objectMapper.writeValueAsString(safePayload);
+        } catch (JsonProcessingException exception) {
+            return safePayload.toString();
+        }
+    }
+
+    private Long extractLong(Object value) {
+        if (value instanceof Number numberValue) {
+            return numberValue.longValue();
+        }
+        if (value instanceof String stringValue && !stringValue.isBlank()) {
+            try {
+                return Long.parseLong(stringValue.trim());
+            } catch (NumberFormatException ignored) {
+                return null;
+            }
+        }
+        return null;
+    }
+
+    private String summarize(String value) {
+        if (value == null) {
+            return null;
+        }
+        String normalized = value.replaceAll("\\s+", " ").trim();
+        if (normalized.length() <= SUMMARY_MAX_LENGTH) {
+            return normalized;
+        }
+        return normalized.substring(0, SUMMARY_MAX_LENGTH - 3) + "...";
+    }
+
+    private String readMetadataString(Map<String, Object> metadata, String key) {
+        if (metadata == null || metadata.isEmpty() || isBlank(key)) {
+            return null;
+        }
+        Object value = metadata.get(key);
+        if (value instanceof String stringValue) {
+            String normalized = stringValue.trim();
+            return normalized.isEmpty() ? null : normalized;
+        }
+        return null;
+    }
+
+    private String firstNonBlank(String... values) {
+        if (values == null) {
+            return null;
+        }
+        for (String value : values) {
+            if (!isBlank(value)) {
+                return value.trim();
+            }
+        }
+        return null;
+    }
+
+    private boolean isBlank(String value) {
+        return value == null || value.isBlank();
+    }
+
+    private record HiveEventContext(
+            String threadId,
+            String cardId,
+            String commandId,
+            String runId,
+            String golemId) {
+    }
+}

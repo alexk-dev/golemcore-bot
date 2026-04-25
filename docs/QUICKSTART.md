@@ -215,6 +215,16 @@ Enable Telegram in dashboard Settings (stored in runtime config):
 
 After saving settings, restart Telegram from the dashboard (or restart the container).
 
+## Method 2: JAR (Alternative)
+
+```bash
+git clone https://github.com/alexk-dev/golemcore-bot.git
+cd golemcore-bot
+./mvnw clean package -DskipTests
+java -jar golemcore-bot-app/target/bot-0.0.0-SNAPSHOT-exec.jar
+```
+
+Then open the dashboard at `http://localhost:8080/dashboard` and configure providers.
 ## Optional: Run Dashboard Frontend Locally
 
 Use this mode when you work on dashboard UI code.

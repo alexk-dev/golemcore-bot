@@ -184,12 +184,6 @@ export function ScheduledTaskEditorContent({
 
   return (
     <>
-      {isEditing && (
-        <div className="small text-body-secondary mb-3">
-          Scheduled task <code>{task.id}</code>
-        </div>
-      )}
-
       <Form.Group className="mb-3">
         <Form.Label>Title</Form.Label>
         <Form.Control

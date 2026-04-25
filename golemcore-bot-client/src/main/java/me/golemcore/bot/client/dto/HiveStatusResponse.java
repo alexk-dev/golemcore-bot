@@ -1,0 +1,5 @@
+package me.golemcore.bot.client.dto;
+
+import java.time.Instant;
+
+public record HiveStatusResponse(String state,boolean enabled,boolean managedByProperties,boolean managedJoinCodeAvailable,boolean autoConnect,String serverUrl,String displayName,String hostLabel,String dashboardBaseUrl,boolean ssoEnabled,boolean sessionPresent,String golemId,String controlChannelUrl,Integer heartbeatIntervalSeconds,Instant lastConnectedAt,Instant lastHeartbeatAt,Instant lastTokenRotatedAt,String controlChannelState,Instant controlChannelConnectedAt,Instant controlChannelLastMessageAt,String controlChannelLastError,String lastReceivedCommandId,String lastReceivedCommandAt,int receivedCommandCount,int bufferedCommandCount,int pendingCommandCount,int pendingEventBatchCount,int pendingEventCount,String outboxLastError,String lastError,String policyGroupId,Integer targetPolicyVersion,Integer appliedPolicyVersion,String policySyncStatus,String lastPolicyErrorDigest){}
