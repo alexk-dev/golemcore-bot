@@ -33,9 +33,32 @@ class NetworkntResponseJsonSchemaValidatorAdapterTest {
     }
 
     @Test
+    void shouldAcceptDraft202012UnevaluatedPropertiesKeyword() {
+        Map<String, Object> schema = Map.of(
+                "$schema", "https://json-schema.org/draft/2020-12/schema",
+                "type", "object",
+                "properties", Map.of(
+                        "version", Map.of("const", "1.0")),
+                "unevaluatedProperties", false);
+
+        assertDoesNotThrow(() -> adapter.validateResponseJsonSchema(schema));
+    }
+
+    @Test
     void shouldRejectInvalidResponseSchemaType() {
         IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
                 () -> adapter.validateResponseJsonSchema(Map.of("type", "invalid")));
+
+        assertTrue(error.getMessage().contains("Invalid responseJsonSchema"));
+    }
+
+    @Test
+    void shouldRejectInvalidRequiredKeywordShape() {
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> adapter.validateResponseJsonSchema(Map.of(
+                        "$schema", "https://json-schema.org/draft/2020-12/schema",
+                        "type", "object",
+                        "required", "version")));
 
         assertTrue(error.getMessage().contains("Invalid responseJsonSchema"));
     }

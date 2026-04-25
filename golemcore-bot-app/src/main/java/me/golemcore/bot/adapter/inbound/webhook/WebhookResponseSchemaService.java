@@ -21,11 +21,12 @@ package me.golemcore.bot.adapter.inbound.webhook;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.networknt.schema.JsonSchema;
-import com.networknt.schema.JsonSchemaFactory;
+import com.networknt.schema.Error;
+import com.networknt.schema.InputFormat;
+import com.networknt.schema.Schema;
 import com.networknt.schema.SchemaLocation;
-import com.networknt.schema.SpecVersion;
-import com.networknt.schema.ValidationMessage;
+import com.networknt.schema.SchemaRegistry;
+import com.networknt.schema.SpecificationVersion;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.LlmRequest;
@@ -39,7 +40,6 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -71,8 +71,9 @@ public class WebhookResponseSchemaService {
     private final ModelSelectionService modelSelectionService;
     private final LlmPort llmPort;
 
-    private final JsonSchemaFactory schemaFactory = JsonSchemaFactory.getInstance(SpecVersion.VersionFlag.V202012);
-    private final JsonSchema schemaDefinitionSchema = schemaFactory.getSchema(DRAFT_2020_12_META_SCHEMA);
+    private final SchemaRegistry schemaRegistry = SchemaRegistry
+            .withDefaultDialect(SpecificationVersion.DRAFT_2020_12);
+    private final Schema schemaDefinitionSchema = schemaRegistry.getSchema(DRAFT_2020_12_META_SCHEMA);
 
     /**
      * Returns whether a webhook response schema is configured.
@@ -163,7 +164,7 @@ public class WebhookResponseSchemaService {
             return new SchemaResult(rawResponse, 0);
         }
 
-        JsonSchema jsonSchema = buildSchema(schema);
+        Schema jsonSchema = buildSchema(schema);
         String schemaText = writeJson(schema);
         String candidate = rawResponse;
         ValidationAttempt validation = validateCandidate(jsonSchema, candidate);
@@ -188,40 +189,40 @@ public class WebhookResponseSchemaService {
                         + MAX_SCHEMA_REPAIR_ATTEMPTS + " repair attempts: " + String.join("; ", validation.errors()));
     }
 
-    private JsonSchema buildSchema(Map<String, Object> schema) {
-        JsonNode schemaNode = objectMapper.valueToTree(schema);
-        validateSchemaDefinition(schemaNode);
+    private Schema buildSchema(Map<String, Object> schema) {
+        String schemaJson = writeJson(schema);
+        validateSchemaDefinition(schemaJson);
         try {
-            return schemaFactory.getSchema(schemaNode);
+            return schemaRegistry.getSchema(schemaJson, InputFormat.JSON);
         } catch (RuntimeException e) {
             throw new SchemaProcessingException("Invalid responseJsonSchema: " + e.getMessage(), e);
         }
     }
 
-    private void validateSchemaDefinition(JsonNode schemaNode) {
-        Set<ValidationMessage> validationMessages = schemaDefinitionSchema.validate(schemaNode);
-        if (!validationMessages.isEmpty()) {
-            List<String> errors = validationMessages.stream()
-                    .map(ValidationMessage::getMessage)
+    private void validateSchemaDefinition(String schemaJson) {
+        List<Error> validationErrors = schemaDefinitionSchema.validate(schemaJson, InputFormat.JSON);
+        if (!validationErrors.isEmpty()) {
+            List<String> errors = validationErrors.stream()
+                    .map(Error::getMessage)
                     .limit(MAX_REPORTED_SCHEMA_ERRORS)
                     .toList();
             throw new SchemaProcessingException("Invalid responseJsonSchema: " + String.join("; ", errors));
         }
     }
 
-    private ValidationAttempt validateCandidate(JsonSchema jsonSchema, String candidate) {
+    private ValidationAttempt validateCandidate(Schema jsonSchema, String candidate) {
         JsonNode payload = parseCandidate(candidate);
         if (payload == null) {
             return new ValidationAttempt(null, false, List.of("response is not valid JSON"));
         }
 
-        Set<ValidationMessage> validationMessages = jsonSchema.validate(payload);
-        if (validationMessages.isEmpty()) {
+        List<Error> validationErrors = jsonSchema.validate(writeJson(payload), InputFormat.JSON);
+        if (validationErrors.isEmpty()) {
             return new ValidationAttempt(payload, true, List.of());
         }
 
-        List<String> errors = validationMessages.stream()
-                .map(ValidationMessage::getMessage)
+        List<String> errors = validationErrors.stream()
+                .map(Error::getMessage)
                 .limit(MAX_REPORTED_SCHEMA_ERRORS)
                 .toList();
         return new ValidationAttempt(payload, false, errors);
