@@ -36,6 +36,11 @@ export interface GoalsResponse {
   standaloneTasks: GoalTask[];
 }
 
+export interface GoalsQueryParams {
+  channel?: string;
+  conversationKey?: string;
+}
+
 export interface CreateGoalRequest {
   title: string;
   description: string | null;
@@ -80,8 +85,10 @@ export interface DeleteTaskResponse {
   taskId: string;
 }
 
-export async function getGoals(): Promise<GoalsResponse> {
-  const { data } = await client.get<GoalsResponse>('/goals');
+export async function getGoals(params?: GoalsQueryParams): Promise<GoalsResponse> {
+  const { data } = params == null
+    ? await client.get<GoalsResponse>('/goals')
+    : await client.get<GoalsResponse>('/goals', { params });
   return data;
 }
 

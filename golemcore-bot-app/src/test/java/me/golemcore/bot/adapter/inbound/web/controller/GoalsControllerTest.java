@@ -18,6 +18,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class GoalsControllerTest {
@@ -68,7 +69,7 @@ class GoalsControllerTest {
         when(autoModeService.isInboxGoal(goal)).thenReturn(false);
         when(autoModeService.isInboxGoal(inbox)).thenReturn(true);
 
-        StepVerifier.create(controller.getGoals())
+        StepVerifier.create(controller.getGoals(null, null))
                 .assertNext(response -> {
                     assertEquals(HttpStatus.OK, response.getStatusCode());
                     GoalsController.GoalsResponse body = response.getBody();
@@ -80,6 +81,43 @@ class GoalsControllerTest {
                     assertEquals("Investigate flaky test", body.standaloneTasks().get(0).title());
                 })
                 .verifyComplete();
+    }
+
+    @Test
+    void getGoalsShouldUseRequestedWebSessionWhenConversationKeyIsProvided() {
+        Goal goal = Goal.builder()
+                .id("goal-web-1")
+                .title("Web chat goal")
+                .status(Goal.GoalStatus.ACTIVE)
+                .tasks(List.of())
+                .build();
+
+        when(autoModeService.isFeatureEnabled()).thenReturn(true);
+        when(autoModeService.isAutoModeEnabled()).thenReturn(false);
+        when(autoModeService.getGoals("web:session-123")).thenReturn(List.of(goal));
+        when(autoModeService.isInboxGoal(goal)).thenReturn(false);
+
+        StepVerifier.create(controller.getGoals("web", "session-123"))
+                .assertNext(response -> {
+                    assertEquals(HttpStatus.OK, response.getStatusCode());
+                    GoalsController.GoalsResponse body = response.getBody();
+                    assertNotNull(body);
+                    assertEquals(1, body.goals().size());
+                    assertEquals("Web chat goal", body.goals().get(0).title());
+                })
+                .verifyComplete();
+
+        verify(autoModeService).getGoals("web:session-123");
+    }
+
+    @Test
+    void getGoalsShouldRejectPartialSessionIdentity() {
+        ResponseStatusException exception = assertThrows(
+                ResponseStatusException.class,
+                () -> controller.getGoals("web", null));
+
+        assertEquals(HttpStatus.BAD_REQUEST, exception.getStatusCode());
+        assertEquals("channel and conversationKey must be provided together", exception.getReason());
     }
 
     @Test

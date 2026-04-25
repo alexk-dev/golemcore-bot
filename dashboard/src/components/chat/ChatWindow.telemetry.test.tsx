@@ -24,6 +24,7 @@ const getMemoryPresets = vi.hoisted(() => vi.fn<() => Promise<Array<{
   id: string;
   label: string;
 }>>>(() => Promise.resolve([])));
+const getGoalsMock = vi.hoisted(() => vi.fn(() => new Promise(() => {})));
 const updatePreferences = vi.hoisted(() => vi.fn(() => new Promise(() => {})));
 const activeSessionIdRef = vi.hoisted(() => ({ value: 'session-1' }));
 const memoryPresetOverridesRef = vi.hoisted(() => ({ value: {} as Record<string, string> }));
@@ -80,6 +81,7 @@ vi.mock('../../store/contextPanelStore', () => ({
         fileChanges: [],
       },
       goals: [],
+      standaloneTasks: [],
       goalsFeatureEnabled: false,
     };
     return typeof selector === 'function' ? selector(state) : state;
@@ -110,7 +112,7 @@ vi.mock('../../hooks/useModels', () => ({
 }));
 
 vi.mock('../../api/goals', () => ({
-  getGoals: () => new Promise(() => {}),
+  getGoals: getGoalsMock,
 }));
 
 vi.mock('../../api/settings', () => ({
@@ -214,9 +216,29 @@ describe('ChatWindow telemetry', () => {
     getSettings.mockImplementation(() => new Promise(() => {}));
     getMemoryPresets.mockReset();
     getMemoryPresets.mockResolvedValue([]);
+    getGoalsMock.mockClear();
     updatePreferences.mockClear();
     activeSessionIdRef.value = 'session-1';
     memoryPresetOverridesRef.value = {};
+  });
+
+  it('loads goals for the active chat session', () => {
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root: Root = createRoot(container);
+
+    act(() => {
+      root.render(<ChatWindow embedded />);
+    });
+
+    expect(getGoalsMock).toHaveBeenCalledWith({
+      channel: 'web',
+      conversationKey: 'session-1',
+    });
+
+    act(() => {
+      root.unmount();
+    });
   });
 
   it('records chat send and force-tier toggles', () => {

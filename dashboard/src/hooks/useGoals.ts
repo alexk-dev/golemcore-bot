@@ -32,7 +32,7 @@ export const GOALS_QUERY_KEY = ['goals'] as const;
 export function useGoalsState(): UseQueryResult<GoalsResponse, unknown> {
   return useQuery({
     queryKey: GOALS_QUERY_KEY,
-    queryFn: getGoals,
+    queryFn: () => getGoals(),
     refetchInterval: 15000,
   });
 }

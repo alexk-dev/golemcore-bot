@@ -4,7 +4,9 @@ import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.domain.model.AutoTask;
 import me.golemcore.bot.domain.model.Goal;
 import me.golemcore.bot.domain.model.ModelTierCatalog;
+import me.golemcore.bot.domain.model.SessionIdentity;
 import me.golemcore.bot.domain.service.AutoModeService;
+import me.golemcore.bot.domain.service.SessionIdentitySupport;
 import me.golemcore.bot.domain.service.StringValueSupport;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -15,6 +17,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 import reactor.core.publisher.Mono;
@@ -36,8 +39,10 @@ public class GoalsController {
     private final AutoModeService autoModeService;
 
     @GetMapping("/goals")
-    public Mono<ResponseEntity<GoalsResponse>> getGoals() {
-        return Mono.just(ResponseEntity.ok(buildGoalsResponse()));
+    public Mono<ResponseEntity<GoalsResponse>> getGoals(
+            @RequestParam(required = false) String channel,
+            @RequestParam(required = false) String conversationKey) {
+        return Mono.just(ResponseEntity.ok(buildGoalsResponse(resolveGoals(channel, conversationKey))));
     }
 
     @PostMapping("/goals")
@@ -156,9 +161,24 @@ public class GoalsController {
         }
     }
 
-    private GoalsResponse buildGoalsResponse() {
-        List<Goal> allGoals = autoModeService.getGoals();
+    private List<Goal> resolveGoals(String channel, String conversationKey) {
+        boolean hasChannel = !StringValueSupport.isBlank(channel);
+        boolean hasConversationKey = !StringValueSupport.isBlank(conversationKey);
+        if (!hasChannel && !hasConversationKey) {
+            return autoModeService.getGoals();
+        }
+        if (!hasChannel || !hasConversationKey) {
+            throw badRequest("channel and conversationKey must be provided together");
+        }
 
+        SessionIdentity sessionIdentity = SessionIdentitySupport.resolveSessionIdentity(channel, conversationKey);
+        if (sessionIdentity == null || !sessionIdentity.isValid()) {
+            throw badRequest("Invalid session identity");
+        }
+        return autoModeService.getGoals(sessionIdentity.asKey());
+    }
+
+    private GoalsResponse buildGoalsResponse(List<Goal> allGoals) {
         List<GoalDto> goals = allGoals.stream()
                 .filter(goal -> !autoModeService.isInboxGoal(goal))
                 .sorted(Comparator.comparing(Goal::getCreatedAt, Comparator.nullsLast(Comparator.naturalOrder())))

@@ -166,9 +166,19 @@ export default function ChatWindow({ embedded = false }: ChatWindowProps = {}): 
 
   useEffect(() => {
     // Keep goals/context side panel fresh while the chat workspace is open.
+    let cancelled = false;
     const fetchGoals = (): void => {
-      getGoals()
-        .then((response) => setGoals(response.goals, response.featureEnabled, response.autoModeEnabled))
+      getGoals({ channel: 'web', conversationKey: chatSessionId })
+        .then((response) => {
+          if (!cancelled) {
+            setGoals(
+              response.goals,
+              response.standaloneTasks,
+              response.featureEnabled,
+              response.autoModeEnabled,
+            );
+          }
+        })
         .catch(() => {
           // Keep polling resilient to intermittent API failures.
         });
@@ -176,8 +186,11 @@ export default function ChatWindow({ embedded = false }: ChatWindowProps = {}): 
 
     fetchGoals();
     const interval = setInterval(fetchGoals, GOALS_POLL_INTERVAL);
-    return () => clearInterval(interval);
-  }, [setGoals]);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [chatSessionId, setGoals]);
 
   useEffect(() => {
     // Restore scroll position on prepends and keep the viewport pinned only when the user is already at the bottom.

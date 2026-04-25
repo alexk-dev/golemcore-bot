@@ -15,7 +15,6 @@ const CORE_ROUTES: MenuRouteExpectation[] = [
 
 const SECONDARY_ROUTES: MenuRouteExpectation[] = [
   { label: 'Sessions', path: '/sessions', visibleText: 'No sessions found.' },
-  { label: 'Goals & Tasks', path: '/goals', visibleText: 'Create and manage goals' },
   { label: 'Scheduler', path: '/scheduler', visibleText: 'No scheduled tasks yet.' },
   { label: 'Webhooks', path: '/webhooks', visibleText: 'Configure inbound HTTP hooks' },
   { label: 'Analytics', path: '/analytics', visibleText: 'Analytics' },
