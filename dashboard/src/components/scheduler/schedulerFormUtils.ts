@@ -1,4 +1,4 @@
-import type { SchedulerSchedule } from '../../api/scheduler';
+import type { SchedulerSchedule, SchedulerScheduledTask } from '../../api/scheduler';
 import type { GoalTask } from '../../api/goals';
 
 const HHMM_COLON_PATTERN = /^(\d{1,2}):(\d{1,2})$/;
@@ -77,7 +77,7 @@ export interface SchedulerTargetOption {
 export function buildGoalOptions(goals: Array<{ id: string; title: string; status: string }>): SchedulerTargetOption[] {
   return goals.map((goal) => ({
     id: goal.id,
-    label: `${goal.title} (${goal.status}) · ${goal.id}`,
+    label: `${goal.title} (${goal.status})`,
   }));
 }
 
@@ -87,15 +87,24 @@ export function buildTaskOptions(goals: Array<{
 }>, standaloneTasks: GoalTask[]): SchedulerTargetOption[] {
   const goalTaskOptions = goals.flatMap((goal) => goal.tasks.map((task) => ({
     id: task.id,
-    label: `${task.title} — ${goal.title} · ${task.id}`,
+    label: `${task.title} — ${goal.title}`,
   })));
 
   const standaloneOptions = standaloneTasks.map((task) => ({
     id: task.id,
-    label: `${task.title} — Standalone task · ${task.id}`,
+    label: `${task.title} — Standalone task`,
   }));
 
   return [...goalTaskOptions, ...standaloneOptions];
+}
+
+export function buildScheduledTaskOptions(
+  scheduledTasks: SchedulerScheduledTask[],
+): SchedulerTargetOption[] {
+  return scheduledTasks.map((task) => ({
+    id: task.id,
+    label: `${task.title} (${task.executionMode})`,
+  }));
 }
 
 export function isScheduleUnlimited(schedule: SchedulerSchedule): boolean {

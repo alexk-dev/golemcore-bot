@@ -1,11 +1,19 @@
-import type { RefObject } from 'react';
 import type { GoalTask } from '../api/goals';
-import type { SchedulerGoal, SchedulerSchedule } from '../api/scheduler';
-import { getGoalHref, getTaskHref } from '../components/scheduler/automationLinks';
+import type {
+  SchedulerGoal,
+  SchedulerSchedule,
+  SchedulerScheduledTask,
+} from '../api/scheduler';
+import {
+  getGoalHref,
+  getScheduledTaskHref,
+  getTaskHref,
+} from '../components/scheduler/automationLinks';
 
 interface UseSchedulerNavigationResult {
   resolveGoalHref: (goalId: string) => string | null;
   resolveTaskHref: (taskId: string) => string | null;
+  resolveScheduledTaskHref: (scheduledTaskId: string) => string | null;
   resolveScheduleTargetHref: (schedule: SchedulerSchedule) => string | null;
   openScheduleEditor: (schedule: SchedulerSchedule) => void;
 }
@@ -19,8 +27,8 @@ function hasTask(taskId: string, goals: SchedulerGoal[], standaloneTasks: GoalTa
 export function useSchedulerNavigation(
   goals: SchedulerGoal[],
   standaloneTasks: GoalTask[],
-  scheduleSectionRef: RefObject<HTMLDivElement>,
-  startEditing: (schedule: SchedulerSchedule) => void,
+  scheduledTasks: SchedulerScheduledTask[],
+  openScheduleEditor: (schedule: SchedulerSchedule) => void,
 ): UseSchedulerNavigationResult {
   const resolveGoalHref = (goalId: string): string | null => (
     goals.some((goal) => goal.id === goalId) ? getGoalHref(goalId) : null
@@ -30,18 +38,26 @@ export function useSchedulerNavigation(
     hasTask(taskId, goals, standaloneTasks) ? getTaskHref(taskId) : null
   );
 
-  const resolveScheduleTargetHref = (schedule: SchedulerSchedule): string | null => (
-    schedule.type === 'GOAL' ? resolveGoalHref(schedule.targetId) : resolveTaskHref(schedule.targetId)
+  const resolveScheduledTaskHref = (scheduledTaskId: string): string | null => (
+    scheduledTasks.some((task) => task.id === scheduledTaskId)
+      ? getScheduledTaskHref(scheduledTaskId)
+      : null
   );
 
-  const openScheduleEditor = (schedule: SchedulerSchedule): void => {
-    startEditing(schedule);
-    scheduleSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  const resolveScheduleTargetHref = (schedule: SchedulerSchedule): string | null => {
+    if (schedule.type === 'GOAL') {
+      return resolveGoalHref(schedule.targetId);
+    }
+    if (schedule.type === 'TASK') {
+      return resolveTaskHref(schedule.targetId);
+    }
+    return resolveScheduledTaskHref(schedule.targetId);
   };
 
   return {
     resolveGoalHref,
     resolveTaskHref,
+    resolveScheduledTaskHref,
     resolveScheduleTargetHref,
     openScheduleEditor,
   };

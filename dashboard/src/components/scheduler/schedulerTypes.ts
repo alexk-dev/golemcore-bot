@@ -1,4 +1,4 @@
-export type SchedulerTargetType = 'GOAL' | 'TASK';
+export type SchedulerTargetType = 'GOAL' | 'TASK' | 'SCHEDULED_TASK';
 export type SchedulerFrequency = 'daily' | 'weekdays' | 'weekly' | 'custom';
 export type SchedulerMode = 'simple' | 'advanced';
 

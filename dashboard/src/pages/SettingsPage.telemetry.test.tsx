@@ -24,7 +24,6 @@ vi.mock('./settings/TelemetryTab', () => ({ default: () => <div>telemetry</div> 
 vi.mock('./settings/McpTab', () => ({ default: () => <div>mcp</div> }));
 vi.mock('./settings/HiveTab', () => ({ default: () => <div>hive</div> }));
 vi.mock('./settings/AutoModeTab', () => ({ default: () => <div>auto</div> }));
-vi.mock('./settings/PlanModeTab', () => ({ default: () => <div>plan</div> }));
 vi.mock('./settings/SelfEvolvingTab', () => ({ default: () => <div>self-evolving</div> }));
 vi.mock('./settings/TracingTab', () => ({ default: () => <div>tracing</div> }));
 vi.mock('./settings/UpdatesTab', () => ({ UpdatesTab: () => <div>updates</div> }));

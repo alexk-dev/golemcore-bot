@@ -1,11 +1,26 @@
 import type { Goal, GoalTask } from './goals';
 import client from './client';
 
-export type SchedulerTargetType = 'GOAL' | 'TASK';
+export type SchedulerTargetType = 'GOAL' | 'TASK' | 'SCHEDULED_TASK';
 export type SchedulerFrequency = 'daily' | 'weekdays' | 'weekly' | 'custom';
 export type SchedulerMode = 'simple' | 'advanced';
+export type ScheduledTaskExecutionMode = 'AGENT_PROMPT' | 'SHELL_COMMAND';
 export type SchedulerGoal = Goal;
 export type SchedulerTask = GoalTask;
+
+export interface SchedulerScheduledTask {
+  id: string;
+  title: string;
+  description: string | null;
+  prompt: string | null;
+  executionMode: ScheduledTaskExecutionMode;
+  shellCommand: string | null;
+  shellWorkingDirectory: string | null;
+  reflectionModelTier: string | null;
+  reflectionTierPriority: boolean;
+  legacySourceType: string | null;
+  legacySourceId: string | null;
+}
 
 export interface SchedulerReport {
   channelType: string;
@@ -47,6 +62,7 @@ export interface SchedulerStateResponse {
   autoModeEnabled: boolean;
   goals: SchedulerGoal[];
   standaloneTasks: SchedulerTask[];
+  scheduledTasks: SchedulerScheduledTask[];
   schedules: SchedulerSchedule[];
   reportChannelOptions: SchedulerReportChannelOption[];
 }
@@ -83,6 +99,8 @@ export interface SchedulerRunSummary {
   scheduleTargetType: string | null;
   scheduleTargetId: string | null;
   scheduleTargetLabel: string | null;
+  scheduledTaskId: string | null;
+  scheduledTaskLabel: string | null;
   goalId: string | null;
   goalLabel: string | null;
   taskId: string | null;

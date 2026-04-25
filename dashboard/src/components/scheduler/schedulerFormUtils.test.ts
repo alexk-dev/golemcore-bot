@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import type { GoalTask } from '../../api/goals';
-import type { SchedulerSchedule } from '../../api/scheduler';
+import type { SchedulerSchedule, SchedulerScheduledTask } from '../../api/scheduler';
 import {
   buildGoalOptions,
+  buildScheduledTaskOptions,
   buildTaskOptions,
   formatLimit,
   isScheduleUnlimited,
@@ -48,7 +49,7 @@ describe('schedulerFormUtils', () => {
     expect(buildGoalOptions([
       { id: 'goal-1', title: 'Release v2', status: 'ACTIVE' },
     ])).toEqual([
-      { id: 'goal-1', label: 'Release v2 (ACTIVE) · goal-1' },
+      { id: 'goal-1', label: 'Release v2 (ACTIVE)' },
     ]);
 
     expect(buildTaskOptions([
@@ -57,8 +58,26 @@ describe('schedulerFormUtils', () => {
         tasks: [{ id: 'task-1', title: 'Write release notes' }],
       },
     ], [standaloneTask])).toEqual([
-      { id: 'task-1', label: 'Write release notes — Release v2 · task-1' },
-      { id: 'task-2', label: 'Review alerts — Standalone task · task-2' },
+      { id: 'task-1', label: 'Write release notes — Release v2' },
+      { id: 'task-2', label: 'Review alerts — Standalone task' },
+    ]);
+
+    const scheduledTask: SchedulerScheduledTask = {
+      id: 'scheduled-1',
+      title: 'Nightly indexing',
+      description: null,
+      prompt: null,
+      executionMode: 'SHELL_COMMAND',
+      shellCommand: 'npm run index',
+      shellWorkingDirectory: '/srv/app',
+      reflectionModelTier: null,
+      reflectionTierPriority: false,
+      legacySourceType: null,
+      legacySourceId: null,
+    };
+
+    expect(buildScheduledTaskOptions([scheduledTask])).toEqual([
+      { id: 'scheduled-1', label: 'Nightly indexing (SHELL_COMMAND)' },
     ]);
   });
 

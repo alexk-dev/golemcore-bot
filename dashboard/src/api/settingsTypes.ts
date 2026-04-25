@@ -12,6 +12,7 @@ export interface RuntimeConfig {
   memory: MemoryConfig;
   skills: SkillsConfig;
   turn: TurnConfig;
+  toolLoop: ToolLoopConfig;
   sessionRetention: SessionRetentionConfig;
   usage: UsageConfig;
   telemetry?: TelemetryConfig;
@@ -42,6 +43,7 @@ export interface MemoryDisclosureConfig { mode: MemoryDisclosureMode | null; pro
 export interface MemoryDiagnosticsConfig { verbosity: MemoryDiagnosticsVerbosity | null; }
 export interface SkillsConfig { enabled: boolean | null; progressiveLoading: boolean | null; marketplaceSourceType: 'repository' | 'directory' | 'sandbox' | null; marketplaceRepositoryDirectory: string | null; marketplaceSandboxPath: string | null; marketplaceRepositoryUrl: string | null; marketplaceBranch: string | null; }
 export interface TurnConfig { maxLlmCalls: number | null; maxToolExecutions: number | null; deadline: string | null; progressUpdatesEnabled: boolean | null; progressIntentEnabled: boolean | null; progressBatchSize: number | null; progressMaxSilenceSeconds: number | null; progressSummaryTimeoutMs: number | null; }
+export interface ToolLoopConfig { maxLlmCalls: number | null; maxToolExecutions: number | null; }
 export interface SessionRetentionConfig { enabled: boolean | null; maxAge: string | null; cleanupInterval: string | null; protectActiveSessions: boolean | null; protectSessionsWithPlans: boolean | null; protectSessionsWithDelayedActions: boolean | null; }
 export interface TelegramConfig { enabled: boolean | null; token: string | null; tokenPresent?: boolean; authMode: 'invite_only' | null; allowedUsers: string[]; inviteCodes: InviteCode[]; }
 export interface InviteCode { code: string; used: boolean; createdAt: string; }
@@ -55,7 +57,7 @@ export interface ShellEnvironmentVariable { name: string; value: string; }
 export interface VoiceConfig { enabled: boolean | null; apiKey: string | null; apiKeyPresent?: boolean; voiceId: string | null; ttsModelId: string | null; sttModelId: string | null; speed: number | null; telegramRespondWithVoice: boolean | null; telegramTranscribeIncoming: boolean | null; sttProvider: string | null; ttsProvider: string | null; whisperSttUrl: string | null; whisperSttApiKey: string | null; whisperSttApiKeyPresent?: boolean; }
 export interface UsageConfig { enabled: boolean | null; }
 export interface TelemetryConfig { enabled: boolean | null; clientId?: string; }
-export interface PlanConfig { enabled: boolean | null; maxPlans: number | null; maxStepsPerPlan: number | null; stopOnFailure: boolean | null; }
+export interface PlanConfig { modelTier: ExplicitModelTierId | null; }
 export interface HiveConfig { enabled: boolean | null; serverUrl: string | null; displayName: string | null; hostLabel: string | null; dashboardBaseUrl: string | null; ssoEnabled: boolean | null; autoConnect: boolean | null; managedByProperties: boolean | null; sdlc: HiveSdlcConfig; }
 export interface HiveSdlcConfig { currentContextEnabled: boolean | null; cardReadEnabled: boolean | null; cardSearchEnabled: boolean | null; threadMessageEnabled: boolean | null; reviewRequestEnabled: boolean | null; followupCardCreateEnabled: boolean | null; lifecycleSignalEnabled: boolean | null; }
 export interface SelfEvolvingConfig { enabled: boolean | null; tracePayloadOverride: boolean | null; managedByProperties?: boolean | null; overriddenPaths?: string[]; capture: SelfEvolvingCaptureConfig; judge: SelfEvolvingJudgeConfig; evolution: SelfEvolvingEvolutionConfig; tactics: SelfEvolvingTacticsConfig; promotion: SelfEvolvingPromotionConfig; benchmark: SelfEvolvingBenchmarkConfig; hive: SelfEvolvingHiveConfig; }
@@ -72,7 +74,7 @@ export interface SelfEvolvingToggleConfig { enabled: boolean | null; }
 export interface SelfEvolvingPromotionConfig { mode: 'approval_gate' | 'auto_accept' | null; allowAutoAccept: boolean | null; shadowRequired: boolean | null; canaryRequired: boolean | null; hiveApprovalPreferred: boolean | null; }
 export interface SelfEvolvingBenchmarkConfig { enabled: boolean | null; harvestProductionRuns: boolean | null; autoCreateRegressionCases: boolean | null; }
 export interface SelfEvolvingHiveConfig { publishInspectionProjection: boolean | null; readonlyInspection: boolean | null; }
-export interface AutoModeConfig { enabled: boolean | null; tickIntervalSeconds: number | null; taskTimeLimitMinutes: number | null; autoStart: boolean | null; maxGoals: number | null; modelTier: string | null; reflectionEnabled: boolean | null; reflectionFailureThreshold: number | null; reflectionModelTier: string | null; reflectionTierPriority: boolean | null; notifyMilestones: boolean | null; }
+export interface AutoModeConfig { enabled: boolean | null; tickIntervalSeconds: number | null; taskTimeLimitMinutes: number | null; autoStart: boolean | null; modelTier: string | null; reflectionEnabled: boolean | null; reflectionFailureThreshold: number | null; reflectionModelTier: string | null; reflectionTierPriority: boolean | null; notifyMilestones: boolean | null; }
 export interface TracingConfig { enabled: boolean | null; payloadSnapshotsEnabled: boolean | null; sessionTraceBudgetMb: number | null; maxSnapshotSizeKb: number | null; maxSnapshotsPerSpan: number | null; maxTracesPerSession: number | null; captureInboundPayloads: boolean | null; captureOutboundPayloads: boolean | null; captureToolPayloads: boolean | null; captureLlmPayloads: boolean | null; }
 export interface RateLimitConfig { enabled: boolean | null; userRequestsPerMinute: number | null; userRequestsPerHour: number | null; userRequestsPerDay: number | null; }
 export interface SecurityConfig { sanitizeInput: boolean | null; detectPromptInjection: boolean | null; detectCommandInjection: boolean | null; maxInputLength: number | null; allowlistEnabled: boolean | null; toolConfirmationEnabled: boolean | null; toolConfirmationTimeoutSeconds: number | null; }

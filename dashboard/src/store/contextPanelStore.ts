@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { Goal } from '../api/goals';
+import type { Goal, GoalTask } from '../api/goals';
 
 export interface FileChangeStat {
   path: string;
@@ -25,13 +25,19 @@ interface ContextPanelState {
   mobileDrawerOpen: boolean;
   turnMetadata: TurnMetadata;
   goals: Goal[];
+  standaloneTasks: GoalTask[];
   goalsFeatureEnabled: boolean;
   autoModeEnabled: boolean;
   togglePanel: () => void;
   openMobileDrawer: () => void;
   closeMobileDrawer: () => void;
   setTurnMetadata: (meta: Partial<TurnMetadata>) => void;
-  setGoals: (goals: Goal[], featureEnabled: boolean, autoModeEnabled: boolean) => void;
+  setGoals: (
+    goals: Goal[],
+    standaloneTasks: GoalTask[],
+    featureEnabled: boolean,
+    autoModeEnabled: boolean,
+  ) => void;
 }
 
 const emptyMetadata: TurnMetadata = {
@@ -51,6 +57,7 @@ export const useContextPanelStore = create<ContextPanelState>()((set) => ({
   mobileDrawerOpen: false,
   turnMetadata: { ...emptyMetadata },
   goals: [],
+  standaloneTasks: [],
   goalsFeatureEnabled: false,
   autoModeEnabled: false,
   togglePanel: () => set((s) => ({ panelOpen: !s.panelOpen })),
@@ -58,6 +65,6 @@ export const useContextPanelStore = create<ContextPanelState>()((set) => ({
   closeMobileDrawer: () => set({ mobileDrawerOpen: false }),
   setTurnMetadata: (meta) =>
     set((s) => ({ turnMetadata: { ...s.turnMetadata, ...meta } })),
-  setGoals: (goals, featureEnabled, autoModeEnabled) =>
-    set({ goals, goalsFeatureEnabled: featureEnabled, autoModeEnabled }),
+  setGoals: (goals, standaloneTasks, featureEnabled, autoModeEnabled) =>
+    set({ goals, standaloneTasks, goalsFeatureEnabled: featureEnabled, autoModeEnabled }),
 }));

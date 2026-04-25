@@ -12,7 +12,7 @@ vi.mock('./client', () => ({
   },
 }));
 
-import { updateMemoryConfig, updateTelemetryConfig } from './settings';
+import { updateMemoryConfig, updateTelemetryConfig, updateToolLoopConfig } from './settings';
 
 describe('settings telemetry metadata', () => {
   beforeEach(() => {
@@ -60,6 +60,21 @@ describe('settings telemetry metadata', () => {
         _telemetry: {
           counterKey: 'settings_save_count_by_section',
           value: 'telemetry',
+        },
+      }),
+    );
+  });
+
+  it('saves tool-loop limits through the tool-loop endpoint under turn settings telemetry', async () => {
+    await updateToolLoopConfig({ maxLlmCalls: 24, maxToolExecutions: 96 });
+
+    expect(clientPut).toHaveBeenCalledWith(
+      '/settings/runtime/tool-loop',
+      { maxLlmCalls: 24, maxToolExecutions: 96 },
+      expect.objectContaining({
+        _telemetry: {
+          counterKey: 'settings_save_count_by_section',
+          value: 'turn',
         },
       }),
     );

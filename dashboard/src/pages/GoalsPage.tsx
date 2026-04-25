@@ -1,10 +1,8 @@
 import { type ReactElement, useEffect, useState } from 'react';
 import { Button, Card, Spinner } from '../components/ui/tailwind-components';
-import { useNavigate } from 'react-router-dom';
 import type { Goal, GoalTask } from '../api/goals';
 import { GoalsWorkspace } from '../components/scheduler/GoalsWorkspace';
 import type { AutomationEditorItem } from '../components/scheduler/SchedulerAutomationEditModal';
-import { getSchedulerPrefillHref } from '../components/scheduler/automationLinks';
 import {
   useCreateGoal,
   useCreateTask,
@@ -47,7 +45,6 @@ function ErrorState({ onRetry }: ErrorStateProps): ReactElement {
 }
 
 export default function GoalsPage(): ReactElement {
-  const navigate = useNavigate();
   const goalsQuery = useGoalsState();
   const createGoalMutation = useCreateGoal();
   const updateGoalMutation = useUpdateGoal();
@@ -116,8 +113,6 @@ export default function GoalsPage(): ReactElement {
       onDeleteTask={(taskId) => {
         void deleteTaskMutation.mutateAsync(taskId);
       }}
-      onScheduleGoal={(goalId) => navigate(getSchedulerPrefillHref('GOAL', goalId))}
-      onScheduleTask={(taskId) => navigate(getSchedulerPrefillHref('TASK', taskId))}
     />
   );
 }
