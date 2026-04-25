@@ -45,6 +45,7 @@ public class RuntimeSettingsFacade {
     }
 
     public RuntimeConfig getRuntimeConfigForApi() {
+        runtimeConfigService.ensureTelemetryClientId();
         return runtimeConfigService.getRuntimeConfigForApi();
     }
 
@@ -303,7 +304,7 @@ public class RuntimeSettingsFacade {
 
     public RuntimeConfig updateTelemetryConfig(RuntimeConfig.TelemetryConfig telemetryConfig) {
         RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
-        config.setTelemetry(telemetryConfig);
+        config.setTelemetry(mergeTelemetryClientId(config.getTelemetry(), telemetryConfig));
         runtimeConfigService.updateRuntimeConfig(config);
         return runtimeConfigService.getRuntimeConfigForApi();
     }
@@ -468,6 +469,18 @@ public class RuntimeSettingsFacade {
             throw new IllegalStateException("Model router settings are managed by Hive policy group \""
                     + bindingState.getPolicyGroupId() + "\" and are read-only");
         }
+    }
+
+    private static RuntimeConfig.TelemetryConfig mergeTelemetryClientId(
+            RuntimeConfig.TelemetryConfig current,
+            RuntimeConfig.TelemetryConfig next) {
+        RuntimeConfig.TelemetryConfig merged = next != null ? next : new RuntimeConfig.TelemetryConfig();
+        String currentClientId = current != null ? current.getClientId() : null;
+        if ((merged.getClientId() == null || merged.getClientId().isBlank())
+                && currentClientId != null && !currentClientId.isBlank()) {
+            merged.setClientId(currentClientId);
+        }
+        return merged;
     }
 
     private void rejectManagedPolicyLlmWrite() {

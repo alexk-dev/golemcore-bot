@@ -1,7 +1,6 @@
 package me.golemcore.bot.infrastructure.telemetry;
 
 import lombok.extern.slf4j.Slf4j;
-import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.info.BuildProperties;
@@ -10,7 +9,6 @@ import org.springframework.stereotype.Component;
 import java.time.Clock;
 import java.util.LinkedHashMap;
 import java.util.Map;
-import java.util.UUID;
 
 @Component
 @Slf4j
@@ -76,25 +74,7 @@ public class TelemetryEventPublisher {
         if (cached != null) {
             return cached;
         }
-        RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
-        RuntimeConfig.TelemetryConfig telemetryConfig = config.getTelemetry();
-        if (telemetryConfig != null && telemetryConfig.getClientId() != null
-                && !telemetryConfig.getClientId().isBlank()) {
-            cachedClientId = telemetryConfig.getClientId();
-            return cachedClientId;
-        }
-        String generated = UUID.randomUUID().toString();
-        try {
-            if (config.getTelemetry() == null) {
-                config.setTelemetry(new RuntimeConfig.TelemetryConfig());
-            }
-            config.getTelemetry().setClientId(generated);
-            runtimeConfigService.updateRuntimeConfig(config);
-            log.info("[Telemetry] Generated and persisted GA4 client_id: {}", generated);
-        } catch (Exception exception) {
-            log.warn("[Telemetry] Failed to persist GA4 client_id: {}", exception.getMessage());
-        }
-        cachedClientId = generated;
-        return generated;
+        cachedClientId = runtimeConfigService.ensureTelemetryClientId();
+        return cachedClientId;
     }
 }
