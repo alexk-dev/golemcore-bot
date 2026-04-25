@@ -3,8 +3,8 @@ import { Button, Card, Col, Form, Row } from '../../components/ui/tailwind-compo
 import toast from 'react-hot-toast';
 import HelpTip from '../../components/common/HelpTip';
 import SettingsCardTitle from '../../components/common/SettingsCardTitle';
-import { useUpdateTurn } from '../../hooks/useSettings';
-import type { TurnConfig } from '../../api/settingsTypes';
+import { useUpdateToolLoop, useUpdateTurn } from '../../hooks/useSettings';
+import type { ToolLoopConfig, TurnConfig } from '../../api/settingsTypes';
 import { SaveStateHint, SettingsSaveBar } from '../../components/common/SettingsSaveBar';
 
 function hasDiff<T>(current: T, initial: T): boolean {
@@ -22,71 +22,99 @@ function toNullableString(value: string): string | null {
 
 interface TurnTabProps {
   config: TurnConfig;
+  toolLoopConfig: ToolLoopConfig;
 }
 
-export default function TurnTab({ config }: TurnTabProps): ReactElement {
+export default function TurnTab({ config, toolLoopConfig }: TurnTabProps): ReactElement {
   const updateTurn = useUpdateTurn();
+  const updateToolLoop = useUpdateToolLoop();
   const [form, setForm] = useState<TurnConfig>({ ...config });
-  const isDirty = useMemo(() => hasDiff(form, config), [form, config]);
+  const [toolLoopForm, setToolLoopForm] = useState<ToolLoopConfig>({ ...toolLoopConfig });
+  const turnDirty = useMemo(() => hasDiff(form, config), [form, config]);
+  const toolLoopDirty = useMemo(() => hasDiff(toolLoopForm, toolLoopConfig), [toolLoopForm, toolLoopConfig]);
+  const isDirty = turnDirty || toolLoopDirty;
+  const isSaving = updateTurn.isPending || updateToolLoop.isPending;
   const progressUpdatesEnabled = form.progressUpdatesEnabled ?? true;
 
   useEffect(() => {
     setForm({ ...config });
   }, [config]);
 
+  useEffect(() => {
+    setToolLoopForm({ ...toolLoopConfig });
+  }, [toolLoopConfig]);
+
   const handleSave = async (): Promise<void> => {
-    await updateTurn.mutateAsync(form);
+    if (toolLoopDirty) {
+      await updateToolLoop.mutateAsync(toolLoopForm);
+    }
+    if (turnDirty) {
+      await updateTurn.mutateAsync(form);
+    }
     toast.success('Turn budget settings saved');
   };
 
   return (
     <Card className="settings-card">
       <Card.Body>
-        <SettingsCardTitle title="Turn Settings" />
+        <SettingsCardTitle title="Tool Loop Limits" />
         <Row className="g-3 mb-3">
           <Col md={4}>
             <Form.Group>
               <Form.Label className="small fw-medium">
-                Max LLM Calls <HelpTip text="Maximum LLM requests within a single turn." />
+                Max Internal AI Calls <HelpTip text="Maximum LLM requests inside the internal tool loop. Saves to toolLoop.maxLlmCalls." />
               </Form.Label>
               <Form.Control
                 size="sm"
                 type="number"
                 min={1}
-                value={form.maxLlmCalls ?? 200}
-                onChange={(e) => setForm({ ...form, maxLlmCalls: toNullableInt(e.target.value) })}
+                value={toolLoopForm.maxLlmCalls ?? 20}
+                onChange={(e) =>
+                  setToolLoopForm({
+                    ...toolLoopForm,
+                    maxLlmCalls: toNullableInt(e.target.value),
+                  })
+                }
               />
             </Form.Group>
           </Col>
           <Col md={4}>
             <Form.Group>
               <Form.Label className="small fw-medium">
-                Max Tool Executions <HelpTip text="Maximum tool executions within a single turn." />
+                Max Tool Executions <HelpTip text="Maximum tool executions inside the internal tool loop. Saves to toolLoop.maxToolExecutions." />
               </Form.Label>
               <Form.Control
                 size="sm"
                 type="number"
                 min={1}
-                value={form.maxToolExecutions ?? 500}
-                onChange={(e) => setForm({ ...form, maxToolExecutions: toNullableInt(e.target.value) })}
-              />
-            </Form.Group>
-          </Col>
-          <Col md={4}>
-            <Form.Group>
-              <Form.Label className="small fw-medium">
-                Deadline <HelpTip text="Turn deadline in ISO-8601 duration format, e.g. PT1H or PT30M." />
-              </Form.Label>
-              <Form.Control
-                size="sm"
-                value={form.deadline ?? 'PT1H'}
-                onChange={(e) => setForm({ ...form, deadline: toNullableString(e.target.value) })}
-                placeholder="PT1H"
+                value={toolLoopForm.maxToolExecutions ?? 80}
+                onChange={(e) =>
+                  setToolLoopForm({
+                    ...toolLoopForm,
+                    maxToolExecutions: toNullableInt(e.target.value),
+                  })
+                }
               />
             </Form.Group>
           </Col>
         </Row>
         <div className="border-top pt-3 mt-2">
+          <SettingsCardTitle title="Turn Settings" />
+          <Row className="g-3 mb-3">
+            <Col md={4}>
+              <Form.Group>
+                <Form.Label className="small fw-medium">
+                  Deadline <HelpTip text="Turn deadline in ISO-8601 duration format, e.g. PT1H or PT30M." />
+                </Form.Label>
+                <Form.Control
+                  size="sm"
+                  value={form.deadline ?? 'PT1H'}
+                  onChange={(e) => setForm({ ...form, deadline: toNullableString(e.target.value) })}
+                  placeholder="PT1H"
+                />
+              </Form.Group>
+            </Col>
+          </Row>
           <SettingsCardTitle title="Live Progress" />
           <p className="small text-body-secondary mb-3">
             Share a short progress update while the agent is working, instead of posting every tool call.
@@ -164,8 +192,8 @@ export default function TurnTab({ config }: TurnTabProps): ReactElement {
           </Row>
         </div>
         <SettingsSaveBar>
-          <Button type="button" variant="primary" size="sm" onClick={() => { void handleSave(); }} disabled={!isDirty || updateTurn.isPending}>
-            {updateTurn.isPending ? 'Saving...' : 'Save'}
+          <Button type="button" variant="primary" size="sm" onClick={() => { void handleSave(); }} disabled={!isDirty || isSaving}>
+            {isSaving ? 'Saving...' : 'Save'}
           </Button>
           <SaveStateHint isDirty={isDirty} />
         </SettingsSaveBar>

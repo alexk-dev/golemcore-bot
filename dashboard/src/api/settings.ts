@@ -19,6 +19,7 @@ import type {
   SecurityConfig,
   SkillsConfig,
   TelemetryConfig,
+  ToolLoopConfig,
   ToolsConfig,
   TracingConfig,
   TurnConfig,
@@ -73,6 +74,7 @@ export type {
   SelfEvolvingToggleConfig,
   SkillsConfig,
   TelemetryConfig,
+  ToolLoopConfig,
   ToolsConfig,
   TracingConfig,
   TurnConfig,
@@ -273,6 +275,15 @@ export async function updateSkillsConfig(config: SkillsConfig): Promise<RuntimeC
 export async function updateTurnConfig(config: TurnConfig): Promise<RuntimeConfig> {
   const { data } = await client.put<RuntimeConfigUiRecord>(
     '/settings/runtime/turn',
+    config,
+    withSettingsSectionTelemetry('turn'),
+  );
+  return toUiRuntimeConfig(data);
+}
+
+export async function updateToolLoopConfig(config: ToolLoopConfig): Promise<RuntimeConfig> {
+  const { data } = await client.put<RuntimeConfigUiRecord>(
+    '/settings/runtime/tool-loop',
     config,
     withSettingsSectionTelemetry('turn'),
   );

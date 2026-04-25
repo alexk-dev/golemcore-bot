@@ -223,6 +223,18 @@ public final class ContextAttributes {
     public static final String TOOL_LOOP_LIMIT_REASON = "toolloop.limit.reason";
 
     /**
+     * Integer - resolved max internal LLM calls for the tool-loop turn that just
+     * stopped.
+     */
+    public static final String TOOL_LOOP_LIMIT_MAX_LLM_CALLS = "toolloop.limit.maxLlmCalls";
+
+    /**
+     * Integer - resolved max tool executions for the tool-loop turn that just
+     * stopped.
+     */
+    public static final String TOOL_LOOP_LIMIT_MAX_TOOL_EXECUTIONS = "toolloop.limit.maxToolExecutions";
+
+    /**
      * {@code List<RuntimeEvent>} - runtime execution events for the current turn.
      */
     public static final String RUNTIME_EVENTS = "runtime.events";

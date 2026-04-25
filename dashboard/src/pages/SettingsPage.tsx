@@ -169,7 +169,7 @@ export default function SettingsPage(): ReactElement {
 
       {staticSection === 'memory' && rc != null && <MemoryTab config={rc.memory} />}
       {staticSection === 'skills' && rc != null && <SkillsTab config={rc.skills} />}
-      {staticSection === 'turn' && rc != null && <TurnTab config={rc.turn} />}
+      {staticSection === 'turn' && rc != null && <TurnTab config={rc.turn} toolLoopConfig={rc.toolLoop} />}
       {staticSection === 'usage' && rc != null && <UsageTab config={rc.usage} sessionRetention={rc.sessionRetention} />}
       {staticSection === 'telemetry' && rc != null && <TelemetryTab config={rc.telemetry ?? { enabled: true }} />}
       {staticSection === 'mcp' && rc != null && <McpTab config={rc.mcp} />}

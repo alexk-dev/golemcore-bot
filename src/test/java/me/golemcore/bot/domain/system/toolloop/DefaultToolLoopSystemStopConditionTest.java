@@ -253,6 +253,8 @@ class DefaultToolLoopSystemStopConditionTest extends DefaultToolLoopSystemFixtur
         Boolean limitReached = context.getAttribute(ContextAttributes.TOOL_LOOP_LIMIT_REACHED);
         assertTrue(Boolean.TRUE.equals(limitReached),
                 "TOOL_LOOP_LIMIT_REACHED should be set when LLM call limit exhausted");
+        assertEquals(Integer.valueOf(1), context.getAttribute(ContextAttributes.TOOL_LOOP_LIMIT_MAX_LLM_CALLS));
+        assertEquals(Integer.valueOf(80), context.getAttribute(ContextAttributes.TOOL_LOOP_LIMIT_MAX_TOOL_EXECUTIONS));
     }
 
     @Test

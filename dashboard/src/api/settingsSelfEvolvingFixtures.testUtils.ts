@@ -55,6 +55,7 @@ export function buildRuntimeConfigFixture(selfEvolving: Record<string, unknown>)
     memory: {},
     skills: {},
     turn: {},
+    toolLoop: {},
     sessionRetention: { enabled: true, maxAge: 'P30D', cleanupInterval: 'PT24H', protectActiveSessions: true, protectSessionsWithPlans: true, protectSessionsWithDelayedActions: true },
     usage: { enabled: true },
     mcp: { enabled: false, defaultStartupTimeout: null, defaultIdleTimeout: null, catalog: [] },

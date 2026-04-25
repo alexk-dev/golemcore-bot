@@ -272,6 +272,8 @@ class LlmCallPhase {
         applyAttachments(context, turnState.getAccumulatedAttachments());
         context.setAttribute(ContextAttributes.TOOL_LOOP_LIMIT_REACHED, true);
         context.setAttribute(ContextAttributes.TOOL_LOOP_LIMIT_REASON, stopReason);
+        context.setAttribute(ContextAttributes.TOOL_LOOP_LIMIT_MAX_LLM_CALLS, turnState.getMaxLlmCalls());
+        context.setAttribute(ContextAttributes.TOOL_LOOP_LIMIT_MAX_TOOL_EXECUTIONS, turnState.getMaxToolExecutions());
         emitRuntimeEvent(context, RuntimeEventType.TURN_FINISHED,
                 eventPayload("reason", "limit", "limit", stopReason.name()));
         return stopTurn(context, lastResponse, pendingToolCalls,

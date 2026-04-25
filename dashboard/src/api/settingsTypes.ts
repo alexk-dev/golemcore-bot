@@ -12,6 +12,7 @@ export interface RuntimeConfig {
   memory: MemoryConfig;
   skills: SkillsConfig;
   turn: TurnConfig;
+  toolLoop: ToolLoopConfig;
   sessionRetention: SessionRetentionConfig;
   usage: UsageConfig;
   telemetry?: TelemetryConfig;
@@ -42,6 +43,7 @@ export interface MemoryDisclosureConfig { mode: MemoryDisclosureMode | null; pro
 export interface MemoryDiagnosticsConfig { verbosity: MemoryDiagnosticsVerbosity | null; }
 export interface SkillsConfig { enabled: boolean | null; progressiveLoading: boolean | null; marketplaceSourceType: 'repository' | 'directory' | 'sandbox' | null; marketplaceRepositoryDirectory: string | null; marketplaceSandboxPath: string | null; marketplaceRepositoryUrl: string | null; marketplaceBranch: string | null; }
 export interface TurnConfig { maxLlmCalls: number | null; maxToolExecutions: number | null; deadline: string | null; progressUpdatesEnabled: boolean | null; progressIntentEnabled: boolean | null; progressBatchSize: number | null; progressMaxSilenceSeconds: number | null; progressSummaryTimeoutMs: number | null; }
+export interface ToolLoopConfig { maxLlmCalls: number | null; maxToolExecutions: number | null; }
 export interface SessionRetentionConfig { enabled: boolean | null; maxAge: string | null; cleanupInterval: string | null; protectActiveSessions: boolean | null; protectSessionsWithPlans: boolean | null; protectSessionsWithDelayedActions: boolean | null; }
 export interface TelegramConfig { enabled: boolean | null; token: string | null; tokenPresent?: boolean; authMode: 'invite_only' | null; allowedUsers: string[]; inviteCodes: InviteCode[]; }
 export interface InviteCode { code: string; used: boolean; createdAt: string; }

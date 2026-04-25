@@ -19,6 +19,7 @@ import {
   getMemoryPresets,
   updateSkillsConfig,
   updateTurnConfig,
+  updateToolLoopConfig,
   updateSessionRetentionConfig,
   updateUsageConfig,
   updateTelemetryConfig,
@@ -45,6 +46,7 @@ import type {
   MemoryPreset,
   SkillsConfig,
   TurnConfig,
+  ToolLoopConfig,
   SessionRetentionConfig,
   UsageConfig,
   TelemetryConfig,
@@ -205,6 +207,14 @@ export function useUpdateTurn(): UseMutationResult<Awaited<ReturnType<typeof upd
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (config: TurnConfig) => updateTurnConfig(config),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['runtime-config'] }),
+  });
+}
+
+export function useUpdateToolLoop(): UseMutationResult<Awaited<ReturnType<typeof updateToolLoopConfig>>, unknown, ToolLoopConfig> {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (config: ToolLoopConfig) => updateToolLoopConfig(config),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['runtime-config'] }),
   });
 }
