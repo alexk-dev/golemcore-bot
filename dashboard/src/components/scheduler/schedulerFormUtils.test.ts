@@ -49,7 +49,7 @@ describe('schedulerFormUtils', () => {
     expect(buildGoalOptions([
       { id: 'goal-1', title: 'Release v2', status: 'ACTIVE' },
     ])).toEqual([
-      { id: 'goal-1', label: 'Release v2 (ACTIVE) · goal-1' },
+      { id: 'goal-1', label: 'Release v2 (ACTIVE)' },
     ]);
 
     expect(buildTaskOptions([
@@ -58,8 +58,8 @@ describe('schedulerFormUtils', () => {
         tasks: [{ id: 'task-1', title: 'Write release notes' }],
       },
     ], [standaloneTask])).toEqual([
-      { id: 'task-1', label: 'Write release notes — Release v2 · task-1' },
-      { id: 'task-2', label: 'Review alerts — Standalone task · task-2' },
+      { id: 'task-1', label: 'Write release notes — Release v2' },
+      { id: 'task-2', label: 'Review alerts — Standalone task' },
     ]);
 
     const scheduledTask: SchedulerScheduledTask = {
@@ -77,7 +77,7 @@ describe('schedulerFormUtils', () => {
     };
 
     expect(buildScheduledTaskOptions([scheduledTask])).toEqual([
-      { id: 'scheduled-1', label: 'Nightly indexing (SHELL_COMMAND) · scheduled-1' },
+      { id: 'scheduled-1', label: 'Nightly indexing (SHELL_COMMAND)' },
     ]);
   });
 

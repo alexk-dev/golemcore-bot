@@ -115,5 +115,8 @@ describe('ContextPanel', () => {
     expect(document.body.textContent).toContain('Prepare changelog');
     expect(document.body.textContent).toContain('Standalone tasks');
     expect(document.body.textContent).toContain('Investigate flaky test');
+    expect(document.body.textContent).not.toContain('goal-release');
+    expect(document.body.textContent).not.toContain('task-goal-1');
+    expect(document.body.textContent).not.toContain('task-standalone-1');
   });
 });

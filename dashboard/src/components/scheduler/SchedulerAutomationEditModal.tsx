@@ -149,7 +149,7 @@ export function SchedulerAutomationEditModal({
       <Modal.Body>
         {item?.kind === 'task' && (
           <div className="small text-body-secondary mb-3">
-            {item.value.standalone ? 'Standalone task' : `Goal ID: ${item.value.goalId ?? '—'}`}
+            {item.value.standalone ? 'Standalone task' : 'Attached to goal'}
           </div>
         )}
 

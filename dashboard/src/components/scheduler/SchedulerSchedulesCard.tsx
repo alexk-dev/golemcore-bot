@@ -87,7 +87,7 @@ export function SchedulerSchedulesCard({
                         )}
                       </div>
                       <div className="small text-body-secondary">
-                        {schedule.type} · target <code>{schedule.targetId}</code>
+                        {schedule.type}
                       </div>
                       <div className="small text-body-secondary">
                         schedule <code>{schedule.id}</code>

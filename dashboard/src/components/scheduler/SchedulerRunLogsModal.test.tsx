@@ -63,7 +63,7 @@ describe('SchedulerRunLogsModal', () => {
     });
 
     expect(document.body.textContent ?? '').toContain('Scheduled task: Nightly cleanup');
-    expect(document.body.textContent ?? '').toContain('scheduled-task-1');
+    expect(document.body.textContent ?? '').not.toContain('scheduled-task-1');
 
     act(() => {
       root.unmount();

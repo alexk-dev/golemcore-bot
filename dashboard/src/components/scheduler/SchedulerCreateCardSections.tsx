@@ -126,11 +126,6 @@ export function TargetSelector({
           <option key={option.id} value={option.id}>{option.label}</option>
         ))}
       </Form.Select>
-      {effectiveTargetId.length > 0 && (
-        <Form.Text className="text-body-secondary">
-          Selected ID: <code>{effectiveTargetId}</code>
-        </Form.Text>
-      )}
       {effectiveTargetId.length === 0 && helpText != null && helpText.length > 0 && (
         <Form.Text className="text-body-secondary">{helpText}</Form.Text>
       )}

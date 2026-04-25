@@ -215,9 +215,6 @@ export default function ContextPanel({ tier, tierForce, chatSessionId, onTierCha
               <div className="d-flex justify-content-between align-items-center">
                 <div>
                   <strong className="goal-title">{goal.title}</strong>
-                  <div className="small text-body-secondary">
-                    <code>{goal.id}</code>
-                  </div>
                 </div>
                 <small className="text-body-secondary">
                   {goal.completedTasks}/{goal.totalTasks}
@@ -231,9 +228,6 @@ export default function ContextPanel({ tier, tierForce, chatSessionId, onTierCha
                       <div>
                         <div className={task.status === 'COMPLETED' ? 'text-decoration-line-through text-body-secondary' : ''}>
                           {task.title}
-                        </div>
-                        <div className="small text-body-secondary">
-                          <code>{task.id}</code>
                         </div>
                       </div>
                     </li>
@@ -254,9 +248,6 @@ export default function ContextPanel({ tier, tierForce, chatSessionId, onTierCha
                     <span className={`task-status-icon ${task.status.toLowerCase()}`} />
                     <div>
                       <div>{task.title}</div>
-                      <div className="small text-body-secondary">
-                        <code>{task.id}</code>
-                      </div>
                     </div>
                   </li>
                 ))}

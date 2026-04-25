@@ -82,9 +82,6 @@ function TaskRow({
             <Badge bg={resolveBadgeVariant(task.status)}>{task.status}</Badge>
             {task.standalone && <Badge bg="secondary">Standalone</Badge>}
           </div>
-          <div className="small text-body-secondary">
-            task <code>{task.id}</code>
-          </div>
           {renderTextBlock('Details', task.description)}
           {renderTextBlock('Prompt', task.prompt)}
           {renderTextBlock('Reflection tier', task.reflectionModelTier)}
@@ -119,9 +116,6 @@ function GoalCard({
             <strong>{goal.title}</strong>
             <Badge bg={resolveBadgeVariant(goal.status)}>{goal.status}</Badge>
             <Badge bg="secondary">{goal.completedTasks}/{goal.totalTasks} tasks</Badge>
-          </div>
-          <div className="small text-body-secondary">
-            goal <code>{goal.id}</code>
           </div>
           {renderTextBlock('Details', goal.description)}
           {renderTextBlock('Prompt', goal.prompt)}

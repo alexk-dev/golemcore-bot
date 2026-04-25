@@ -77,7 +77,7 @@ export interface SchedulerTargetOption {
 export function buildGoalOptions(goals: Array<{ id: string; title: string; status: string }>): SchedulerTargetOption[] {
   return goals.map((goal) => ({
     id: goal.id,
-    label: `${goal.title} (${goal.status}) · ${goal.id}`,
+    label: `${goal.title} (${goal.status})`,
   }));
 }
 
@@ -87,12 +87,12 @@ export function buildTaskOptions(goals: Array<{
 }>, standaloneTasks: GoalTask[]): SchedulerTargetOption[] {
   const goalTaskOptions = goals.flatMap((goal) => goal.tasks.map((task) => ({
     id: task.id,
-    label: `${task.title} — ${goal.title} · ${task.id}`,
+    label: `${task.title} — ${goal.title}`,
   })));
 
   const standaloneOptions = standaloneTasks.map((task) => ({
     id: task.id,
-    label: `${task.title} — Standalone task · ${task.id}`,
+    label: `${task.title} — Standalone task`,
   }));
 
   return [...goalTaskOptions, ...standaloneOptions];
@@ -103,7 +103,7 @@ export function buildScheduledTaskOptions(
 ): SchedulerTargetOption[] {
   return scheduledTasks.map((task) => ({
     id: task.id,
-    label: `${task.title} (${task.executionMode}) · ${task.id}`,
+    label: `${task.title} (${task.executionMode})`,
   }));
 }
 
