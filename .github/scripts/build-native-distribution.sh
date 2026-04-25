@@ -6,6 +6,7 @@ set -euo pipefail
 # layout shipped by GitHub Releases.
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 TARGET_DIR="${ROOT_DIR}/target"
+APP_TARGET_DIR="${ROOT_DIR}/golemcore-bot-app/target"
 NATIVE_DIST_DIR="${TARGET_DIR}/native-dist"
 BUILD_DIR="${NATIVE_DIST_DIR}/build"
 JPACKAGE_INPUT_DIR="${BUILD_DIR}/jpackage-input"
@@ -22,20 +23,20 @@ fi
 
 # The release jar is the actual Spring Boot runtime that RuntimeCliLauncher should
 # restart into after an update.
-RUNTIME_JAR_PATH="$(find "${TARGET_DIR}" -maxdepth 1 -type f -name 'bot-*-exec.jar' | sort | head -n 1)"
+RUNTIME_JAR_PATH="$(find "${APP_TARGET_DIR}" -maxdepth 1 -type f -name 'bot-*-exec.jar' | sort | head -n 1)"
 if [[ -z "${RUNTIME_JAR_PATH}" ]]; then
-  echo "Executable runtime jar not found in target/. Run ./mvnw clean package first." >&2
+  echo "Executable runtime jar not found in golemcore-bot-app/target/. Run ./mvnw clean package first." >&2
   exit 1
 fi
 
 # The launcher classes are packaged separately so jpackage can bootstrap the
 # app-image with the lightweight restart-aware entry point.
-if [[ ! -d "${TARGET_DIR}/classes/me/golemcore/bot/launcher" ]]; then
-  echo "Launcher classes not found in target/classes. Run ./mvnw clean package first." >&2
+if [[ ! -d "${APP_TARGET_DIR}/classes/me/golemcore/bot/launcher" ]]; then
+  echo "Launcher classes not found in golemcore-bot-app/target/classes. Run ./mvnw clean package first." >&2
   exit 1
 fi
-if [[ ! -d "${TARGET_DIR}/classes/me/golemcore/bot/runtime" ]]; then
-  echo "Runtime support classes not found in target/classes. Run ./mvnw clean package first." >&2
+if [[ ! -d "${APP_TARGET_DIR}/classes/me/golemcore/bot/runtime" ]]; then
+  echo "Runtime support classes not found in golemcore-bot-app/target/classes. Run ./mvnw clean package first." >&2
   exit 1
 fi
 
@@ -43,8 +44,8 @@ RUNTIME_JAR_NAME="$(basename "${RUNTIME_JAR_PATH}")"
 VERSION="${RUNTIME_JAR_NAME#bot-}"
 VERSION="${VERSION%-exec.jar}"
 APP_VERSION="$(printf '%s' "${VERSION}" | sed -E 's/^([0-9]+\.[0-9]+\.[0-9]+).*/\1/')"
-if [[ -z "${APP_VERSION}" ]]; then
-  APP_VERSION="0.0.0"
+if [[ ! "${APP_VERSION}" =~ ^[1-9][0-9]*(\.[0-9]+){0,2}$ ]]; then
+  APP_VERSION="1.0.0"
 fi
 
 # jpackage app-image layouts differ between Linux and macOS, so capture the
@@ -102,8 +103,8 @@ mkdir -p "${JPACKAGE_INPUT_DIR}" "${APP_IMAGE_OUTPUT_DIR}" "${NATIVE_DIST_DIR}"
 jar --create \
   --file "${LAUNCHER_JAR_PATH}" \
   --main-class "${LAUNCHER_MAIN_CLASS}" \
-  -C "${TARGET_DIR}/classes" me/golemcore/bot/launcher \
-  -C "${TARGET_DIR}/classes" me/golemcore/bot/runtime
+  -C "${APP_TARGET_DIR}/classes" me/golemcore/bot/launcher \
+  -C "${APP_TARGET_DIR}/classes" me/golemcore/bot/runtime
 
 if [[ ! -f "${PICOCLI_JAR_PATH}" ]]; then
   echo "picocli jar not found: ${PICOCLI_JAR_PATH}" >&2

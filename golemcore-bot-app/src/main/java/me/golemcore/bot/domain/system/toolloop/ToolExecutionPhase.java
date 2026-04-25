@@ -27,7 +27,6 @@ import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.RuntimeEventType;
 import me.golemcore.bot.domain.model.ToolFailureKind;
 import me.golemcore.bot.domain.model.ToolNames;
-import me.golemcore.bot.domain.model.ToolResult;
 import me.golemcore.bot.domain.model.hive.HiveRuntimeContracts;
 import me.golemcore.bot.domain.model.trace.TraceContext;
 import me.golemcore.bot.domain.model.trace.TraceSpanKind;

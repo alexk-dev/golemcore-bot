@@ -148,9 +148,9 @@ jobs:
       - name: Smoke test standalone JAR
         run: |
           set -euo pipefail
-          runtime_jar="$(find target -maxdepth 1 -type f -name 'bot-*-exec.jar' | sort | head -n 1)"
+          runtime_jar="$(find golemcore-bot-app/target -maxdepth 1 -type f -name 'bot-*-exec.jar' | sort | head -n 1)"
           if [[ -z "${runtime_jar}" ]]; then
-            echo "Executable runtime jar not found in target/." >&2
+            echo "Executable runtime jar not found in golemcore-bot-app/target/." >&2
             exit 1
           fi
 
