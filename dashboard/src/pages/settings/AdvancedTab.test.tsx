@@ -62,7 +62,10 @@ const DEFAULT_COMPACTION: CompactionConfig = {
   keepLastMessages: null,
 };
 
-function buildResilienceConfig(l2ProviderFallbackMaxAttempts: number): ResilienceConfig {
+function buildResilienceConfig(
+  l2ProviderFallbackMaxAttempts: number,
+  followThroughMaxChainDepth = 1,
+): ResilienceConfig {
   return {
     enabled: true,
     hotRetryMaxAttempts: 5,
@@ -79,6 +82,18 @@ function buildResilienceConfig(l2ProviderFallbackMaxAttempts: number): Resilienc
     degradationStripTools: true,
     coldRetryEnabled: true,
     coldRetryMaxAttempts: 4,
+    followThrough: {
+      enabled: true,
+      modelTier: 'routing',
+      timeoutSeconds: 5,
+      maxChainDepth: followThroughMaxChainDepth,
+    },
+    autoProceed: {
+      enabled: false,
+      modelTier: 'routing',
+      timeoutSeconds: 5,
+      maxChainDepth: 2,
+    },
   };
 }
 
@@ -115,10 +130,16 @@ function renderAdvancedTab(resilience: ResilienceConfig): RenderResult {
   };
 }
 
-function getNumberInput(container: HTMLElement): HTMLInputElement {
-  const input = container.querySelector('input[type="number"]');
+function getInputByLabel(container: HTMLElement, label: string): HTMLInputElement {
+  const labels = Array.from(container.querySelectorAll('label'));
+  const match = labels.find((node) => node.textContent?.includes(label));
+  if (match == null) {
+    throw new Error(`Label "${label}" not found`);
+  }
+  const group = match.parentElement;
+  const input = group?.querySelector('input, select');
   if (!(input instanceof HTMLInputElement)) {
-    throw new Error('Number input not found');
+    throw new Error(`Input for label "${label}" not found`);
   }
   return input;
 }
@@ -158,7 +179,7 @@ describe('AdvancedTab resilience settings', () => {
 
   it('saves resilience config through the advanced settings mutation', async () => {
     const view = renderAdvancedTab(buildResilienceConfig(5));
-    const input = getNumberInput(view.container);
+    const input = getInputByLabel(view.container, 'L2 Provider Fallback Max Attempts');
 
     act(() => {
       const descriptor = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
@@ -178,6 +199,42 @@ describe('AdvancedTab resilience settings', () => {
       resilience: buildResilienceConfig(7),
     });
     expect(toastSuccess).toHaveBeenCalledWith('Advanced settings saved');
+
+    view.unmount();
+  });
+
+  it('renders follow-through nudge controls', () => {
+    const view = renderAdvancedTab(buildResilienceConfig(5));
+
+    expect(view.container.textContent).toContain('Follow-Through Nudge');
+    expect(view.container.textContent).toContain('Classifier Model Tier');
+    expect(view.container.textContent).toContain('Classifier Timeout');
+    expect(view.container.textContent).toContain('Max Chain Depth');
+
+    view.unmount();
+  });
+
+  it('saves follow-through max chain depth through the advanced settings mutation', async () => {
+    const view = renderAdvancedTab(buildResilienceConfig(5, 1));
+    const input = getInputByLabel(view.container, 'Max Chain Depth');
+
+    act(() => {
+      const descriptor = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
+      descriptor?.set?.call(input, '3');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+
+    act(() => {
+      getButtonByText('Save All').click();
+    });
+    await flushPromises();
+
+    expect(mutateAsync).toHaveBeenCalledWith({
+      rateLimit: DEFAULT_RATE_LIMIT,
+      security: DEFAULT_SECURITY,
+      compaction: DEFAULT_COMPACTION,
+      resilience: buildResilienceConfig(5, 3),
+    });
 
     view.unmount();
   });

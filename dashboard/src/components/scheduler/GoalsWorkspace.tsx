@@ -31,8 +31,6 @@ interface GoalsWorkspaceProps {
   onEditTask: (task: GoalTask) => void;
   onDeleteGoal: (goalId: string) => void;
   onDeleteTask: (taskId: string) => void;
-  onScheduleGoal: (goalId: string) => void;
-  onScheduleTask: (taskId: string) => void;
 }
 
 export function GoalsWorkspace({
@@ -49,8 +47,6 @@ export function GoalsWorkspace({
   onEditTask,
   onDeleteGoal,
   onDeleteTask,
-  onScheduleGoal,
-  onScheduleTask,
 }: GoalsWorkspaceProps): ReactElement {
   return (
     <div className="dashboard-main">
@@ -87,8 +83,6 @@ export function GoalsWorkspace({
             onEditTask={onEditTask}
             onDeleteGoal={onDeleteGoal}
             onDeleteTask={onDeleteTask}
-            onScheduleGoal={onScheduleGoal}
-            onScheduleTask={onScheduleTask}
           />
         </Col>
       </Row>

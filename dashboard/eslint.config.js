@@ -5,7 +5,7 @@ import reactRefresh from 'eslint-plugin-react-refresh';
 import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
-  { ignores: ['dist', 'node_modules', '../src/main/resources/static/dashboard'] },
+  { ignores: ['dist', 'node_modules', '../golemcore-bot-app/target/dashboard-dist'] },
 
   // Base: ESLint recommended + TypeScript strict + stylistic
   js.configs.recommended,

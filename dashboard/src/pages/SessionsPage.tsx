@@ -222,6 +222,9 @@ export default function SessionsPage(): ReactElement {
       <div className="section-header">
         <h4 className="mb-0">Sessions</h4>
       </div>
+      <p className="text-body-secondary small mb-3">
+        Automatic cleanup is configured in <Link to="/settings/usage">Settings → Usage &amp; Retention</Link>.
+      </p>
       <SessionsTable
         sessions={sessions}
         actionsDisabled={clearMut.isPending || deleteMut.isPending}

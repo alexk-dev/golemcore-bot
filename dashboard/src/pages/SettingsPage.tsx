@@ -169,8 +169,8 @@ export default function SettingsPage(): ReactElement {
 
       {staticSection === 'memory' && rc != null && <MemoryTab config={rc.memory} />}
       {staticSection === 'skills' && rc != null && <SkillsTab config={rc.skills} />}
-      {staticSection === 'turn' && rc != null && <TurnTab config={rc.turn} />}
-      {staticSection === 'usage' && rc != null && <UsageTab config={rc.usage} />}
+      {staticSection === 'turn' && rc != null && <TurnTab config={rc.turn} toolLoopConfig={rc.toolLoop} />}
+      {staticSection === 'usage' && rc != null && <UsageTab config={rc.usage} sessionRetention={rc.sessionRetention} />}
       {staticSection === 'telemetry' && rc != null && <TelemetryTab config={rc.telemetry ?? { enabled: true }} />}
       {staticSection === 'mcp' && rc != null && <McpTab config={rc.mcp} />}
       {staticSection === 'hive' && rc != null && <HiveTab config={rc.hive} hiveStatus={hiveStatus.data} />}
@@ -192,8 +192,8 @@ export default function SettingsPage(): ReactElement {
           }}
         />
       )}
-      {staticSection === 'plan' && rc != null && <PlanModeTab config={rc.plan} />}
       {staticSection === 'auto' && rc != null && <AutoModeTab config={rc.autoMode} />}
+      {staticSection === 'plan' && rc != null && <PlanModeTab config={rc.plan} />}
       {staticSection === 'tracing' && rc != null && <TracingTab config={rc.tracing} />}
       {staticSection === 'updates' && <UpdatesTab />}
 

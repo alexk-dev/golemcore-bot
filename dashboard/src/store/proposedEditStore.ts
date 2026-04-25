@@ -1,17 +1,29 @@
 import { create } from 'zustand';
 import { createUuid } from '../utils/uuid';
 
+export interface ProposedEditSelection {
+  from: number;
+  to: number;
+  selectedText: string;
+}
+
 export interface ProposedEdit {
   id: string;
   path: string;
+  sourceContent: string;
   before: string;
   after: string;
+  instruction: string;
+  selection: ProposedEditSelection;
 }
 
 export interface ProposedEditInput {
   path: string;
+  sourceContent: string;
   before: string;
   after: string;
+  instruction: string;
+  selection: ProposedEditSelection;
 }
 
 interface ProposedEditState {
@@ -31,7 +43,7 @@ export const useProposedEditStore = create<ProposedEditState>((set) => ({
   submitProposal: (input: ProposedEditInput): string => {
     const id = createUuid();
     set((state) => ({
-      proposals: [...state.proposals, { id, ...input }],
+      proposals: [...state.proposals.filter((proposal) => proposal.path !== input.path), { id, ...input }],
     }));
     return id;
   },

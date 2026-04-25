@@ -15,7 +15,6 @@ const config: AutoModeConfig = {
   tickIntervalSeconds: 300,
   taskTimeLimitMinutes: 10,
   autoStart: true,
-  maxGoals: 3,
   modelTier: null,
   reflectionEnabled: true,
   reflectionFailureThreshold: 2,
@@ -33,5 +32,12 @@ describe('AutoModeTab', () => {
     expect(html).toContain('Prefer reflection tier over active skill tier');
     expect(html).toContain('Special 5');
     expect(html).toContain('Use task tier');
+  });
+
+  it('does not render goal count limits', () => {
+    const html = renderToStaticMarkup(<AutoModeTab config={config} />);
+
+    expect(html).not.toContain('Max Goals');
+    expect(html).not.toContain('Maximum number of concurrent goals');
   });
 });

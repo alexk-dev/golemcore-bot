@@ -1,6 +1,11 @@
-import type { ReactElement, RefObject } from 'react';
-import { Card, Col, Row } from '../ui/tailwind-components';
+import type { ReactElement } from 'react';
+import { Card } from '../ui/tailwind-components';
 import type {
+  CreateScheduledTaskRequest,
+  UpdateScheduledTaskRequest,
+} from '../../api/scheduledTasks';
+import type {
+  CreateScheduleRequest,
   SchedulerRunDetail,
   SchedulerRunSummary,
   SchedulerSchedule,
@@ -8,9 +13,10 @@ import type {
 } from '../../api/scheduler';
 import type { useSchedulerForm } from '../../hooks/useSchedulerForm';
 import type { ReportChannelOption } from './SchedulerCreateCardReportChannel';
-import { SchedulerCreateCard } from './SchedulerCreateCard';
 import { SchedulerRunLogsModal } from './SchedulerRunLogsModal';
-import { SchedulerSchedulesCard } from './SchedulerSchedulesCard';
+import { SchedulerScheduleModal } from './SchedulerScheduleModal';
+import { ScheduledTaskEditorModal } from './ScheduledTaskEditorModal';
+import { ScheduledTaskListCard } from './ScheduledTaskListCard';
 import { SchedulerStatusHeader } from './SchedulerStatusHeader';
 
 export interface SchedulerWorkspaceProps {
@@ -21,16 +27,22 @@ export interface SchedulerWorkspaceProps {
   isCronValid: boolean;
   isFormValid: boolean;
   isSavingSchedule: boolean;
+  isSavingScheduledTask: boolean;
   isBusy: boolean;
+  runningTaskId: string | null;
   editingScheduleLabel: string | null;
+  editingScheduledTask: SchedulerStateResponse['scheduledTasks'][number] | null;
   logsSchedule: SchedulerSchedule | null;
   runs: SchedulerRunSummary[];
   runsLoading: boolean;
   selectedRunId: string | null;
   runDetail: SchedulerRunDetail | undefined;
   runDetailLoading: boolean;
-  scheduleSectionRef: RefObject<HTMLDivElement>;
-  onTargetTypeChange: ReturnType<typeof useSchedulerForm>['setTargetType'];
+  isScheduledTaskModalOpen: boolean;
+  isScheduleModalOpen: boolean;
+  onOpenCreateScheduledTask: () => void;
+  onCloseScheduledTaskModal: () => void;
+  onCloseScheduleModal: () => void;
   onTargetChange: ReturnType<typeof useSchedulerForm>['setTargetId'];
   onModeChange: ReturnType<typeof useSchedulerForm>['setMode'];
   onFrequencyChange: ReturnType<typeof useSchedulerForm>['setFrequency'];
@@ -45,8 +57,17 @@ export interface SchedulerWorkspaceProps {
   onWebhookUrlChange: ReturnType<typeof useSchedulerForm>['setReportWebhookUrl'];
   onWebhookSecretChange: ReturnType<typeof useSchedulerForm>['setReportWebhookSecret'];
   reportChannelOptions: ReportChannelOption[];
+  onCreateScheduledTask: (request: CreateScheduledTaskRequest) => Promise<SchedulerStateResponse['scheduledTasks'][number]>;
+  onCreateScheduleRequest: (request: CreateScheduleRequest) => void | Promise<void>;
+  onUpdateScheduledTask: (
+    scheduledTaskId: string,
+    request: UpdateScheduledTaskRequest,
+  ) => Promise<void>;
+  onDeleteScheduledTask: (scheduledTaskId: string) => void;
+  onEditScheduledTask: (scheduledTask: SchedulerStateResponse['scheduledTasks'][number]) => void;
+  onRunScheduledTaskNow: (scheduledTaskId: string) => void;
+  onScheduleScheduledTask: (scheduledTaskId: string) => void;
   onSubmitSchedule: () => void;
-  onCancelEditSchedule: () => void;
   onOpenLogs: (schedule: SchedulerSchedule) => void;
   onCloseLogs: () => void;
   onDeleteSchedule: (scheduleId: string) => void;
@@ -54,7 +75,7 @@ export interface SchedulerWorkspaceProps {
   onSelectRun: (runId: string) => void;
   resolveGoalHref: (goalId: string) => string | null;
   resolveTaskHref: (taskId: string) => string | null;
-  resolveScheduleTargetHref: (schedule: SchedulerSchedule) => string | null;
+  resolveScheduledTaskHref: (scheduledTaskId: string) => string | null;
 }
 
 export function SchedulerWorkspace({
@@ -65,16 +86,22 @@ export function SchedulerWorkspace({
   isCronValid,
   isFormValid,
   isSavingSchedule,
+  isSavingScheduledTask,
   isBusy,
+  runningTaskId,
   editingScheduleLabel,
+  editingScheduledTask,
   logsSchedule,
   runs,
   runsLoading,
   selectedRunId,
   runDetail,
   runDetailLoading,
-  scheduleSectionRef,
-  onTargetTypeChange,
+  isScheduledTaskModalOpen,
+  isScheduleModalOpen,
+  onOpenCreateScheduledTask,
+  onCloseScheduledTaskModal,
+  onCloseScheduleModal,
   onTargetChange,
   onModeChange,
   onFrequencyChange,
@@ -89,8 +116,14 @@ export function SchedulerWorkspace({
   onWebhookUrlChange,
   onWebhookSecretChange,
   reportChannelOptions,
+  onCreateScheduledTask,
+  onCreateScheduleRequest,
+  onUpdateScheduledTask,
+  onDeleteScheduledTask,
+  onEditScheduledTask,
+  onRunScheduledTaskNow,
+  onScheduleScheduledTask,
   onSubmitSchedule,
-  onCancelEditSchedule,
   onOpenLogs,
   onCloseLogs,
   onDeleteSchedule,
@@ -98,14 +131,11 @@ export function SchedulerWorkspace({
   onSelectRun,
   resolveGoalHref,
   resolveTaskHref,
-  resolveScheduleTargetHref,
+  resolveScheduledTaskHref,
 }: SchedulerWorkspaceProps): ReactElement {
   return (
     <div className="dashboard-main">
-      <SchedulerStatusHeader
-        featureEnabled={data.featureEnabled}
-        autoModeEnabled={data.autoModeEnabled}
-      />
+      <SchedulerStatusHeader />
 
       {!data.featureEnabled && (
         <Card className="mb-3">
@@ -115,55 +145,65 @@ export function SchedulerWorkspace({
         </Card>
       )}
 
-      <Row className="g-3">
-        <Col xl={5}>
-          <div ref={scheduleSectionRef}>
-            <SchedulerCreateCard
-              featureEnabled={data.featureEnabled}
-              goals={data.goals}
-              standaloneTasks={data.standaloneTasks}
-              form={{ ...form, targetId: effectiveTargetId }}
-              isTimeValid={isTimeValid}
-              isCronValid={isCronValid}
-              isFormValid={isFormValid}
-              isCreating={isSavingSchedule}
-              isEditing={editingScheduleLabel != null}
-              editingScheduleLabel={editingScheduleLabel}
-              onTargetTypeChange={onTargetTypeChange}
-              onTargetChange={onTargetChange}
-              onModeChange={onModeChange}
-              onFrequencyChange={onFrequencyChange}
-              onToggleDay={onToggleDay}
-              onTimeChange={onTimeChange}
-              onPresetTimeSelect={onTimeChange}
-              onCronExpressionChange={onCronExpressionChange}
-              onPresetCronSelect={onCronExpressionChange}
-              onLimitInputChange={onLimitInputChange}
-              onPresetLimitSelect={onLimitInputChange}
-              onEnabledChange={onEnabledChange}
-              onClearContextBeforeRunChange={onClearContextBeforeRunChange}
-              onReportChannelTypeChange={onReportChannelTypeChange}
-              onReportChatIdChange={onReportChatIdChange}
-              onWebhookUrlChange={onWebhookUrlChange}
-              onWebhookSecretChange={onWebhookSecretChange}
-              reportChannelOptions={reportChannelOptions}
-              onSubmit={onSubmitSchedule}
-              onCancelEdit={onCancelEditSchedule}
-            />
-          </div>
-        </Col>
+      <div className="d-flex flex-column gap-3">
+        <ScheduledTaskListCard
+          scheduledTasks={data.scheduledTasks}
+          schedules={data.schedules}
+          busy={isBusy}
+          runningTaskId={runningTaskId}
+          onCreate={onOpenCreateScheduledTask}
+          onRunNow={onRunScheduledTaskNow}
+          onSchedule={onScheduleScheduledTask}
+          onEdit={onEditScheduledTask}
+          onDelete={onDeleteScheduledTask}
+          onViewLogs={onOpenLogs}
+          onEditSchedule={onEditSchedule}
+          onDeleteSchedule={onDeleteSchedule}
+        />
+      </div>
 
-        <Col xl={7}>
-          <SchedulerSchedulesCard
-            schedules={data.schedules}
-            busy={isBusy}
-            resolveTargetHref={resolveScheduleTargetHref}
-            onViewLogs={onOpenLogs}
-            onEdit={onEditSchedule}
-            onDelete={onDeleteSchedule}
-          />
-        </Col>
-      </Row>
+      <ScheduledTaskEditorModal
+        show={isScheduledTaskModalOpen}
+        featureEnabled={data.featureEnabled}
+        busy={isSavingScheduledTask}
+        scheduleBusy={isSavingSchedule}
+        task={editingScheduledTask}
+        reportChannelOptions={reportChannelOptions}
+        onHide={onCloseScheduledTaskModal}
+        onCreate={onCreateScheduledTask}
+        onCreateSchedule={onCreateScheduleRequest}
+        onUpdate={onUpdateScheduledTask}
+      />
+
+      <SchedulerScheduleModal
+        show={isScheduleModalOpen}
+        featureEnabled={data.featureEnabled}
+        scheduledTasks={data.scheduledTasks}
+        form={form}
+        effectiveTargetId={effectiveTargetId}
+        isTimeValid={isTimeValid}
+        isCronValid={isCronValid}
+        isFormValid={isFormValid}
+        isSavingSchedule={isSavingSchedule}
+        isEditing={editingScheduleLabel != null}
+        editingScheduleLabel={editingScheduleLabel}
+        reportChannelOptions={reportChannelOptions}
+        onHide={onCloseScheduleModal}
+        onTargetChange={onTargetChange}
+        onModeChange={onModeChange}
+        onFrequencyChange={onFrequencyChange}
+        onToggleDay={onToggleDay}
+        onTimeChange={onTimeChange}
+        onCronExpressionChange={onCronExpressionChange}
+        onLimitInputChange={onLimitInputChange}
+        onEnabledChange={onEnabledChange}
+        onClearContextBeforeRunChange={onClearContextBeforeRunChange}
+        onReportChannelTypeChange={onReportChannelTypeChange}
+        onReportChatIdChange={onReportChatIdChange}
+        onWebhookUrlChange={onWebhookUrlChange}
+        onWebhookSecretChange={onWebhookSecretChange}
+        onSubmit={onSubmitSchedule}
+      />
 
       <SchedulerRunLogsModal
         show={logsSchedule != null}
@@ -176,6 +216,7 @@ export function SchedulerWorkspace({
         runDetailLoading={runDetailLoading}
         resolveGoalHref={resolveGoalHref}
         resolveTaskHref={resolveTaskHref}
+        resolveScheduledTaskHref={resolveScheduledTaskHref}
         onHide={onCloseLogs}
         onSelectRun={onSelectRun}
       />

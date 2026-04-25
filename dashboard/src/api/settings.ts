@@ -19,9 +19,11 @@ import type {
   SecurityConfig,
   SkillsConfig,
   TelemetryConfig,
+  ToolLoopConfig,
   ToolsConfig,
   TracingConfig,
   TurnConfig,
+  SessionRetentionConfig,
   UsageConfig,
   VoiceConfig,
 } from './settingsTypes';
@@ -72,9 +74,11 @@ export type {
   SelfEvolvingToggleConfig,
   SkillsConfig,
   TelemetryConfig,
+  ToolLoopConfig,
   ToolsConfig,
   TracingConfig,
   TurnConfig,
+  SessionRetentionConfig,
   UsageConfig,
   VoiceConfig,
 } from './settingsTypes';
@@ -277,6 +281,24 @@ export async function updateTurnConfig(config: TurnConfig): Promise<RuntimeConfi
   return toUiRuntimeConfig(data);
 }
 
+export async function updateToolLoopConfig(config: ToolLoopConfig): Promise<RuntimeConfig> {
+  const { data } = await client.put<RuntimeConfigUiRecord>(
+    '/settings/runtime/tool-loop',
+    config,
+    withSettingsSectionTelemetry('turn'),
+  );
+  return toUiRuntimeConfig(data);
+}
+
+export async function updateSessionRetentionConfig(config: SessionRetentionConfig): Promise<RuntimeConfig> {
+  const { data } = await client.put<RuntimeConfigUiRecord>(
+    '/settings/runtime/session-retention',
+    config,
+    withSettingsSectionTelemetry('usage'),
+  );
+  return toUiRuntimeConfig(data);
+}
+
 export async function updateUsageConfig(config: UsageConfig): Promise<RuntimeConfig> {
   const { data } = await client.put<RuntimeConfigUiRecord>(
     '/settings/runtime/usage',
@@ -335,20 +357,20 @@ export async function updateHiveConfig(config: HiveConfig): Promise<RuntimeConfi
   return toUiRuntimeConfig(data);
 }
 
-export async function updatePlanConfig(config: PlanConfig): Promise<RuntimeConfig> {
-  const { data } = await client.put<RuntimeConfigUiRecord>(
-    '/settings/runtime/plan',
-    config,
-    withSettingsSectionTelemetry('plan'),
-  );
-  return toUiRuntimeConfig(data);
-}
-
 export async function updateAutoConfig(config: AutoModeConfig): Promise<RuntimeConfig> {
   const { data } = await client.put<RuntimeConfigUiRecord>(
     '/settings/runtime/auto',
     config,
     withSettingsSectionTelemetry('auto'),
+  );
+  return toUiRuntimeConfig(data);
+}
+
+export async function updatePlanConfig(config: PlanConfig): Promise<RuntimeConfig> {
+  const { data } = await client.put<RuntimeConfigUiRecord>(
+    '/settings/runtime/plan',
+    config,
+    withSettingsSectionTelemetry('plan'),
   );
   return toUiRuntimeConfig(data);
 }

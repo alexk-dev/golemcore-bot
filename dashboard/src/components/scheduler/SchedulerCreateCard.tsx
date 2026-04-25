@@ -1,14 +1,13 @@
 import type { ReactElement } from 'react';
 import { Button, Card } from '../ui/tailwind-components';
-import type { SchedulerGoal, SchedulerTask, SchedulerTargetType } from '../../api/scheduler';
+import type { SchedulerScheduledTask } from '../../api/scheduler';
 import type {
   SchedulerFrequency,
   SchedulerMode,
   ScheduleFormState,
 } from './schedulerTypes';
 import {
-  buildGoalOptions,
-  buildTaskOptions,
+  buildScheduledTaskOptions,
   parseLimitInput,
   type SchedulerTargetOption,
 } from './schedulerFormUtils';
@@ -20,14 +19,14 @@ import {
   SchedulerModeToggle,
   SimpleScheduleFields,
   TargetSelector,
-  TargetTypeToggle,
 } from './SchedulerCreateCardSections';
 import { ReportChannelField, type ReportChannelOption } from './SchedulerCreateCardReportChannel';
 
+type SchedulerCreateLayout = 'card' | 'plain';
+
 interface SchedulerCreateCardProps {
   featureEnabled: boolean;
-  goals: SchedulerGoal[];
-  standaloneTasks: SchedulerTask[];
+  scheduledTasks: SchedulerScheduledTask[];
   form: ScheduleFormState;
   isTimeValid: boolean;
   isCronValid: boolean;
@@ -35,7 +34,6 @@ interface SchedulerCreateCardProps {
   isCreating: boolean;
   isEditing: boolean;
   editingScheduleLabel: string | null;
-  onTargetTypeChange: (targetType: SchedulerTargetType) => void;
   onTargetChange: (targetId: string) => void;
   onModeChange: (mode: SchedulerMode) => void;
   onFrequencyChange: (frequency: SchedulerFrequency) => void;
@@ -55,6 +53,8 @@ interface SchedulerCreateCardProps {
   reportChannelOptions: ReportChannelOption[];
   onSubmit: () => void;
   onCancelEdit: () => void;
+  layout?: SchedulerCreateLayout;
+  showTargetSelector?: boolean;
 }
 
 interface SchedulerSubmitState {
@@ -66,14 +66,9 @@ interface SchedulerSubmitState {
 }
 
 function resolveTargetOptions(
-  targetType: SchedulerTargetType,
-  goals: SchedulerGoal[],
-  standaloneTasks: SchedulerTask[],
+  scheduledTasks: SchedulerScheduledTask[],
 ): SchedulerTargetOption[] {
-  if (targetType === 'GOAL') {
-    return buildGoalOptions(goals);
-  }
-  return buildTaskOptions(goals, standaloneTasks);
+  return buildScheduledTaskOptions(scheduledTasks);
 }
 
 function resolveEffectiveTargetId(options: SchedulerTargetOption[], targetId: string): string {
@@ -85,13 +80,7 @@ function resolveEffectiveTargetId(options: SchedulerTargetOption[], targetId: st
 }
 
 function shouldDisableSubmit(state: SchedulerSubmitState): boolean {
-  if (!state.featureEnabled) {
-    return true;
-  }
-  if (!state.isFormValid) {
-    return true;
-  }
-  if (state.isCreating) {
+  if (!state.featureEnabled || !state.isFormValid || state.isCreating) {
     return true;
   }
   if (state.effectiveTargetId.length === 0) {
@@ -111,10 +100,26 @@ function resolveSubmitLabel(isEditing: boolean, isCreating: boolean): string {
   return isEditing ? 'Save schedule' : 'Create schedule';
 }
 
+function renderContent(
+  layout: SchedulerCreateLayout,
+  title: string,
+  content: ReactElement,
+): ReactElement {
+  if (layout === 'plain') {
+    return content;
+  }
+
+  return (
+    <Card className="h-100">
+      <Card.Header className="fw-semibold">{title}</Card.Header>
+      <Card.Body>{content}</Card.Body>
+    </Card>
+  );
+}
+
 export function SchedulerCreateCard({
   featureEnabled,
-  goals,
-  standaloneTasks,
+  scheduledTasks,
   form,
   isTimeValid,
   isCronValid,
@@ -122,7 +127,6 @@ export function SchedulerCreateCard({
   isCreating,
   isEditing,
   editingScheduleLabel,
-  onTargetTypeChange,
   onTargetChange,
   onModeChange,
   onFrequencyChange,
@@ -142,8 +146,10 @@ export function SchedulerCreateCard({
   reportChannelOptions,
   onSubmit,
   onCancelEdit,
+  layout = 'card',
+  showTargetSelector = true,
 }: SchedulerCreateCardProps): ReactElement {
-  const targetOptions = resolveTargetOptions(form.targetType, goals, standaloneTasks);
+  const targetOptions = resolveTargetOptions(scheduledTasks);
   const effectiveTargetId = resolveEffectiveTargetId(targetOptions, form.targetId);
   const parsedLimit = parseLimitInput(form.limitInput);
   const submitDisabled = shouldDisableSubmit({
@@ -154,100 +160,101 @@ export function SchedulerCreateCard({
     parsedLimit,
   });
 
-  return (
-    <Card className="h-100">
-      <Card.Header className="fw-semibold">{resolveHeaderTitle(isEditing)}</Card.Header>
-      <Card.Body>
-        {isEditing && editingScheduleLabel != null && editingScheduleLabel.length > 0 && (
-          <div className="small text-body-secondary mb-3">
-            Editing target: <strong>{editingScheduleLabel}</strong>
-          </div>
-        )}
+  const content = (
+    <>
+      {isEditing && editingScheduleLabel != null && editingScheduleLabel.length > 0 && (
+        <div className="small text-body-secondary mb-3">
+          Editing target: <strong>{editingScheduleLabel}</strong>
+        </div>
+      )}
 
-        <TargetTypeToggle selected={form.targetType} onChange={onTargetTypeChange} />
-
+      {showTargetSelector && (
         <TargetSelector
+          label="Scheduled task"
+          helpText="Create a scheduled task first, then attach a schedule to it here."
           featureEnabled={featureEnabled}
           targetOptions={targetOptions}
           effectiveTargetId={effectiveTargetId}
           onTargetChange={onTargetChange}
         />
+      )}
 
-        <SchedulerModeToggle selected={form.mode} onChange={onModeChange} />
+      <SchedulerModeToggle selected={form.mode} onChange={onModeChange} />
 
-        {form.mode === 'simple' ? (
-          <SimpleScheduleFields
-            featureEnabled={featureEnabled}
-            frequency={form.frequency}
-            days={form.days}
-            time={form.time}
-            isTimeValid={isTimeValid}
-            onFrequencyChange={onFrequencyChange}
-            onToggleDay={onToggleDay}
-            onTimeChange={onTimeChange}
-            onPresetTimeSelect={onPresetTimeSelect}
-          />
-        ) : (
-          <AdvancedCronFields
-            featureEnabled={featureEnabled}
-            cronExpression={form.cronExpression}
-            isCronValid={isCronValid}
-            onCronExpressionChange={onCronExpressionChange}
-            onPresetCronSelect={onPresetCronSelect}
-          />
-        )}
-
-        <RepeatLimitField
+      {form.mode === 'simple' ? (
+        <SimpleScheduleFields
           featureEnabled={featureEnabled}
-          limitInput={form.limitInput}
-          onLimitInputChange={onLimitInputChange}
-          onPresetLimitSelect={onPresetLimitSelect}
+          frequency={form.frequency}
+          days={form.days}
+          time={form.time}
+          isTimeValid={isTimeValid}
+          onFrequencyChange={onFrequencyChange}
+          onToggleDay={onToggleDay}
+          onTimeChange={onTimeChange}
+          onPresetTimeSelect={onPresetTimeSelect}
         />
-
-        <ClearContextField
+      ) : (
+        <AdvancedCronFields
           featureEnabled={featureEnabled}
-          clearContextBeforeRun={form.clearContextBeforeRun}
-          onChange={onClearContextBeforeRunChange}
+          cronExpression={form.cronExpression}
+          isCronValid={isCronValid}
+          onCronExpressionChange={onCronExpressionChange}
+          onPresetCronSelect={onPresetCronSelect}
         />
+      )}
 
-        <ReportChannelField
+      <RepeatLimitField
+        featureEnabled={featureEnabled}
+        limitInput={form.limitInput}
+        onLimitInputChange={onLimitInputChange}
+        onPresetLimitSelect={onPresetLimitSelect}
+      />
+
+      <ClearContextField
+        featureEnabled={featureEnabled}
+        clearContextBeforeRun={form.clearContextBeforeRun}
+        onChange={onClearContextBeforeRunChange}
+      />
+
+      <ReportChannelField
+        featureEnabled={featureEnabled}
+        reportChannelType={form.reportChannelType}
+        reportChatId={form.reportChatId}
+        reportWebhookUrl={form.reportWebhookUrl}
+        reportWebhookSecret={form.reportWebhookSecret}
+        channelOptions={reportChannelOptions}
+        onChange={onReportChannelTypeChange}
+        onChatIdChange={onReportChatIdChange}
+        onWebhookUrlChange={onWebhookUrlChange}
+        onWebhookSecretChange={onWebhookSecretChange}
+      />
+
+      {isEditing && (
+        <ScheduleEnabledField
           featureEnabled={featureEnabled}
-          reportChannelType={form.reportChannelType}
-          reportChatId={form.reportChatId}
-          reportWebhookUrl={form.reportWebhookUrl}
-          reportWebhookSecret={form.reportWebhookSecret}
-          channelOptions={reportChannelOptions}
-          onChange={onReportChannelTypeChange}
-          onChatIdChange={onReportChatIdChange}
-          onWebhookUrlChange={onWebhookUrlChange}
-          onWebhookSecretChange={onWebhookSecretChange}
+          enabled={form.enabled}
+          onEnabledChange={onEnabledChange}
         />
+      )}
 
+      <div className="d-flex gap-2 justify-content-end">
         {isEditing && (
-          <ScheduleEnabledField
-            featureEnabled={featureEnabled}
-            enabled={form.enabled}
-            onEnabledChange={onEnabledChange}
-          />
-        )}
-
-        <div className="d-flex gap-2">
-          <Button
-            type="button"
-            variant="primary"
-            size="sm"
-            disabled={submitDisabled}
-            onClick={onSubmit}
-          >
-            {resolveSubmitLabel(isEditing, isCreating)}
+          <Button type="button" variant="secondary" size="sm" onClick={onCancelEdit}>
+            Cancel
           </Button>
-          {isEditing && (
-            <Button type="button" variant="secondary" size="sm" onClick={onCancelEdit}>
-              Cancel
-            </Button>
-          )}
-        </div>
-      </Card.Body>
-    </Card>
+        )}
+        <Button
+          type="button"
+          variant="primary"
+          size="sm"
+          disabled={submitDisabled}
+          onClick={onSubmit}
+        >
+          {resolveSubmitLabel(isEditing, isCreating)}
+        </Button>
+      </div>
+    </>
   );
+
+  return renderContent(layout, resolveHeaderTitle(isEditing), content);
 }

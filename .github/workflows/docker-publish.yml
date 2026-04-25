@@ -50,7 +50,7 @@ jobs:
         run: mvn -B -ntp -Djgitver.skip=true -f golemcore-plugins/pom.xml -pl extension-api,runtime-api -am install -DskipTests
 
       - name: Build and run tests
-        run: ./mvnw clean verify -DskipGitHooks=true
+        run: ./mvnw -DskipGitHooks=true -Dsurefire.failIfNoSpecifiedTests=false clean verify
 
       - name: Check Codecov token availability
         if: always() && matrix.arch == 'amd64'
@@ -68,7 +68,13 @@ jobs:
         if: always() && matrix.arch == 'amd64' && steps.codecov-token.outputs.available == 'true'
         uses: codecov/codecov-action@v6
         with:
-          files: ./target/site/jacoco/jacoco.xml
+          files: |
+            ./golemcore-bot-contracts/target/site/jacoco/jacoco.xml
+            ./golemcore-bot-self-evolving/target/site/jacoco/jacoco.xml
+            ./golemcore-bot-client/target/site/jacoco/jacoco.xml
+            ./golemcore-bot-hive/target/site/jacoco/jacoco.xml
+            ./golemcore-bot-extensions/target/site/jacoco/jacoco.xml
+            ./golemcore-bot-app/target/site/jacoco/jacoco.xml
           token: ${{ secrets.CODECOV_TOKEN }}
           fail_ci_if_error: false
           handle_no_reports_found: true
@@ -107,6 +113,179 @@ jobs:
           ./mvnw -B -ntp test
           -Dtest=DashboardSecurityIntegrationTest,RuntimeSettingsHttpIntegrationTest,HiveSdlcDefaultSettingsIntegrationTest
           -DskipGitHooks=true
+          -Dsurefire.failIfNoSpecifiedTests=false
+
+  native-distribution:
+    name: Native Distribution (linux-x64)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v5
+        with:
+          java-version: '25'
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Checkout plugin APIs
+        uses: actions/checkout@v6
+        with:
+          repository: alexk-dev/golemcore-plugins
+          ref: ${{ env.PLUGIN_API_REPO_REF }}
+          path: golemcore-plugins
+
+      - name: Install plugin API artifacts
+        run: mvn -B -ntp -Djgitver.skip=true -f golemcore-plugins/pom.xml -pl extension-api,runtime-api -am install -DskipTests
+
+      - name: Build release JAR
+        run: ./mvnw -B -ntp clean package -DskipTests -DskipGitHooks=true
+
+      - name: Smoke test standalone JAR
+        run: |
+          set -euo pipefail
+          runtime_jar="$(find golemcore-bot-app/target -maxdepth 1 -type f -name 'bot-*-exec.jar' | sort | head -n 1)"
+          if [[ -z "${runtime_jar}" ]]; then
+            echo "Executable runtime jar not found in golemcore-bot-app/target/." >&2
+            exit 1
+          fi
+
+          port=18082
+          log_file="target/standalone-jar-smoke.log"
+          mkdir -p target/standalone-jar-smoke/workspace target/standalone-jar-smoke/sandbox
+
+          cleanup() {
+            if [[ -n "${jar_pid:-}" ]] && kill -0 "${jar_pid}" >/dev/null 2>&1; then
+              kill "${jar_pid}" >/dev/null 2>&1 || true
+              wait "${jar_pid}" >/dev/null 2>&1 || true
+            fi
+            cat "${log_file}" || true
+          }
+          trap cleanup EXIT
+
+          STORAGE_PATH="$(pwd)/target/standalone-jar-smoke/workspace" \
+          TOOLS_WORKSPACE="$(pwd)/target/standalone-jar-smoke/sandbox" \
+          BOT_UPDATE_ENABLED=false \
+          BOT_PLUGINS_ENABLED=false \
+          BOT_PLUGINS_AUTO_START=false \
+            java -jar "${runtime_jar}" \
+              --server.port="${port}" \
+              --server.address=127.0.0.1 \
+              >"${log_file}" 2>&1 &
+          jar_pid="$!"
+
+          for attempt in {1..60}; do
+            if curl -fsS "http://127.0.0.1:${port}/api/system/health" | grep -F '"status":"UP"'; then
+              exit 0
+            fi
+            if ! kill -0 "${jar_pid}" >/dev/null 2>&1; then
+              echo "Standalone JAR exited before health check passed." >&2
+              exit 1
+            fi
+            sleep 2
+          done
+
+          echo "Timed out waiting for standalone JAR health endpoint." >&2
+          exit 1
+
+      - name: Build native distribution bundle
+        run: ./.github/scripts/build-native-distribution.sh
+
+      - name: Verify launcher entrypoints
+        run: ./.github/scripts/verify-launcher-entrypoints.sh
+
+      - name: Smoke test native launcher
+        run: |
+          archive="$(find target/native-dist -maxdepth 1 -type f -name '*-linux-x64.tar.gz' | sort | head -n 1)"
+          if [[ -z "${archive}" ]]; then
+            echo "Linux native distribution archive not found." >&2
+            exit 1
+          fi
+          mkdir -p target/native-dist/smoke
+          tar -xzf "${archive}" -C target/native-dist/smoke
+          runtime_java="target/native-dist/smoke/golemcore-bot/lib/runtime/bin/java"
+          runtime_jar="$(find target/native-dist/smoke/golemcore-bot/lib/runtime -maxdepth 1 -type f -name 'bot-*-exec.jar' | sort | head -n 1)"
+          if [[ ! -x "${runtime_java}" ]]; then
+            echo "Bundled Java command not found: ${runtime_java}" >&2
+            exit 1
+          fi
+          if [[ -z "${runtime_jar}" ]]; then
+            echo "Bundled runtime jar not found under lib/runtime." >&2
+            exit 1
+          fi
+          grep -F 'golemcore.launcher.bundled-jar=$APPDIR/../runtime/' target/native-dist/smoke/golemcore-bot/lib/app/golemcore-bot.cfg
+          grep -F 'golemcore.launcher.java-command=$APPDIR/../runtime/bin/java' target/native-dist/smoke/golemcore-bot/lib/app/golemcore-bot.cfg
+          grep -F 'spring.profiles.active=prod' target/native-dist/smoke/golemcore-bot/lib/app/golemcore-bot.cfg
+          "${runtime_java}" -version
+          native_bin="$(pwd)/target/native-dist/smoke/golemcore-bot/bin/golemcore-bot"
+          "${native_bin}" --help
+          if "${native_bin}" 2>target/native-dist/smoke/missing-command.err; then
+            echo "Launcher unexpectedly started without a command." >&2
+            exit 1
+          fi
+          grep -F 'Missing command. Use `golemcore-bot web` to start the web runtime.' target/native-dist/smoke/missing-command.err
+          "${native_bin}" web --help
+
+          native_port=18081
+          native_workspace="$(pwd)/target/native-dist/smoke/workspace"
+          native_sandbox="$(pwd)/target/native-dist/smoke/sandbox"
+          native_home="$(pwd)/target/native-dist/smoke/home"
+          native_no_java_path="$(pwd)/target/native-dist/smoke/no-java-path"
+          native_log="$(pwd)/target/native-dist/smoke/native-web.log"
+          mkdir -p \
+            "${native_workspace}/updates/jars" \
+            "${native_sandbox}" \
+            "${native_home}" \
+            "${native_no_java_path}"
+          printf 'stale staged runtime\n' >"${native_workspace}/updates/jars/bot-0.0.0-0-exec.jar"
+          printf 'bot-0.0.0-0-exec.jar\n' >"${native_workspace}/updates/current.txt"
+
+          cleanup_native() {
+            if [[ -n "${native_pid:-}" ]] && kill -0 "${native_pid}" >/dev/null 2>&1; then
+              kill "${native_pid}" >/dev/null 2>&1 || true
+              wait "${native_pid}" >/dev/null 2>&1 || true
+            fi
+            cat "${native_log}" || true
+          }
+          trap cleanup_native EXIT
+
+          env -i \
+            HOME="${native_home}" \
+            PATH="${native_no_java_path}" \
+            STORAGE_PATH="${native_workspace}" \
+            TOOLS_WORKSPACE="${native_sandbox}" \
+            BOT_UPDATE_ENABLED=false \
+            BOT_PLUGINS_ENABLED=false \
+            BOT_PLUGINS_AUTO_START=false \
+            "${native_bin}" web --port="${native_port}" --hostname=127.0.0.1 \
+            >"${native_log}" 2>&1 &
+          native_pid="$!"
+
+          for attempt in {1..60}; do
+            if curl -fsS "http://127.0.0.1:${native_port}/api/system/health" | grep -F '"status":"UP"'; then
+              grep -F 'Ignoring current marker because bundled runtime' "${native_log}"
+              exit 0
+            fi
+            if ! kill -0 "${native_pid}" >/dev/null 2>&1; then
+              echo "Native launcher exited before health check passed." >&2
+              exit 1
+            fi
+            sleep 2
+          done
+
+          echo "Timed out waiting for native launcher health endpoint." >&2
+          exit 1
+
+      - name: Upload native distribution
+        uses: actions/upload-artifact@v7
+        with:
+          name: golemcore-bot-linux-x64
+          path: target/native-dist/*.tar.gz
+          if-no-files-found: error
 
   code-quality:
     name: Code Quality
@@ -144,30 +323,42 @@ jobs:
         run: mvn -B -ntp -Djgitver.skip=true -f golemcore-plugins/pom.xml -pl extension-api,runtime-api -am install -DskipTests
 
       - name: Check formatting
-        run: ./mvnw formatter:validate -DskipGitHooks=true
+        run: ./mvnw -B -ntp -DskipGitHooks=true net.revelc.code.formatter:formatter-maven-plugin:2.29.0:validate
 
       - name: Run PMD
-        run: ./mvnw -P strict pmd:check -DskipGitHooks=true
+        run: ./mvnw -B -ntp -P strict -Dfrontend.skip=true -DskipTests -DskipGitHooks=true test-compile org.apache.maven.plugins:maven-pmd-plugin:3.28.0:check
 
       - name: Run SpotBugs
-        run: ./mvnw -P strict compile spotbugs:check -DskipGitHooks=true
+        run: ./mvnw -B -ntp -P strict -Dfrontend.skip=true -DskipTests -DskipGitHooks=true compile com.github.spotbugs:spotbugs-maven-plugin:4.9.8.3:check
 
       - name: Generate Javadoc
-        run: ./mvnw -B -ntp javadoc:javadoc -DskipGitHooks=true
+        run: ./mvnw -pl ./golemcore-bot-app -am -B -ntp -Dfrontend.skip=true -DskipTests -DskipGitHooks=true test-compile org.apache.maven.plugins:maven-javadoc-plugin:3.12.0:javadoc
 
       - name: Upload PMD report
         if: always()
         uses: actions/upload-artifact@v7
         with:
           name: pmd-report
-          path: target/pmd.xml
+          path: |
+            golemcore-bot-contracts/target/pmd.xml
+            golemcore-bot-self-evolving/target/pmd.xml
+            golemcore-bot-client/target/pmd.xml
+            golemcore-bot-hive/target/pmd.xml
+            golemcore-bot-extensions/target/pmd.xml
+            golemcore-bot-app/target/pmd.xml
 
       - name: Upload SpotBugs report
         if: always()
         uses: actions/upload-artifact@v7
         with:
           name: spotbugs-report
-          path: target/spotbugsXml.xml
+          path: |
+            golemcore-bot-contracts/target/spotbugsXml.xml
+            golemcore-bot-self-evolving/target/spotbugsXml.xml
+            golemcore-bot-client/target/spotbugsXml.xml
+            golemcore-bot-hive/target/spotbugsXml.xml
+            golemcore-bot-extensions/target/spotbugsXml.xml
+            golemcore-bot-app/target/spotbugsXml.xml
 
   sonar:
     name: SonarCloud Analysis
@@ -219,6 +410,7 @@ jobs:
         run: >
           ./mvnw clean verify sonar:sonar
           -DskipGitHooks=true
+          -Dsurefire.failIfNoSpecifiedTests=false
 
       - name: Skip SonarCloud Analysis (missing SONAR_TOKEN)
         if: steps.sonar-token.outputs.available != 'true'
@@ -280,9 +472,15 @@ jobs:
             echo "jib-tags=dev-latest-${ARCH}" >> $GITHUB_OUTPUT
           fi
 
+      - name: Build app artifacts
+        run: |
+          ./mvnw -pl ./golemcore-bot-app -am install \
+            -DskipTests \
+            -DskipGitHooks=true
+
       - name: Build and push app image (${{ matrix.arch }})
         run: |
-          ./mvnw prepare-package jib:build \
+          ./mvnw -f golemcore-bot-app/pom.xml com.google.cloud.tools:jib-maven-plugin:build \
             -DskipTests \
             -DskipGitHooks=true \
             -Djib.from.image=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-base:latest \
@@ -291,6 +489,75 @@ jobs:
             -Djib.to.tags=${{ steps.tags.outputs.jib-tags }} \
             -Djib.to.auth.username=${{ github.actor }} \
             -Djib.to.auth.password=${{ secrets.GITHUB_TOKEN }}
+
+      - name: Log in to GHCR for smoke test
+        if: matrix.arch == 'amd64'
+        uses: docker/login-action@4907a6ddec9925e35a0a9e82d7399ccc52663121 # v4.1.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Smoke test app image launch commands
+        if: matrix.arch == 'amd64'
+        run: |
+          set -euo pipefail
+          image="${{ steps.tags.outputs.app-image }}"
+
+          cleanup() {
+            for name in "${containers[@]:-}"; do
+              docker logs "${name}" || true
+              docker rm -f "${name}" >/dev/null 2>&1 || true
+            done
+          }
+          trap cleanup EXIT
+
+          containers=()
+
+          smoke_container() {
+            local name="$1"
+            local host_port="$2"
+            local container_port="$3"
+            shift 3
+            containers+=("${name}")
+
+            docker run -d \
+              --name "${name}" \
+              --shm-size=256m \
+              -e STORAGE_PATH=/app/workspace \
+              -e TOOLS_WORKSPACE=/app/sandbox \
+              -e BOT_UPDATE_ENABLED=false \
+              -e BOT_PLUGINS_ENABLED=false \
+              -e BOT_PLUGINS_AUTO_START=false \
+              -p "${host_port}:${container_port}" \
+              "${image}" \
+              "$@"
+
+            for attempt in {1..60}; do
+              if curl -fsS "http://127.0.0.1:${host_port}/api/system/health" | grep -F '"status":"UP"'; then
+                return 0
+              fi
+              if ! docker ps --format '{{.Names}}' | grep -Fxq "${name}"; then
+                echo "Container ${name} exited before health check passed." >&2
+                return 1
+              fi
+              sleep 2
+            done
+
+            echo "Timed out waiting for ${name} health endpoint." >&2
+            return 1
+          }
+
+          smoke_container \
+            "golemcore-bot-smoke-default-${{ github.run_id }}-${{ github.run_attempt }}" \
+            18080 \
+            8080
+
+          smoke_container \
+            "golemcore-bot-smoke-legacy-args-${{ github.run_id }}-${{ github.run_attempt }}" \
+            18090 \
+            9090 \
+            --server.port=9090
 
   # ── Stitch multiarch manifest ────────────────────────────────────────────
   create-manifest:

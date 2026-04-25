@@ -7,9 +7,9 @@ describe('useSchedulerForm helpers', () => {
   it('parses stored webhook bearer token back into form state', () => {
     const schedule: SchedulerSchedule = {
       id: 'sched-webhook',
-      type: 'GOAL',
-      targetId: 'goal-1',
-      targetLabel: 'Goal',
+      type: 'SCHEDULED_TASK',
+      targetId: 'scheduled-task-1',
+      targetLabel: 'Scheduled task',
       cronExpression: '0 0 9 * * *',
       enabled: true,
       clearContextBeforeRun: false,
@@ -36,8 +36,8 @@ describe('useSchedulerForm helpers', () => {
 
   it('marks blank report channel as an explicit clear on update requests', () => {
     const form: ScheduleFormState = {
-      targetType: 'GOAL',
-      targetId: 'goal-1',
+      targetType: 'SCHEDULED_TASK',
+      targetId: 'scheduled-task-1',
       mode: 'simple',
       frequency: 'daily',
       days: [1],
@@ -52,7 +52,7 @@ describe('useSchedulerForm helpers', () => {
       reportWebhookSecret: '',
     };
 
-    const request = createUpdateRequest(form, 'goal-1', -1);
+    const request = createUpdateRequest(form, 'scheduled-task-1', -1);
 
     expect(request.report?.operation).toBe('CLEAR');
     expect(request.report?.config).toBeNull();

@@ -19,6 +19,8 @@ import {
   getMemoryPresets,
   updateSkillsConfig,
   updateTurnConfig,
+  updateToolLoopConfig,
+  updateSessionRetentionConfig,
   updateUsageConfig,
   updateTelemetryConfig,
   updateMcpConfig,
@@ -26,8 +28,8 @@ import {
   updateMcpCatalogEntry,
   removeMcpCatalogEntry,
   updateHiveConfig,
-  updatePlanConfig,
   updateAutoConfig,
+  updatePlanConfig,
   updateTracingConfig,
   updateAdvancedConfig,
 } from '../api/settings';
@@ -44,13 +46,15 @@ import type {
   MemoryPreset,
   SkillsConfig,
   TurnConfig,
+  ToolLoopConfig,
+  SessionRetentionConfig,
   UsageConfig,
   TelemetryConfig,
   McpConfig,
   McpCatalogEntry,
   HiveConfig,
-  PlanConfig,
   AutoModeConfig,
+  PlanConfig,
   TracingConfig,
   RateLimitConfig,
   ResilienceConfig,
@@ -207,6 +211,22 @@ export function useUpdateTurn(): UseMutationResult<Awaited<ReturnType<typeof upd
   });
 }
 
+export function useUpdateToolLoop(): UseMutationResult<Awaited<ReturnType<typeof updateToolLoopConfig>>, unknown, ToolLoopConfig> {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (config: ToolLoopConfig) => updateToolLoopConfig(config),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['runtime-config'] }),
+  });
+}
+
+export function useUpdateSessionRetention(): UseMutationResult<Awaited<ReturnType<typeof updateSessionRetentionConfig>>, unknown, SessionRetentionConfig> {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (config: SessionRetentionConfig) => updateSessionRetentionConfig(config),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['runtime-config'] }),
+  });
+}
+
 export function useUpdateUsage(): UseMutationResult<Awaited<ReturnType<typeof updateUsageConfig>>, unknown, UsageConfig> {
   const qc = useQueryClient();
   return useMutation({
@@ -263,18 +283,18 @@ export function useUpdateHive(): UseMutationResult<Awaited<ReturnType<typeof upd
   });
 }
 
-export function useUpdatePlan(): UseMutationResult<Awaited<ReturnType<typeof updatePlanConfig>>, unknown, PlanConfig> {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (config: PlanConfig) => updatePlanConfig(config),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['runtime-config'] }),
-  });
-}
-
 export function useUpdateAuto(): UseMutationResult<Awaited<ReturnType<typeof updateAutoConfig>>, unknown, AutoModeConfig> {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (config: AutoModeConfig) => updateAutoConfig(config),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['runtime-config'] }),
+  });
+}
+
+export function useUpdatePlan(): UseMutationResult<Awaited<ReturnType<typeof updatePlanConfig>>, unknown, PlanConfig> {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (config: PlanConfig) => updatePlanConfig(config),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['runtime-config'] }),
   });
 }

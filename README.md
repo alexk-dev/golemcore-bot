@@ -55,6 +55,12 @@ docker run -d \
 
 docker logs -f golemcore-bot
 
+# Health probe:
+# curl http://localhost:8080/api/system/health
+#
+# Compatibility: Docker CMD overrides may still pass Spring Boot args directly:
+# docker run ... ghcr.io/alexk-dev/golemcore-bot:latest --server.port=9090
+
 # Open http://localhost:8080/dashboard
 # On first start, check logs for the temporary admin password.
 ```
@@ -73,6 +79,96 @@ Why the extra Docker flags?
 - Join Hive for control-plane coordination and inspection.
 
 Need a local build, Compose setup, or production deployment path? See **[Quick Start](docs/QUICKSTART.md)** and **[Deployment](docs/DEPLOYMENT.md)**.
+
+---
+
+## Local native app-image bundle (experimental)
+
+Besides Docker and the plain executable JAR, the release workflow now also publishes a **local app-image bundle** for the current OS/architecture.
+
+### Build it locally
+
+```bash
+./mvnw clean package -DskipTests -DskipGitHooks=true
+npx golemcore-bot-local-build-native-dist
+```
+
+This produces an archive in:
+
+```text
+target/native-dist/golemcore-bot-<version>-<platform>-<arch>.tar.gz
+```
+
+### What is inside
+
+The app-image contains:
+
+- a small launcher application produced by `jpackage`
+- a bundled Java runtime, so running the extracted app-image does not require a separately installed Java
+- the regular self-updatable runtime jar under `lib/runtime/`
+- a picocli-powered native launcher entrypoint with built-in help and launcher-only options
+- launcher wiring that points to that bundled runtime jar first
+
+So the startup order becomes:
+
+1. staged update from `updates/current.txt`, unless the bundled runtime jar is newer
+2. bundled runtime jar from the app-image
+3. legacy Jib/classpath fallback
+
+### Native launcher options
+
+The native launcher uses picocli, so it has first-class help and a small set of launcher-specific flags.
+
+Show help:
+
+```bash
+./golemcore-bot/bin/golemcore-bot --help
+```
+
+Common options:
+
+- `web` — required command that starts the bundled Spring Boot runtime
+- `web --port=<port>` — forwards `-Dserver.port=<port>` to the spawned runtime
+- `web --hostname=<address>` — forwards `-Dserver.address=<address>` to the spawned runtime
+- `--storage-path=<path>` / `web --storage-path=<path>` — forwards `-Dbot.storage.local.base-path=<path>`
+- `--updates-path=<path>` / `web --updates-path=<path>` — forwards `-Dbot.update.updates-path=<path>`
+- `--bundled-jar=<path>` — overrides the bundled runtime jar path
+- `web -J=<jvm-option>` / `web --java-option=<jvm-option>` — forwards extra JVM options to the spawned runtime
+
+The native package starts the Spring runtime with the `prod` profile by default.
+
+Examples:
+
+```bash
+./golemcore-bot/bin/golemcore-bot web --port=8080 --hostname=0.0.0.0
+./golemcore-bot/bin/golemcore-bot web -J=-Xmx1g --port=9090
+./golemcore-bot/bin/golemcore-bot --storage-path=/srv/golemcore/workspace web --updates-path=/srv/golemcore/updates
+```
+
+### Spring runtime arguments still work
+
+Unknown arguments are forwarded to Spring Boot unchanged, so existing application arguments continue to work:
+
+```bash
+./golemcore-bot/bin/golemcore-bot web --server.port=9090
+./golemcore-bot/bin/golemcore-bot web --spring.main.banner-mode=off
+./golemcore-bot/bin/golemcore-bot web -Dlogging.level.root=INFO
+```
+
+If you want to make the split explicit, you can also use `--` before Spring arguments:
+
+```bash
+./golemcore-bot/bin/golemcore-bot web --port=9090 -- --spring.main.banner-mode=off
+```
+
+### Why this matters
+
+This keeps the existing self-update model based on:
+
+- `updates/current.txt`
+- `updates/jars/`
+
+while also letting the bot start cleanly from a native local bundle with documented launcher parameters.
 
 ---
 

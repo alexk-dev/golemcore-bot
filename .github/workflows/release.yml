@@ -203,18 +203,39 @@ jobs:
         if: steps.release-flag.outputs.should-release == 'true' && steps.tag-push.outputs.should-release == 'true'
         run: ./mvnw clean package -DskipTests -DskipGitHooks=true
 
+      # Build the local native bundles from the freshly produced runtime jar so
+      # the release carries the same launcher-aware packaging users build locally.
+      - name: Build native distribution bundles
+        if: steps.release-flag.outputs.should-release == 'true' && steps.tag-push.outputs.should-release == 'true'
+        run: ./.github/scripts/build-native-distribution.sh
+
+      - name: Verify launcher entrypoints
+        if: steps.release-flag.outputs.should-release == 'true' && steps.tag-push.outputs.should-release == 'true'
+        run: ./.github/scripts/verify-launcher-entrypoints.sh
+
       - name: Prepare release assets
         if: steps.release-flag.outputs.should-release == 'true' && steps.tag-push.outputs.should-release == 'true'
         id: assets
         run: |
-          JAR_PATH=$(find target -maxdepth 1 -type f -name 'bot-*.jar' ! -name '*.jar.original' | sort | head -n 1)
+          JAR_PATH=$(find golemcore-bot-app/target -maxdepth 1 -type f -name 'bot-*.jar' ! -name '*.jar.original' | sort | head -n 1)
           if [[ -z "${JAR_PATH}" ]]; then
-            echo "Release jar not found (expected target/bot-*.jar)." >&2
+            echo "Release jar not found (expected golemcore-bot-app/target/bot-*.jar)." >&2
             exit 1
           fi
-          JAR_NAME=$(basename "${JAR_PATH}")
           SHA_FILE=sha256sums.txt
-          sha256sum "${JAR_PATH}" | awk -v jar="${JAR_NAME}" '{print $1 "  " jar}' > "${SHA_FILE}"
+          JAR_NAME=$(basename "${JAR_PATH}")
+          sha256sum "${JAR_PATH}" | awk -v file="${JAR_NAME}" '{print $1 "  " file}' > "${SHA_FILE}"
+
+          # Publish checksums for each native bundle as well so local installers
+          # can verify the exact archive they downloaded.
+          while IFS= read -r bundlePath; do
+            if [[ -z "${bundlePath}" ]]; then
+              continue
+            fi
+            bundleName=$(basename "${bundlePath}")
+            sha256sum "${bundlePath}" | awk -v file="${bundleName}" '{print $1 "  " file}' >> "${SHA_FILE}"
+          done < <(find target/native-dist -maxdepth 1 -type f | sort)
+
           echo "jar-path=${JAR_PATH}" >> "${GITHUB_OUTPUT}"
           echo "sha-file=${SHA_FILE}" >> "${GITHUB_OUTPUT}"
 
@@ -223,13 +244,13 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_TAG: ${{ steps.release.outputs.version }}
-          RELEASE_JAR: ${{ steps.assets.outputs.jar-path }}
           RELEASE_SHA: ${{ steps.assets.outputs.sha-file }}
         run: |
+          RELEASE_FILES=$(find target/native-dist -maxdepth 1 -type f | sort)
           if gh release view "${RELEASE_TAG}" >/dev/null 2>&1; then
-            gh release upload "${RELEASE_TAG}" "${RELEASE_JAR}" "${RELEASE_SHA}" --clobber
+            gh release upload "${RELEASE_TAG}" ${{ steps.assets.outputs.jar-path }} ${RELEASE_FILES} "${RELEASE_SHA}" --clobber
           else
-            gh release create "${RELEASE_TAG}" "${RELEASE_JAR}" "${RELEASE_SHA}" \
+            gh release create "${RELEASE_TAG}" ${{ steps.assets.outputs.jar-path }} ${RELEASE_FILES} "${RELEASE_SHA}" \
               --title "${RELEASE_TAG}" \
               --generate-notes
           fi
@@ -260,11 +281,11 @@ jobs:
       - name: Summary
         if: steps.release-flag.outputs.should-release == 'true' && steps.tag-push.outputs.should-release == 'true'
         run: |
-          echo "## Release ${{ steps.release.outputs.version }}" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Tag \`${{ steps.release.outputs.version }}\` pushed (main push intentionally disabled by branch rules)." >> $GITHUB_STEP_SUMMARY
-          echo "GitHub Release with \`bot-*.jar\` and \`sha256sums.txt\` was published." >> $GITHUB_STEP_SUMMARY
-          echo "Artifacts published to Maven Central." >> $GITHUB_STEP_SUMMARY
+          echo "## Release ${{ steps.release.outputs.version }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Tag \`${{ steps.release.outputs.version }}\` pushed (main push intentionally disabled by branch rules)." >> "$GITHUB_STEP_SUMMARY"
+          echo "GitHub Release with the executable JAR, native local bundles, and \`sha256sums.txt\` was published." >> "$GITHUB_STEP_SUMMARY"
+          echo "Artifacts published to Maven Central." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Summary (no release)
         if: steps.release-flag.outputs.should-release != 'true' || steps.tag-push.outputs.should-release != 'true'
@@ -277,6 +298,6 @@ jobs:
             RELEASE_REASON="not_applicable"
           fi
 
-          echo "## No release" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Release flow skipped safely. Reason: \`${RELEASE_REASON}\`." >> $GITHUB_STEP_SUMMARY
+          echo "## No release" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Release flow skipped safely. Reason: \`${RELEASE_REASON}\`." >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,85 @@
+name: Context Window E2E
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  context-window-e2e:
+    name: AgentLoop Context Window E2E
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    env:
+      PLUGIN_API_REPO_REF: 67cd0d10a997f494dcaf4686438e5c6bcfc8ac65
+      AGENTLOOP_E2E_OPENAI_BASE_URL: ${{ secrets.AGENTLOOP_E2E_OPENAI_BASE_URL }}
+      AGENTLOOP_E2E_OPENAI_API_KEY: ${{ secrets.AGENTLOOP_E2E_OPENAI_API_KEY }}
+      AGENTLOOP_E2E_MODEL: ${{ secrets.AGENTLOOP_E2E_MODEL }}
+      AGENTLOOP_E2E_PROVIDER: ${{ secrets.AGENTLOOP_E2E_PROVIDER }}
+      AGENTLOOP_E2E_REASONING: ${{ secrets.AGENTLOOP_E2E_REASONING }}
+      AGENTLOOP_E2E_LEGACY_API: ${{ secrets.AGENTLOOP_E2E_LEGACY_API }}
+      AGENTLOOP_E2E_SUPPORTS_TEMPERATURE: ${{ secrets.AGENTLOOP_E2E_SUPPORTS_TEMPERATURE }}
+      AGENTLOOP_E2E_MAX_INPUT_TOKENS: ${{ secrets.AGENTLOOP_E2E_MAX_INPUT_TOKENS }}
+      AGENTLOOP_E2E_PAYLOAD_KB: ${{ secrets.AGENTLOOP_E2E_PAYLOAD_KB }}
+      AGENTLOOP_E2E_TIMEOUT_SECONDS: ${{ secrets.AGENTLOOP_E2E_TIMEOUT_SECONDS }}
+      AGENTLOOP_E2E_REQUEST_TIMEOUT_SECONDS: ${{ secrets.AGENTLOOP_E2E_REQUEST_TIMEOUT_SECONDS }}
+      AGENTLOOP_E2E_MAX_SNAPSHOT_KB: ${{ secrets.AGENTLOOP_E2E_MAX_SNAPSHOT_KB }}
+
+    steps:
+      - name: Check required secrets
+        id: guard
+        shell: bash
+        run: |
+          missing=()
+          if [ -z "${AGENTLOOP_E2E_OPENAI_BASE_URL}" ]; then missing+=("AGENTLOOP_E2E_OPENAI_BASE_URL"); fi
+          if [ -z "${AGENTLOOP_E2E_OPENAI_API_KEY}" ]; then missing+=("AGENTLOOP_E2E_OPENAI_API_KEY"); fi
+          if [ -z "${AGENTLOOP_E2E_MODEL}" ]; then missing+=("AGENTLOOP_E2E_MODEL"); fi
+
+          if [ "${#missing[@]}" -gt 0 ]; then
+            echo "enabled=false" >> "${GITHUB_OUTPUT}"
+            echo "::notice::Skipping AgentLoop context-window E2E; missing required secrets: ${missing[*]}"
+            exit 0
+          fi
+
+          echo "enabled=true" >> "${GITHUB_OUTPUT}"
+
+      - name: Checkout
+        if: steps.guard.outputs.enabled == 'true'
+        uses: actions/checkout@v6
+
+      - name: Set up JDK 25
+        if: steps.guard.outputs.enabled == 'true'
+        uses: actions/setup-java@v5
+        with:
+          java-version: '25'
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Checkout plugin APIs
+        if: steps.guard.outputs.enabled == 'true'
+        uses: actions/checkout@v6
+        with:
+          repository: alexk-dev/golemcore-plugins
+          ref: ${{ env.PLUGIN_API_REPO_REF }}
+          path: golemcore-plugins
+
+      - name: Install plugin API artifacts
+        if: steps.guard.outputs.enabled == 'true'
+        run: mvn -B -ntp -Djgitver.skip=true -f golemcore-plugins/pom.xml -pl extension-api,runtime-api -am install -DskipTests
+
+      - name: Run AgentLoop context-window E2E
+        if: steps.guard.outputs.enabled == 'true'
+        env:
+          AGENTLOOP_E2E_ENABLED: "true"
+        run: >
+          ./mvnw -B -ntp
+          -pl ./golemcore-bot-app -am
+          -Dtest=AgentLoopContextWindowExternalE2ETest
+          -Dsurefire.failIfNoSpecifiedTests=false
+          -Dfrontend.skip=true
+          -DskipGitHooks=true
+          test

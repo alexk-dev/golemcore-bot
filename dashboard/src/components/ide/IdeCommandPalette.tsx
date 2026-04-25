@@ -1,16 +1,18 @@
 import type { ReactElement } from 'react';
-import { FiCommand, FiDownload, FiFileText, FiSave, FiSearch, FiSettings } from 'react-icons/fi';
+import { FiCommand, FiDownload, FiEdit3, FiFileText, FiSave, FiSearch, FiSettings } from 'react-icons/fi';
 import { Button } from '../ui/button';
 import { Modal } from '../ui/overlay';
 
 export interface IdeCommandPaletteProps {
   show: boolean;
   canSaveActiveTab: boolean;
+  canOpenInlineEdit: boolean;
   hasActiveTab: boolean;
   activePath: string | null;
   isDownloadingActiveFile: boolean;
   onClose: () => void;
   onSaveActiveTab: () => void;
+  onOpenInlineEdit: () => void;
   onOpenQuickOpen: () => void;
   onToggleEditorSearch: () => void;
   onToggleSettings: () => void;
@@ -20,11 +22,13 @@ export interface IdeCommandPaletteProps {
 export function IdeCommandPalette({
   show,
   canSaveActiveTab,
+  canOpenInlineEdit,
   hasActiveTab,
   activePath,
   isDownloadingActiveFile,
   onClose,
   onSaveActiveTab,
+  onOpenInlineEdit,
   onOpenQuickOpen,
   onToggleEditorSearch,
   onToggleSettings,
@@ -32,6 +36,11 @@ export function IdeCommandPalette({
 }: IdeCommandPaletteProps): ReactElement {
   const handleSave = (): void => {
     onSaveActiveTab();
+    onClose();
+  };
+
+  const handleInlineEdit = (): void => {
+    onOpenInlineEdit();
     onClose();
   };
 
@@ -65,6 +74,10 @@ export function IdeCommandPalette({
           <Button variant="secondary" className="justify-start" onClick={handleQuickOpen}>
             <FiCommand size={14} />
             Quick Open
+          </Button>
+          <Button variant="secondary" className="justify-start" onClick={handleInlineEdit} disabled={!canOpenInlineEdit}>
+            <FiEdit3 size={14} />
+            Inline Edit Selection
           </Button>
           <Button variant="secondary" className="justify-start" onClick={handleSave} disabled={!canSaveActiveTab}>
             <FiSave size={14} />

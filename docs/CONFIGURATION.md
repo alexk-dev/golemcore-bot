@@ -537,6 +537,40 @@ Field notes:
 3. `queueSteeringMode`: `one-at-a-time` or `all`.
 4. `queueFollowUpMode`: `one-at-a-time` or `all`.
 
+### Session Retention
+
+Automatic cleanup of persisted chat sessions is configured under `sessionRetention`:
+
+```json
+{
+  "sessionRetention": {
+    "enabled": true,
+    "maxAge": "P30D",
+    "cleanupInterval": "PT24H",
+    "protectActiveSessions": true,
+    "protectSessionsWithPlans": true,
+    "protectSessionsWithDelayedActions": true
+  }
+}
+```
+
+Field notes:
+
+1. `maxAge`: ISO-8601 retention window before a session becomes eligible for deletion.
+2. `cleanupInterval`: how often the background cleanup job may run.
+3. `protectActiveSessions`: keeps sessions referenced by current web/Telegram active-session pointers.
+4. `protectSessionsWithPlans`: keeps sessions that still have collecting, ready, approved, or executing plan mode state.
+5. `protectSessionsWithDelayedActions`: keeps sessions referenced by pending delayed actions and reminders.
+
+Recommended defaults:
+
+- `enabled=true`
+- `maxAge=P30D`
+- `cleanupInterval=PT24H`
+- all protection flags enabled
+
+This cleanup targets the `sessions/` directory, which is usually the fastest-growing durable state for long-running chat usage.
+
 ### Memory (V2)
 
 Memory behavior is configured under `memory`:
@@ -726,6 +760,7 @@ Some settings are still controlled via Spring properties (application config), t
 - Plugin marketplace HTTP fallback: `BOT_PLUGINS_MARKETPLACE_API_BASE_URL`, `BOT_PLUGINS_MARKETPLACE_RAW_BASE_URL`, `BOT_PLUGINS_MARKETPLACE_REMOTE_CACHE_TTL`
 - SelfEvolving bootstrap overrides: `bot.self-evolving.bootstrap.*`
 - Self-update controls: `BOT_UPDATE_ENABLED`, `UPDATE_PATH`, `BOT_UPDATE_MAX_KEPT_VERSIONS`, `BOT_UPDATE_CHECK_INTERVAL`
+- Local bundle runtime override: `GOLEMCORE_BUNDLED_JAR`, `golemcore.launcher.bundled-jar`
 - Allowed providers in model picker: `BOT_MODEL_SELECTION_ALLOWED_PROVIDERS`
 - Tool result truncation: `bot.auto-compact.max-tool-result-chars`
 - Plan mode feature flag: `bot.plan.enabled`
@@ -798,7 +833,7 @@ Behavior:
 - If source type is `sandbox`, the configured path is resolved relative to the configured tool workspace and must stay inside that sandbox.
 - If source type is `sandbox`, the configured path may point either to the repository root or directly to its `registry/` directory.
 - Otherwise the backend reads the configured remote repository through the GitHub tree/raw endpoints.
-- Remote repository mode currently supports GitHub-style repository URLs such as `https://github.com/alexk-dev/golemcore-skills`.
+- Remote repository mode currently expects a GitHub repository URL such as `https://github.com/alexk-dev/golemcore-skills`.
 - Installed skill artifacts are written into `skills/marketplace/<maintainer>/<artifact>/...` and then the skill registry is reloaded.
 - Standalone marketplace artifacts install one runtime skill; pack artifacts install multiple runtime skills with namespaced runtime ids.
 - The registry format is manifest-driven: `registry/<maintainer>/maintainer.yaml` plus `registry/<maintainer>/<artifact>/artifact.yaml`.
@@ -810,7 +845,7 @@ Core self-update is controlled by Spring properties under `bot.update.*`.
 - `bot.update.enabled` defaults to `true` (disable with `BOT_UPDATE_ENABLED=false`).
 - Release repository is fixed in code: `alexk-dev/golemcore-bot`.
 - GitHub token is not required (public repository).
-- Release asset glob is fixed in code: `bot-*.jar`.
+- Release asset glob is fixed in code: `bot-*-exec.jar`.
 
 Configurable properties:
 
@@ -818,11 +853,49 @@ Configurable properties:
 - `bot.update.max-kept-versions` (`BOT_UPDATE_MAX_KEPT_VERSIONS`, default `3`)
 - `bot.update.check-interval` (`BOT_UPDATE_CHECK_INTERVAL`, default `PT1H`)
 
+### Local native bundle runtime resolution
+
+When the app starts through the native app-image launcher, the CLI launcher can also use:
+
+- `GOLEMCORE_BUNDLED_JAR`
+- `golemcore.launcher.bundled-jar`
+
+These point to the bundled runtime jar inside the local app-image.
+
+The native launcher itself is picocli-based and documents its launcher-only options via `--help`.
+
+Launcher-specific options:
+
+- `web` starts the spawned runtime
+- `web --port=<port>` forwards `-Dserver.port=<port>` to the spawned runtime
+- `web --hostname=<address>` forwards `-Dserver.address=<address>` to the spawned runtime
+- `--storage-path=<path>` or `web --storage-path=<path>` forwards `-Dbot.storage.local.base-path=<path>`
+- `--updates-path=<path>` or `web --updates-path=<path>` forwards `-Dbot.update.updates-path=<path>`
+- `--bundled-jar=<path>` overrides the bundled runtime jar path
+- `web -J=<jvm-option>` / `web --java-option=<jvm-option>` forwards extra JVM options
+
+The native package starts the Spring runtime with the `prod` profile by default.
+
+Unknown arguments are passed through to Spring Boot, so both of these remain valid:
+
+```bash
+golemcore-bot web --port=9090
+golemcore-bot web --spring.main.banner-mode=off
+```
+
+The launcher priority is:
+
+1. staged update selected by `updates/current.txt`, unless the bundled runtime jar is newer
+2. bundled runtime jar
+3. legacy Jib classpath fallback
+
+This preserves the existing self-update model for local distributions while allowing a newer native bundle to take over from an older persisted runtime.
+
 ## Storage Layout
 
 Default (macOS/Linux): `~/.golemcore/workspace`
 
-```
+```text
 workspace/
 ├── auto/                    # auto mode + plan mode state
 ├── memory/                  # structured memory items (JSONL)
