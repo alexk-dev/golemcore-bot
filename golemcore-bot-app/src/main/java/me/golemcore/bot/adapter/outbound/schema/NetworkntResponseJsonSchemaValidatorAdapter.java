@@ -18,20 +18,20 @@
 
 package me.golemcore.bot.adapter.outbound.schema;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.networknt.schema.JsonSchema;
-import com.networknt.schema.JsonSchemaFactory;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.networknt.schema.Error;
+import com.networknt.schema.InputFormat;
+import com.networknt.schema.Schema;
 import com.networknt.schema.SchemaLocation;
-import com.networknt.schema.SpecVersion;
-import com.networknt.schema.ValidationMessage;
+import com.networknt.schema.SchemaRegistry;
+import com.networknt.schema.SpecificationVersion;
 import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.port.outbound.ResponseJsonSchemaValidatorPort;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 @Component
 @RequiredArgsConstructor
@@ -43,8 +43,9 @@ public class NetworkntResponseJsonSchemaValidatorAdapter implements ResponseJson
 
     private final ObjectMapper objectMapper;
 
-    private final JsonSchemaFactory schemaFactory = JsonSchemaFactory.getInstance(SpecVersion.VersionFlag.V202012);
-    private final JsonSchema schemaDefinitionSchema = schemaFactory.getSchema(DRAFT_2020_12_META_SCHEMA);
+    private final SchemaRegistry schemaRegistry = SchemaRegistry
+            .withDefaultDialect(SpecificationVersion.DRAFT_2020_12);
+    private final Schema schemaDefinitionSchema = schemaRegistry.getSchema(DRAFT_2020_12_META_SCHEMA);
 
     @Override
     public void validateResponseJsonSchema(Map<String, Object> responseJsonSchema) {
@@ -55,19 +56,27 @@ public class NetworkntResponseJsonSchemaValidatorAdapter implements ResponseJson
             throw new IllegalArgumentException("Invalid responseJsonSchema: schema must not be empty");
         }
 
-        JsonNode schemaNode = objectMapper.valueToTree(responseJsonSchema);
-        Set<ValidationMessage> validationMessages = schemaDefinitionSchema.validate(schemaNode);
-        if (!validationMessages.isEmpty()) {
-            List<String> errors = validationMessages.stream()
-                    .map(ValidationMessage::getMessage)
+        String schemaJson = writeJson(responseJsonSchema);
+        List<Error> validationErrors = schemaDefinitionSchema.validate(schemaJson, InputFormat.JSON);
+        if (!validationErrors.isEmpty()) {
+            List<String> errors = validationErrors.stream()
+                    .map(Error::getMessage)
                     .limit(MAX_REPORTED_SCHEMA_ERRORS)
                     .toList();
             throw new IllegalArgumentException("Invalid responseJsonSchema: " + String.join("; ", errors));
         }
 
         try {
-            schemaFactory.getSchema(schemaNode);
+            schemaRegistry.getSchema(schemaJson, InputFormat.JSON);
         } catch (RuntimeException e) {
+            throw new IllegalArgumentException("Invalid responseJsonSchema: " + e.getMessage(), e);
+        }
+    }
+
+    private String writeJson(Map<String, Object> responseJsonSchema) {
+        try {
+            return objectMapper.writeValueAsString(responseJsonSchema);
+        } catch (JsonProcessingException e) {
             throw new IllegalArgumentException("Invalid responseJsonSchema: " + e.getMessage(), e);
         }
     }

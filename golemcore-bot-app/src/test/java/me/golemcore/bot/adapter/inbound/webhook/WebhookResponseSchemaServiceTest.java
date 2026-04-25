@@ -227,6 +227,44 @@ class WebhookResponseSchemaServiceTest {
     }
 
     @Test
+    void shouldApplyDraft202012UnevaluatedPropertiesDuringResponseValidation() {
+        when(modelSelectionService.resolveForTier("smart"))
+                .thenReturn(new ModelSelectionService.ModelSelection("openai/gpt-test", "low"));
+        when(llmPort.chat(any()))
+                .thenReturn(CompletableFuture.completedFuture(LlmResponse.builder()
+                        .content("""
+                                {"version":"1.0","response":{"text":"Ready","tts":"Ready","end_session":true}}
+                                """)
+                        .build()));
+
+        WebhookResponseSchemaService.SchemaResult result = service.validateAndRepair(
+                """
+                        {"version":"1.0","response":{"text":"Ready","tts":"Ready","end_session":true},"unexpected":true}
+                        """,
+                draft202012UnevaluatedPropertiesSchema(),
+                "smart",
+                "coding");
+
+        Map<?, ?> payload = assertInstanceOf(Map.class, result.payload());
+        assertEquals("1.0", payload.get("version"));
+        assertEquals(1, result.repairAttempts());
+        verify(llmPort).chat(any());
+    }
+
+    @Test
+    void shouldRejectInvalidSchemaDefinitionBeforeRepairModelCall() {
+        WebhookResponseSchemaService.SchemaProcessingException exception = assertThrows(
+                WebhookResponseSchemaService.SchemaProcessingException.class,
+                () -> service.validateAndRepair("{}", Map.of(
+                        "$schema", "https://json-schema.org/draft/2020-12/schema",
+                        "type", "object",
+                        "required", "version"), "smart", "coding"));
+
+        assertTrue(exception.getMessage().contains("Invalid responseJsonSchema"));
+        verify(llmPort, never()).chat(any());
+    }
+
+    @Test
     void shouldFailAfterThreeUnsuccessfulRepairAttempts() {
         when(modelSelectionService.resolveForTier("smart"))
                 .thenReturn(new ModelSelectionService.ModelSelection("openai/gpt-test", "low"));
@@ -395,5 +433,24 @@ class WebhookResponseSchemaServiceTest {
                                         "tts", Map.of("type", "string", "description", "Text to speak"),
                                         "end_session", Map.of("type", "boolean",
                                                 "description", "Session completion flag")))));
+    }
+
+    private Map<String, Object> draft202012UnevaluatedPropertiesSchema() {
+        return Map.of(
+                "$schema", "https://json-schema.org/draft/2020-12/schema",
+                "type", "object",
+                "allOf", List.of(Map.of(
+                        "properties", Map.of(
+                                "version", Map.of("type", "string", "const", "1.0"),
+                                "response", Map.of(
+                                        "type", "object",
+                                        "required", List.of("text", "tts", "end_session"),
+                                        "properties", Map.of(
+                                                "text", Map.of("type", "string"),
+                                                "tts", Map.of("type", "string"),
+                                                "end_session", Map.of("type", "boolean")),
+                                        "unevaluatedProperties", false)),
+                        "required", List.of("version", "response"))),
+                "unevaluatedProperties", false);
     }
 }
