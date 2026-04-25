@@ -69,6 +69,23 @@ class MessageServiceTest {
                 result);
     }
 
+    @Test
+    void shouldNotAdvertiseUnsupportedGoalTaskSchedules() {
+        String englishHelp = messageService.getMessage("command.schedule.help.text", "en");
+        String englishUsage = messageService.getMessage("command.schedule.usage", "en");
+        String russianHelp = messageService.getMessage("command.schedule.help.text", "ru");
+        String russianUsage = messageService.getMessage("command.schedule.usage", "ru");
+
+        assertFalse(englishHelp.contains("/schedule goal"));
+        assertFalse(englishHelp.contains("/schedule task"));
+        assertFalse(englishUsage.contains("goal"));
+        assertFalse(englishUsage.contains("task"));
+        assertFalse(russianHelp.contains("/schedule goal"));
+        assertFalse(russianHelp.contains("/schedule task"));
+        assertFalse(russianUsage.contains("goal"));
+        assertFalse(russianUsage.contains("task"));
+    }
+
     // --- getMessage (explicit language) ---
 
     @Test

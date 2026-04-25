@@ -25,7 +25,6 @@ import me.golemcore.bot.domain.service.HiveSessionStateStore;
 import me.golemcore.bot.domain.service.HiveSsoService;
 import me.golemcore.bot.domain.service.MemoryPresetService;
 import me.golemcore.bot.domain.service.ModelSelectionService;
-import me.golemcore.bot.domain.service.PlanExecutionService;
 import me.golemcore.bot.domain.service.PlanService;
 import me.golemcore.bot.domain.service.PromptSectionService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
@@ -121,11 +120,8 @@ public class ApplicationLayerConfiguration {
     }
 
     @Bean
-    PlanCommandService planCommandService(
-            PlanService planService,
-            PlanExecutionService planExecutionService,
-            RuntimeConfigService runtimeConfigService) {
-        return new PlanCommandService(planService, planExecutionService, runtimeConfigService);
+    PlanCommandService planCommandService(PlanService planService) {
+        return new PlanCommandService(planService);
     }
 
     @Bean

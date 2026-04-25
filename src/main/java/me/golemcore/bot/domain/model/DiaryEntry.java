@@ -39,6 +39,7 @@ public class DiaryEntry {
     private Instant timestamp;
     private DiaryType type;
     private String content;
+    private String sessionId;
     private String goalId;
     private String taskId;
 

@@ -34,6 +34,8 @@ import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -210,17 +212,38 @@ public class AutoModeScheduler implements AutoExecutionStatusPort {
             }
 
             try {
-                List<ScheduleEntry> dueSchedules = scheduleService.getDueSchedules();
-                if (dueSchedules.isEmpty()) {
-                    return;
-                }
-
-                log.info("[AutoScheduler] Tick: {} due schedules", dueSchedules.size());
-
                 int taskTimeLimitMinutes = runtimeConfigService.getAutoTaskTimeLimitMinutes();
-                for (ScheduleEntry schedule : dueSchedules) {
-                    scheduledRunExecutor.executeSchedule(schedule, deliveryContext.get(), taskTimeLimitMinutes);
-                    scheduleService.recordExecution(schedule.getId());
+                boolean loggedDueSchedules = false;
+                Set<String> busyScheduledTaskIds = new HashSet<>();
+                Set<String> processedScheduleIds = new HashSet<>();
+                while (true) {
+                    List<ScheduleEntry> dueSchedules = scheduleService.getDueSchedules();
+                    if (dueSchedules.isEmpty()) {
+                        return;
+                    }
+                    if (!loggedDueSchedules) {
+                        log.info("[AutoScheduler] Tick: {} due schedules", dueSchedules.size());
+                        loggedDueSchedules = true;
+                    }
+
+                    ScheduleEntry schedule = dueSchedules.stream()
+                            .filter(entry -> !processedScheduleIds.contains(entry.getId()))
+                            .filter(entry -> !busyScheduledTaskIds.contains(resolveBusyScheduledTaskId(entry)))
+                            .findFirst()
+                            .orElse(null);
+                    if (schedule == null) {
+                        return;
+                    }
+                    String scheduledTaskId = resolveBusyScheduledTaskId(schedule);
+                    ScheduledRunOutcome outcome = scheduledRunExecutor.executeSchedule(
+                            schedule,
+                            deliveryContext.get(),
+                            taskTimeLimitMinutes);
+                    if (scheduledTaskId != null) {
+                        busyScheduledTaskIds.add(scheduledTaskId);
+                    }
+                    handleRunOutcome(schedule, outcome);
+                    processedScheduleIds.add(schedule.getId());
                 }
             } finally {
                 executing.set(false);
@@ -229,5 +252,30 @@ public class AutoModeScheduler implements AutoExecutionStatusPort {
             executing.set(false);
             log.error("[AutoScheduler] Tick failed: {}", e.getMessage(), e);
         }
+    }
+
+    private void handleRunOutcome(ScheduleEntry schedule, ScheduledRunOutcome outcome) {
+        switch (outcome) {
+        case EXECUTED -> scheduleService.recordExecution(schedule.getId());
+        case SKIPPED_TARGET_MISSING -> {
+            scheduleService.disableSchedule(schedule.getId());
+            log.warn("[AutoScheduler] Disabled schedule {} after permanent skip: {}", schedule.getId(), outcome);
+        }
+        case SKIPPED_TASK_BUSY ->
+            log.info("[AutoScheduler] Schedule {} skipped because scheduled task {} is already running",
+                    schedule.getId(), schedule.getTargetId());
+        case FAILED -> {
+            scheduleService.recordFailedAttempt(schedule.getId());
+            log.warn("[AutoScheduler] Schedule {} failed; next execution was recalculated", schedule.getId());
+        }
+        }
+    }
+
+    private String resolveBusyScheduledTaskId(ScheduleEntry schedule) {
+        if (schedule == null || schedule.getType() != ScheduleEntry.ScheduleType.SCHEDULED_TASK) {
+            return null;
+        }
+        String targetId = schedule.getTargetId();
+        return targetId != null && !targetId.isBlank() ? targetId : null;
     }
 }

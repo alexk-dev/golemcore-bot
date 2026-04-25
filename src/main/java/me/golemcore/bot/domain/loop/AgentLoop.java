@@ -366,6 +366,7 @@ public class AgentLoop {
         copyStringMetadataAttribute(message, context, ContextAttributes.AUTO_SCHEDULE_ID);
         copyStringMetadataAttribute(message, context, ContextAttributes.AUTO_GOAL_ID);
         copyStringMetadataAttribute(message, context, ContextAttributes.AUTO_TASK_ID);
+        copyStringMetadataAttribute(message, context, ContextAttributes.AUTO_SCHEDULED_TASK_ID);
         copyStringMetadataAttribute(message, context, ContextAttributes.ACTIVE_SKILL_NAME);
         copyStringMetadataAttribute(message, context, ContextAttributes.AUTO_RUN_ACTIVE_SKILL);
         copyStringMetadataAttribute(message, context, ContextAttributes.AUTO_REFLECTION_TIER);

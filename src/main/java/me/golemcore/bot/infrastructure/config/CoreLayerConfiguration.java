@@ -3,12 +3,14 @@ package me.golemcore.bot.infrastructure.config;
 import java.time.Clock;
 import java.util.List;
 import me.golemcore.bot.application.update.UpdateService;
+import me.golemcore.bot.domain.service.AutoModeMigrationService;
 import me.golemcore.bot.domain.loop.AgentLoop;
 import me.golemcore.bot.domain.service.ContextCompactionPolicy;
 import me.golemcore.bot.domain.service.ContextHygieneService;
 import me.golemcore.bot.domain.service.ContextTokenEstimator;
 import me.golemcore.bot.domain.service.DefaultContextHygieneService;
 import me.golemcore.bot.domain.service.ModelSelectionService;
+import me.golemcore.bot.domain.service.PlanModeToolRestrictionService;
 import me.golemcore.bot.domain.service.PlanService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.ScheduleService;
@@ -17,10 +19,9 @@ import me.golemcore.bot.domain.service.UpdateActivityGate;
 import me.golemcore.bot.domain.service.UpdateMaintenanceWindow;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.domain.system.AgentSystem;
-import me.golemcore.bot.domain.system.PlanFinalizationSystem;
+import me.golemcore.bot.domain.system.PlanExecutionContextCleanupSystem;
 import me.golemcore.bot.port.outbound.ChannelRuntimePort;
 import me.golemcore.bot.port.outbound.LlmPort;
-import me.golemcore.bot.port.outbound.PlanReadyNotificationPort;
 import me.golemcore.bot.port.outbound.RateLimitPort;
 import me.golemcore.bot.port.outbound.ReleaseSourcePort;
 import me.golemcore.bot.port.outbound.ScheduleCronPort;
@@ -50,6 +51,14 @@ public class CoreLayerConfiguration {
     }
 
     @Bean
+    ScheduleService scheduleService(
+            SchedulePersistencePort schedulePersistencePort,
+            ScheduleCronPort scheduleCronPort,
+            Clock clock,
+            AutoModeMigrationService autoModeMigrationService) {
+        return new ScheduleService(schedulePersistencePort, scheduleCronPort, clock, autoModeMigrationService);
+    }
+
     ScheduleService scheduleService(
             SchedulePersistencePort schedulePersistencePort,
             ScheduleCronPort scheduleCronPort,
@@ -111,9 +120,12 @@ public class CoreLayerConfiguration {
     }
 
     @Bean
-    PlanFinalizationSystem planFinalizationSystem(
-            PlanService planService,
-            PlanReadyNotificationPort planReadyNotificationPort) {
-        return new PlanFinalizationSystem(planService, planReadyNotificationPort);
+    PlanModeToolRestrictionService planModeToolRestrictionService(PlanService planService) {
+        return new PlanModeToolRestrictionService(planService);
+    }
+
+    @Bean
+    PlanExecutionContextCleanupSystem planExecutionContextCleanupSystem(PlanService planService) {
+        return new PlanExecutionContextCleanupSystem(planService);
     }
 }

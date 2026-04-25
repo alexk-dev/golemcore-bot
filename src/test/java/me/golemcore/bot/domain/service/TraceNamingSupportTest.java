@@ -2,6 +2,7 @@ package me.golemcore.bot.domain.service;
 
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.Message;
+import me.golemcore.bot.domain.model.ScheduleEntry;
 import org.junit.jupiter.api.Test;
 
 import java.util.Map;
@@ -49,5 +50,15 @@ class TraceNamingSupportTest {
                 .build();
 
         assertEquals(TraceNamingSupport.DELAYED_ACTION, TraceNamingSupport.inboundMessage(message));
+    }
+
+    @Test
+    void shouldReturnScheduledTaskTraceNameForScheduledTaskSchedule() {
+        ScheduleEntry schedule = ScheduleEntry.builder()
+                .type(ScheduleEntry.ScheduleType.SCHEDULED_TASK)
+                .targetId("scheduled-task-1")
+                .build();
+
+        assertEquals("auto.schedule.scheduled_task", TraceNamingSupport.autoSchedule(schedule));
     }
 }

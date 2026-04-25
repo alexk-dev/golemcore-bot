@@ -15,6 +15,7 @@ import me.golemcore.bot.domain.model.ChannelTypes;
 import me.golemcore.bot.domain.model.Goal;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.ScheduleEntry;
+import me.golemcore.bot.domain.model.ScheduledTask;
 import me.golemcore.bot.domain.model.ScheduleReportConfig;
 import me.golemcore.bot.domain.model.ScheduleReportConfigUpdate;
 import me.golemcore.bot.domain.service.AutoModeService;
@@ -46,9 +47,10 @@ public class SchedulerFacade {
     }
 
     public SchedulerStateView getState() {
-        List<Goal> allGoals = autoModeService.getGoals();
+        List<Goal> allGoals = loadSessionGoalsForState();
         Map<String, Goal> goalById = new HashMap<>();
         Map<String, String> taskTitleById = new HashMap<>();
+        Map<String, String> scheduledTaskTitleById = new HashMap<>();
 
         for (Goal goal : allGoals) {
             goalById.put(goal.getId(), goal);
@@ -70,11 +72,20 @@ public class SchedulerFacade {
                 })
                 .toList();
 
+        List<ScheduledTaskView> scheduledTasks = autoModeService.getScheduledTasks().stream()
+                .sorted(Comparator.comparing(ScheduledTask::getCreatedAt,
+                        Comparator.nullsLast(Comparator.naturalOrder())))
+                .map(task -> {
+                    scheduledTaskTitleById.put(task.getId(), task.getTitle());
+                    return toScheduledTaskView(task);
+                })
+                .toList();
+
         List<ScheduleView> schedules = scheduleService.getSchedules().stream()
                 .sorted(Comparator
                         .comparing(ScheduleEntry::getCreatedAt, Comparator.nullsLast(Comparator.naturalOrder()))
                         .reversed())
-                .map(entry -> toScheduleView(entry, goalById, taskTitleById))
+                .map(entry -> toScheduleView(entry, goalById, taskTitleById, scheduledTaskTitleById))
                 .toList();
 
         return new SchedulerStateView(
@@ -82,6 +93,7 @@ public class SchedulerFacade {
                 autoModeService.isAutoModeEnabled(),
                 goals,
                 standaloneTasks,
+                scheduledTasks,
                 schedules,
                 buildReportChannelOptions());
     }
@@ -93,7 +105,7 @@ public class SchedulerFacade {
         }
 
         ScheduleEntry.ScheduleType targetType = parseTargetType(request.targetType());
-        String targetId = validateTargetId(request.targetId(), targetType);
+        String requestedTargetId = requireId(request.targetId(), "targetId");
         int maxExecutions = normalizeMaxExecutions(request.maxExecutions());
         ScheduleMode mode = parseMode(request.mode(), request.cronExpression());
         String cronExpression = buildRequestedCronExpression(
@@ -104,6 +116,7 @@ public class SchedulerFacade {
                 request.cronExpression());
 
         ScheduleReportConfig report = normalizeReportRequest(request.report());
+        String targetId = validateTargetId(requestedTargetId, targetType);
         ScheduleEntry entry = scheduleService.createSchedule(
                 targetType,
                 targetId,
@@ -111,7 +124,7 @@ public class SchedulerFacade {
                 maxExecutions,
                 Boolean.TRUE.equals(request.clearContextBeforeRun()),
                 report);
-        return toScheduleView(entry, resolveTargetLabel(entry, autoModeService.getGoals()));
+        return toScheduleView(entry, resolveTargetLabel(entry, List.of()));
     }
 
     public ScheduleView updateSchedule(String scheduleId, UpdateScheduleCommand request) {
@@ -122,7 +135,7 @@ public class SchedulerFacade {
 
         String normalizedScheduleId = requireId(scheduleId, "scheduleId");
         ScheduleEntry.ScheduleType targetType = parseTargetType(request.targetType());
-        String targetId = validateTargetId(request.targetId(), targetType);
+        String requestedTargetId = requireId(request.targetId(), "targetId");
         int maxExecutions = normalizeMaxExecutions(request.maxExecutions());
         ScheduleMode mode = parseMode(request.mode(), request.cronExpression());
         String cronExpression = buildRequestedCronExpression(
@@ -133,6 +146,7 @@ public class SchedulerFacade {
                 request.cronExpression());
 
         ScheduleReportConfigUpdate reportUpdate = normalizeReportUpdateRequest(request.report());
+        String targetId = validateTargetId(requestedTargetId, targetType);
         ScheduleEntry entry = scheduleService.updateSchedule(
                 normalizedScheduleId,
                 targetType,
@@ -142,7 +156,7 @@ public class SchedulerFacade {
                 normalizeEnabled(request.enabled()),
                 request.clearContextBeforeRun(),
                 reportUpdate);
-        return toScheduleView(entry, resolveTargetLabel(entry, autoModeService.getGoals()));
+        return toScheduleView(entry, resolveTargetLabel(entry, List.of()));
     }
 
     public void deleteSchedule(String scheduleId) {
@@ -179,6 +193,21 @@ public class SchedulerFacade {
                 tasks);
     }
 
+    private ScheduledTaskView toScheduledTaskView(ScheduledTask task) {
+        return new ScheduledTaskView(
+                task.getId(),
+                task.getTitle(),
+                task.getDescription(),
+                task.getPrompt(),
+                task.getExecutionModeOrDefault().name(),
+                task.getShellCommand(),
+                task.getShellWorkingDirectory(),
+                task.getReflectionModelTier(),
+                task.isReflectionTierPriority(),
+                task.getLegacySourceType(),
+                task.getLegacySourceId());
+    }
+
     private TaskView toTaskView(AutoTask task, boolean standalone) {
         String goalId = standalone ? null : task.getGoalId();
         return new TaskView(
@@ -195,8 +224,9 @@ public class SchedulerFacade {
     private ScheduleView toScheduleView(
             ScheduleEntry entry,
             Map<String, Goal> goalById,
-            Map<String, String> taskTitleById) {
-        String targetLabel = resolveTargetLabel(entry, goalById, taskTitleById);
+            Map<String, String> taskTitleById,
+            Map<String, String> scheduledTaskTitleById) {
+        String targetLabel = resolveTargetLabel(entry, goalById, taskTitleById, scheduledTaskTitleById);
         return toScheduleView(entry, targetLabel);
     }
 
@@ -280,16 +310,26 @@ public class SchedulerFacade {
     private static String resolveTargetLabel(
             ScheduleEntry entry,
             Map<String, Goal> goalById,
-            Map<String, String> taskTitleById) {
+            Map<String, String> taskTitleById,
+            Map<String, String> scheduledTaskTitleById) {
         if (entry.getType() == ScheduleEntry.ScheduleType.GOAL) {
             Goal goal = goalById.get(entry.getTargetId());
             return goal != null ? goal.getTitle() : entry.getTargetId();
+        }
+        if (entry.getType() == ScheduleEntry.ScheduleType.SCHEDULED_TASK) {
+            String scheduledTaskTitle = scheduledTaskTitleById.get(entry.getTargetId());
+            return scheduledTaskTitle != null ? scheduledTaskTitle : entry.getTargetId();
         }
         String taskTitle = taskTitleById.get(entry.getTargetId());
         return taskTitle != null ? taskTitle : entry.getTargetId();
     }
 
     private String resolveTargetLabel(ScheduleEntry entry, List<Goal> goals) {
+        if (entry.getType() == ScheduleEntry.ScheduleType.SCHEDULED_TASK) {
+            return autoModeService.getScheduledTask(entry.getTargetId())
+                    .map(ScheduledTask::getTitle)
+                    .orElse(entry.getTargetId());
+        }
         if (entry.getType() == ScheduleEntry.ScheduleType.GOAL) {
             Optional<Goal> goal = goals.stream()
                     .filter(item -> item.getId().equals(entry.getTargetId()))
@@ -306,17 +346,27 @@ public class SchedulerFacade {
     }
 
     private String validateTargetId(String targetId, ScheduleEntry.ScheduleType type) {
-        String normalizedTargetId = requireId(targetId, "targetId");
+        String normalizedTargetId = targetId.trim();
 
         if (type == ScheduleEntry.ScheduleType.GOAL) {
-            if (autoModeService.getGoal(normalizedTargetId).isEmpty()) {
-                throw new IllegalArgumentException("Goal not found: " + normalizedTargetId);
-            }
-        } else if (autoModeService.findGoalForTask(normalizedTargetId).isEmpty()) {
-            throw new IllegalArgumentException("Task not found: " + normalizedTargetId);
+            throw new IllegalArgumentException("Goal schedules are no longer supported");
+        }
+        if (type == ScheduleEntry.ScheduleType.TASK) {
+            throw new IllegalArgumentException("Task schedules are no longer supported");
+        }
+        if (autoModeService.getScheduledTask(normalizedTargetId).isEmpty()) {
+            throw new IllegalArgumentException("Scheduled task not found: " + normalizedTargetId);
         }
 
         return normalizedTargetId;
+    }
+
+    private List<Goal> loadSessionGoalsForState() {
+        try {
+            return autoModeService.getGoals();
+        } catch (IllegalStateException exception) {
+            return List.of();
+        }
     }
 
     private static ScheduleEntry.ScheduleType parseTargetType(String value) {
@@ -324,12 +374,15 @@ public class SchedulerFacade {
             throw new IllegalArgumentException("targetType is required");
         }
 
-        String normalized = value.trim().toUpperCase(Locale.ROOT);
+        String normalized = value.trim().toUpperCase(Locale.ROOT).replace('-', '_').replace(' ', '_');
         if ("GOAL".equals(normalized)) {
             return ScheduleEntry.ScheduleType.GOAL;
         }
         if ("TASK".equals(normalized)) {
             return ScheduleEntry.ScheduleType.TASK;
+        }
+        if ("SCHEDULED_TASK".equals(normalized)) {
+            return ScheduleEntry.ScheduleType.SCHEDULED_TASK;
         }
         throw new IllegalArgumentException("Unsupported targetType: " + value);
     }
@@ -655,6 +708,7 @@ public class SchedulerFacade {
             boolean autoModeEnabled,
             List<GoalView> goals,
             List<TaskView> standaloneTasks,
+            List<ScheduledTaskView> scheduledTasks,
             List<ScheduleView> schedules,
             List<ScheduleReportChannelOptionView> reportChannelOptions) {
     }
@@ -679,6 +733,20 @@ public class SchedulerFacade {
             String status,
             int order,
             boolean standalone) {
+    }
+
+    public record ScheduledTaskView(
+            String id,
+            String title,
+            String description,
+            String prompt,
+            String executionMode,
+            String shellCommand,
+            String shellWorkingDirectory,
+            String reflectionModelTier,
+            boolean reflectionTierPriority,
+            String legacySourceType,
+            String legacySourceId) {
     }
 
     public record ScheduleView(

@@ -102,7 +102,6 @@ public class SystemController {
         config.put("toolLoopMaxToolExecutions", runtimeConfigService.getToolLoopMaxToolExecutions());
         config.put("voiceEnabled", runtimeConfigService.isVoiceEnabled());
         config.put("ragEnabled", ragPort.isAvailable());
-        config.put("planEnabled", runtimeConfigService.isPlanEnabled());
         config.put("autoModeEnabled", runtimeConfigService.isAutoModeEnabled());
         config.put("dashboardEnabled", botProperties.getDashboard().isEnabled());
         return Mono.just(ResponseEntity.ok(config));

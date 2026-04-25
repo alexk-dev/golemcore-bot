@@ -826,9 +826,54 @@ class OutgoingResponsePreparationSystemTest {
         context.setAttribute(ContextAttributes.TOOL_LOOP_LIMIT_REACHED, true);
         context.setAttribute(ContextAttributes.TOOL_LOOP_LIMIT_REASON, TurnLimitReason.MAX_LLM_CALLS);
 
-        when(runtimeConfigService.getTurnMaxLlmCalls()).thenReturn(200);
+        when(runtimeConfigService.getToolLoopMaxLlmCalls()).thenReturn(200);
         String i18nMessage = "Reached max internal calls (200)";
         when(preferencesService.getMessage("system.toolloop.limit.maxLlmCalls", 200)).thenReturn(i18nMessage);
+
+        AgentContext result = system.process(context);
+
+        OutgoingResponse outgoing = result.getAttribute(ContextAttributes.OUTGOING_RESPONSE);
+        assertNotNull(outgoing);
+        assertEquals(i18nMessage, outgoing.getText());
+    }
+
+    @Test
+    void shouldUseActualToolLoopLlmLimitWhenLegacyTurnConfigDiffers() {
+        AgentContext context = buildContext();
+        LlmResponse response = LlmResponse.builder()
+                .content("Tool loop stopped: reached max internal LLM calls (20).")
+                .build();
+        context.setAttribute(ContextAttributes.LLM_RESPONSE, response);
+        context.setAttribute(ContextAttributes.TOOL_LOOP_LIMIT_REACHED, true);
+        context.setAttribute(ContextAttributes.TOOL_LOOP_LIMIT_REASON, TurnLimitReason.MAX_LLM_CALLS);
+        context.setAttribute(ContextAttributes.TOOL_LOOP_LIMIT_MAX_LLM_CALLS, 20);
+
+        when(runtimeConfigService.getTurnMaxLlmCalls()).thenReturn(20_000);
+        when(runtimeConfigService.getToolLoopMaxLlmCalls()).thenReturn(20);
+        String i18nMessage = "Reached max internal calls (20)";
+        when(preferencesService.getMessage("system.toolloop.limit.maxLlmCalls", 20)).thenReturn(i18nMessage);
+
+        AgentContext result = system.process(context);
+
+        OutgoingResponse outgoing = result.getAttribute(ContextAttributes.OUTGOING_RESPONSE);
+        assertNotNull(outgoing);
+        assertEquals(i18nMessage, outgoing.getText());
+    }
+
+    @Test
+    void shouldFallBackToCurrentToolLoopLimitWhenActualLimitAttributeIsMissing() {
+        AgentContext context = buildContext();
+        LlmResponse response = LlmResponse.builder()
+                .content("Tool loop stopped: reached max internal LLM calls.")
+                .build();
+        context.setAttribute(ContextAttributes.LLM_RESPONSE, response);
+        context.setAttribute(ContextAttributes.TOOL_LOOP_LIMIT_REACHED, true);
+        context.setAttribute(ContextAttributes.TOOL_LOOP_LIMIT_REASON, TurnLimitReason.MAX_LLM_CALLS);
+
+        when(runtimeConfigService.getTurnMaxLlmCalls()).thenReturn(20_000);
+        when(runtimeConfigService.getToolLoopMaxLlmCalls()).thenReturn(24);
+        String i18nMessage = "Reached max internal calls (24)";
+        when(preferencesService.getMessage("system.toolloop.limit.maxLlmCalls", 24)).thenReturn(i18nMessage);
 
         AgentContext result = system.process(context);
 
@@ -847,7 +892,7 @@ class OutgoingResponsePreparationSystemTest {
         context.setAttribute(ContextAttributes.TOOL_LOOP_LIMIT_REACHED, true);
         context.setAttribute(ContextAttributes.TOOL_LOOP_LIMIT_REASON, TurnLimitReason.MAX_TOOL_EXECUTIONS);
 
-        when(runtimeConfigService.getTurnMaxToolExecutions()).thenReturn(500);
+        when(runtimeConfigService.getToolLoopMaxToolExecutions()).thenReturn(500);
         String i18nMessage = "Reached max tool executions (500)";
         when(preferencesService.getMessage("system.toolloop.limit.maxToolExecutions", 500))
                 .thenReturn(i18nMessage);

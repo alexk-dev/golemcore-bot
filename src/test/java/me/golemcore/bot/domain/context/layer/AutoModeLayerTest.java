@@ -2,6 +2,7 @@ package me.golemcore.bot.domain.context.layer;
 
 import me.golemcore.bot.domain.context.ContextLayerResult;
 import me.golemcore.bot.domain.model.AgentContext;
+import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.service.AutoModeService;
@@ -15,6 +16,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -88,6 +90,23 @@ class AutoModeLayerTest {
     }
 
     @Test
+    void shouldKeepGuidelinesWhenAutoContextIsUnavailable() {
+        when(autoModeService.buildAutoContext(null, null))
+                .thenThrow(new IllegalStateException("No current session available"));
+
+        Message autoMsg = Message.builder().role("user").content("task")
+                .metadata(Map.of(ContextAttributes.AUTO_MODE, true)).build();
+        AgentContext context = AgentContext.builder().messages(List.of(autoMsg)).build();
+
+        ContextLayerResult result = layer.assemble(context);
+
+        assertTrue(result.hasContent());
+        assertTrue(result.getContent().contains("Autonomous Execution Guidelines"));
+        assertTrue(result.getContent().contains("Do NOT include follow-up questions"));
+        assertFalse(result.getContent().contains("# Goals"));
+    }
+
+    @Test
     void shouldPassAutoGoalAndTaskIdsToContextBuilder() {
         when(autoModeService.buildAutoContext("goal-1", "task-1")).thenReturn("# Goals\n- Scoped");
 
@@ -101,6 +120,30 @@ class AutoModeLayerTest {
 
         assertTrue(result.getContent().contains("Scoped"));
         verify(autoModeService).buildAutoContext("goal-1", "task-1");
+        verifyNoMoreInteractions(autoModeService);
+    }
+
+    @Test
+    void shouldUseAgentSessionWhenBuildingScopedContext() {
+        when(autoModeService.buildAutoContext("webhook:chat-1", "goal-1", "task-1"))
+                .thenReturn("# Auto Mode\n- Scoped session goal");
+
+        Message autoMsg = Message.builder().role("user").content("task")
+                .metadata(Map.of(ContextAttributes.AUTO_MODE, true)).build();
+        AgentSession session = AgentSession.builder()
+                .id("webhook:chat-1")
+                .channelType("webhook")
+                .chatId("chat-1")
+                .build();
+        AgentContext context = AgentContext.builder().session(session).messages(List.of(autoMsg)).build();
+        context.setAttribute(ContextAttributes.AUTO_GOAL_ID, "goal-1");
+        context.setAttribute(ContextAttributes.AUTO_TASK_ID, "task-1");
+
+        ContextLayerResult result = layer.assemble(context);
+
+        assertTrue(result.getContent().contains("Scoped session goal"));
+        verify(autoModeService).buildAutoContext("webhook:chat-1", "goal-1", "task-1");
+        verifyNoMoreInteractions(autoModeService);
     }
 
     @Test

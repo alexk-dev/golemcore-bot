@@ -52,10 +52,10 @@ public interface RuntimeSettingsWebDtos {
     public static class McpCatalogEntryDto extends RuntimeConfig.McpCatalogEntry {
     }
 
-    public static class HiveConfigDto extends RuntimeConfig.HiveConfig {
+    public static class PlanConfigDto extends RuntimeConfig.PlanConfig {
     }
 
-    public static class PlanConfigDto extends RuntimeConfig.PlanConfig {
+    public static class HiveConfigDto extends RuntimeConfig.HiveConfig {
     }
 
     public static class AutoModeConfigDto extends RuntimeConfig.AutoModeConfig {

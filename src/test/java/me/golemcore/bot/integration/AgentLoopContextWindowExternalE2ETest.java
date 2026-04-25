@@ -32,7 +32,11 @@ import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.RuntimeEvent;
 import me.golemcore.bot.domain.model.RuntimeEventType;
 import me.golemcore.bot.domain.model.Secret;
+import me.golemcore.bot.domain.model.SessionIdentity;
+import me.golemcore.bot.domain.service.AutoModeService;
+import me.golemcore.bot.domain.service.PlanService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.service.SessionScopedGoalService;
 import me.golemcore.bot.domain.service.SessionInspectionService;
 import me.golemcore.bot.domain.view.SessionTraceExportView;
 import me.golemcore.bot.infrastructure.config.ModelConfigService;
@@ -73,9 +77,7 @@ class AgentLoopContextWindowExternalE2ETest {
             "goal_management",
             "memory",
             "discover_mcp_server",
-            "send_voice",
-            "plan_get",
-            "plan_set_content");
+            "send_voice");
 
     @TempDir
     static Path tempDir;
@@ -88,6 +90,15 @@ class AgentLoopContextWindowExternalE2ETest {
 
     @Autowired
     private RuntimeConfigService runtimeConfigService;
+
+    @Autowired
+    private AutoModeService autoModeService;
+
+    @Autowired
+    private SessionScopedGoalService sessionScopedGoalService;
+
+    @Autowired
+    private PlanService planService;
 
     @Autowired
     private ModelConfigService modelConfigService;
@@ -205,7 +216,221 @@ class AgentLoopContextWindowExternalE2ETest {
         assertTrue(request.toString().contains(marker));
     }
 
+    @Test
+    void shouldIncludeSessionGoalsTasksAndEphemeralPlanModeInContextWithOpenAiCompatibleApi() throws Exception {
+        String marker = "AGENTLOOP_PLAN_GOALS_E2E_" + UUID.randomUUID().toString().replace("-", "");
+        String chatId = "plan-goals-e2e-" + UUID.randomUUID();
+        String sessionId = "webhook:" + chatId;
+        String runId = "run-" + UUID.randomUUID();
+        String goalTitle = "Context E2E durable goal " + marker;
+        String taskTitle = "Context E2E pending task " + marker;
+
+        var goal = autoModeService.createGoal(
+                sessionId,
+                goalTitle,
+                "Durable goal description " + marker,
+                "Durable goal prompt " + marker,
+                null,
+                false);
+        var task = sessionScopedGoalService.addTask(
+                sessionId,
+                goal.getId(),
+                taskTitle,
+                "Durable task description " + marker,
+                "Durable task prompt " + marker,
+                null,
+                false,
+                1);
+        planService.activatePlanMode(new SessionIdentity(ChannelTypes.WEBHOOK, chatId), chatId, null);
+
+        CompletableFuture<String> responseFuture = webhookChannelAdapter.registerPendingRun(
+                chatId, runId, null, "balanced");
+
+        Message inbound = Message.builder()
+                .role("user")
+                .content("""
+                        Return exactly this verification code as plain text, with no extra explanation:
+                        %s
+                        """.formatted(marker))
+                .channelType(ChannelTypes.WEBHOOK)
+                .chatId(chatId)
+                .senderId("agentloop-plan-goals-e2e")
+                .timestamp(Instant.now())
+                .metadata(new LinkedHashMap<>(Map.of(
+                        ContextAttributes.MEMORY_PRESET_ID, MemoryPresetIds.DISABLED,
+                        ContextAttributes.WEBHOOK_MODEL_TIER, "balanced",
+                        ContextAttributes.AUTO_MODE, true,
+                        ContextAttributes.AUTO_GOAL_ID, goal.getId(),
+                        ContextAttributes.AUTO_TASK_ID, task.getId())))
+                .build();
+
+        AgentContext context = agentLoop.processMessage(inbound);
+
+        assertNotNull(context);
+        assertNull(context.getAttribute(ContextAttributes.LLM_ERROR));
+        assertTrue(Boolean.TRUE.equals(context.getAttribute(ContextAttributes.FINAL_ANSWER_READY)));
+
+        String response = responseFuture.get(intEnv("AGENTLOOP_E2E_TIMEOUT_SECONDS", DEFAULT_TIMEOUT_SECONDS),
+                TimeUnit.SECONDS);
+        assertNotNull(response);
+        assertFalse(response.isBlank(), "plan/auto context E2E should complete with a user-visible response");
+
+        String requestPayload = latestLlmRequestPayload(sessionId);
+        JsonNode request = objectMapper.readTree(requestPayload);
+        String systemPrompt = request.path("systemPrompt").asText();
+
+        assertMessagesContain(request.path("messages"), marker, requestPayload);
+        assertTrue(systemPrompt.contains("# Plan Mode"), systemPrompt);
+        assertTrue(systemPrompt.contains("Plan mode is ACTIVE"), systemPrompt);
+        assertTrue(systemPrompt.contains("Use session goals/tasks"), systemPrompt);
+        assertTrue(systemPrompt.contains("# Auto Mode"), systemPrompt);
+        assertTrue(systemPrompt.contains(goalTitle), systemPrompt);
+        assertTrue(systemPrompt.contains(taskTitle), systemPrompt);
+        assertFalse(systemPrompt.contains("plan_get"), systemPrompt);
+        assertFalse(systemPrompt.contains("plan_set_content"), systemPrompt);
+        assertBoundedTools(request.path("tools"), systemPrompt);
+    }
+
+    @Test
+    void shouldCompletePlanModeThroughToolLoopWithOpenAiCompatibleApi() throws Exception {
+        runtimeConfigService.updateRuntimeConfig(buildRuntimeConfig(2, 1));
+        String marker = "AGENTLOOP_PLAN_LOOP_E2E_" + UUID.randomUUID().toString().replace("-", "");
+        String chatId = "plan-loop-e2e-" + UUID.randomUUID();
+        String sessionId = "webhook:" + chatId;
+        SessionIdentity sessionIdentity = new SessionIdentity(ChannelTypes.WEBHOOK, chatId);
+        planService.activatePlanMode(sessionIdentity, chatId, null);
+
+        CompletableFuture<String> planResponseFuture = webhookChannelAdapter.registerPendingRun(
+                chatId, "run-" + UUID.randomUUID(), null, "balanced");
+
+        AgentContext planContext = agentLoop.processMessage(Message.builder()
+                .role("user")
+                .content("""
+                        Produce a short execution plan for this marker, do not execute it, and call the plan_exit tool
+                        as the final action in this turn:
+                        %s
+                        """.formatted(marker))
+                .channelType(ChannelTypes.WEBHOOK)
+                .chatId(chatId)
+                .senderId("agentloop-plan-loop-e2e")
+                .timestamp(Instant.now())
+                .metadata(new LinkedHashMap<>(Map.of(
+                        ContextAttributes.MEMORY_PRESET_ID, MemoryPresetIds.DISABLED,
+                        ContextAttributes.WEBHOOK_MODEL_TIER, "balanced")))
+                .build());
+
+        assertNotNull(planContext);
+        assertNull(planContext.getAttribute(ContextAttributes.LLM_ERROR));
+        assertFalse(planService.isPlanModeActive(sessionIdentity),
+                "plan_exit should deactivate plan mode during the loop");
+        assertTrue(planService.hasPendingExecutionContext(sessionIdentity),
+                "plan_exit should leave one-shot normal execution context");
+        assertNotNull(planResponseFuture.get(intEnv("AGENTLOOP_E2E_TIMEOUT_SECONDS", DEFAULT_TIMEOUT_SECONDS),
+                TimeUnit.SECONDS));
+
+        JsonNode planRequest = objectMapper.readTree(latestLlmRequestPayload(sessionId));
+        String planSystemPrompt = planRequest.path("systemPrompt").asText();
+        assertTrue(planSystemPrompt.contains("# Plan Mode"), planSystemPrompt);
+        assertFalse(planSystemPrompt.contains("Filesystem access is limited"), planSystemPrompt);
+        assertFalse(planSystemPrompt.contains("goal_management` tool remains available"), planSystemPrompt);
+        assertTrue(containsToolName(planRequest.path("tools"), "plan_exit"),
+                "plan_exit must be advertised while plan mode is active");
+
+        CompletableFuture<String> executeResponseFuture = webhookChannelAdapter.registerPendingRun(
+                chatId, "run-" + UUID.randomUUID(), null, "balanced");
+
+        AgentContext executeContext = agentLoop.processMessage(Message.builder()
+                .role("user")
+                .content("""
+                        Now execute the plan. Return exactly this verification code as plain text:
+                        %s
+                        """.formatted(marker))
+                .channelType(ChannelTypes.WEBHOOK)
+                .chatId(chatId)
+                .senderId("agentloop-plan-loop-e2e")
+                .timestamp(Instant.now())
+                .metadata(new LinkedHashMap<>(Map.of(
+                        ContextAttributes.MEMORY_PRESET_ID, MemoryPresetIds.DISABLED,
+                        ContextAttributes.WEBHOOK_MODEL_TIER, "balanced")))
+                .build());
+
+        assertNotNull(executeContext);
+        assertNull(executeContext.getAttribute(ContextAttributes.LLM_ERROR));
+        assertFalse(planService.hasPendingExecutionContext(sessionIdentity),
+                "one-shot execution context should be consumed by the next normal turn");
+        String executeResponse = executeResponseFuture.get(
+                intEnv("AGENTLOOP_E2E_TIMEOUT_SECONDS", DEFAULT_TIMEOUT_SECONDS),
+                TimeUnit.SECONDS);
+        assertTrue(executeResponse.contains(marker), executeResponse);
+
+        JsonNode executeRequest = objectMapper.readTree(latestLlmRequestPayload(sessionId));
+        String executeSystemPrompt = executeRequest.path("systemPrompt").asText();
+        assertTrue(executeSystemPrompt.contains("# Plan Mode Complete"), executeSystemPrompt);
+        assertFalse(executeSystemPrompt.contains("A plan file exists"), executeSystemPrompt);
+        assertFalse(executeSystemPrompt.contains("Plan mode is ACTIVE"), executeSystemPrompt);
+        assertFalse(containsToolName(executeRequest.path("tools"), "plan_exit"),
+                "plan_exit should not be advertised after leaving plan mode");
+    }
+
+    @Test
+    void shouldAllowGoalManagementToolInsidePlanModeWithOpenAiCompatibleApi() throws Exception {
+        runtimeConfigService.updateRuntimeConfig(buildRuntimeConfig(3, 2, true));
+        String marker = "AGENTLOOP_PLAN_GOAL_TOOL_E2E_" + UUID.randomUUID().toString().replace("-", "");
+        String chatId = "plan-goal-tool-e2e-" + UUID.randomUUID();
+        String sessionId = "webhook:" + chatId;
+        String goalTitle = "Plan mode tool-created goal " + marker;
+        SessionIdentity sessionIdentity = new SessionIdentity(ChannelTypes.WEBHOOK, chatId);
+        planService.activatePlanMode(sessionIdentity, chatId, null);
+
+        CompletableFuture<String> responseFuture = webhookChannelAdapter.registerPendingRun(
+                chatId, "run-" + UUID.randomUUID(), null, "balanced");
+
+        AgentContext context = agentLoop.processMessage(Message.builder()
+                .role("user")
+                .content("""
+                        While Plan Mode is active, call the goal_management tool exactly once with:
+                        operation=create_goal
+                        title=%s
+                        description=Created by the plan-mode goal tool E2E test.
+
+                        Then call plan_exit as the final tool call. Do not use shell or filesystem tools.
+                        """.formatted(goalTitle))
+                .channelType(ChannelTypes.WEBHOOK)
+                .chatId(chatId)
+                .senderId("agentloop-plan-goal-tool-e2e")
+                .timestamp(Instant.now())
+                .metadata(new LinkedHashMap<>(Map.of(
+                        ContextAttributes.MEMORY_PRESET_ID, MemoryPresetIds.DISABLED,
+                        ContextAttributes.WEBHOOK_MODEL_TIER, "balanced")))
+                .build());
+
+        assertNotNull(context);
+        assertNull(context.getAttribute(ContextAttributes.LLM_ERROR));
+        assertFalse(planService.isPlanModeActive(sessionIdentity),
+                "plan_exit should end plan mode after goal_management runs");
+        assertTrue(autoModeService.getGoals(sessionId).stream()
+                .anyMatch(goal -> goalTitle.equals(goal.getTitle())),
+                "goal_management should create a session-scoped goal while plan mode is active");
+        assertNotNull(responseFuture.get(intEnv("AGENTLOOP_E2E_TIMEOUT_SECONDS", DEFAULT_TIMEOUT_SECONDS),
+                TimeUnit.SECONDS));
+
+        JsonNode request = objectMapper.readTree(latestLlmRequestPayload(sessionId));
+        assertTrue(containsToolName(request.path("tools"), "goal_management"),
+                "goal_management must be advertised while plan mode is active");
+        assertTrue(containsToolName(request.path("tools"), "plan_exit"),
+                "plan_exit must be advertised while plan mode is active");
+    }
+
     private RuntimeConfig buildRuntimeConfig() {
+        return buildRuntimeConfig(1, 0);
+    }
+
+    private RuntimeConfig buildRuntimeConfig(int maxLlmCalls, int maxToolExecutions) {
+        return buildRuntimeConfig(maxLlmCalls, maxToolExecutions, false);
+    }
+
+    private RuntimeConfig buildRuntimeConfig(int maxLlmCalls, int maxToolExecutions,
+            boolean goalManagementEnabled) {
         String reasoning = blankToNull(System.getenv("AGENTLOOP_E2E_REASONING"));
         Map<String, RuntimeConfig.LlmProviderConfig> providers = new LinkedHashMap<>();
         providers.put(providerId, RuntimeConfig.LlmProviderConfig.builder()
@@ -239,7 +464,7 @@ class AgentLoopContextWindowExternalE2ETest {
                         .skillManagementEnabled(false)
                         .skillTransitionEnabled(false)
                         .tierEnabled(false)
-                        .goalManagementEnabled(false)
+                        .goalManagementEnabled(goalManagementEnabled)
                         .build())
                 .tracing(RuntimeConfig.TracingConfig.builder()
                         .enabled(true)
@@ -275,8 +500,8 @@ class AgentLoopContextWindowExternalE2ETest {
                         .summaryTimeoutMs(15_000)
                         .build())
                 .turn(RuntimeConfig.TurnConfig.builder()
-                        .maxLlmCalls(1)
-                        .maxToolExecutions(0)
+                        .maxLlmCalls(maxLlmCalls)
+                        .maxToolExecutions(maxToolExecutions)
                         .deadline("PT3M")
                         .autoRetryEnabled(false)
                         .progressUpdatesEnabled(false)
@@ -297,9 +522,6 @@ class AgentLoopContextWindowExternalE2ETest {
                         .enabled(false)
                         .build())
                 .mcp(RuntimeConfig.McpConfig.builder()
-                        .enabled(false)
-                        .build())
-                .plan(RuntimeConfig.PlanConfig.builder()
                         .enabled(false)
                         .build())
                 .hive(RuntimeConfig.HiveConfig.builder()
@@ -426,6 +648,19 @@ class AgentLoopContextWindowExternalE2ETest {
             assertFalse(containsToolName(tools, disabledToolName),
                     () -> "disabled tool should not be advertised: " + disabledToolName);
         }
+    }
+
+    private void assertMessagesContain(JsonNode messages, String marker, String requestPayload) {
+        assertTrue(messages.isArray(), requestPayload);
+        boolean found = false;
+        for (JsonNode message : messages) {
+            if (message.toString().contains(marker)) {
+                found = true;
+                break;
+            }
+        }
+        assertTrue(found, () -> "Expected provider request messages to contain marker " + marker
+                + ", request payload: " + requestPayload);
     }
 
     private boolean containsToolName(JsonNode tools, String name) {

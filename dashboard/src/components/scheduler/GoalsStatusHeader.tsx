@@ -14,7 +14,10 @@ export function GoalsStatusHeader({
     <div className="section-header d-flex align-items-center justify-content-between">
       <div>
         <h4 className="mb-1">Goals & Tasks</h4>
-        <p className="mb-0 text-body-secondary">Create and manage goals, standalone tasks, and detailed execution prompts.</p>
+        <p className="mb-0 text-body-secondary">
+          Create and manage goals, standalone tasks, and detailed execution prompts.
+          Scheduling now lives on the Scheduler page via Scheduled Tasks.
+        </p>
       </div>
       <div className="d-flex align-items-center gap-2">
         <Badge bg={featureEnabled ? 'success' : 'secondary'}>

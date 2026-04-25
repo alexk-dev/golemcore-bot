@@ -9,7 +9,6 @@ import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.service.ContextCompactionPolicy;
 import me.golemcore.bot.domain.service.ModelSelectionService;
-import me.golemcore.bot.domain.service.PlanService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.RuntimeEventService;
 import me.golemcore.bot.domain.service.TurnProgressService;
@@ -53,9 +52,6 @@ abstract class DefaultToolLoopSystemFixture {
 
     @Mock
     ConversationViewBuilder viewBuilder;
-
-    @Mock
-    PlanService planService;
 
     @Mock
     ModelSelectionService modelSelectionService;
@@ -102,7 +98,6 @@ abstract class DefaultToolLoopSystemFixture {
                 .turnSettings(me.golemcore.bot.support.TestPorts.turn(turnSettings))
                 .settings(me.golemcore.bot.support.TestPorts.toolLoop(settings))
                 .modelSelectionService(modelSelectionService)
-                .planService(planService)
                 .contextCompactionPolicy(new ContextCompactionPolicy(runtimeConfigService, modelSelectionService))
                 .clock(clock)
                 .build();
@@ -154,7 +149,6 @@ abstract class DefaultToolLoopSystemFixture {
                 .turnSettings(me.golemcore.bot.support.TestPorts.turn(turnSettings))
                 .settings(me.golemcore.bot.support.TestPorts.toolLoop(settings))
                 .modelSelectionService(modelSelectionService)
-                .planService(planService)
                 .runtimeEventService(runtimeEventService)
                 .contextCompactionPolicy(new ContextCompactionPolicy(runtimeConfigService, modelSelectionService))
                 .clock(clock)
@@ -170,7 +164,6 @@ abstract class DefaultToolLoopSystemFixture {
                 .turnSettings(me.golemcore.bot.support.TestPorts.turn(turnSettings))
                 .settings(me.golemcore.bot.support.TestPorts.toolLoop(settings))
                 .modelSelectionService(modelSelectionService)
-                .planService(planService)
                 .runtimeConfigService(runtimeConfigService)
                 .contextCompactionPolicy(new ContextCompactionPolicy(runtimeConfigService, modelSelectionService))
                 .clock(clock)
@@ -186,7 +179,6 @@ abstract class DefaultToolLoopSystemFixture {
                 .turnSettings(me.golemcore.bot.support.TestPorts.turn(turnSettings))
                 .settings(me.golemcore.bot.support.TestPorts.toolLoop(settings))
                 .modelSelectionService(modelSelectionService)
-                .planService(planService)
                 .runtimeConfigService(runtimeConfigService)
                 .turnProgressService(turnProgressService)
                 .contextCompactionPolicy(new ContextCompactionPolicy(runtimeConfigService, modelSelectionService))
@@ -203,7 +195,6 @@ abstract class DefaultToolLoopSystemFixture {
                 .turnSettings(me.golemcore.bot.support.TestPorts.turn(turnSettings))
                 .settings(me.golemcore.bot.support.TestPorts.toolLoop(settings))
                 .modelSelectionService(modelSelectionService)
-                .planService(planService)
                 .toolFailureRecoveryService(recoveryService)
                 .contextCompactionPolicy(new ContextCompactionPolicy(runtimeConfigService, modelSelectionService))
                 .clock(clock)

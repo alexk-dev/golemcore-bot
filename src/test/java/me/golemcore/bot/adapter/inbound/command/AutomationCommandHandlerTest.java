@@ -126,6 +126,49 @@ class AutomationCommandHandlerTest {
     }
 
     @Test
+    void shouldRenderSessionScopedGoalsTasksDiaryAndGoalCreationOutcomes() {
+        Goal goal = Goal.builder()
+                .id("goal-1")
+                .title("Session PR")
+                .description("Session scoped goal")
+                .status(Goal.GoalStatus.PAUSED)
+                .tasks(List.of(
+                        AutoTask.builder().id("task-1").title("Plan").order(1).status(AutoTask.TaskStatus.PENDING)
+                                .build(),
+                        AutoTask.builder().id("task-2").title("Fix").order(2).status(AutoTask.TaskStatus.FAILED)
+                                .build(),
+                        AutoTask.builder().id("task-3").title("Skip").order(3).status(AutoTask.TaskStatus.SKIPPED)
+                                .build()))
+                .build();
+        DiaryEntry entry = DiaryEntry.builder()
+                .timestamp(Instant.parse("2026-04-10T12:00:00Z"))
+                .type(DiaryEntry.DiaryType.DECISION)
+                .content("Session note")
+                .build();
+        when(automationCommandService.getGoals("session-1"))
+                .thenReturn(new AutomationCommandService.GoalsOverview(List.of(goal)));
+        when(automationCommandService.getTasks("session-1"))
+                .thenReturn(new AutomationCommandService.TasksOverview(List.of(goal)));
+        when(automationCommandService.getDiary("session-1", 10))
+                .thenReturn(new AutomationCommandService.DiaryOverview(List.of(entry)));
+        when(automationCommandService.createGoal("session-1", "New goal"))
+                .thenReturn(new AutomationCommandService.GoalCreated(Goal.builder().title("New goal").build()));
+
+        CommandPort.CommandResult goals = handler.handleGoals("session-1");
+        CommandPort.CommandResult tasks = handler.handleTasks("session-1");
+        CommandPort.CommandResult diary = handler.handleDiary(List.of("bad-count"), "session-1");
+        CommandPort.CommandResult created = handler.handleGoal(List.of("New", "goal"), "session-1");
+
+        assertTrue(goals.output().contains("Session PR"));
+        assertTrue(goals.output().contains("PAUSED"));
+        assertTrue(tasks.output().contains("[ ] Plan"));
+        assertTrue(tasks.output().contains("[!] Fix"));
+        assertTrue(tasks.output().contains("[-] Skip"));
+        assertTrue(diary.output().contains("Session note"));
+        assertEquals("command.goal.created New goal", created.output());
+    }
+
+    @Test
     void shouldRenderScheduleListAndDeleteOutcomes() {
         ScheduleEntry entry = ScheduleEntry.builder()
                 .id("sched-1")

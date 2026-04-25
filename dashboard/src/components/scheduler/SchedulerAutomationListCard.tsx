@@ -11,8 +11,6 @@ interface SchedulerAutomationListCardProps {
   onEditTask: (task: GoalTask) => void;
   onDeleteGoal: (goalId: string) => void;
   onDeleteTask: (taskId: string) => void;
-  onScheduleGoal: (goalId: string) => void;
-  onScheduleTask: (taskId: string) => void;
 }
 
 interface TaskRowProps {
@@ -20,7 +18,6 @@ interface TaskRowProps {
   busy: boolean;
   onEditTask: (task: GoalTask) => void;
   onDeleteTask: (taskId: string) => void;
-  onScheduleTask: (taskId: string) => void;
 }
 
 interface GoalCardProps {
@@ -30,8 +27,6 @@ interface GoalCardProps {
   onEditTask: (task: GoalTask) => void;
   onDeleteGoal: (goalId: string) => void;
   onDeleteTask: (taskId: string) => void;
-  onScheduleGoal: (goalId: string) => void;
-  onScheduleTask: (taskId: string) => void;
 }
 
 function resolveBadgeVariant(status: string): 'primary' | 'success' | 'warning' | 'danger' | 'secondary' {
@@ -77,7 +72,6 @@ function TaskRow({
   busy,
   onEditTask,
   onDeleteTask,
-  onScheduleTask,
 }: TaskRowProps): ReactElement {
   return (
     <div id={getTaskAnchorId(task.id)} className="border rounded p-3">
@@ -97,9 +91,6 @@ function TaskRow({
           {renderReflectionPriority(task.reflectionTierPriority)}
         </div>
         <div className="d-flex gap-2 flex-wrap justify-content-end">
-          <Button type="button" size="sm" variant="secondary" disabled={busy} onClick={() => onScheduleTask(task.id)}>
-            Schedule
-          </Button>
           <Button type="button" size="sm" variant="secondary" disabled={busy} onClick={() => onEditTask(task)}>
             Edit
           </Button>
@@ -119,8 +110,6 @@ function GoalCard({
   onEditTask,
   onDeleteGoal,
   onDeleteTask,
-  onScheduleGoal,
-  onScheduleTask,
 }: GoalCardProps): ReactElement {
   return (
     <div id={getGoalAnchorId(goal.id)} className="border rounded p-3">
@@ -140,9 +129,6 @@ function GoalCard({
           {renderReflectionPriority(goal.reflectionTierPriority)}
         </div>
         <div className="d-flex gap-2 flex-wrap justify-content-end">
-          <Button type="button" size="sm" variant="secondary" disabled={busy} onClick={() => onScheduleGoal(goal.id)}>
-            Schedule
-          </Button>
           <Button type="button" size="sm" variant="secondary" disabled={busy} onClick={() => onEditGoal(goal)}>
             Edit
           </Button>
@@ -161,7 +147,6 @@ function GoalCard({
               busy={busy}
               onEditTask={onEditTask}
               onDeleteTask={onDeleteTask}
-              onScheduleTask={onScheduleTask}
             />
           ))}
         </div>
@@ -180,8 +165,6 @@ export function SchedulerAutomationListCard({
   onEditTask,
   onDeleteGoal,
   onDeleteTask,
-  onScheduleGoal,
-  onScheduleTask,
 }: SchedulerAutomationListCardProps): ReactElement {
   return (
     <Card className="h-100">
@@ -202,8 +185,6 @@ export function SchedulerAutomationListCard({
                 onEditTask={onEditTask}
                 onDeleteGoal={onDeleteGoal}
                 onDeleteTask={onDeleteTask}
-                onScheduleGoal={onScheduleGoal}
-                onScheduleTask={onScheduleTask}
               />
             ))}
           </div>
@@ -219,7 +200,6 @@ export function SchedulerAutomationListCard({
                 busy={busy}
                 onEditTask={onEditTask}
                 onDeleteTask={onDeleteTask}
-                onScheduleTask={onScheduleTask}
               />
             ))}
           </div>

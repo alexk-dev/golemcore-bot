@@ -1,11 +1,10 @@
 import { useMemo, useState } from 'react';
 import type {
   CreateScheduleRequest,
-  SchedulerGoal,
   SchedulerReport,
   SchedulerReportPatch,
   SchedulerSchedule,
-  SchedulerTask,
+  SchedulerScheduledTask,
   UpdateScheduleRequest,
 } from '../api/scheduler';
 import type {
@@ -54,7 +53,7 @@ interface SchedulerFormStateResult {
 
 function buildInitialFormState(): ScheduleFormState {
   return {
-    targetType: 'GOAL',
+    targetType: 'SCHEDULED_TASK',
     targetId: '',
     mode: 'simple',
     frequency: 'daily',
@@ -80,20 +79,13 @@ function isLikelyCronExpression(value: string): boolean {
   return parts.length === 5 || parts.length === 6;
 }
 
-function collectTaskIds(goals: SchedulerGoal[], standaloneTasks: SchedulerTask[]): string[] {
-  const goalTaskIds = goals.flatMap((goal) => goal.tasks.map((task) => task.id));
-  const standaloneTaskIds = standaloneTasks.map((task) => task.id);
-  return [...goalTaskIds, ...standaloneTaskIds];
-}
-
 function resolveEffectiveTargetId(
-  goals: SchedulerGoal[],
-  standaloneTasks: SchedulerTask[],
+  scheduledTasks: SchedulerScheduledTask[],
   form: ScheduleFormState,
 ): string {
-  const targetIds = form.targetType === 'GOAL'
-    ? goals.map((goal) => goal.id)
-    : collectTaskIds(goals, standaloneTasks);
+  const targetIds = form.targetType === 'SCHEDULED_TASK'
+    ? scheduledTasks.map((task) => task.id)
+    : [];
 
   if (targetIds.includes(form.targetId)) {
     return form.targetId;
@@ -303,15 +295,14 @@ export function parseScheduleToFormState(schedule: SchedulerSchedule): ScheduleF
 }
 
 export function useSchedulerForm(
-  goals: SchedulerGoal[],
-  standaloneTasks: SchedulerTask[],
+  scheduledTasks: SchedulerScheduledTask[],
 ): SchedulerFormStateResult {
   const [form, setForm] = useState<ScheduleFormState>(buildInitialFormState);
   const [editingScheduleId, setEditingScheduleId] = useState<string | null>(null);
 
   const effectiveTargetId = useMemo(
-    () => resolveEffectiveTargetId(goals, standaloneTasks, form),
-    [form, goals, standaloneTasks],
+    () => resolveEffectiveTargetId(scheduledTasks, form),
+    [form, scheduledTasks],
   );
   const isTimeValid = form.mode === 'advanced' || isValidTimeInput(normalizeTimeInput(form.time));
   const isCronValid = form.mode === 'simple' || isLikelyCronExpression(form.cronExpression);

@@ -367,14 +367,6 @@ public class RuntimeSettingsFacade {
         return runtimeConfigService.getRuntimeConfigForApi();
     }
 
-    public RuntimeConfig updatePlanConfig(RuntimeConfig.PlanConfig planConfig) {
-        validator.validatePlanConfig(planConfig);
-        RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
-        config.setPlan(planConfig);
-        runtimeConfigService.updateRuntimeConfig(config);
-        return runtimeConfigService.getRuntimeConfigForApi();
-    }
-
     public void updateWebhooksConfig(UserPreferences.WebhookConfig webhookConfig) {
         UserPreferences prefs = preferencesService.getPreferences();
         mergeService.mergeWebhookSecrets(prefs.getWebhooks(), webhookConfig);
@@ -387,6 +379,14 @@ public class RuntimeSettingsFacade {
         RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
         validator.validateAndNormalizeAutoModeConfig(autoConfig);
         config.setAutoMode(autoConfig);
+        runtimeConfigService.updateRuntimeConfig(config);
+        return runtimeConfigService.getRuntimeConfigForApi();
+    }
+
+    public RuntimeConfig updatePlanConfig(RuntimeConfig.PlanConfig planConfig) {
+        RuntimeConfig config = runtimeConfigService.getRuntimeConfig();
+        validator.validateAndNormalizePlanConfig(planConfig);
+        config.setPlan(planConfig);
         runtimeConfigService.updateRuntimeConfig(config);
         return runtimeConfigService.getRuntimeConfigForApi();
     }

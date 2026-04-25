@@ -46,6 +46,8 @@ export interface RuntimeConfigUiRecord extends UnknownRecord {
   llm?: { providers?: Record<string, UnknownRecord> } & UnknownRecord;
   tools?: UnknownRecord;
   voice?: UnknownRecord;
+  plan?: UnknownRecord;
+  toolLoop?: UnknownRecord;
   hive?: UnknownRecord;
   selfEvolving?: unknown;
   modelRegistry?: unknown;
@@ -56,6 +58,7 @@ export function toUiRuntimeConfig(data: RuntimeConfigUiRecord): RuntimeConfig {
   const cfg: RuntimeConfigUiRecord = {
     ...data,
     plan: typeof data.plan === 'object' && data.plan != null ? { ...data.plan } : {},
+    toolLoop: typeof data.toolLoop === 'object' && data.toolLoop != null ? { ...data.toolLoop } : {},
     hive: toHiveConfig(data.hive),
   };
   if (cfg.telegram) {

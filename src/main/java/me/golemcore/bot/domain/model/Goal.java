@@ -39,11 +39,13 @@ import java.util.List;
 public class Goal {
 
     private String id;
+    private String sessionId;
     private String title;
     private String description;
     private String prompt;
     private String reflectionModelTier;
     private boolean reflectionTierPriority;
+    private boolean systemInbox;
 
     @Builder.Default
     private GoalStatus status = GoalStatus.ACTIVE;

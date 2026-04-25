@@ -51,22 +51,13 @@ export default function AutoModeTab({ config }: AutoModeTabProps): ReactElement 
           onChange={(e) => setForm({ ...form, enabled: e.target.checked })} className="mb-3" />
 
         <Row className="g-3 mb-3">
-          <Col md={4}>
+          <Col md={6}>
             <Form.Group>
               <Form.Label className="small fw-medium">
                 Task Time Limit (minutes) <HelpTip text="Maximum time a single autonomous task can run before being stopped" />
               </Form.Label>
               <Form.Control size="sm" type="number" value={form.taskTimeLimitMinutes ?? 10}
                 onChange={(e) => setForm({ ...form, taskTimeLimitMinutes: toNullableInt(e.target.value) })} />
-            </Form.Group>
-          </Col>
-          <Col md={4}>
-            <Form.Group>
-              <Form.Label className="small fw-medium">
-                Max Goals <HelpTip text="Maximum number of concurrent goals the bot can work on" />
-              </Form.Label>
-              <Form.Control size="sm" type="number" value={form.maxGoals ?? 3}
-                onChange={(e) => setForm({ ...form, maxGoals: toNullableInt(e.target.value) })} />
             </Form.Group>
           </Col>
         </Row>

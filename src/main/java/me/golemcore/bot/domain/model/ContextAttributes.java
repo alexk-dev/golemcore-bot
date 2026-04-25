@@ -176,16 +176,20 @@ public final class ContextAttributes {
     /** Boolean - session-scoped lock for the selected model tier. */
     public static final String SESSION_MODEL_TIER_FORCE = "session.modelTier.force";
 
+    /** String - active interaction mode for the current turn. */
+    public static final String ACTIVE_MODE = "active.mode";
+
+    /** String value for {@link #ACTIVE_MODE} when plan mode is active. */
+    public static final String ACTIVE_MODE_PLAN = "plan";
+
     /** Boolean - plan mode is active for the current session. */
     public static final String PLAN_MODE_ACTIVE = "plan.mode.active";
 
+    /** Boolean - pending post-plan execution context was injected this turn. */
+    public static final String PLAN_EXECUTION_CONTEXT_PENDING = "plan.execution.context.pending";
+
     /** String - plan ID that needs user approval before execution. */
     public static final String PLAN_APPROVAL_NEEDED = "plan.approval.needed";
-
-    /**
-     * Boolean ? set when plan_set_content tool call was observed in LLM response.
-     */
-    public static final String PLAN_SET_CONTENT_REQUESTED = "plan.set_content.requested";
 
     /** String ? prompt suffix/extra context produced by RAG/context building. */
     public static final String RAG_CONTEXT = "rag.context";
@@ -217,6 +221,18 @@ public final class ContextAttributes {
      * TurnLimitReason ? machine-readable reason why tool loop limit was reached.
      */
     public static final String TOOL_LOOP_LIMIT_REASON = "toolloop.limit.reason";
+
+    /**
+     * Integer - resolved max internal LLM calls for the tool-loop turn that just
+     * stopped.
+     */
+    public static final String TOOL_LOOP_LIMIT_MAX_LLM_CALLS = "toolloop.limit.maxLlmCalls";
+
+    /**
+     * Integer - resolved max tool executions for the tool-loop turn that just
+     * stopped.
+     */
+    public static final String TOOL_LOOP_LIMIT_MAX_TOOL_EXECUTIONS = "toolloop.limit.maxToolExecutions";
 
     /**
      * {@code List<RuntimeEvent>} - runtime execution events for the current turn.
@@ -450,6 +466,9 @@ public final class ContextAttributes {
 
     /** String ? active auto task identifier for the turn. */
     public static final String AUTO_TASK_ID = "auto.task.id";
+
+    /** String ? active scheduled task identifier for the turn. */
+    public static final String AUTO_SCHEDULED_TASK_ID = "auto.scheduled_task.id";
 
     /** String ? active skill name applied during the current turn or message. */
     public static final String ACTIVE_SKILL_NAME = "skill.active.name";

@@ -175,37 +175,36 @@ public class GoalManagementTool implements ToolComponent {
 
     @Override
     public CompletableFuture<ToolResult> execute(Map<String, Object> parameters) {
-        return CompletableFuture.supplyAsync(() -> {
-            log.info("[GoalManagement] Execute: {}", parameters);
+        log.info("[GoalManagement] Execute: {}", parameters);
 
-            if (!isEnabled()) {
-                return ToolResult.failure("Goal management tool is disabled");
+        if (!isEnabled()) {
+            return CompletableFuture.completedFuture(ToolResult.failure("Goal management tool is disabled"));
+        }
+
+        try {
+            String operation = (String) parameters.get(PARAM_OPERATION);
+
+            if (operation == null) {
+                return CompletableFuture.completedFuture(ToolResult.failure("Missing required parameter: operation"));
             }
 
-            try {
-                String operation = (String) parameters.get(PARAM_OPERATION);
-
-                if (operation == null) {
-                    return ToolResult.failure("Missing required parameter: operation");
-                }
-
-                return switch (operation) {
-                case "create_goal" -> createGoal(parameters);
-                case "list_goals" -> listGoals();
-                case "plan_tasks" -> planTasks(parameters);
-                case "update_task_status" -> updateTaskStatus(parameters);
-                case "write_diary" -> writeDiary(parameters);
-                case "complete_goal" -> completeGoal(parameters);
-                case "delete_goal" -> deleteGoal(parameters);
-                case "delete_task" -> deleteTask(parameters);
-                case "clear_completed" -> clearCompleted();
-                default -> ToolResult.failure("Unknown operation: " + operation);
-                };
-            } catch (RuntimeException e) {
-                log.error("[GoalManagement] Error: {}", e.getMessage(), e);
-                return ToolResult.failure("Error: " + e.getMessage());
-            }
-        });
+            ToolResult result = switch (operation) {
+            case "create_goal" -> createGoal(parameters);
+            case "list_goals" -> listGoals();
+            case "plan_tasks" -> planTasks(parameters);
+            case "update_task_status" -> updateTaskStatus(parameters);
+            case "write_diary" -> writeDiary(parameters);
+            case "complete_goal" -> completeGoal(parameters);
+            case "delete_goal" -> deleteGoal(parameters);
+            case "delete_task" -> deleteTask(parameters);
+            case "clear_completed" -> clearCompleted();
+            default -> ToolResult.failure("Unknown operation: " + operation);
+            };
+            return CompletableFuture.completedFuture(result);
+        } catch (RuntimeException e) {
+            log.error("[GoalManagement] Error: {}", e.getMessage(), e);
+            return CompletableFuture.completedFuture(ToolResult.failure("Error: " + e.getMessage()));
+        }
     }
 
     private ToolResult createGoal(Map<String, Object> params) {

@@ -30,6 +30,8 @@ import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.OutgoingResponse;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.RuntimeEventType;
+import me.golemcore.bot.domain.model.ToolFailureKind;
+import me.golemcore.bot.domain.model.ToolNames;
 import me.golemcore.bot.domain.model.TurnLimitReason;
 import me.golemcore.bot.domain.model.trace.TraceContext;
 import me.golemcore.bot.domain.model.trace.TraceSpanKind;
@@ -72,6 +74,7 @@ class LlmCallPhase {
 
     private static final Logger log = LoggerFactory.getLogger(LlmCallPhase.class);
     private static final int EMPTY_FINAL_RESPONSE_MAX_RETRIES = 2;
+    private static final String PLAN_MARKDOWN_ARGUMENT = "plan_markdown";
 
     private final LlmPort llmPort;
     private final ConversationViewBuilder viewBuilder;
@@ -269,6 +272,8 @@ class LlmCallPhase {
         applyAttachments(context, turnState.getAccumulatedAttachments());
         context.setAttribute(ContextAttributes.TOOL_LOOP_LIMIT_REACHED, true);
         context.setAttribute(ContextAttributes.TOOL_LOOP_LIMIT_REASON, stopReason);
+        context.setAttribute(ContextAttributes.TOOL_LOOP_LIMIT_MAX_LLM_CALLS, turnState.getMaxLlmCalls());
+        context.setAttribute(ContextAttributes.TOOL_LOOP_LIMIT_MAX_TOOL_EXECUTIONS, turnState.getMaxToolExecutions());
         emitRuntimeEvent(context, RuntimeEventType.TURN_FINISHED,
                 eventPayload("reason", "limit", "limit", stopReason.name()));
         return stopTurn(context, lastResponse, pendingToolCalls,
@@ -284,18 +289,8 @@ class LlmCallPhase {
             List<Message.ToolCall> pendingToolCalls, String reason, int llmCalls, int toolExecutions,
             HistoryWriter historyWriter) {
         flushProgress(context, "turn_stop");
-        if (pendingToolCalls != null) {
-            for (Message.ToolCall toolCall : pendingToolCalls) {
-                if (context.getToolResults() != null && context.getToolResults().containsKey(toolCall.getId())) {
-                    continue;
-                }
-                ToolExecutionOutcome synthetic = ToolExecutionOutcome.synthetic(toolCall,
-                        me.golemcore.bot.domain.model.ToolFailureKind.EXECUTION_FAILED,
-                        "Tool loop stopped: " + reason);
-                context.addToolResult(synthetic.toolCallId(), synthetic.toolResult());
-                historyWriter.appendToolResult(context, synthetic);
-            }
-        }
+        writeSyntheticResultsForPendingTools(context, pendingToolCalls, "Tool loop stopped: " + reason,
+                historyWriter);
 
         String stopMessage = "Tool loop stopped: " + reason + ".";
         historyWriter.appendFinalAssistantAnswer(context, lastResponse, stopMessage);
@@ -308,6 +303,68 @@ class LlmCallPhase {
         clearProgress(context);
         return new ToolLoopTurnResult(context, true, llmCalls, toolExecutions);
     }
+
+    ToolLoopTurnResult finishPlanModeTurn(AgentContext context, LlmResponse lastResponse,
+            List<Message.ToolCall> pendingToolCalls, int llmCalls, int toolExecutions,
+            HistoryWriter historyWriter) {
+        flushProgress(context, "plan_exit");
+        writeSyntheticResultsForPendingTools(context, pendingToolCalls,
+                "Tool loop stopped: plan mode completed", historyWriter);
+
+        String planMarkdown = resolvePlanExitMarkdown(pendingToolCalls);
+        String responseContent = lastResponse != null ? lastResponse.getContent() : null;
+        String finalText = planMarkdown != null && !planMarkdown.isBlank()
+                ? planMarkdown
+                : responseContent;
+        if (finalText == null || finalText.isBlank()) {
+            finalText = "Plan mode completed.";
+        }
+        historyWriter.appendFinalAssistantAnswer(context, lastResponse, finalText);
+
+        LlmResponse cleanResponse = LlmResponse.builder()
+                .content(finalText)
+                .build();
+        context.setAttribute(ContextAttributes.LLM_RESPONSE, cleanResponse);
+        context.setAttribute(ContextAttributes.FINAL_ANSWER_READY, true);
+        clearProgress(context);
+        return new ToolLoopTurnResult(context, true, llmCalls, toolExecutions);
+    }
+
+            private String resolvePlanExitMarkdown(List<Message.ToolCall> toolCalls) {
+                if (toolCalls == null) {
+                    return null;
+                }
+                for (Message.ToolCall toolCall : toolCalls) {
+                    if (toolCall == null || !ToolNames.PLAN_EXIT.equals(toolCall.getName())) {
+                        continue;
+                    }
+                    Map<String, Object> arguments = toolCall.getArguments();
+                    Object planMarkdown = arguments != null ? arguments.get(PLAN_MARKDOWN_ARGUMENT) : null;
+                    if (planMarkdown instanceof String planText && !planText.isBlank()) {
+                        return planText;
+                    }
+                }
+                return null;
+            }
+
+            private void writeSyntheticResultsForPendingTools(AgentContext context,
+                    List<Message.ToolCall> pendingToolCalls,
+                    String reason, HistoryWriter historyWriter) {
+                if (pendingToolCalls == null) {
+                    return;
+                }
+                for (Message.ToolCall toolCall : pendingToolCalls) {
+                    if (context.getToolResults() != null && context.getToolResults().containsKey(toolCall.getId())) {
+                        continue;
+                    }
+                    ToolExecutionOutcome synthetic = ToolExecutionOutcome.synthetic(
+                            toolCall,
+                            ToolFailureKind.EXECUTION_FAILED,
+                            reason);
+                    context.addToolResult(synthetic.toolCallId(), synthetic.toolResult());
+                    historyWriter.appendToolResult(context, synthetic);
+                }
+            }
 
             // ==================== Error handling ====================
 

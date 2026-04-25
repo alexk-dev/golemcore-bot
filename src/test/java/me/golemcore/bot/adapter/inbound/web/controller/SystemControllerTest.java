@@ -27,6 +27,7 @@ import java.util.Properties;
 import java.util.concurrent.CompletableFuture;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -228,7 +229,7 @@ class SystemControllerTest {
                     assertTrue(body.containsKey("llmProvider"));
                     assertTrue(body.containsKey("maxIterations"));
                     assertTrue(body.containsKey("dashboardEnabled"));
-                    assertTrue(body.containsKey("planEnabled"));
+                    assertFalse(body.containsKey("planEnabled"));
                 })
                 .verifyComplete();
     }

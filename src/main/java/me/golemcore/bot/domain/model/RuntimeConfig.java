@@ -649,12 +649,12 @@ public class RuntimeConfig {
     @NoArgsConstructor
     @AllArgsConstructor
     @Builder
+    @JsonIgnoreProperties(ignoreUnknown = true)
     public static class AutoModeConfig {
         private Boolean enabled;
         private Integer tickIntervalSeconds;
         private Integer taskTimeLimitMinutes;
         private Boolean autoStart;
-        private Integer maxGoals;
         private String modelTier;
         @Builder.Default
         private Boolean reflectionEnabled = true;
@@ -1333,15 +1333,9 @@ public class RuntimeConfig {
     @NoArgsConstructor
     @AllArgsConstructor
     @Builder
+    @JsonIgnoreProperties(ignoreUnknown = true)
     public static class PlanConfig {
-        @Builder.Default
-        private Boolean enabled = false;
-        @Builder.Default
-        private Integer maxPlans = 5;
-        @Builder.Default
-        private Integer maxStepsPerPlan = 50;
-        @Builder.Default
-        private Boolean stopOnFailure = true;
+        private String modelTier;
     }
 
     @Data

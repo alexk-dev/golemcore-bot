@@ -1,16 +1,11 @@
-import { useEffect, useState } from 'react';
-import { Badge, Button, Form, Spinner } from '../ui/tailwind-components';
-import type { PlanControlState, PlanSummary } from '../../api/plans';
-import { getExplicitModelTierOptions, getModelTierMeta } from '../../lib/modelTiers';
+import { Badge, Button, Spinner } from '../ui/tailwind-components';
+import type { PlanControlState } from '../../api/plans';
 import {
-  useApprovePlan,
-  useCancelPlan,
   useDisablePlanMode,
   useDonePlanMode,
   useEnablePlanMode,
   usePlanActionsPending,
   usePlanControlState,
-  useResumePlan,
 } from '../../hooks/usePlans';
 
 interface Props {
@@ -27,70 +22,9 @@ interface PlanControlBodyProps {
   isLoading: boolean;
   isError: boolean;
   actionPending: boolean;
-  selectedTier: string;
-  onSelectedTierChange: (tier: string) => void;
-  onEnable: (tier: string | null) => void;
+  onEnable: () => void;
   onDone: () => void;
   onDisable: () => void;
-  onApprove: (planId: string) => void;
-  onCancel: (planId: string) => void;
-  onResume: (planId: string) => void;
-}
-
-interface PlanModeActionsProps {
-  planModeActive: boolean;
-  actionPending: boolean;
-  selectedTier: string;
-  onSelectedTierChange: (tier: string) => void;
-  onEnable: (tier: string | null) => void;
-  onDone: () => void;
-  onDisable: () => void;
-}
-
-interface PlansListProps {
-  plans: PlanSummary[];
-  actionPending: boolean;
-  onApprove: (planId: string) => void;
-  onCancel: (planId: string) => void;
-  onResume: (planId: string) => void;
-}
-
-interface PlanItemActionsProps {
-  plan: PlanSummary;
-  actionPending: boolean;
-  onApprove: (planId: string) => void;
-  onCancel: (planId: string) => void;
-  onResume: (planId: string) => void;
-}
-
-const CANCELLABLE_STATUSES = new Set(['COLLECTING', 'APPROVED', 'EXECUTING', 'READY', 'PARTIALLY_COMPLETED']);
-
-function shortId(id: string): string {
-  if (id.length <= 8) {
-    return id;
-  }
-  return id.slice(0, 8);
-}
-
-function planStatusVariant(status: string): string {
-  switch (status) {
-  case 'COLLECTING':
-    return 'secondary';
-  case 'READY':
-    return 'info';
-  case 'APPROVED':
-    return 'primary';
-  case 'EXECUTING':
-    return 'warning';
-  case 'COMPLETED':
-    return 'success';
-  case 'PARTIALLY_COMPLETED':
-    return 'warning';
-  case 'CANCELLED':
-    return 'dark';
-  default:
-    return 'secondary';
-  }
 }
 
 function PlanControlHeader({ disabled, onRefresh }: PlanControlHeaderProps) {
@@ -115,14 +49,9 @@ function PlanControlBody({
   isLoading,
   isError,
   actionPending,
-  selectedTier,
-  onSelectedTierChange,
   onEnable,
   onDone,
   onDisable,
-  onApprove,
-  onCancel,
-  onResume,
 }: PlanControlBodyProps) {
   if (isLoading) {
     return (
@@ -137,199 +66,53 @@ function PlanControlBody({
     return <div className="text-danger small">Failed to load plan state.</div>;
   }
 
-  if (data?.featureEnabled !== true) {
-    return <div className="text-body-secondary small">Plan mode is disabled in settings.</div>;
-  }
+  const planModeActive = data?.planModeActive === true;
 
   return (
     <>
       <div className="d-flex align-items-center gap-2 mb-2">
-        <Badge bg={data.planModeActive ? 'success' : 'secondary'}>
-          {data.planModeActive ? 'ON' : 'OFF'}
+        <Badge bg={planModeActive ? 'success' : 'secondary'}>
+          {planModeActive ? 'ON' : 'OFF'}
         </Badge>
-        {data.activePlanId != null && (
-          <small className="text-body-secondary font-mono">active: {shortId(data.activePlanId)}</small>
-        )}
       </div>
 
-      <PlanModeActions
-        planModeActive={data.planModeActive}
-        actionPending={actionPending}
-        selectedTier={selectedTier}
-        onSelectedTierChange={onSelectedTierChange}
-        onEnable={onEnable}
-        onDone={onDone}
-        onDisable={onDisable}
-      />
-
-      <PlansList
-        plans={data.plans}
-        actionPending={actionPending}
-        onApprove={onApprove}
-        onCancel={onCancel}
-        onResume={onResume}
-      />
-    </>
-  );
-}
-
-function PlanModeActions({
-  planModeActive,
-  actionPending,
-  selectedTier,
-  onSelectedTierChange,
-  onEnable,
-  onDone,
-  onDisable,
-}: PlanModeActionsProps) {
-  if (!planModeActive) {
-    return (
-      <div className="d-flex flex-column gap-2 mb-3">
-        <Form.Group>
-          <Form.Label className="small text-body-secondary mb-1">Plan tier override</Form.Label>
-          <Form.Select
+      {!planModeActive ? (
+        <div className="d-flex flex-column gap-2">
+          <Button
+            type="button"
             size="sm"
-            value={selectedTier}
+            variant="primary"
             disabled={actionPending}
-            onChange={(event) => onSelectedTierChange(event.target.value)}
+            onClick={onEnable}
           >
-            <option value="">Default routing</option>
-            {getExplicitModelTierOptions().map((option) => (
-              <option key={option.value} value={option.value}>{option.label}</option>
-            ))}
-          </Form.Select>
-        </Form.Group>
-        <Button
-          type="button"
-          size="sm"
-          variant="primary"
-          disabled={actionPending}
-          onClick={() => onEnable(selectedTier.length > 0 ? selectedTier : null)}
-        >
-          Plan ON
-        </Button>
-      </div>
-    );
-  }
-
-  return (
-    <div className="d-flex flex-wrap gap-2 mb-3">
-      <Button type="button" size="sm" variant="success" disabled={actionPending} onClick={onDone}>
-        Plan done
-      </Button>
-      <Button type="button" size="sm" variant="secondary" disabled={actionPending} onClick={onDisable}>
-        Plan OFF
-      </Button>
-    </div>
-  );
-}
-
-function PlansList({ plans, actionPending, onApprove, onCancel, onResume }: PlansListProps) {
-  if (plans.length === 0) {
-    return (
-      <div className="plan-control-list">
-        <small className="text-body-secondary">No plans yet.</small>
-      </div>
-    );
-  }
-
-  return (
-    <div className="plan-control-list">
-      {plans.slice(0, 6).map((plan) => (
-        <div key={plan.id} className={`plan-control-item ${plan.active ? 'plan-control-item--active' : ''}`}>
-          <div className="d-flex align-items-start justify-content-between gap-2">
-            <div className="min-w-0">
-              <div className="plan-control-title text-truncate" title={plan.title ?? plan.id}>
-                {plan.title?.trim() ?? `Plan ${shortId(plan.id)}`}
-              </div>
-              <div className="text-body-secondary small font-mono">{shortId(plan.id)}</div>
-            </div>
-            <Badge bg={planStatusVariant(plan.status)}>{plan.status}</Badge>
-          </div>
-
-          <div className="text-body-secondary small mt-1">
-            {plan.completedStepCount}/{plan.stepCount} steps
-            {plan.failedStepCount > 0 ? `, failed: ${plan.failedStepCount}` : ''}
-          </div>
-          {plan.modelTier != null && plan.modelTier.length > 0 && (
-            <div className="text-body-secondary small mt-1">
-              tier {getModelTierMeta(plan.modelTier)?.label ?? plan.modelTier}
-            </div>
-          )}
-
-          <PlanItemActions
-            plan={plan}
-            actionPending={actionPending}
-            onApprove={onApprove}
-            onCancel={onCancel}
-            onResume={onResume}
-          />
+            Plan ON
+          </Button>
         </div>
-      ))}
-    </div>
-  );
-}
-
-function PlanItemActions({
-  plan,
-  actionPending,
-  onApprove,
-  onCancel,
-  onResume,
-}: PlanItemActionsProps) {
-  const canApprove = plan.status === 'READY';
-  const canResume = plan.status === 'PARTIALLY_COMPLETED';
-  const canCancel = CANCELLABLE_STATUSES.has(plan.status);
-
-  if (!canApprove && !canResume && !canCancel) {
-    return null;
-  }
-
-  return (
-    <div className="d-flex flex-wrap gap-2 mt-2">
-      {canApprove && (
-        <Button type="button" size="sm" variant="primary" disabled={actionPending} onClick={() => onApprove(plan.id)}>
-          Approve
-        </Button>
+      ) : (
+        <div className="d-flex flex-wrap gap-2">
+          <Button type="button" size="sm" variant="success" disabled={actionPending} onClick={onDone}>
+            Plan done
+          </Button>
+          <Button type="button" size="sm" variant="secondary" disabled={actionPending} onClick={onDisable}>
+            Plan OFF
+          </Button>
+        </div>
       )}
-
-      {canResume && (
-        <Button type="button" size="sm" variant="warning" disabled={actionPending} onClick={() => onResume(plan.id)}>
-          Resume
-        </Button>
-      )}
-
-      {canCancel && (
-        <Button type="button" size="sm" variant="danger" disabled={actionPending} onClick={() => onCancel(plan.id)}>
-          Cancel
-        </Button>
-      )}
-    </div>
+    </>
   );
 }
 
 export default function PlanControlPanel({ chatSessionId }: Props) {
   const { data, isLoading, isError, refetch } = usePlanControlState(chatSessionId, true);
-  const [selectedTier, setSelectedTier] = useState('');
-
-  useEffect(() => {
-    setSelectedTier('');
-  }, [chatSessionId]);
 
   const enableMutation = useEnablePlanMode();
   const disableMutation = useDisablePlanMode();
   const doneMutation = useDonePlanMode();
-  const approveMutation = useApprovePlan();
-  const cancelMutation = useCancelPlan();
-  const resumeMutation = useResumePlan();
 
   const actionPending = usePlanActionsPending([
     enableMutation,
     disableMutation,
     doneMutation,
-    approveMutation,
-    cancelMutation,
-    resumeMutation,
   ]);
 
   return (
@@ -346,25 +129,14 @@ export default function PlanControlPanel({ chatSessionId }: Props) {
         isLoading={isLoading}
         isError={isError}
         actionPending={actionPending}
-        selectedTier={selectedTier}
-        onSelectedTierChange={setSelectedTier}
-        onEnable={(modelTier) => {
-          enableMutation.mutate({ sessionId: chatSessionId, modelTier });
+        onEnable={() => {
+          enableMutation.mutate({ sessionId: chatSessionId });
         }}
         onDone={() => {
           doneMutation.mutate(chatSessionId);
         }}
         onDisable={() => {
           disableMutation.mutate(chatSessionId);
-        }}
-        onApprove={(planId) => {
-          approveMutation.mutate({ planId, sessionId: chatSessionId });
-        }}
-        onCancel={(planId) => {
-          cancelMutation.mutate({ planId, sessionId: chatSessionId });
-        }}
-        onResume={(planId) => {
-          resumeMutation.mutate({ planId, sessionId: chatSessionId });
         }}
       />
     </div>

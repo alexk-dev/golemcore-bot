@@ -18,86 +18,100 @@ package me.golemcore.bot.domain.service;
  * Contact: alex@kuleshov.tech
  */
 
+import java.io.IOException;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import lombok.extern.slf4j.Slf4j;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import me.golemcore.bot.domain.loop.AgentContextHolder;
+import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.AutoTask;
 import me.golemcore.bot.domain.model.DiaryEntry;
 import me.golemcore.bot.domain.model.Goal;
 import me.golemcore.bot.domain.model.Skill;
+import me.golemcore.bot.domain.model.ScheduledTask;
 import me.golemcore.bot.port.outbound.StoragePort;
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
-import java.io.IOException;
-import java.time.Instant;
-import java.time.LocalDate;
-import java.time.ZoneOffset;
-import java.time.format.DateTimeFormatter;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
-import java.util.Optional;
-import java.util.Set;
-import java.util.UUID;
-
 /**
- * Core service for autonomous agent mode managing goals, tasks, diary entries,
- * and global state. Single-user design with simplified storage layout. Auto
- * mode enables the agent to work independently on long-term goals, breaking
- * them into tasks and maintaining a daily diary of progress. Integrates with
- * {@link me.golemcore.bot.auto.AutoModeScheduler} for periodic agent
- * invocations routed through the shared per-session run coordinator.
- * <p>
- * Storage layout:
- * <ul>
- * <li>auto/state.json - global enabled state</li>
- * <li>auto/goals.json - list of all goals</li>
- * <li>auto/diary/{date}.jsonl - diary entries per day</li>
- * </ul>
+ * Auto mode facade that routes transient goals/tasks to the current session and
+ * keeps recurring work in dedicated scheduled tasks.
  */
 @Service
 @Slf4j
 public class AutoModeService {
 
-    private static final String AUTO_DIR = "auto";
-    private static final String GOAL_NOT_FOUND = "Goal not found: ";
-    private static final String TASK_NOT_FOUND = "Task not found: ";
-    private static final String INBOX_GOAL_ID = "inbox";
-    private static final String INBOX_GOAL_TITLE = "Inbox";
-    private static final String INBOX_GOAL_DESCRIPTION = "System container for standalone tasks";
-    private static final int MAX_TASKS_PER_GOAL = 20;
-    private static final int AUTO_CONTEXT_MAX_OTHER_GOALS = 3;
-    private static final int AUTO_CONTEXT_DIARY_LOOKBACK = 20;
-    private static final int AUTO_CONTEXT_MAX_DIARY_ENTRIES = 4;
-    private static final int AUTO_CONTEXT_FIELD_MAX_CHARS = 1_200;
-    private static final int AUTO_CONTEXT_DIARY_MAX_CHARS = 320;
-    private static final TypeReference<List<Goal>> GOAL_LIST_TYPE_REF = new TypeReference<>() {
-    };
-
     private final StoragePort storagePort;
     private final ObjectMapper objectMapper;
     private final RuntimeConfigService runtimeConfigService;
+    private final SessionScopedGoalService sessionScopedGoalService;
+    private final SessionDiaryService sessionDiaryService;
+    private final PersistentScheduledTaskService persistentScheduledTaskService;
+    private final String fallbackSessionId;
 
-    // In-memory state
     private volatile boolean enabled = false;
-    private volatile List<Goal> goalsCache;
 
+    @Autowired
     public AutoModeService(StoragePort storagePort, ObjectMapper objectMapper,
-            RuntimeConfigService runtimeConfigService) {
+            RuntimeConfigService runtimeConfigService,
+            SessionScopedGoalService sessionScopedGoalService,
+            SessionDiaryService sessionDiaryService,
+            PersistentScheduledTaskService persistentScheduledTaskService) {
         this.storagePort = storagePort;
         this.objectMapper = objectMapper;
         this.runtimeConfigService = runtimeConfigService;
+        this.sessionScopedGoalService = sessionScopedGoalService;
+        this.sessionDiaryService = sessionDiaryService;
+        this.persistentScheduledTaskService = persistentScheduledTaskService;
+        this.fallbackSessionId = null;
+    }
+
+    AutoModeService(
+            StoragePort storagePort,
+            ObjectMapper objectMapper,
+            RuntimeConfigService runtimeConfigService,
+            PersistentScheduledTaskService persistentScheduledTaskService) {
+        this(
+                storagePort,
+                objectMapper,
+                runtimeConfigService,
+                createLegacySessionScopedGoalService(storagePort, objectMapper, runtimeConfigService),
+                new LegacySessionDiaryService(storagePort, objectMapper),
+                persistentScheduledTaskService,
+                "legacy-test-session");
+    }
+
+    private AutoModeService(StoragePort storagePort, ObjectMapper objectMapper,
+            RuntimeConfigService runtimeConfigService,
+            SessionScopedGoalService sessionScopedGoalService,
+            SessionDiaryService sessionDiaryService,
+            PersistentScheduledTaskService persistentScheduledTaskService,
+            String fallbackSessionId) {
+        this.storagePort = storagePort;
+        this.objectMapper = objectMapper;
+        this.runtimeConfigService = runtimeConfigService;
+        this.sessionScopedGoalService = sessionScopedGoalService;
+        this.sessionDiaryService = sessionDiaryService;
+        this.persistentScheduledTaskService = persistentScheduledTaskService;
+        this.fallbackSessionId = fallbackSessionId;
+    }
+
+    private static SessionScopedGoalService createLegacySessionScopedGoalService(
+            StoragePort storagePort,
+            ObjectMapper objectMapper,
+            RuntimeConfigService runtimeConfigService) {
+        SessionDiaryService diaryService = new LegacySessionDiaryService(storagePort, objectMapper);
+        return new SessionScopedGoalService(
+                new LegacyGoalStorageService(storagePort, objectMapper),
+                runtimeConfigService,
+                diaryService);
     }
 
     public boolean isFeatureEnabled() {
         return runtimeConfigService.isAutoModeEnabled();
     }
-
-    // ==================== State management ====================
 
     public boolean isAutoModeEnabled() {
         return enabled;
@@ -115,8 +129,6 @@ public class AutoModeService {
         log.info("[AutoMode] Disabled");
     }
 
-    // ==================== Goal management ====================
-
     public Goal createGoal(String title, String description) {
         return createGoal(title, description, null, null, false);
     }
@@ -125,158 +137,82 @@ public class AutoModeService {
         return createGoal(title, description, prompt, null, false);
     }
 
-    public Goal createGoal(String title, String description, String prompt,
+    public Goal createGoal(String sessionId, String title, String description, String prompt,
             String reflectionModelTier, boolean reflectionTierPriority) {
-        List<Goal> goals = getGoals();
-
-        long activeCount = goals.stream()
-                .filter(g -> !isInboxGoal(g))
-                .filter(g -> g.getStatus() == Goal.GoalStatus.ACTIVE)
-                .count();
-        if (activeCount >= runtimeConfigService.getAutoMaxGoals()) {
-            throw new IllegalStateException("Maximum active goals reached: " + runtimeConfigService.getAutoMaxGoals());
-        }
-
-        Instant now = Instant.now();
-        Goal goal = Goal.builder()
-                .id(UUID.randomUUID().toString())
-                .title(requireTitle(title, "Goal title is required"))
-                .description(normalizeOptionalValue(description))
-                .prompt(normalizeOptionalValue(prompt))
-                .reflectionModelTier(normalizeOptionalValue(reflectionModelTier))
-                .reflectionTierPriority(reflectionTierPriority)
-                .status(Goal.GoalStatus.ACTIVE)
-                .createdAt(now)
-                .updatedAt(now)
-                .build();
-
-        goals.add(goal);
-        saveGoals(goals);
-        log.info("[AutoMode] Created goal '{}'", goal.getTitle());
-        return goal;
+        return sessionScopedGoalService.createGoal(sessionId, title, description, prompt, reflectionModelTier,
+                reflectionTierPriority);
     }
 
-    public synchronized List<Goal> getGoals() {
-        if (goalsCache == null) {
-            goalsCache = loadGoals();
-        }
-        return goalsCache;
+    public Goal createGoal(String title, String description, String prompt,
+            String reflectionModelTier, boolean reflectionTierPriority) {
+        return sessionScopedGoalService.createGoal(
+                requireCurrentSessionId(),
+                title,
+                description,
+                prompt,
+                reflectionModelTier,
+                reflectionTierPriority);
+    }
+
+    public List<Goal> getGoals() {
+        return sessionScopedGoalService.getGoals(requireCurrentSessionId());
+    }
+
+    public List<Goal> getGoals(String sessionId) {
+        return sessionScopedGoalService.getGoals(sessionId);
     }
 
     public List<Goal> getActiveGoals() {
-        return getGoals().stream()
-                .filter(g -> g.getStatus() == Goal.GoalStatus.ACTIVE)
-                .toList();
+        return sessionScopedGoalService.getActiveGoals(requireCurrentSessionId());
+    }
+
+    public List<Goal> getActiveGoals(String sessionId) {
+        return sessionScopedGoalService.getActiveGoals(sessionId);
     }
 
     public Optional<Goal> getGoal(String goalId) {
-        return getGoals().stream()
-                .filter(g -> g.getId().equals(goalId))
-                .findFirst();
+        return sessionScopedGoalService.getGoal(requireCurrentSessionId(), goalId);
+    }
+
+    public Optional<Goal> getGoal(String sessionId, String goalId) {
+        return sessionScopedGoalService.getGoal(sessionId, goalId);
     }
 
     public Goal updateGoal(String goalId, String title, String description, String prompt,
             String reflectionModelTier, Boolean reflectionTierPriority, Goal.GoalStatus status) {
-        Goal goal = getGoal(goalId)
-                .orElseThrow(() -> new IllegalArgumentException(GOAL_NOT_FOUND + goalId));
-
-        if (isInboxGoal(goal)) {
-            throw new IllegalArgumentException("Inbox goal cannot be edited");
-        }
-
-        Goal.GoalStatus resolvedStatus = status != null ? status : goal.getStatus();
-        long activeCount = getGoals().stream()
-                .filter(item -> !item.getId().equals(goalId))
-                .filter(item -> !isInboxGoal(item))
-                .filter(item -> item.getStatus() == Goal.GoalStatus.ACTIVE)
-                .count();
-        if (resolvedStatus == Goal.GoalStatus.ACTIVE && activeCount >= runtimeConfigService.getAutoMaxGoals()) {
-            throw new IllegalStateException("Maximum active goals reached: " + runtimeConfigService.getAutoMaxGoals());
-        }
-
-        Instant now = Instant.now();
-        goal.setTitle(requireTitle(title, "Goal title is required"));
-        goal.setDescription(normalizeOptionalValue(description));
-        goal.setPrompt(normalizeOptionalValue(prompt));
-        goal.setReflectionModelTier(normalizeOptionalValue(reflectionModelTier));
-        if (reflectionTierPriority != null) {
-            goal.setReflectionTierPriority(reflectionTierPriority);
-        }
-        goal.setStatus(resolvedStatus);
-        goal.setUpdatedAt(now);
-        saveGoals(getGoals());
-
-        log.info("[AutoMode] Updated goal '{}'", goal.getTitle());
-        return goal;
+        return sessionScopedGoalService.updateGoal(
+                requireCurrentSessionId(),
+                goalId,
+                title,
+                description,
+                prompt,
+                reflectionModelTier,
+                reflectionTierPriority,
+                status);
     }
 
     public AutoTask addTask(String goalId, String title, String description, int order) {
-        return addTask(goalId, title, description, null, null, false, order);
+        return sessionScopedGoalService.addTask(requireCurrentSessionId(), goalId, title, description, null, null,
+                false, order);
     }
 
     public AutoTask addTask(String goalId, String title, String description, String prompt, int order) {
-        return addTask(goalId, title, description, prompt, null, false, order);
+        return sessionScopedGoalService.addTask(requireCurrentSessionId(), goalId, title, description, prompt, null,
+                false, order);
     }
 
     public AutoTask addTask(String goalId, String title, String description, String prompt,
             String reflectionModelTier, boolean reflectionTierPriority, int order) {
-        Goal goal = getGoal(goalId)
-                .orElseThrow(() -> new IllegalArgumentException(GOAL_NOT_FOUND + goalId));
-        validateTaskCapacity(goal);
-
-        Instant now = Instant.now();
-        AutoTask task = AutoTask.builder()
-                .id(UUID.randomUUID().toString())
-                .goalId(goalId)
-                .title(requireTitle(title, "Task title is required"))
-                .description(normalizeOptionalValue(description))
-                .prompt(normalizeOptionalValue(prompt))
-                .reflectionModelTier(normalizeOptionalValue(reflectionModelTier))
-                .reflectionTierPriority(reflectionTierPriority)
-                .order(order > 0 ? order : nextTaskOrder(goal))
-                .status(AutoTask.TaskStatus.PENDING)
-                .createdAt(now)
-                .updatedAt(now)
-                .build();
-
-        goal.getTasks().add(task);
-        goal.setUpdatedAt(now);
-        rebalanceTaskOrders(goal);
-        saveGoals(getGoals());
-        log.info("[AutoMode] Added task '{}' to goal '{}'", task.getTitle(), goal.getTitle());
-        return task;
+        return sessionScopedGoalService.addTask(requireCurrentSessionId(), goalId, title, description, prompt,
+                reflectionModelTier, reflectionTierPriority, order);
     }
 
     public AutoTask createTask(String goalId, String title, String description, String prompt,
             String reflectionModelTier, Boolean reflectionTierPriority, AutoTask.TaskStatus status) {
-        Goal targetGoal = resolveTaskGoal(goalId);
-        validateTaskCapacity(targetGoal);
-
-        Instant now = Instant.now();
-        AutoTask task = AutoTask.builder()
-                .id(UUID.randomUUID().toString())
-                .goalId(targetGoal.getId())
-                .title(requireTitle(title, "Task title is required"))
-                .description(normalizeOptionalValue(description))
-                .prompt(normalizeOptionalValue(prompt))
-                .reflectionModelTier(normalizeOptionalValue(reflectionModelTier))
-                .reflectionTierPriority(Boolean.TRUE.equals(reflectionTierPriority))
-                .status(status != null ? status : AutoTask.TaskStatus.PENDING)
-                .order(nextTaskOrder(targetGoal))
-                .createdAt(now)
-                .updatedAt(now)
-                .build();
-
-        targetGoal.getTasks().add(task);
-        targetGoal.setUpdatedAt(now);
-        saveGoals(getGoals());
-        log.info("[AutoMode] Created task '{}' in goal '{}'", task.getTitle(), targetGoal.getTitle());
-        return task;
+        return sessionScopedGoalService.createTask(requireCurrentSessionId(), goalId, title, description, prompt,
+                reflectionModelTier, reflectionTierPriority, status);
     }
 
-    /**
-     * Add a standalone task to the system Inbox goal.
-     */
     public AutoTask addStandaloneTask(String title, String description) {
         return addStandaloneTask(title, description, null, null, false);
     }
@@ -287,88 +223,29 @@ public class AutoModeService {
 
     public AutoTask addStandaloneTask(String title, String description, String prompt,
             String reflectionModelTier, boolean reflectionTierPriority) {
-        return createTask(null, title, description, prompt, reflectionModelTier, reflectionTierPriority,
-                AutoTask.TaskStatus.PENDING);
+        return sessionScopedGoalService.createTask(requireCurrentSessionId(), null, title, description, prompt,
+                reflectionModelTier, reflectionTierPriority, AutoTask.TaskStatus.PENDING);
     }
 
     public boolean isInboxGoal(Goal goal) {
-        if (goal == null || goal.getId() == null) {
-            return false;
-        }
-        return INBOX_GOAL_ID.equals(goal.getId());
+        return sessionScopedGoalService.isInboxGoal(goal);
     }
 
     public String getInboxGoalId() {
-        return INBOX_GOAL_ID;
+        return "inbox";
     }
 
     public Goal getOrCreateInboxGoal() {
-        Optional<Goal> existing = getGoal(INBOX_GOAL_ID);
-        if (existing.isPresent()) {
-            return existing.get();
-        }
-
-        List<Goal> goals = getGoals();
-        Instant now = Instant.now();
-        Goal inboxGoal = Goal.builder()
-                .id(INBOX_GOAL_ID)
-                .title(INBOX_GOAL_TITLE)
-                .description(INBOX_GOAL_DESCRIPTION)
-                .status(Goal.GoalStatus.ACTIVE)
-                .createdAt(now)
-                .updatedAt(now)
-                .build();
-
-        goals.add(inboxGoal);
-        saveGoals(goals);
-        log.info("[AutoMode] Created system inbox goal");
-        return inboxGoal;
+        return sessionScopedGoalService.getOrCreateInboxGoal(requireCurrentSessionId());
     }
 
     public void updateTaskStatus(String goalId, String taskId,
             AutoTask.TaskStatus status, String result) {
-        Goal goal = getGoal(goalId)
-                .orElseThrow(() -> new IllegalArgumentException(GOAL_NOT_FOUND + goalId));
-
-        AutoTask task = goal.getTasks().stream()
-                .filter(t -> t.getId().equals(taskId))
-                .findFirst()
-                .orElseThrow(() -> new IllegalArgumentException(TASK_NOT_FOUND + taskId));
-
-        Instant now = Instant.now();
-        task.setStatus(status);
-        task.setResult(result);
-        task.setUpdatedAt(now);
-        goal.setUpdatedAt(now);
-
-        if (status == AutoTask.TaskStatus.COMPLETED) {
-            resetTaskFailureState(task);
-        } else if (status == AutoTask.TaskStatus.FAILED) {
-            task.setConsecutiveFailureCount(task.getConsecutiveFailureCount() + 1);
-            task.setLastFailureSummary(normalizeOptionalValue(result));
-            task.setLastFailureFingerprint(buildFailureFingerprint(result));
-            task.setLastFailureAt(now);
-            task.setReflectionRequired(task.getConsecutiveFailureCount() >= getReflectionFailureThreshold());
-        }
-
-        saveGoals(getGoals());
-
-        if (status == AutoTask.TaskStatus.COMPLETED) {
-            writeDiary(DiaryEntry.builder()
-                    .timestamp(now)
-                    .type(DiaryEntry.DiaryType.PROGRESS)
-                    .content("Completed task: " + task.getTitle() +
-                            (result != null ? " — " + result : ""))
-                    .goalId(goalId)
-                    .taskId(taskId)
-                    .build());
-        }
-
-        log.info("[AutoMode] Updated task '{}' status to {}", task.getTitle(), status);
+        sessionScopedGoalService.updateTaskStatus(requireCurrentSessionId(), goalId, taskId, status, result);
     }
 
     public Optional<AutoTask> getTask(String taskId) {
-        return findTaskLocation(taskId).map(TaskLocation::task);
+        return sessionScopedGoalService.getTask(requireCurrentSessionId(), taskId);
     }
 
     public AutoTask updateTask(
@@ -379,276 +256,89 @@ public class AutoModeService {
             String reflectionModelTier,
             Boolean reflectionTierPriority,
             AutoTask.TaskStatus status) {
-        TaskLocation location = findTaskLocation(taskId)
-                .orElseThrow(() -> new IllegalArgumentException(TASK_NOT_FOUND + taskId));
+        return sessionScopedGoalService.updateTask(requireCurrentSessionId(), taskId, title, description, prompt,
+                reflectionModelTier, reflectionTierPriority, status);
+    }
 
-        Goal goal = location.goal();
-        AutoTask task = location.task();
-        AutoTask.TaskStatus previousStatus = task.getStatus();
-        AutoTask.TaskStatus resolvedStatus = status != null ? status : task.getStatus();
-        Instant now = Instant.now();
-
-        task.setTitle(requireTitle(title, "Task title is required"));
-        task.setDescription(normalizeOptionalValue(description));
-        task.setPrompt(normalizeOptionalValue(prompt));
-        task.setReflectionModelTier(normalizeOptionalValue(reflectionModelTier));
-        if (reflectionTierPriority != null) {
-            task.setReflectionTierPriority(reflectionTierPriority);
-        }
-        task.setStatus(resolvedStatus);
-        task.setUpdatedAt(now);
-        if (resolvedStatus == AutoTask.TaskStatus.COMPLETED && previousStatus != AutoTask.TaskStatus.COMPLETED) {
-            resetTaskFailureState(task);
-        }
-        goal.setUpdatedAt(now);
-        saveGoals(getGoals());
-
-        if (resolvedStatus == AutoTask.TaskStatus.COMPLETED && previousStatus != AutoTask.TaskStatus.COMPLETED) {
-            writeDiary(DiaryEntry.builder()
-                    .timestamp(now)
-                    .type(DiaryEntry.DiaryType.PROGRESS)
-                    .content("Completed task: " + task.getTitle())
-                    .goalId(goal.getId())
-                    .taskId(taskId)
-                    .build());
-        }
-
-        log.info("[AutoMode] Updated task '{}'", task.getTitle());
-        return task;
+    public Optional<AutoTask> getNextPendingTask(String sessionId) {
+        return sessionScopedGoalService.getNextPendingTask(sessionId);
     }
 
     public Optional<AutoTask> getNextPendingTask() {
-        return getActiveGoals().stream()
-                .sorted(Comparator.comparing(Goal::getCreatedAt))
-                .flatMap(g -> g.getTasks().stream()
-                        .filter(t -> t.getStatus() == AutoTask.TaskStatus.PENDING)
-                        .sorted(Comparator.comparingInt(AutoTask::getOrder)))
-                .findFirst();
+        return sessionScopedGoalService.getNextPendingTask(requireCurrentSessionId());
     }
 
     public void completeGoal(String goalId) {
-        Goal goal = getGoal(goalId)
-                .orElseThrow(() -> new IllegalArgumentException(GOAL_NOT_FOUND + goalId));
-
-        goal.setStatus(Goal.GoalStatus.COMPLETED);
-        goal.setUpdatedAt(Instant.now());
-        saveGoals(getGoals());
-
-        writeDiary(DiaryEntry.builder()
-                .timestamp(Instant.now())
-                .type(DiaryEntry.DiaryType.PROGRESS)
-                .content("Goal completed: " + goal.getTitle())
-                .goalId(goalId)
-                .build());
-
-        log.info("[AutoMode] Completed goal '{}'", goal.getTitle());
+        sessionScopedGoalService.completeGoal(requireCurrentSessionId(), goalId);
     }
 
     public void deleteGoal(String goalId) {
-        if (INBOX_GOAL_ID.equals(goalId)) {
-            throw new IllegalArgumentException("Inbox goal cannot be deleted");
-        }
-
-        List<Goal> goals = getGoals();
-        boolean removed = goals.removeIf(g -> g.getId().equals(goalId));
-        if (!removed) {
-            throw new IllegalArgumentException(GOAL_NOT_FOUND + goalId);
-        }
-        saveGoals(goals);
-
-        writeDiary(DiaryEntry.builder()
-                .timestamp(Instant.now())
-                .type(DiaryEntry.DiaryType.DECISION)
-                .content("Goal deleted: " + goalId)
-                .goalId(goalId)
-                .build());
-
-        log.info("[AutoMode] Deleted goal '{}'", goalId);
+        sessionScopedGoalService.deleteGoal(requireCurrentSessionId(), goalId);
     }
 
     public void deleteTask(String goalId, String taskId) {
-        Goal goal = getGoal(goalId)
-                .orElseThrow(() -> new IllegalArgumentException(GOAL_NOT_FOUND + goalId));
-
-        boolean removed = goal.getTasks().removeIf(t -> t.getId().equals(taskId));
-        if (!removed) {
-            throw new IllegalArgumentException(TASK_NOT_FOUND + taskId);
-        }
-
-        goal.setUpdatedAt(Instant.now());
-        rebalanceTaskOrders(goal);
-        saveGoals(getGoals());
-        log.info("[AutoMode] Deleted task '{}' from goal '{}'", taskId, goal.getTitle());
+        sessionScopedGoalService.deleteTask(requireCurrentSessionId(), goalId, taskId);
     }
 
     public void deleteTask(String taskId) {
-        TaskLocation location = findTaskLocation(taskId)
-                .orElseThrow(() -> new IllegalArgumentException(TASK_NOT_FOUND + taskId));
-        deleteTask(location.goal().getId(), taskId);
+        sessionScopedGoalService.deleteTask(requireCurrentSessionId(), taskId);
     }
 
     public int clearCompletedGoals() {
-        List<Goal> goals = getGoals();
-        int before = goals.size();
-        goals.removeIf(g -> g.getStatus() == Goal.GoalStatus.COMPLETED
-                || g.getStatus() == Goal.GoalStatus.CANCELLED);
-        int removed = before - goals.size();
-
-        if (removed > 0) {
-            saveGoals(goals);
-            log.info("[AutoMode] Cleared {} completed/cancelled goals", removed);
-        }
-
-        return removed;
+        return sessionScopedGoalService.clearCompletedGoals(requireCurrentSessionId());
     }
-
-    // ==================== Auto reflection ====================
 
     public void recordAutoRunFailure(String goalId, String taskId, String failureSummary, String failureFingerprint,
             String activeSkillName) {
-        if (StringValueSupport.isBlank(goalId)) {
-            return;
-        }
+        sessionScopedGoalService.recordAutoRunFailure(requireCurrentSessionId(), goalId, taskId, failureSummary,
+                failureFingerprint, activeSkillName);
+    }
 
-        Goal goal = getGoal(goalId)
-                .orElseThrow(() -> new IllegalArgumentException(GOAL_NOT_FOUND + goalId));
-        Instant now = Instant.now();
-        String normalizedFailureSummary = normalizeOptionalValue(failureSummary);
-        String normalizedFailureFingerprint = buildFailureFingerprint(
-                failureFingerprint != null ? failureFingerprint : failureSummary);
-        String normalizedActiveSkillName = normalizeOptionalValue(activeSkillName);
-
-        if (StringValueSupport.isBlank(taskId)) {
-            goal.setConsecutiveFailureCount(goal.getConsecutiveFailureCount() + 1);
-            goal.setLastFailureSummary(normalizedFailureSummary);
-            goal.setLastFailureFingerprint(normalizedFailureFingerprint);
-            goal.setLastFailureAt(now);
-            goal.setLastUsedSkillName(normalizedActiveSkillName);
-            goal.setReflectionRequired(goal.getConsecutiveFailureCount() >= getReflectionFailureThreshold());
-            goal.setUpdatedAt(now);
-            saveGoals(getGoals());
-            return;
-        }
-
-        AutoTask task = goal.getTasks().stream()
-                .filter(item -> taskId.equals(item.getId()))
-                .findFirst()
-                .orElseThrow(() -> new IllegalArgumentException(TASK_NOT_FOUND + taskId));
-
-        task.setStatus(AutoTask.TaskStatus.FAILED);
-        task.setResult(normalizedFailureSummary);
-        task.setConsecutiveFailureCount(task.getConsecutiveFailureCount() + 1);
-        task.setLastFailureSummary(normalizedFailureSummary);
-        task.setLastFailureFingerprint(normalizedFailureFingerprint);
-        task.setLastFailureAt(now);
-        task.setLastUsedSkillName(normalizedActiveSkillName);
-        task.setReflectionRequired(task.getConsecutiveFailureCount() >= getReflectionFailureThreshold());
-        task.setUpdatedAt(now);
-        goal.setUpdatedAt(now);
-        saveGoals(getGoals());
+    public void recordAutoRunFailure(String sessionId, String goalId, String taskId, String failureSummary,
+            String failureFingerprint, String activeSkillName) {
+        sessionScopedGoalService.recordAutoRunFailure(sessionId, goalId, taskId, failureSummary, failureFingerprint,
+                activeSkillName);
     }
 
     public void recordAutoRunSuccess(String goalId, String taskId, String activeSkillName) {
-        if (StringValueSupport.isBlank(goalId)) {
-            return;
-        }
+        sessionScopedGoalService.recordAutoRunSuccess(requireCurrentSessionId(), goalId, taskId, activeSkillName);
+    }
 
-        Goal goal = getGoal(goalId)
-                .orElseThrow(() -> new IllegalArgumentException(GOAL_NOT_FOUND + goalId));
-        String normalizedActiveSkillName = normalizeOptionalValue(activeSkillName);
-        Instant now = Instant.now();
-
-        if (StringValueSupport.isBlank(taskId)) {
-            resetGoalFailureState(goal);
-            goal.setLastUsedSkillName(normalizedActiveSkillName);
-            goal.setUpdatedAt(now);
-            saveGoals(getGoals());
-            return;
-        }
-
-        AutoTask task = goal.getTasks().stream()
-                .filter(item -> taskId.equals(item.getId()))
-                .findFirst()
-                .orElseThrow(() -> new IllegalArgumentException(TASK_NOT_FOUND + taskId));
-
-        resetTaskFailureState(task);
-        task.setLastUsedSkillName(normalizedActiveSkillName);
-        if (task.getStatus() == AutoTask.TaskStatus.FAILED) {
-            task.setStatus(AutoTask.TaskStatus.IN_PROGRESS);
-        }
-        task.setUpdatedAt(now);
-        goal.setUpdatedAt(now);
-        saveGoals(getGoals());
+    public void recordAutoRunSuccess(String sessionId, String goalId, String taskId, String activeSkillName) {
+        sessionScopedGoalService.recordAutoRunSuccess(sessionId, goalId, taskId, activeSkillName);
     }
 
     public boolean shouldTriggerReflection(String goalId, String taskId) {
-        return resolveTaskReflectionState(goalId, taskId).reflectionRequired();
+        return sessionScopedGoalService.shouldTriggerReflection(requireCurrentSessionId(), goalId, taskId);
+    }
+
+    public boolean shouldTriggerReflection(String sessionId, String goalId, String taskId) {
+        return sessionScopedGoalService.shouldTriggerReflection(sessionId, goalId, taskId);
     }
 
     public void applyReflectionResult(String goalId, String taskId, String reflectionStrategy) {
-        if (StringValueSupport.isBlank(goalId)) {
-            return;
-        }
+        sessionScopedGoalService.applyReflectionResult(requireCurrentSessionId(), goalId, taskId, reflectionStrategy);
+    }
 
-        Goal goal = getGoal(goalId)
-                .orElseThrow(() -> new IllegalArgumentException(GOAL_NOT_FOUND + goalId));
-
-        Instant now = Instant.now();
-        String normalizedReflectionStrategy = normalizeOptionalValue(reflectionStrategy);
-        if (StringValueSupport.isBlank(taskId)) {
-            goal.setReflectionStrategy(normalizedReflectionStrategy);
-            goal.setReflectionRequired(false);
-            goal.setConsecutiveFailureCount(0);
-            goal.setLastReflectionAt(now);
-            goal.setUpdatedAt(now);
-            saveGoals(getGoals());
-
-            if (goal.getReflectionStrategy() != null) {
-                writeDiary(DiaryEntry.builder()
-                        .timestamp(now)
-                        .type(DiaryEntry.DiaryType.OBSERVATION)
-                        .content("Reflection strategy for goal '" + goal.getTitle() + "': "
-                                + goal.getReflectionStrategy())
-                        .goalId(goalId)
-                        .build());
-            }
-            return;
-        }
-
-        AutoTask task = goal.getTasks().stream()
-                .filter(item -> taskId.equals(item.getId()))
-                .findFirst()
-                .orElseThrow(() -> new IllegalArgumentException(TASK_NOT_FOUND + taskId));
-
-        task.setReflectionStrategy(normalizedReflectionStrategy);
-        task.setReflectionRequired(false);
-        task.setConsecutiveFailureCount(0);
-        task.setLastReflectionAt(now);
-        if (task.getStatus() == AutoTask.TaskStatus.FAILED) {
-            task.setStatus(AutoTask.TaskStatus.IN_PROGRESS);
-        }
-        task.setUpdatedAt(now);
-        goal.setUpdatedAt(now);
-        saveGoals(getGoals());
-
-        if (task.getReflectionStrategy() != null) {
-            writeDiary(DiaryEntry.builder()
-                    .timestamp(now)
-                    .type(DiaryEntry.DiaryType.OBSERVATION)
-                    .content("Reflection strategy for task '" + task.getTitle() + "': " + task.getReflectionStrategy())
-                    .goalId(goalId)
-                    .taskId(taskId)
-                    .build());
-        }
+    public void applyReflectionResult(String sessionId, String goalId, String taskId, String reflectionStrategy) {
+        sessionScopedGoalService.applyReflectionResult(sessionId, goalId, taskId, reflectionStrategy);
     }
 
     public TaskReflectionState resolveTaskReflectionState(String goalId, String taskId) {
-        return getTaskReflectionState(goalId, taskId)
-                .orElse(new TaskReflectionState(null, false, null, false, null, 0, false, null, null, null));
+        return toTaskReflectionState(sessionScopedGoalService.resolveTaskReflectionState(requireCurrentSessionId(),
+                goalId, taskId));
+    }
+
+    public TaskReflectionState resolveTaskReflectionState(String sessionId, String goalId, String taskId) {
+        return toTaskReflectionState(sessionScopedGoalService.resolveTaskReflectionState(sessionId, goalId, taskId));
     }
 
     public String resolveReflectionTier(String goalId, String taskId, Skill skill) {
-        TaskReflectionState state = resolveTaskReflectionState(goalId, taskId);
+        return resolveReflectionTier(requireCurrentSessionId(), goalId, taskId, skill);
+    }
+
+    public String resolveReflectionTier(String sessionId, String goalId, String taskId, Skill skill) {
+        TaskReflectionState state = resolveTaskReflectionState(sessionId, goalId, taskId);
         if (state.taskReflectionModelTier() != null && !state.taskReflectionModelTier().isBlank()
                 && state.taskReflectionTierPriority()) {
             return state.taskReflectionModelTier();
@@ -670,7 +360,11 @@ public class AutoModeService {
     }
 
     public boolean isReflectionTierPriority(String goalId, String taskId) {
-        TaskReflectionState state = resolveTaskReflectionState(goalId, taskId);
+        return isReflectionTierPriority(requireCurrentSessionId(), goalId, taskId);
+    }
+
+    public boolean isReflectionTierPriority(String sessionId, String goalId, String taskId) {
+        TaskReflectionState state = resolveTaskReflectionState(sessionId, goalId, taskId);
         if (state.taskReflectionModelTier() != null && !state.taskReflectionModelTier().isBlank()) {
             return state.taskReflectionTierPriority();
         }
@@ -681,485 +375,228 @@ public class AutoModeService {
     }
 
     public int getReflectionFailureThreshold() {
-        return Math.max(1, runtimeConfigService.getAutoReflectionFailureThreshold());
+        return sessionScopedGoalService.getReflectionFailureThreshold();
     }
 
-    // ==================== Diary ====================
-
     public void writeDiary(DiaryEntry entry) {
-        if (entry.getTimestamp() == null) {
-            entry.setTimestamp(Instant.now());
-        }
-        try {
-            String date = LocalDate.ofInstant(entry.getTimestamp(), ZoneOffset.UTC)
-                    .format(DateTimeFormatter.ISO_LOCAL_DATE);
-            String path = "diary/" + date + ".jsonl";
-            String line = objectMapper.writeValueAsString(entry) + "\n";
-            storagePort.appendText(AUTO_DIR, path, line).join();
-            log.debug("[AutoMode] Diary entry written");
-        } catch (Exception e) {
-            log.error("[AutoMode] Failed to write diary", e);
-        }
+        sessionDiaryService.writeDiary(requireCurrentSessionId(), entry);
+    }
+
+    public List<DiaryEntry> getRecentDiary(String sessionId, int count) {
+        return sessionDiaryService.getRecentDiary(sessionId, count);
     }
 
     public List<DiaryEntry> getRecentDiary(int count) {
-        try {
-            List<DiaryEntry> entries = new ArrayList<>();
-            LocalDate today = LocalDate.now(ZoneOffset.UTC);
-
-            for (int i = 0; i < 7 && entries.size() < count; i++) {
-                String date = today.minusDays(i).format(DateTimeFormatter.ISO_LOCAL_DATE);
-                String path = "diary/" + date + ".jsonl";
-                String content = storagePort.getText(AUTO_DIR, path).join();
-                if (content != null && !content.isBlank()) {
-                    String[] lines = content.split("\n");
-                    for (int j = lines.length - 1; j >= 0 && entries.size() < count; j--) {
-                        if (!lines[j].isBlank()) {
-                            entries.add(objectMapper.readValue(lines[j], DiaryEntry.class));
-                        }
-                    }
-                }
-            }
-
-            Collections.reverse(entries);
-            return entries;
-        } catch (IOException | RuntimeException e) {
-            log.error("[AutoMode] Failed to read diary", e);
-            return List.of();
-        }
+        return sessionDiaryService.getRecentDiary(requireCurrentSessionId(), count);
     }
 
-    // ==================== Context building ====================
-
     public String buildAutoContext() {
-        return buildAutoContext(null, null);
+        return sessionScopedGoalService.buildAutoContext(requireCurrentSessionId());
+    }
+
+    public String buildAutoContext(String sessionId) {
+        return sessionScopedGoalService.buildAutoContext(sessionId);
     }
 
     public String buildAutoContext(String requestedGoalId, String requestedTaskId) {
-        List<Goal> activeGoals = getActiveGoals();
-        if (activeGoals.isEmpty()) {
-            return null;
-        }
-
-        Optional<AutoTask> currentTask = resolveCurrentTask(requestedTaskId);
-        Optional<Goal> currentGoal = resolveCurrentGoal(activeGoals, requestedGoalId, currentTask);
-
-        StringBuilder sb = new StringBuilder();
-        sb.append("# Auto Mode\n\n");
-
-        currentGoal.ifPresent(goal -> appendCurrentGoal(sb, goal));
-        String relevanceText = buildAutoRelevanceText(currentGoal.orElse(null), currentTask.orElse(null));
-        appendOtherActiveGoals(sb, activeGoals, currentGoal.map(Goal::getId).orElse(null), relevanceText);
-
-        currentTask.ifPresent(task -> appendCurrentTask(sb, task, currentGoal.map(Goal::getTitle).orElse("unknown")));
-        appendRelevantDiary(sb, selectRelevantDiary(
-                currentGoal.map(Goal::getId).orElse(requestedGoalId),
-                currentTask.map(AutoTask::getId).orElse(requestedTaskId),
-                relevanceText));
-
-        sb.append("\n## Instructions\n");
-        sb.append("You are in autonomous work mode.\n");
-        sb.append("1. Work on the current task above using available tools\n");
-        sb.append("2. Use goal_management tool to update task status when done or write diary entries\n");
-        sb.append("3. When all tasks for a goal are done, mark the goal as COMPLETED\n");
-        sb.append("4. When a recovery strategy is present, follow it instead of repeating the failed approach\n");
-        sb.append("5. If you need to create new sub-tasks, use plan_tasks operation\n");
-        sb.append("6. Be concise and focused — record key findings in diary\n");
-
-        return sb.toString();
+        return sessionScopedGoalService.buildAutoContext(requireCurrentSessionId(), requestedGoalId, requestedTaskId);
     }
 
-    private Optional<AutoTask> resolveCurrentTask(String requestedTaskId) {
-        if (requestedTaskId != null && !requestedTaskId.isBlank()) {
-            return getTask(requestedTaskId);
-        }
-        return getNextPendingTask();
+    public String buildAutoContext(String sessionId, String requestedGoalId, String requestedTaskId) {
+        return sessionScopedGoalService.buildAutoContext(sessionId, requestedGoalId, requestedTaskId);
     }
 
-    private Optional<Goal> resolveCurrentGoal(List<Goal> activeGoals, String requestedGoalId,
-            Optional<AutoTask> currentTask) {
-        if (requestedGoalId != null && !requestedGoalId.isBlank()) {
-            return activeGoals.stream()
-                    .filter(goal -> requestedGoalId.equals(goal.getId()))
-                    .findFirst();
-        }
-        if (currentTask.isPresent()) {
-            String taskGoalId = currentTask.get().getGoalId();
-            return activeGoals.stream()
-                    .filter(goal -> goal.getId().equals(taskGoalId))
-                    .findFirst();
-        }
-        return activeGoals.stream()
-                .sorted(Comparator.comparing(Goal::getCreatedAt))
-                .findFirst();
-    }
-
-    private void appendCurrentGoal(StringBuilder sb, Goal goal) {
-        long completed = goal.getCompletedTaskCount();
-        int total = goal.getTasks().size();
-        sb.append("## Current Goal\n");
-        sb.append(String.format("**%s** [%s] (%d/%d tasks done)%n",
-                goal.getTitle(), goal.getStatus(), completed, total));
-        appendField(sb, "Description", goal.getDescription(), AUTO_CONTEXT_FIELD_MAX_CHARS);
-        appendField(sb, "Prompt", goal.getPrompt(), AUTO_CONTEXT_FIELD_MAX_CHARS);
-        appendReflectionTier(sb, goal.getReflectionModelTier(), goal.isReflectionTierPriority());
-        appendField(sb, "Recovery strategy", goal.getReflectionStrategy(), AUTO_CONTEXT_FIELD_MAX_CHARS);
-    }
-
-    private void appendOtherActiveGoals(StringBuilder sb, List<Goal> activeGoals, String currentGoalId,
-            String relevanceText) {
-        List<Goal> otherGoals = activeGoals.stream()
-                .filter(goal -> currentGoalId == null || !currentGoalId.equals(goal.getId()))
-                .sorted(Comparator.comparingInt((Goal goal) -> scoreText(goalSearchText(goal), relevanceText))
-                        .reversed()
-                        .thenComparing(Goal::getUpdatedAt, Comparator.nullsLast(Comparator.reverseOrder()))
-                        .thenComparing(Goal::getCreatedAt, Comparator.nullsLast(Comparator.reverseOrder())))
-                .limit(AUTO_CONTEXT_MAX_OTHER_GOALS)
-                .toList();
-        if (otherGoals.isEmpty()) {
-            return;
-        }
-        sb.append("\n## Other Active Goals (summary)\n");
-        for (Goal goal : otherGoals) {
-            sb.append("- ").append(goal.getTitle()).append(" [").append(goal.getStatus()).append("] (")
-                    .append(goal.getCompletedTaskCount()).append("/").append(goal.getTasks().size())
-                    .append(" tasks done)\n");
-        }
-        long omitted = activeGoals.stream()
-                .filter(goal -> currentGoalId == null || !currentGoalId.equals(goal.getId()))
-                .count() - otherGoals.size();
-        if (omitted > 0) {
-            sb.append("- ... ").append(omitted).append(" more active goals omitted from prompt\n");
-        }
-    }
-
-    private void appendCurrentTask(StringBuilder sb, AutoTask task, String goalTitle) {
-        sb.append("\n## Current Task\n");
-        sb.append(String.format("**%s** (goal: %s)%n", task.getTitle(), goalTitle));
-        sb.append("Status: ").append(task.getStatus()).append("\n");
-        appendField(sb, "Details", task.getDescription(), AUTO_CONTEXT_FIELD_MAX_CHARS);
-        appendField(sb, "Prompt", task.getPrompt(), AUTO_CONTEXT_FIELD_MAX_CHARS);
-        appendReflectionTier(sb, task.getReflectionModelTier(), task.isReflectionTierPriority());
-        appendField(sb, "Recovery strategy", task.getReflectionStrategy(), AUTO_CONTEXT_FIELD_MAX_CHARS);
-        if (task.isReflectionRequired()) {
-            sb.append("Reflection required after repeated failures.\n");
-        }
-    }
-
-    private List<DiaryEntry> selectRelevantDiary(String goalId, String taskId, String relevanceText) {
-        List<DiaryEntry> recentDiary = getRecentDiary(AUTO_CONTEXT_DIARY_LOOKBACK);
-        List<ScoredDiaryEntry> scored = new ArrayList<>();
-        for (int index = 0; index < recentDiary.size(); index++) {
-            DiaryEntry entry = recentDiary.get(index);
-            int score = scoreDiary(entry, goalId, taskId, relevanceText) + index;
-            if (score > 0) {
-                scored.add(new ScoredDiaryEntry(entry, index, score));
-            }
-        }
-        List<ScoredDiaryEntry> selected = scored.stream()
-                .sorted(Comparator.comparingInt(ScoredDiaryEntry::score).reversed()
-                        .thenComparing(ScoredDiaryEntry::index, Comparator.reverseOrder()))
-                .limit(AUTO_CONTEXT_MAX_DIARY_ENTRIES)
-                .sorted(Comparator.comparingInt(ScoredDiaryEntry::index))
-                .toList();
-        if (!selected.isEmpty()) {
-            return selected.stream().map(ScoredDiaryEntry::entry).toList();
-        }
-        int fromIndex = Math.max(0, recentDiary.size() - AUTO_CONTEXT_MAX_DIARY_ENTRIES);
-        return recentDiary.subList(fromIndex, recentDiary.size());
-    }
-
-    private void appendRelevantDiary(StringBuilder sb, List<DiaryEntry> diaryEntries) {
-        if (diaryEntries.isEmpty()) {
-            return;
-        }
-        sb.append("\n## Relevant Diary (").append(diaryEntries.size()).append(" entries)\n");
-        DateTimeFormatter timeFormat = DateTimeFormatter.ofPattern("HH:mm")
-                .withZone(ZoneOffset.UTC);
-        for (DiaryEntry entry : diaryEntries) {
-            sb.append("- [").append(timeFormat.format(entry.getTimestamp())).append("] ");
-            sb.append(entry.getType()).append(": ");
-            sb.append(truncate(entry.getContent(), AUTO_CONTEXT_DIARY_MAX_CHARS)).append("\n");
-        }
-        sb.append("Older or unrelated diary entries are intentionally omitted from the system prompt.\n");
-    }
-
-    private int scoreDiary(DiaryEntry entry, String goalId, String taskId, String relevanceText) {
-        if (entry == null) {
-            return 0;
-        }
-        int score = 0;
-        if (taskId != null && !taskId.isBlank() && taskId.equals(entry.getTaskId())) {
-            score += 100;
-        }
-        if (goalId != null && !goalId.isBlank() && goalId.equals(entry.getGoalId())) {
-            score += 60;
-        }
-        score += scoreText(entry.getContent(), relevanceText);
-        return score;
-    }
-
-    private String buildAutoRelevanceText(Goal goal, AutoTask task) {
-        StringBuilder sb = new StringBuilder();
-        if (goal != null) {
-            sb.append(goalSearchText(goal)).append(' ');
-        }
-        if (task != null) {
-            appendSearchText(sb, task.getTitle());
-            appendSearchText(sb, task.getDescription());
-            appendSearchText(sb, task.getPrompt());
-            appendSearchText(sb, task.getReflectionStrategy());
-        }
-        return sb.toString();
-    }
-
-    private String goalSearchText(Goal goal) {
-        if (goal == null) {
-            return "";
-        }
-        StringBuilder sb = new StringBuilder();
-        appendSearchText(sb, goal.getTitle());
-        appendSearchText(sb, goal.getDescription());
-        appendSearchText(sb, goal.getPrompt());
-        appendSearchText(sb, goal.getReflectionStrategy());
-        return sb.toString();
-    }
-
-    private int scoreText(String text, String relevanceText) {
-        if (StringValueSupport.isBlank(text) || StringValueSupport.isBlank(relevanceText)) {
-            return 0;
-        }
-        Set<String> terms = tokenize(relevanceText);
-        if (terms.isEmpty()) {
-            return 0;
-        }
-        Set<String> textTerms = tokenize(text);
-        int score = 0;
-        for (String term : terms) {
-            if (textTerms.contains(term)) {
-                score += 6;
-            }
-        }
-        return score;
-    }
-
-    private Set<String> tokenize(String value) {
-        if (StringValueSupport.isBlank(value)) {
-            return Set.of();
-        }
-        Set<String> terms = new LinkedHashSet<>();
-        for (String token : value.toLowerCase(Locale.ROOT).split("[^\\p{L}\\p{N}_-]+")) {
-            if (token.length() >= 3) {
-                terms.add(token);
-            }
-        }
-        return terms;
-    }
-
-    private void appendSearchText(StringBuilder sb, String value) {
-        if (!StringValueSupport.isBlank(value)) {
-            sb.append(value).append(' ');
-        }
-    }
-
-    private record ScoredDiaryEntry(DiaryEntry entry, int index, int score) {
-    }
-
-    private void appendReflectionTier(StringBuilder sb, String reflectionModelTier, boolean reflectionTierPriority) {
-        if (reflectionModelTier == null || reflectionModelTier.isBlank()) {
-            return;
-        }
-        sb.append("Reflection tier: ").append(reflectionModelTier)
-                .append(reflectionTierPriority ? " (priority)" : " (default)")
-                .append("\n");
-    }
-
-    private void appendField(StringBuilder sb, String label, String value, int maxChars) {
-        if (value == null || value.isBlank()) {
-            return;
-        }
-        sb.append(label).append(": ").append(truncate(value, maxChars)).append("\n");
-    }
-
-    private String truncate(String value, int maxChars) {
-        if (value == null || value.length() <= maxChars) {
-            return value;
-        }
-        return value.substring(0, Math.max(0, maxChars - 18)).stripTrailing() + " ... [truncated]";
-    }
-
-    // ==================== Persistence ====================
-
-    private void saveState(boolean enabled) {
-        try {
-            String json = objectMapper.writeValueAsString(Map.of("enabled", enabled));
-            storagePort.putText(AUTO_DIR, "state.json", json).join();
-        } catch (Exception e) {
-            log.error("[AutoMode] Failed to save state", e);
-        }
-    }
-
-    private void saveGoals(List<Goal> goals) {
-        try {
-            String json = objectMapper.writeValueAsString(goals);
-            storagePort.putText(AUTO_DIR, "goals.json", json).join();
-            goalsCache = goals;
-        } catch (Exception e) {
-            log.error("[AutoMode] Failed to save goals", e);
-        }
-    }
-
-    private List<Goal> loadGoals() {
-        try {
-            String json = storagePort.getText(AUTO_DIR, "goals.json").join();
-            if (json != null && !json.isBlank()) {
-                return new ArrayList<>(objectMapper.readValue(json, GOAL_LIST_TYPE_REF));
-            }
-        } catch (IOException | RuntimeException e) { // NOSONAR - intentionally catch all for fallback
-            log.debug("[AutoMode] No goals found or failed to parse: {}", e.getMessage());
-        }
-        return new ArrayList<>();
-    }
-
-    /**
-     * Load enabled state from storage. Called externally by scheduler.
-     */
     public void loadState() {
         try {
-            String json = storagePort.getText(AUTO_DIR, "state.json").join();
+            String json = storagePort.getText("auto", "state.json").join();
             if (json != null) {
                 @SuppressWarnings("unchecked")
                 Map<String, Object> state = objectMapper.readValue(json, Map.class);
                 enabled = Boolean.TRUE.equals(state.get("enabled"));
             }
             log.info("[AutoMode] Loaded state: enabled={}", enabled);
-        } catch (IOException | RuntimeException e) {
-            log.debug("[AutoMode] Failed to load state: {}", e.getMessage());
+        } catch (IOException | RuntimeException exception) {
+            log.debug("[AutoMode] Failed to load state: {}", exception.getMessage());
         }
     }
 
-    /**
-     * Find the goal that contains a given task.
-     */
     public Optional<Goal> findGoalForTask(String taskId) {
-        return getGoals().stream()
-                .filter(g -> g.getTasks().stream().anyMatch(t -> t.getId().equals(taskId)))
-                .findFirst();
+        return sessionScopedGoalService.findGoalForTask(requireCurrentSessionId(), taskId);
     }
 
-    private Goal resolveTaskGoal(String goalId) {
-        if (StringValueSupport.isBlank(goalId)) {
-            return getOrCreateInboxGoal();
+    public Optional<Goal> findGoalForTask(String sessionId, String taskId) {
+        return sessionScopedGoalService.findGoalForTask(sessionId, taskId);
+    }
+
+    public void deleteSessionGoals(String sessionId) {
+        sessionScopedGoalService.replaceGoals(sessionId, List.of());
+    }
+
+    public List<ScheduledTask> getScheduledTasks() {
+        return persistentScheduledTaskService.getScheduledTasks();
+    }
+
+    public Optional<ScheduledTask> getScheduledTask(String scheduledTaskId) {
+        return persistentScheduledTaskService.getScheduledTask(scheduledTaskId);
+    }
+
+    public ScheduledTask createScheduledTask(String title, String description, String prompt,
+            String reflectionModelTier, boolean reflectionTierPriority) {
+        return persistentScheduledTaskService.createScheduledTask(title, description, prompt, reflectionModelTier,
+                reflectionTierPriority);
+    }
+
+    public ScheduledTask createScheduledTask(
+            String title,
+            String description,
+            String prompt,
+            String reflectionModelTier,
+            boolean reflectionTierPriority,
+            ScheduledTask.ExecutionMode executionMode,
+            String shellCommand,
+            String shellWorkingDirectory) {
+        return persistentScheduledTaskService.createScheduledTask(
+                title,
+                description,
+                prompt,
+                reflectionModelTier,
+                reflectionTierPriority,
+                executionMode,
+                shellCommand,
+                shellWorkingDirectory);
+    }
+
+    public ScheduledTask updateScheduledTask(String scheduledTaskId, String title, String description, String prompt,
+            String reflectionModelTier, Boolean reflectionTierPriority) {
+        return persistentScheduledTaskService.updateScheduledTask(scheduledTaskId, title, description, prompt,
+                reflectionModelTier, reflectionTierPriority);
+    }
+
+    public ScheduledTask updateScheduledTask(
+            String scheduledTaskId,
+            String title,
+            String description,
+            String prompt,
+            String reflectionModelTier,
+            Boolean reflectionTierPriority,
+            ScheduledTask.ExecutionMode executionMode,
+            String shellCommand,
+            String shellWorkingDirectory) {
+        return persistentScheduledTaskService.updateScheduledTask(
+                scheduledTaskId,
+                title,
+                description,
+                prompt,
+                reflectionModelTier,
+                reflectionTierPriority,
+                executionMode,
+                shellCommand,
+                shellWorkingDirectory);
+    }
+
+    public void deleteScheduledTask(String scheduledTaskId) {
+        persistentScheduledTaskService.deleteScheduledTask(scheduledTaskId);
+    }
+
+    public void recordScheduledTaskFailure(String scheduledTaskId, String failureSummary, String failureFingerprint,
+            String activeSkillName) {
+        persistentScheduledTaskService.recordFailure(scheduledTaskId, failureSummary, failureFingerprint,
+                activeSkillName, getReflectionFailureThreshold());
+    }
+
+    public void recordScheduledTaskSuccess(String scheduledTaskId, String activeSkillName) {
+        persistentScheduledTaskService.recordSuccess(scheduledTaskId, activeSkillName);
+    }
+
+    public void applyScheduledTaskReflectionResult(String scheduledTaskId, String reflectionStrategy) {
+        persistentScheduledTaskService.applyReflectionResult(scheduledTaskId, reflectionStrategy);
+    }
+
+    public boolean shouldTriggerScheduledTaskReflection(String scheduledTaskId) {
+        return persistentScheduledTaskService.getScheduledTask(scheduledTaskId)
+                .map(ScheduledTask::isReflectionRequired)
+                .orElse(false);
+    }
+
+    public TaskReflectionState resolveScheduledTaskReflectionState(String scheduledTaskId) {
+        ScheduledTask task = persistentScheduledTaskService.getScheduledTask(scheduledTaskId)
+                .orElseThrow(() -> new IllegalArgumentException("Scheduled task not found: " + scheduledTaskId));
+        return new TaskReflectionState(
+                null,
+                false,
+                task.getReflectionModelTier(),
+                task.isReflectionTierPriority(),
+                task.getLastUsedSkillName(),
+                task.getConsecutiveFailureCount(),
+                task.isReflectionRequired(),
+                task.getLastFailureSummary(),
+                task.getLastFailureFingerprint(),
+                task.getReflectionStrategy());
+    }
+
+    public String resolveScheduledTaskReflectionTier(String scheduledTaskId, Skill skill) {
+        TaskReflectionState state = resolveScheduledTaskReflectionState(scheduledTaskId);
+        if (state.taskReflectionModelTier() != null && !state.taskReflectionModelTier().isBlank()
+                && state.taskReflectionTierPriority()) {
+            return state.taskReflectionModelTier();
         }
-        return getGoal(goalId)
-                .orElseThrow(() -> new IllegalArgumentException(GOAL_NOT_FOUND + goalId));
+        if (skill != null && skill.getReflectionTier() != null && !skill.getReflectionTier().isBlank()) {
+            return skill.getReflectionTier();
+        }
+        if (state.taskReflectionModelTier() != null && !state.taskReflectionModelTier().isBlank()) {
+            return state.taskReflectionModelTier();
+        }
+        return runtimeConfigService.getAutoReflectionModelTier();
     }
 
-    private void validateTaskCapacity(Goal goal) {
-        if (goal.getTasks().size() >= MAX_TASKS_PER_GOAL) {
-            throw new IllegalStateException("Maximum tasks per goal reached: " + MAX_TASKS_PER_GOAL);
+    public boolean isScheduledTaskReflectionTierPriority(String scheduledTaskId) {
+        TaskReflectionState state = resolveScheduledTaskReflectionState(scheduledTaskId);
+        if (state.taskReflectionModelTier() != null && !state.taskReflectionModelTier().isBlank()) {
+            return state.taskReflectionTierPriority();
+        }
+        return runtimeConfigService.isAutoReflectionTierPriority();
+    }
+
+    private TaskReflectionState toTaskReflectionState(SessionScopedGoalService.TaskReflectionStateSnapshot snapshot) {
+        return new TaskReflectionState(
+                snapshot.goalReflectionModelTier(),
+                snapshot.goalReflectionTierPriority(),
+                snapshot.taskReflectionModelTier(),
+                snapshot.taskReflectionTierPriority(),
+                snapshot.lastUsedSkillName(),
+                snapshot.consecutiveFailureCount(),
+                snapshot.reflectionRequired(),
+                snapshot.lastFailureSummary(),
+                snapshot.lastFailureFingerprint(),
+                snapshot.reflectionStrategy());
+    }
+
+    private void saveState(boolean enabledValue) {
+        try {
+            String json = objectMapper.writeValueAsString(Map.of("enabled", enabledValue));
+            storagePort.putText("auto", "state.json", json).join();
+        } catch (Exception exception) {
+            log.error("[AutoMode] Failed to save state", exception);
         }
     }
 
-    private int nextTaskOrder(Goal goal) {
-        return goal.getTasks().stream()
-                .mapToInt(AutoTask::getOrder)
-                .max()
-                .orElse(0) + 1;
-    }
-
-    private void rebalanceTaskOrders(Goal goal) {
-        List<AutoTask> orderedTasks = new ArrayList<>(goal.getTasks());
-        orderedTasks.sort(Comparator.comparingInt(AutoTask::getOrder)
-                .thenComparing(AutoTask::getCreatedAt, Comparator.nullsLast(Comparator.naturalOrder())));
-        for (int index = 0; index < orderedTasks.size(); index++) {
-            orderedTasks.get(index).setOrder(index + 1);
-        }
-    }
-
-    private Optional<TaskLocation> findTaskLocation(String taskId) {
-        for (Goal goal : getGoals()) {
-            for (AutoTask task : goal.getTasks()) {
-                if (task.getId().equals(taskId)) {
-                    return Optional.of(new TaskLocation(goal, task));
-                }
+    private String requireCurrentSessionId() {
+        AgentContext context = AgentContextHolder.get();
+        if (context == null || context.getSession() == null || context.getSession().getId() == null) {
+            if (fallbackSessionId != null) {
+                return fallbackSessionId;
             }
+            throw new IllegalStateException("No current session available for auto mode operation");
         }
-        return Optional.empty();
+        return context.getSession().getId();
     }
 
-    private Optional<TaskReflectionState> getTaskReflectionState(String goalId, String taskId) {
-        if (StringValueSupport.isBlank(goalId)) {
-            return Optional.empty();
-        }
-
-        return getGoal(goalId).flatMap(goal -> {
-            if (StringValueSupport.isBlank(taskId)) {
-                return Optional.of(new TaskReflectionState(
-                        goal.getReflectionModelTier(),
-                        goal.isReflectionTierPriority(),
-                        null,
-                        false,
-                        goal.getLastUsedSkillName(),
-                        goal.getConsecutiveFailureCount(),
-                        goal.isReflectionRequired(),
-                        goal.getLastFailureSummary(),
-                        goal.getLastFailureFingerprint(),
-                        goal.getReflectionStrategy()));
-            }
-
-            return goal.getTasks().stream()
-                    .filter(item -> taskId.equals(item.getId()))
-                    .findFirst()
-                    .map(task -> new TaskReflectionState(
-                            goal.getReflectionModelTier(),
-                            goal.isReflectionTierPriority(),
-                            task.getReflectionModelTier(),
-                            task.isReflectionTierPriority(),
-                            task.getLastUsedSkillName(),
-                            task.getConsecutiveFailureCount(),
-                            task.isReflectionRequired(),
-                            task.getLastFailureSummary(),
-                            task.getLastFailureFingerprint(),
-                            task.getReflectionStrategy()));
-        });
+    public SessionScopedGoalService getSessionScopedGoalService() {
+        return sessionScopedGoalService;
     }
 
-    private String normalizeOptionalValue(String value) {
-        if (StringValueSupport.isBlank(value)) {
-            return null;
-        }
-        return value.trim();
-    }
-
-    private String requireTitle(String value, String message) {
-        if (StringValueSupport.isBlank(value)) {
-            throw new IllegalArgumentException(message);
-        }
-        return value.trim();
-    }
-
-    private void resetTaskFailureState(AutoTask task) {
-        task.setConsecutiveFailureCount(0);
-        task.setReflectionRequired(false);
-        task.setLastFailureSummary(null);
-        task.setLastFailureFingerprint(null);
-        task.setLastFailureAt(null);
-    }
-
-    private void resetGoalFailureState(Goal goal) {
-        goal.setConsecutiveFailureCount(0);
-        goal.setReflectionRequired(false);
-        goal.setLastFailureSummary(null);
-        goal.setLastFailureFingerprint(null);
-        goal.setLastFailureAt(null);
-    }
-
-    private String buildFailureFingerprint(String failureSummary) {
-        if (StringValueSupport.isBlank(failureSummary)) {
-            return null;
-        }
-        return failureSummary.trim().replaceAll("\\s+", " ").toLowerCase(Locale.ROOT);
+    public PersistentScheduledTaskService getPersistentScheduledTaskService() {
+        return persistentScheduledTaskService;
     }
 
     public record TaskReflectionState(
@@ -1173,8 +610,5 @@ public class AutoModeService {
             String lastFailureSummary,
             String lastFailureFingerprint,
             String reflectionStrategy) {
-    }
-
-    private record TaskLocation(Goal goal, AutoTask task) {
     }
 }

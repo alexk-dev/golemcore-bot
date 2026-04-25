@@ -11,8 +11,6 @@ import me.golemcore.bot.domain.model.CompactionReason;
 import me.golemcore.bot.domain.model.CompactionResult;
 import me.golemcore.bot.domain.model.DiaryEntry;
 import me.golemcore.bot.domain.model.Goal;
-import me.golemcore.bot.domain.model.Plan;
-import me.golemcore.bot.domain.model.PlanStep;
 import me.golemcore.bot.domain.model.ScheduleEntry;
 import me.golemcore.bot.domain.model.SessionIdentity;
 import me.golemcore.bot.domain.model.Skill;
@@ -21,7 +19,6 @@ import me.golemcore.bot.domain.model.UsageStats;
 import me.golemcore.bot.domain.service.AutoModeService;
 import me.golemcore.bot.domain.service.CompactionOrchestrationService;
 import me.golemcore.bot.domain.service.DelayedActionPolicyService;
-import me.golemcore.bot.domain.service.PlanExecutionService;
 import me.golemcore.bot.domain.service.PlanService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.ScheduleService;
@@ -38,7 +35,6 @@ import org.springframework.context.ApplicationEventPublisher;
 
 import java.time.Duration;
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -51,6 +47,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.RETURNS_DEFAULTS;
 import static org.mockito.Mockito.any;
+import static org.mockito.Mockito.anyBoolean;
 import static org.mockito.Mockito.anyInt;
 import static org.mockito.Mockito.anyString;
 import static org.mockito.Mockito.eq;
@@ -84,9 +81,8 @@ class CommandRouterTest {
     private static final String TIER_SMART = "smart";
     private static final String SUB_STATUS = "status";
     private static final String SUB_OFF = "off";
-    private static final String SUB_APPROVE = "approve";
-    private static final String SUB_CANCEL = "cancel";
-    private static final String SUB_RESUME = "resume";
+    private static final SessionIdentity TELEGRAM_SESSION_IDENTITY = new SessionIdentity(CHANNEL_TYPE_TELEGRAM,
+            CHAT_ID);
 
     private SkillComponent skillComponent;
     private SessionPort sessionService;
@@ -99,7 +95,6 @@ class CommandRouterTest {
     private ModelSelectionCommandService modelSelectionCommandService;
     private ModelSelectionCommandHandler modelSelectionCommandHandler;
     private PlanService planService;
-    private PlanExecutionService planExecutionService;
     private PlanCommandService planCommandService;
     private PlanCommandHandler planCommandHandler;
     private RuntimeConfigService runtimeConfigService;
@@ -146,9 +141,18 @@ class CommandRouterTest {
         });
 
         autoModeService = mock(AutoModeService.class);
+        when(autoModeService.getGoals(SESSION_ID)).thenAnswer(invocation -> autoModeService.getGoals());
+        when(autoModeService.getActiveGoals(SESSION_ID)).thenAnswer(invocation -> autoModeService.getActiveGoals());
+        when(autoModeService.getNextPendingTask(SESSION_ID))
+                .thenAnswer(invocation -> autoModeService.getNextPendingTask());
+        when(autoModeService.getRecentDiary(eq(SESSION_ID), anyInt()))
+                .thenAnswer(invocation -> autoModeService.getRecentDiary(invocation.getArgument(1, Integer.class)));
+        when(autoModeService.createGoal(eq(SESSION_ID), anyString(), any(), any(), any(), anyBoolean()))
+                .thenAnswer(invocation -> autoModeService.createGoal(
+                        invocation.getArgument(1, String.class),
+                        invocation.getArgument(2, String.class)));
         modelSelectionCommandService = mock(ModelSelectionCommandService.class);
         planService = mock(PlanService.class);
-        planExecutionService = mock(PlanExecutionService.class);
         runtimeConfigService = mock(RuntimeConfigService.class);
         scheduleService = mock(ScheduleService.class);
         delayedActionPolicyService = mock(DelayedActionPolicyService.class);
@@ -166,15 +170,13 @@ class CommandRouterTest {
         modelSelectionCommandHandler = new ModelSelectionCommandHandler(
                 modelSelectionCommandService,
                 preferencesService);
-        planCommandService = new PlanCommandService(planService, planExecutionService, runtimeConfigService);
+        planCommandService = new PlanCommandService(planService);
         planCommandHandler = new PlanCommandHandler(planCommandService, preferencesService);
         runCoordinator = mock(SessionRunCoordinator.class);
 
         ToolComponent tool1 = mockTool(TOOL_FILESYSTEM, "File system operations", true);
         ToolComponent tool2 = mockTool(TOOL_SHELL, "Shell command execution", true);
         ToolComponent tool3 = mockTool("disabled-tool", "Disabled tool", false);
-
-        when(runtimeConfigService.getPlanMaxPlans()).thenReturn(5);
 
         buildPropertiesProvider = mock(ObjectProvider.class);
 
@@ -220,7 +222,6 @@ class CommandRouterTest {
         assertTrue(router.hasCommand("tasks"));
         assertTrue(router.hasCommand(CMD_SCHEDULE));
         assertTrue(router.hasCommand("plan"));
-        assertTrue(router.hasCommand("plans"));
         assertTrue(router.hasCommand("stop"));
         assertFalse(router.hasCommand("unknown"));
         assertFalse(router.hasCommand("settings"));
@@ -229,7 +230,7 @@ class CommandRouterTest {
     @Test
     void listCommands() {
         List<CommandPort.CommandDefinition> commands = router.listCommands();
-        assertEquals(11, commands.size());
+        assertEquals(12, commands.size());
     }
 
     @Test
@@ -329,15 +330,12 @@ class CommandRouterTest {
 
     @Test
     void resetCommand() throws Exception {
-        when(planService.isFeatureEnabled()).thenReturn(true);
         when(planService.isPlanModeActive()).thenReturn(true);
-        when(planService.getActivePlanIdOptional()).thenReturn(Optional.of("plan-1"));
 
         CommandPort.CommandResult result = router.execute("reset", List.of(), CTX).get();
 
         assertTrue(result.success());
         verify(sessionService).clearMessages(SESSION_ID);
-        verify(planService).cancelPlan("plan-1");
         verify(planService).deactivatePlanMode();
     }
 
@@ -542,17 +540,6 @@ class CommandRouterTest {
         assertTrue(result.output().contains("command.goals.empty"));
     }
 
-    @Test
-    void goalLimitExceeded() throws Exception {
-        when(autoModeService.isFeatureEnabled()).thenReturn(true);
-        when(autoModeService.createGoal(anyString(), any()))
-                .thenThrow(new IllegalStateException("Max goals reached"));
-
-        CommandPort.CommandResult result = router.execute(CMD_GOAL, List.of("Another", CMD_GOAL), CTX).get();
-        assertFalse(result.success());
-        assertTrue(result.output().contains("command.goal.limit"));
-    }
-
     // ===== Tasks command =====
 
     @Test
@@ -661,42 +648,25 @@ class CommandRouterTest {
         assertTrue(commands.stream().anyMatch(c -> CMD_GOALS.equals(c.name())));
         assertTrue(commands.stream().anyMatch(c -> CMD_DIARY.equals(c.name())));
         assertTrue(commands.stream().anyMatch(c -> CMD_SCHEDULE.equals(c.name())));
-        assertEquals(17, commands.size()); // 11 base + 6 auto mode
+        assertEquals(18, commands.size()); // 11 base + 6 auto mode + /plan
     }
 
     @Test
     void listCommandsIncludesPlanWhenEnabled() {
-        when(planService.isFeatureEnabled()).thenReturn(true);
-
         List<CommandPort.CommandDefinition> commands = router.listCommands();
         assertTrue(commands.stream().anyMatch(c -> "plan".equals(c.name())));
-        assertTrue(commands.stream().anyMatch(c -> "plans".equals(c.name())));
-        assertEquals(13, commands.size()); // 11 base + 2 plan
+        assertTrue(commands.stream().noneMatch(c -> "plans".equals(c.name())));
+        assertEquals(12, commands.size()); // 11 base + /plan
     }
 
     // ===== Plan commands =====
 
     private static final String CMD_PLAN = "plan";
-    private static final String CMD_PLANS = "plans";
-    private static final String PLAN_ID_FULL = "plan-001-full-uuid-here";
-    private static final String PLAN_ID_SHORT = "plan-001";
-
-    private Plan buildPlan(String id, Plan.PlanStatus status, List<PlanStep> steps, String title) {
-        return Plan.builder()
-                .id(id)
-                .title(title)
-                .status(status)
-                .steps(new ArrayList<>(steps))
-                .chatId(CHAT_ID)
-                .createdAt(Instant.now())
-                .updatedAt(Instant.now())
-                .build();
-    }
 
     @Test
     void planNoArgsShowsStatus() throws Exception {
         when(planService.isFeatureEnabled()).thenReturn(true);
-        when(planService.isPlanModeActive()).thenReturn(true);
+        when(planService.isPlanModeActive(TELEGRAM_SESSION_IDENTITY)).thenReturn(true);
 
         CommandPort.CommandResult result = router.execute(CMD_PLAN, List.of(), CTX_WITH_CHANNEL).get();
         assertTrue(result.success());
@@ -715,23 +685,14 @@ class CommandRouterTest {
     }
 
     @Test
-    void planReturnsNotAvailableWhenDisabled() throws Exception {
-        when(planService.isFeatureEnabled()).thenReturn(false);
-
-        CommandPort.CommandResult result = router.execute(CMD_PLAN, List.of("on"), CTX_WITH_CHANNEL).get();
-        assertTrue(result.success());
-        assertTrue(result.output().contains("command.plan.not-available"));
-    }
-
-    @Test
     void planOnActivatesPlanMode() throws Exception {
         when(planService.isFeatureEnabled()).thenReturn(true);
-        when(planService.isPlanModeActive()).thenReturn(false);
+        when(planService.isPlanModeActive(TELEGRAM_SESSION_IDENTITY)).thenReturn(false);
 
         CommandPort.CommandResult result = router.execute(CMD_PLAN, List.of("on"), CTX_WITH_CHANNEL).get();
         assertTrue(result.success());
         assertTrue(result.output().contains("command.plan.enabled"));
-        verify(planService).activatePlanMode(CHAT_ID, null);
+        verify(planService).activatePlanMode(TELEGRAM_SESSION_IDENTITY, CHAT_ID, null);
     }
 
     @Test
@@ -749,20 +710,39 @@ class CommandRouterTest {
     }
 
     @Test
-    void planOnWithTier() throws Exception {
+    void planOnUsesConversationKeyForSessionIdentityAndTransportForReplies() throws Exception {
+        SessionIdentity conversationIdentity = new SessionIdentity(CHANNEL_TYPE_TELEGRAM, "conv-1");
+        Map<String, Object> context = Map.of(
+                "sessionId", "telegram:conv-1",
+                "channelType", CHANNEL_TYPE_TELEGRAM,
+                "chatId", "transport-1",
+                "sessionChatId", "transport-1",
+                "conversationKey", "conv-1",
+                "transportChatId", "transport-1");
         when(planService.isFeatureEnabled()).thenReturn(true);
-        when(planService.isPlanModeActive()).thenReturn(false);
+        when(planService.isPlanModeActive(conversationIdentity)).thenReturn(false);
+
+        CommandPort.CommandResult result = router.execute(CMD_PLAN, List.of("on"), context).get();
+
+        assertTrue(result.success());
+        verify(planService).activatePlanMode(conversationIdentity, "transport-1", null);
+    }
+
+    @Test
+    void planOnIgnoresTierArgument() throws Exception {
+        when(planService.isFeatureEnabled()).thenReturn(true);
+        when(planService.isPlanModeActive(TELEGRAM_SESSION_IDENTITY)).thenReturn(false);
 
         CommandPort.CommandResult result = router.execute(CMD_PLAN, List.of("on", TIER_SMART), CTX_WITH_CHANNEL).get();
         assertTrue(result.success());
-        assertTrue(result.output().contains("tier: " + TIER_SMART));
-        verify(planService).activatePlanMode(CHAT_ID, TIER_SMART);
+        assertFalse(result.output().contains("tier: " + TIER_SMART));
+        verify(planService).activatePlanMode(TELEGRAM_SESSION_IDENTITY, CHAT_ID, null);
     }
 
     @Test
     void planOnAlreadyActive() throws Exception {
         when(planService.isFeatureEnabled()).thenReturn(true);
-        when(planService.isPlanModeActive()).thenReturn(true);
+        when(planService.isPlanModeActive(TELEGRAM_SESSION_IDENTITY)).thenReturn(true);
 
         CommandPort.CommandResult result = router.execute(CMD_PLAN, List.of("on"), CTX_WITH_CHANNEL).get();
         assertTrue(result.success());
@@ -770,248 +750,34 @@ class CommandRouterTest {
     }
 
     @Test
-    void planOnLimitExceeded() throws Exception {
-        when(planService.isFeatureEnabled()).thenReturn(true);
-        when(planService.isPlanModeActive()).thenReturn(false);
-        org.mockito.Mockito.doThrow(new IllegalStateException("Max reached"))
-                .when(planService).activatePlanMode(anyString(), any());
-
-        CommandPort.CommandResult result = router.execute(CMD_PLAN, List.of("on"), CTX_WITH_CHANNEL).get();
-        assertFalse(result.success());
-        assertTrue(result.output().contains("command.plan.limit"));
-    }
-
-    @Test
     void planOffDeactivatesWhenActive() throws Exception {
         when(planService.isFeatureEnabled()).thenReturn(true);
-        when(planService.isPlanModeActive()).thenReturn(true);
+        when(planService.isPlanModeActive(TELEGRAM_SESSION_IDENTITY)).thenReturn(true);
 
         CommandPort.CommandResult result = router.execute(CMD_PLAN, List.of(SUB_OFF), CTX_WITH_CHANNEL).get();
         assertTrue(result.success());
         assertTrue(result.output().contains("command.plan.disabled"));
-        verify(planService).deactivatePlanMode();
+        verify(planService).deactivatePlanMode(TELEGRAM_SESSION_IDENTITY);
     }
 
     @Test
     void planDoneDeactivatesPlanMode() throws Exception {
         when(planService.isFeatureEnabled()).thenReturn(true);
-        when(planService.isPlanModeActive()).thenReturn(true);
-        Plan plan = buildPlan(PLAN_ID_FULL, Plan.PlanStatus.COLLECTING, List.of(), null);
-        when(planService.getActivePlan()).thenReturn(Optional.of(plan));
+        when(planService.isPlanModeActive(TELEGRAM_SESSION_IDENTITY)).thenReturn(true);
 
         CommandPort.CommandResult result = router.execute(CMD_PLAN, List.of("done"), CTX_WITH_CHANNEL).get();
         assertTrue(result.success());
-        verify(planService, never()).cancelPlan(any());
-        verify(planService).deactivatePlanMode();
+        verify(planService).completePlanMode(TELEGRAM_SESSION_IDENTITY);
     }
 
     @Test
     void planOffWhenNotActive() throws Exception {
         when(planService.isFeatureEnabled()).thenReturn(true);
-        when(planService.isPlanModeActive()).thenReturn(false);
+        when(planService.isPlanModeActive(TELEGRAM_SESSION_IDENTITY)).thenReturn(false);
 
         CommandPort.CommandResult result = router.execute(CMD_PLAN, List.of(SUB_OFF), CTX_WITH_CHANNEL).get();
         assertTrue(result.success());
         assertTrue(result.output().contains("command.plan.not-active"));
-    }
-
-    @Test
-    void planApproveWithExplicitId() throws Exception {
-        when(planService.isFeatureEnabled()).thenReturn(true);
-
-        CommandPort.CommandResult result = router.execute(CMD_PLAN,
-                List.of(SUB_APPROVE, PLAN_ID_FULL), CTX_WITH_CHANNEL).get();
-        assertTrue(result.success());
-        assertTrue(result.output().contains("command.plan.approved"));
-        verify(planService).approvePlan(PLAN_ID_FULL);
-        verify(planExecutionService).executePlan(PLAN_ID_FULL);
-    }
-
-    @Test
-    void planApproveAutoFindsReadyPlan() throws Exception {
-        when(planService.isFeatureEnabled()).thenReturn(true);
-        when(planService.getPlans()).thenReturn(List.of(
-                buildPlan(PLAN_ID_FULL, Plan.PlanStatus.READY, List.of(), null)));
-
-        CommandPort.CommandResult result = router.execute(CMD_PLAN, List.of(SUB_APPROVE), CTX_WITH_CHANNEL).get();
-        assertTrue(result.success());
-        verify(planService).approvePlan(PLAN_ID_FULL);
-    }
-
-    @Test
-    void planApproveNoReadyPlan() throws Exception {
-        when(planService.isFeatureEnabled()).thenReturn(true);
-        when(planService.getPlans()).thenReturn(List.of());
-
-        CommandPort.CommandResult result = router.execute(CMD_PLAN, List.of(SUB_APPROVE), CTX_WITH_CHANNEL).get();
-        assertFalse(result.success());
-        assertTrue(result.output().contains("command.plan.no-ready"));
-    }
-
-    @Test
-    void planApproveException() throws Exception {
-        when(planService.isFeatureEnabled()).thenReturn(true);
-        org.mockito.Mockito.doThrow(new IllegalStateException("Wrong status"))
-                .when(planService).approvePlan(PLAN_ID_FULL);
-
-        CommandPort.CommandResult result = router.execute(CMD_PLAN,
-                List.of(SUB_APPROVE, PLAN_ID_FULL), CTX_WITH_CHANNEL).get();
-        assertFalse(result.success());
-        assertTrue(result.output().contains("Wrong status"));
-    }
-
-    @Test
-    void planCancelWithExplicitId() throws Exception {
-        when(planService.isFeatureEnabled()).thenReturn(true);
-
-        CommandPort.CommandResult result = router.execute(CMD_PLAN,
-                List.of(SUB_CANCEL, PLAN_ID_FULL), CTX_WITH_CHANNEL).get();
-        assertTrue(result.success());
-        assertTrue(result.output().contains("command.plan.cancelled"));
-        verify(planService, never()).deactivatePlanMode();
-    }
-
-    @Test
-    void planCancelAutoFindsActivePlan() throws Exception {
-        when(planService.isFeatureEnabled()).thenReturn(true);
-        when(planService.getPlans()).thenReturn(List.of(
-                buildPlan(PLAN_ID_FULL, Plan.PlanStatus.COLLECTING, List.of(), null)));
-
-        CommandPort.CommandResult result = router.execute(CMD_PLAN, List.of(SUB_CANCEL), CTX_WITH_CHANNEL).get();
-        assertTrue(result.success());
-        verify(planService, never()).deactivatePlanMode();
-    }
-
-    @Test
-    void planCancelNoActivePlan() throws Exception {
-        when(planService.isFeatureEnabled()).thenReturn(true);
-        when(planService.getPlans()).thenReturn(List.of());
-
-        CommandPort.CommandResult result = router.execute(CMD_PLAN, List.of(SUB_CANCEL), CTX_WITH_CHANNEL).get();
-        assertFalse(result.success());
-        assertTrue(result.output().contains("command.plan.no-active-plan"));
-    }
-
-    @Test
-    void planCancelException() throws Exception {
-        when(planService.isFeatureEnabled()).thenReturn(true);
-        org.mockito.Mockito.doThrow(new IllegalArgumentException("Not found"))
-                .when(planService).cancelPlan(PLAN_ID_FULL);
-
-        CommandPort.CommandResult result = router.execute(CMD_PLAN,
-                List.of(SUB_CANCEL, PLAN_ID_FULL), CTX_WITH_CHANNEL).get();
-        assertFalse(result.success());
-        assertTrue(result.output().contains("Not found"));
-    }
-
-    @Test
-    void planResumeWithExplicitId() throws Exception {
-        when(planService.isFeatureEnabled()).thenReturn(true);
-
-        CommandPort.CommandResult result = router.execute(CMD_PLAN,
-                List.of(SUB_RESUME, PLAN_ID_FULL), CTX_WITH_CHANNEL).get();
-        assertTrue(result.success());
-        assertTrue(result.output().contains("command.plan.resumed"));
-        verify(planExecutionService).resumePlan(PLAN_ID_FULL);
-    }
-
-    @Test
-    void planResumeAutoFindsPartialPlan() throws Exception {
-        when(planService.isFeatureEnabled()).thenReturn(true);
-        when(planService.getPlans()).thenReturn(List.of(
-                buildPlan(PLAN_ID_FULL, Plan.PlanStatus.PARTIALLY_COMPLETED, List.of(), null)));
-
-        CommandPort.CommandResult result = router.execute(CMD_PLAN, List.of(SUB_RESUME), CTX_WITH_CHANNEL).get();
-        assertTrue(result.success());
-        verify(planExecutionService).resumePlan(PLAN_ID_FULL);
-    }
-
-    @Test
-    void planResumeNoPartialPlan() throws Exception {
-        when(planService.isFeatureEnabled()).thenReturn(true);
-        when(planService.getPlans()).thenReturn(List.of());
-
-        CommandPort.CommandResult result = router.execute(CMD_PLAN, List.of(SUB_RESUME), CTX_WITH_CHANNEL).get();
-        assertFalse(result.success());
-        assertTrue(result.output().contains("command.plan.no-partial"));
-    }
-
-    @Test
-    void planResumeException() throws Exception {
-        when(planService.isFeatureEnabled()).thenReturn(true);
-        org.mockito.Mockito.doThrow(new IllegalStateException("Bad state"))
-                .when(planExecutionService).resumePlan(PLAN_ID_FULL);
-
-        CommandPort.CommandResult result = router.execute(CMD_PLAN,
-                List.of(SUB_RESUME, PLAN_ID_FULL), CTX_WITH_CHANNEL).get();
-        assertFalse(result.success());
-        assertTrue(result.output().contains("Bad state"));
-    }
-
-    @Test
-    void planStatusWithExplicitId() throws Exception {
-        when(planService.isFeatureEnabled()).thenReturn(true);
-        Plan plan = buildPlan(PLAN_ID_FULL, Plan.PlanStatus.APPROVED,
-                List.of(PlanStep.builder().id("s1").toolName(TOOL_FILESYSTEM)
-                        .description("write file").order(0)
-                        .status(PlanStep.StepStatus.PENDING).build()),
-                null);
-        plan.setModelTier("smart");
-        when(planService.getPlan(PLAN_ID_FULL)).thenReturn(Optional.of(plan));
-
-        CommandPort.CommandResult result = router.execute(CMD_PLAN,
-                List.of(SUB_STATUS, PLAN_ID_FULL), CTX_WITH_CHANNEL).get();
-        assertTrue(result.success());
-        assertTrue(result.output().contains(PLAN_ID_SHORT));
-        assertTrue(result.output().contains("APPROVED"));
-        assertTrue(result.output().contains("Tier: smart"));
-        assertTrue(result.output().contains(TOOL_FILESYSTEM));
-    }
-
-    @Test
-    void planStatusAutoFindsActivePlan() throws Exception {
-        when(planService.isFeatureEnabled()).thenReturn(true);
-        when(planService.getPlans()).thenReturn(List.of(
-                buildPlan(PLAN_ID_FULL, Plan.PlanStatus.EXECUTING, List.of(), null)));
-        when(planService.getPlan(PLAN_ID_FULL)).thenReturn(Optional.of(
-                buildPlan(PLAN_ID_FULL, Plan.PlanStatus.EXECUTING, List.of(), null)));
-
-        CommandPort.CommandResult result = router.execute(CMD_PLAN, List.of(SUB_STATUS), CTX_WITH_CHANNEL).get();
-        assertTrue(result.success());
-    }
-
-    @Test
-    void planStatusFallbackToMostRecentPlan() throws Exception {
-        when(planService.isFeatureEnabled()).thenReturn(true);
-        // No active plan found
-        when(planService.getPlans()).thenReturn(List.of(
-                buildPlan(PLAN_ID_FULL, Plan.PlanStatus.COMPLETED, List.of(), null)));
-        when(planService.getPlan(PLAN_ID_FULL)).thenReturn(Optional.of(
-                buildPlan(PLAN_ID_FULL, Plan.PlanStatus.COMPLETED, List.of(), null)));
-
-        CommandPort.CommandResult result = router.execute(CMD_PLAN, List.of(SUB_STATUS), CTX_WITH_CHANNEL).get();
-        assertTrue(result.success());
-    }
-
-    @Test
-    void planStatusNoPlansAtAll() throws Exception {
-        when(planService.isFeatureEnabled()).thenReturn(true);
-        when(planService.getPlans()).thenReturn(List.of());
-
-        CommandPort.CommandResult result = router.execute(CMD_PLAN, List.of(SUB_STATUS), CTX_WITH_CHANNEL).get();
-        assertTrue(result.success());
-        assertTrue(result.output().contains("command.plans.empty"));
-    }
-
-    @Test
-    void planStatusNotFound() throws Exception {
-        when(planService.isFeatureEnabled()).thenReturn(true);
-        when(planService.getPlan("missing")).thenReturn(Optional.empty());
-
-        CommandPort.CommandResult result = router.execute(CMD_PLAN,
-                List.of(SUB_STATUS, "missing"), CTX_WITH_CHANNEL).get();
-        assertFalse(result.success());
-        assertTrue(result.output().contains("command.plan.not-found"));
     }
 
     @Test
@@ -1021,72 +787,6 @@ class CommandRouterTest {
         CommandPort.CommandResult result = router.execute(CMD_PLAN, List.of("invalid"), CTX_WITH_CHANNEL).get();
         assertTrue(result.success());
         assertTrue(result.output().contains("command.plan.usage"));
-    }
-
-    @Test
-    void plansShowsAllPlans() throws Exception {
-        when(planService.isFeatureEnabled()).thenReturn(true);
-        when(planService.getPlans()).thenReturn(List.of(
-                buildPlan(PLAN_ID_FULL, Plan.PlanStatus.COMPLETED,
-                        List.of(PlanStep.builder().id("s1").toolName("fs").order(0)
-                                .status(PlanStep.StepStatus.COMPLETED).build()),
-                        "My Plan"),
-                buildPlan("plan-002-full-uuid-here", Plan.PlanStatus.CANCELLED, List.of(), null)));
-
-        CommandPort.CommandResult result = router.execute(CMD_PLANS, List.of(), CTX).get();
-        assertTrue(result.success());
-        assertTrue(result.output().contains("command.plans.title"));
-        assertTrue(result.output().contains(PLAN_ID_SHORT));
-        assertTrue(result.output().contains("My Plan"));
-        assertTrue(result.output().contains("COMPLETED"));
-        assertTrue(result.output().contains("CANCELLED"));
-    }
-
-    @Test
-    void plansEmpty() throws Exception {
-        when(planService.isFeatureEnabled()).thenReturn(true);
-        when(planService.getPlans()).thenReturn(List.of());
-
-        CommandPort.CommandResult result = router.execute(CMD_PLANS, List.of(), CTX).get();
-        assertTrue(result.success());
-        assertTrue(result.output().contains("command.plans.empty"));
-    }
-
-    @Test
-    void plansNotAvailableWhenDisabled() throws Exception {
-        when(planService.isFeatureEnabled()).thenReturn(false);
-
-        CommandPort.CommandResult result = router.execute(CMD_PLANS, List.of(), CTX).get();
-        assertTrue(result.success());
-        assertTrue(result.output().contains("command.plan.not-available"));
-    }
-
-    @Test
-    void planStatusFormatsAllStepStatuses() throws Exception {
-        when(planService.isFeatureEnabled()).thenReturn(true);
-        Plan plan = buildPlan(PLAN_ID_FULL, Plan.PlanStatus.PARTIALLY_COMPLETED,
-                List.of(
-                        PlanStep.builder().id("s1").toolName("fs").description("write").order(0)
-                                .status(PlanStep.StepStatus.COMPLETED).build(),
-                        PlanStep.builder().id("s2").toolName(TOOL_SHELL).description("run").order(1)
-                                .status(PlanStep.StepStatus.FAILED).build(),
-                        PlanStep.builder().id("s3").toolName(TOOL_SHELL).description(null).order(2)
-                                .status(PlanStep.StepStatus.PENDING).build(),
-                        PlanStep.builder().id("s4").toolName(TOOL_SHELL).order(3)
-                                .status(PlanStep.StepStatus.IN_PROGRESS).build(),
-                        PlanStep.builder().id("s5").toolName(TOOL_SHELL).order(4)
-                                .status(PlanStep.StepStatus.SKIPPED).build()),
-                null);
-        when(planService.getPlan(PLAN_ID_FULL)).thenReturn(Optional.of(plan));
-
-        CommandPort.CommandResult result = router.execute(CMD_PLAN,
-                List.of(SUB_STATUS, PLAN_ID_FULL), CTX_WITH_CHANNEL).get();
-        assertTrue(result.success());
-        assertTrue(result.output().contains("[x]")); // COMPLETED
-        assertTrue(result.output().contains("[!]")); // FAILED
-        assertTrue(result.output().contains("[ ]")); // PENDING
-        assertTrue(result.output().contains("[>]")); // IN_PROGRESS
-        assertTrue(result.output().contains("[-]")); // SKIPPED
     }
 
     // ===== Tier commands =====
@@ -1183,8 +883,9 @@ class CommandRouterTest {
 
         CommandPort.CommandResult result = router.execute(CMD_SCHEDULE,
                 List.of(CMD_GOAL, TEST_GOAL_ID, "0", "9", "*", "*", "MON-FRI"), CTX).get();
-        assertTrue(result.success());
-        assertTrue(result.output().contains("command.schedule.created"));
+        assertFalse(result.success());
+        assertTrue(result.output().contains("command.schedule.invalid-cron"));
+        assertTrue(result.output().contains("Goal schedules are no longer supported"));
     }
 
     @Test
@@ -1207,8 +908,9 @@ class CommandRouterTest {
 
         CommandPort.CommandResult result = router.execute(CMD_SCHEDULE,
                 List.of("task", TEST_TASK_ID, "*/30", "*", "*", "*", "*"), CTX).get();
-        assertTrue(result.success());
-        assertTrue(result.output().contains("command.schedule.created"));
+        assertFalse(result.success());
+        assertTrue(result.output().contains("command.schedule.invalid-cron"));
+        assertTrue(result.output().contains("Task schedules are no longer supported"));
     }
 
     @Test
@@ -1303,7 +1005,8 @@ class CommandRouterTest {
         CommandPort.CommandResult result = router.execute(CMD_SCHEDULE,
                 List.of(CMD_GOAL, "missing-goal", "0", "9", "*", "*", "*"), CTX).get();
         assertFalse(result.success());
-        assertTrue(result.output().contains("command.schedule.goal.not-found"));
+        assertTrue(result.output().contains("command.schedule.invalid-cron"));
+        assertTrue(result.output().contains("Goal schedules are no longer supported"));
     }
 
     @Test
@@ -1314,7 +1017,8 @@ class CommandRouterTest {
         CommandPort.CommandResult result = router.execute(CMD_SCHEDULE,
                 List.of("task", "missing-task", "0", "9", "*", "*", "*"), CTX).get();
         assertFalse(result.success());
-        assertTrue(result.output().contains("command.schedule.task.not-found"));
+        assertTrue(result.output().contains("command.schedule.invalid-cron"));
+        assertTrue(result.output().contains("Task schedules are no longer supported"));
     }
 
     @Test
@@ -1338,8 +1042,9 @@ class CommandRouterTest {
 
         CommandPort.CommandResult result = router.execute(CMD_SCHEDULE,
                 List.of(CMD_GOAL, TEST_GOAL_ID, "0", "12", "*", "*", "*", "3"), CTX).get();
-        assertTrue(result.success());
-        assertTrue(result.output().contains("command.schedule.created"));
+        assertFalse(result.success());
+        assertTrue(result.output().contains("command.schedule.invalid-cron"));
+        assertTrue(result.output().contains("Goal schedules are no longer supported"));
     }
 
     @Test

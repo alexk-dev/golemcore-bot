@@ -1,6 +1,5 @@
 package me.golemcore.bot.application.command;
 
-import java.util.ArrayList;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.domain.model.AutoTask;
@@ -18,7 +17,6 @@ import me.golemcore.bot.domain.service.ScheduleService;
 public class AutomationCommandService {
 
     private static final int MIN_SCHEDULE_ARGS = 2;
-    private static final int MIN_CRON_PARTS_FOR_REPEAT_CHECK = 1;
 
     private final AutoModeService autoModeService;
     private final RuntimeConfigService runtimeConfigService;
@@ -34,8 +32,22 @@ public class AutomationCommandService {
         return autoModeService.isAutoModeEnabled();
     }
 
+    public List<Goal> getActiveGoals(String sessionId) {
+        if (isBlank(sessionId)) {
+            return List.copyOf(autoModeService.getActiveGoals());
+        }
+        return List.copyOf(autoModeService.getActiveGoals(sessionId));
+    }
+
     public List<Goal> getActiveGoals() {
         return List.copyOf(autoModeService.getActiveGoals());
+    }
+
+    public java.util.Optional<AutoTask> getNextPendingTask(String sessionId) {
+        if (isBlank(sessionId)) {
+            return autoModeService.getNextPendingTask();
+        }
+        return autoModeService.getNextPendingTask(sessionId);
     }
 
     public java.util.Optional<AutoTask> getNextPendingTask() {
@@ -69,6 +81,17 @@ public class AutomationCommandService {
         return new AutoDisabled();
     }
 
+    public GoalsOutcome getGoals(String sessionId) {
+        if (!autoModeService.isFeatureEnabled()) {
+            return new AutoFeatureUnavailable();
+        }
+        List<Goal> goals = isBlank(sessionId) ? autoModeService.getGoals() : autoModeService.getGoals(sessionId);
+        if (goals.isEmpty()) {
+            return new EmptyGoals();
+        }
+        return new GoalsOverview(List.copyOf(goals));
+    }
+
     public GoalsOutcome getGoals() {
         if (!autoModeService.isFeatureEnabled()) {
             return new AutoFeatureUnavailable();
@@ -80,6 +103,19 @@ public class AutomationCommandService {
         return new GoalsOverview(List.copyOf(goals));
     }
 
+    public GoalCreationOutcome createGoal(String sessionId, String description) {
+        if (!autoModeService.isFeatureEnabled()) {
+            return new AutoFeatureUnavailable();
+        }
+        if (description == null || description.isBlank()) {
+            return new GoalDescriptionRequired();
+        }
+        Goal goal = isBlank(sessionId)
+                ? autoModeService.createGoal(description, null)
+                : autoModeService.createGoal(sessionId, description, null, null, null, false);
+        return new GoalCreated(goal);
+    }
+
     public GoalCreationOutcome createGoal(String description) {
         if (!autoModeService.isFeatureEnabled()) {
             return new AutoFeatureUnavailable();
@@ -87,12 +123,20 @@ public class AutomationCommandService {
         if (description == null || description.isBlank()) {
             return new GoalDescriptionRequired();
         }
-        try {
-            Goal goal = autoModeService.createGoal(description, null);
-            return new GoalCreated(goal);
-        } catch (IllegalStateException exception) {
-            return new GoalLimitReached(runtimeConfigService.getAutoMaxGoals());
+        Goal goal = autoModeService.createGoal(description, null);
+        return new GoalCreated(goal);
+    }
+
+    public TasksOutcome getTasks(String sessionId) {
+        if (!autoModeService.isFeatureEnabled()) {
+            return new AutoFeatureUnavailable();
         }
+        List<Goal> goals = isBlank(sessionId) ? autoModeService.getGoals() : autoModeService.getGoals(sessionId);
+        boolean hasTasks = goals.stream().anyMatch(goal -> !goal.getTasks().isEmpty());
+        if (goals.isEmpty() || !hasTasks) {
+            return new EmptyTasks();
+        }
+        return new TasksOverview(List.copyOf(goals));
     }
 
     public TasksOutcome getTasks() {
@@ -105,6 +149,19 @@ public class AutomationCommandService {
             return new EmptyTasks();
         }
         return new TasksOverview(List.copyOf(goals));
+    }
+
+    public DiaryOutcome getDiary(String sessionId, int count) {
+        if (!autoModeService.isFeatureEnabled()) {
+            return new AutoFeatureUnavailable();
+        }
+        List<DiaryEntry> entries = isBlank(sessionId)
+                ? autoModeService.getRecentDiary(count)
+                : autoModeService.getRecentDiary(sessionId, count);
+        if (entries.isEmpty()) {
+            return new EmptyDiary();
+        }
+        return new DiaryOverview(List.copyOf(entries));
     }
 
     public DiaryOutcome getDiary(int count) {
@@ -136,10 +193,7 @@ public class AutomationCommandService {
         if (args.size() < MIN_SCHEDULE_ARGS) {
             return new GoalScheduleUsage();
         }
-        if (autoModeService.getGoal(goalId).isEmpty()) {
-            return new GoalNotFound(goalId);
-        }
-        return createScheduleFromArgs(ScheduleEntry.ScheduleType.GOAL, goalId, args.subList(1, args.size()));
+        return new InvalidCron("Goal schedules are no longer supported");
     }
 
     public ScheduleOutcome createTaskSchedule(String taskId, List<String> args) {
@@ -149,10 +203,7 @@ public class AutomationCommandService {
         if (args.size() < MIN_SCHEDULE_ARGS) {
             return new TaskScheduleUsage();
         }
-        if (autoModeService.findGoalForTask(taskId).isEmpty()) {
-            return new TaskNotFound(taskId);
-        }
-        return createScheduleFromArgs(ScheduleEntry.ScheduleType.TASK, taskId, args.subList(1, args.size()));
+        return new InvalidCron("Task schedules are no longer supported");
     }
 
     public ScheduleOutcome deleteSchedule(String scheduleId) {
@@ -226,28 +277,8 @@ public class AutomationCommandService {
         return delayedActionPolicyService == null || delayedActionPolicyService.canScheduleActions(channelType);
     }
 
-    private ScheduleOutcome createScheduleFromArgs(
-            ScheduleEntry.ScheduleType type,
-            String targetId,
-            List<String> cronAndRepeat) {
-        int maxExecutions = -1;
-        List<String> cronParts = new ArrayList<>(cronAndRepeat);
-        if (cronParts.size() > MIN_CRON_PARTS_FOR_REPEAT_CHECK) {
-            String lastArg = cronParts.get(cronParts.size() - 1);
-            try {
-                maxExecutions = Integer.parseInt(lastArg);
-                cronParts = cronParts.subList(0, cronParts.size() - 1);
-            } catch (NumberFormatException ignored) {
-            }
-        }
-
-        String cronExpression = String.join(" ", cronParts);
-        try {
-            ScheduleEntry entry = scheduleService.createSchedule(type, targetId, cronExpression, maxExecutions);
-            return new ScheduleCreated(entry.getId(), entry.getCronExpression());
-        } catch (IllegalArgumentException exception) {
-            return new InvalidCron(exception.getMessage());
-        }
+    private static boolean isBlank(String value) {
+        return value == null || value.isBlank();
     }
 
     public sealed
@@ -267,8 +298,7 @@ public class AutomationCommandService {
             public sealed
 
             interface GoalCreationOutcome
-            permits AutoFeatureUnavailable, GoalDescriptionRequired, GoalCreated,
-            GoalLimitReached
+            permits AutoFeatureUnavailable, GoalDescriptionRequired, GoalCreated
             {
                 }
 
@@ -333,9 +363,6 @@ public class AutomationCommandService {
     }
 
     public record GoalCreated(Goal goal) implements GoalCreationOutcome {
-    }
-
-    public record GoalLimitReached(int maxGoals) implements GoalCreationOutcome {
     }
 
     public record EmptyTasks() implements TasksOutcome {

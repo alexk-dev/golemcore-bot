@@ -120,7 +120,7 @@ public class ResponseRoutingSystem implements AgentSystem {
             return context;
         }
 
-        if (isAutoModeMessage(context)) {
+        if (isExternallyReportedAutoRun(context)) {
             return context;
         }
 
@@ -685,12 +685,21 @@ public class ResponseRoutingSystem implements AgentSystem {
         overrides.put(channel.getChannelType(), channel);
     }
 
-    private boolean isAutoModeMessage(AgentContext context) {
+    private boolean isExternallyReportedAutoRun(AgentContext context) {
         if (context.getMessages() == null || context.getMessages().isEmpty()) {
             return false;
         }
         Message last = context.getMessages().get(context.getMessages().size() - 1);
-        return last.getMetadata() != null && Boolean.TRUE.equals(last.getMetadata().get(ContextAttributes.AUTO_MODE));
+        if (last.getMetadata() == null || !Boolean.TRUE.equals(last.getMetadata().get(ContextAttributes.AUTO_MODE))) {
+            return false;
+        }
+        return hasTextMetadata(last, ContextAttributes.AUTO_RUN_ID)
+                || hasTextMetadata(last, ContextAttributes.AUTO_SCHEDULE_ID);
+    }
+
+    private boolean hasTextMetadata(Message message, String key) {
+        Object value = message.getMetadata().get(key);
+        return value instanceof String text && !text.isBlank();
     }
 
     private record WebhookDeliveryTarget(String channelType, String chatId) {

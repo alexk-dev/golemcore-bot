@@ -26,18 +26,17 @@ import me.golemcore.bot.domain.context.LayerCriticality;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.MemoryPresetIds;
-import me.golemcore.bot.domain.model.SessionIdentity;
 import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.model.ToolNames;
 import me.golemcore.bot.domain.service.DelayedActionPolicyService;
-import me.golemcore.bot.domain.service.PlanService;
-import me.golemcore.bot.domain.service.SessionIdentitySupport;
+import me.golemcore.bot.domain.service.PlanModeToolRestrictionService;
 import me.golemcore.bot.domain.service.ToolCallExecutionService;
 import me.golemcore.bot.port.outbound.McpPort;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 /**
@@ -48,7 +47,7 @@ import java.util.Map;
  * This layer:
  * <ul>
  * <li>Lists all native tools via {@link ToolCallExecutionService}</li>
- * <li>Filters by enabled/advertised status (plan mode, Hive, delays)</li>
+ * <li>Filters by enabled/advertised status (Hive, delays)</li>
  * <li>Starts MCP servers for active skills with MCP config</li>
  * <li>Creates turn-scoped tool adapters for MCP tools</li>
  * <li>Sets {@code availableTools} and {@code CONTEXT_SCOPED_TOOLS} on
@@ -58,8 +57,6 @@ import java.util.Map;
 @Slf4j
 public class ToolLayer extends AbstractContextLayer {
 
-    private static final String TOOL_PLAN_SET_CONTENT = "plan_set_content";
-    private static final String TOOL_PLAN_GET = "plan_get";
     private static final int MAX_CATALOG_TOOLS = 24;
     private static final int MAX_DESCRIPTION_CHARS = 180;
     private static final String TOOL_USE_POLICY = """
@@ -77,21 +74,33 @@ public class ToolLayer extends AbstractContextLayer {
 
             Prefer `command -v` before using shell tools. Avoid issuing the same missing command twice without proving the binary is available.
             """;
+    private static final String PLAN_MODE_TOOL_POLICY = """
+
+            ## Plan Mode Tool Restrictions
+
+            Plan Mode is active. Shell tools and mutating edit/write/patch tools are unavailable. Use only the advertised plan-mode tools and their schemas.
+            """;
 
     private final ToolCallExecutionService toolCallExecutionService;
     private final McpPort mcpPort;
-    private final PlanService planService;
     private final DelayedActionPolicyService delayedActionPolicyService;
+    private final PlanModeToolRestrictionService planModeToolRestrictionService;
 
     public ToolLayer(ToolCallExecutionService toolCallExecutionService,
             McpPort mcpPort,
-            PlanService planService,
             DelayedActionPolicyService delayedActionPolicyService) {
+        this(toolCallExecutionService, mcpPort, delayedActionPolicyService, null);
+    }
+
+    public ToolLayer(ToolCallExecutionService toolCallExecutionService,
+            McpPort mcpPort,
+            DelayedActionPolicyService delayedActionPolicyService,
+            PlanModeToolRestrictionService planModeToolRestrictionService) {
         super("tool", 50, 65, ContextLayerLifecycle.TURN, 3_000, true);
         this.toolCallExecutionService = toolCallExecutionService;
         this.mcpPort = mcpPort;
-        this.planService = planService;
         this.delayedActionPolicyService = delayedActionPolicyService;
+        this.planModeToolRestrictionService = planModeToolRestrictionService;
     }
 
     @Override
@@ -106,19 +115,15 @@ public class ToolLayer extends AbstractContextLayer {
 
     @Override
     public ContextLayerResult assemble(AgentContext context) {
-        SessionIdentity sessionIdentity = SessionIdentitySupport.resolveSessionIdentity(
-                context.getSession());
-        boolean planModeActive = sessionIdentity != null
-                ? planService.isPlanModeActive(sessionIdentity)
-                : planService.isPlanModeActive();
         boolean hiveSessionActive = isHiveSession(context);
 
         // Collect native tools
         Map<String, ToolDefinition> toolsByName = new LinkedHashMap<>();
         toolCallExecutionService.listTools().stream()
                 .filter(ToolComponent::isEnabled)
-                .filter(tool -> isToolAdvertised(tool, context, planModeActive, hiveSessionActive))
+                .filter(tool -> isToolAdvertised(tool, context, hiveSessionActive))
                 .map(ToolComponent::getDefinition)
+                .map(tool -> restrictToolDefinition(context, tool))
                 .forEach(tool -> putToolDefinition(toolsByName, tool, false));
 
         // Collect MCP tools for active skill
@@ -127,7 +132,8 @@ public class ToolLayer extends AbstractContextLayer {
             List<ToolDefinition> mcpTools = mcpPort.getOrStartClient(context.getActiveSkill());
             if (!mcpTools.isEmpty()) {
                 for (ToolDefinition mcpTool : mcpTools) {
-                    if (mcpTool == null || mcpTool.getName() == null || mcpTool.getName().isBlank()) {
+                    if (mcpTool == null || mcpTool.getName() == null || mcpTool.getName().isBlank()
+                            || !isMcpToolAdvertised(context, mcpTool.getName())) {
                         continue;
                     }
                     ToolComponent adapter = mcpPort.createToolAdapter(
@@ -138,7 +144,7 @@ public class ToolLayer extends AbstractContextLayer {
                         continue;
                     }
                     contextScopedTools.put(mcpTool.getName(), adapter);
-                    putToolDefinition(toolsByName, mcpTool, true);
+                    putToolDefinition(toolsByName, restrictToolDefinition(context, mcpTool), true);
                 }
                 log.info("[ToolLayer] Loaded {} MCP tools for skill '{}'",
                         mcpTools.size(), context.getActiveSkill().getName());
@@ -171,6 +177,9 @@ public class ToolLayer extends AbstractContextLayer {
         if (toolsByName.containsKey(ToolNames.SHELL)) {
             sb.append(SHELL_TOOL_POLICY);
         }
+        if (isPlanModeActive(context)) {
+            sb.append(PLAN_MODE_TOOL_POLICY);
+        }
 
         String content = sb.toString();
         return result(content);
@@ -187,12 +196,8 @@ public class ToolLayer extends AbstractContextLayer {
         return normalized.substring(0, MAX_DESCRIPTION_CHARS) + "...";
     }
 
-    private boolean isToolAdvertised(ToolComponent tool, AgentContext context,
-            boolean planModeActive, boolean hiveSessionActive) {
+    private boolean isToolAdvertised(ToolComponent tool, AgentContext context, boolean hiveSessionActive) {
         String toolName = tool.getToolName();
-        if (TOOL_PLAN_SET_CONTENT.equals(toolName) || TOOL_PLAN_GET.equals(toolName)) {
-            return planModeActive;
-        }
         if (ToolNames.SCHEDULE_SESSION_ACTION.equals(toolName)) {
             String channelType = context != null && context.getSession() != null
                     ? context.getSession().getChannelType()
@@ -205,7 +210,40 @@ public class ToolLayer extends AbstractContextLayer {
         if (isHiveSdlcTool(toolName)) {
             return hiveSessionActive;
         }
-        return true;
+        return isToolNameAdvertised(context, toolName);
+    }
+
+    private boolean isToolNameAdvertised(AgentContext context, String toolName) {
+        if (planModeToolRestrictionService == null) {
+            return true;
+        }
+        return planModeToolRestrictionService.shouldAdvertiseTool(context, toolName);
+    }
+
+    private boolean isMcpToolAdvertised(AgentContext context, String toolName) {
+        if (isPlanModeActive(context) && isPrivilegedPlanModeNativeToolName(toolName)) {
+            return false;
+        }
+        return isToolNameAdvertised(context, toolName);
+    }
+
+    private boolean isPrivilegedPlanModeNativeToolName(String toolName) {
+        String normalized = toolName == null ? "" : toolName.trim().toLowerCase(Locale.ROOT);
+        return ToolNames.FILESYSTEM.equals(normalized)
+                || ToolNames.GOAL_MANAGEMENT.equals(normalized)
+                || ToolNames.PLAN_EXIT.equals(normalized);
+    }
+
+    private boolean isPlanModeActive(AgentContext context) {
+        return planModeToolRestrictionService != null
+                && planModeToolRestrictionService.isPlanModeActive(context);
+    }
+
+    private ToolDefinition restrictToolDefinition(AgentContext context, ToolDefinition toolDefinition) {
+        if (planModeToolRestrictionService == null) {
+            return toolDefinition;
+        }
+        return planModeToolRestrictionService.restrictToolDefinition(context, toolDefinition);
     }
 
     private boolean isMemoryPresetDisabled(AgentContext context) {

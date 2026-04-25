@@ -19,8 +19,11 @@ class DefaultContextHygieneServiceTest {
     void shouldExposeAttributeScopesForDiagnostics() {
         assertEquals(ContextScope.ITERATION,
                 service.specs().get(ContextAttributes.CONTEXT_HYGIENE_REPORT).scope());
+        assertEquals(ContextScope.SESSION,
+                service.specs().get(ContextAttributes.AUTO_SCHEDULED_TASK_ID).scope());
         assertFalse(service.specs().get(ContextAttributes.CONTEXT_SCOPED_TOOLS).promptVisible());
         assertTrue(service.specs().get(ContextAttributes.RAG_CONTEXT).promptVisible());
+        assertTrue(service.specs().get(ContextAttributes.AUTO_SCHEDULED_TASK_ID).promptVisible());
     }
 
     @Test

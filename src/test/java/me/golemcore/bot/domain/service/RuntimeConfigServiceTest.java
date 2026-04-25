@@ -646,7 +646,6 @@ class RuntimeConfigServiceTest {
         assertTrue(service.isAutoModeEnabled());
         assertEquals(30, service.getAutoTickIntervalSeconds());
         assertEquals(10, service.getAutoTaskTimeLimitMinutes());
-        assertEquals(3, service.getAutoMaxGoals());
         assertEquals("default", service.getAutoModelTier());
     }
 
@@ -1694,27 +1693,35 @@ class RuntimeConfigServiceTest {
     }
 
     @Test
-    void shouldReturnDefaultPlanSettings() {
-        assertFalse(service.isPlanEnabled());
-        assertEquals(5, service.getPlanMaxPlans());
-        assertEquals(50, service.getPlanMaxStepsPerPlan());
+    void shouldKeepPlanModeAlwaysEnabledWithOptionalTierOverride() {
+        assertTrue(service.isPlanEnabled());
         assertTrue(service.isPlanStopOnFailure());
+        assertNull(service.getPlanModelTier());
     }
 
     @Test
-    void shouldReturnConfiguredPlanSettings() throws Exception {
+    void shouldReturnConfiguredPlanModelTier() throws Exception {
         RuntimeConfig.PlanConfig plan = RuntimeConfig.PlanConfig.builder()
-                .enabled(true)
-                .maxPlans(8)
-                .maxStepsPerPlan(120)
-                .stopOnFailure(false)
+                .modelTier("deep")
                 .build();
         persistedSections.put("plan.json", objectMapper.writeValueAsString(plan));
 
-        assertTrue(service.isPlanEnabled());
-        assertEquals(8, service.getPlanMaxPlans());
-        assertEquals(120, service.getPlanMaxStepsPerPlan());
-        assertFalse(service.isPlanStopOnFailure());
+        assertEquals("deep", service.getPlanModelTier());
+    }
+
+    @Test
+    void shouldLoadPlanTierFromLegacyPlanConfigWithRemovedFields() {
+        persistedSections.put("plan.json", """
+                {
+                  "enabled": false,
+                  "maxPlans": 1,
+                  "maxStepsPerPlan": 2,
+                  "stopOnFailure": false,
+                  "modelTier": "deep"
+                }
+                """);
+
+        assertEquals("deep", service.getPlanModelTier());
     }
 
     @Test
@@ -1832,7 +1839,6 @@ class RuntimeConfigServiceTest {
         assertEquals("telegram.json", RuntimeConfig.ConfigSection.TELEGRAM.getFileName());
         assertEquals("model-router.json", RuntimeConfig.ConfigSection.MODEL_ROUTER.getFileName());
         assertEquals("auto-mode.json", RuntimeConfig.ConfigSection.AUTO_MODE.getFileName());
-        assertEquals("plan.json", RuntimeConfig.ConfigSection.PLAN.getFileName());
         assertEquals("hive.json", RuntimeConfig.ConfigSection.HIVE.getFileName());
     }
 

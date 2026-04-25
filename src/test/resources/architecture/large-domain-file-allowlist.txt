@@ -25,3 +25,5 @@ me/golemcore/bot/domain/service/AutoRunHistoryService.java
 me/golemcore/bot/domain/selfevolving/benchmark/JudgeTraceDigestService.java
 me/golemcore/bot/domain/model/ContextAttributes.java
 me/golemcore/bot/domain/service/SessionService.java
+me/golemcore/bot/domain/service/SessionScopedGoalService.java
+me/golemcore/bot/domain/service/ScheduleService.java

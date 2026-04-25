@@ -26,6 +26,9 @@ public final class TraceNamingSupport {
         if (schedule != null && schedule.getType() == ScheduleEntry.ScheduleType.TASK) {
             return "auto.schedule.task";
         }
+        if (schedule != null && schedule.getType() == ScheduleEntry.ScheduleType.SCHEDULED_TASK) {
+            return "auto.schedule.scheduled_task";
+        }
         return "auto.schedule.goal";
     }
 

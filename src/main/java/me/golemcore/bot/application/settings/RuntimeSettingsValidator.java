@@ -119,6 +119,9 @@ public class RuntimeSettingsValidator {
         if (merged.getAutoMode() != null) {
             validateAndNormalizeAutoModeConfig(merged.getAutoMode());
         }
+        if (merged.getPlan() != null) {
+            validateAndNormalizePlanConfig(merged.getPlan());
+        }
         if (merged.getTracing() != null) {
             validateAndNormalizeTracingConfig(merged.getTracing());
         }
@@ -280,6 +283,13 @@ public class RuntimeSettingsValidator {
         }
     }
 
+    public void validateAndNormalizePlanConfig(RuntimeConfig.PlanConfig planConfig) {
+        if (planConfig == null) {
+            throw new IllegalArgumentException("plan config is required");
+        }
+        planConfig.setModelTier(normalizeOptionalSelectableTier(planConfig.getModelTier(), "plan.modelTier"));
+    }
+
     public void validateMemoryConfig(RuntimeConfig.MemoryConfig memoryConfig) {
         if (memoryConfig == null) {
             throw new IllegalArgumentException("memory config is required");
@@ -405,14 +415,6 @@ public class RuntimeSettingsValidator {
         if (whisperSttUrl != null && whisperSttUrl.isBlank()) {
             voiceConfig.setWhisperSttUrl(null);
         }
-    }
-
-    public void validatePlanConfig(RuntimeConfig.PlanConfig planConfig) {
-        if (planConfig == null) {
-            throw new IllegalArgumentException("plan config is required");
-        }
-        validateNullableInteger(planConfig.getMaxPlans(), 1, 100, "plan.maxPlans");
-        validateNullableInteger(planConfig.getMaxStepsPerPlan(), 1, 1000, "plan.maxStepsPerPlan");
     }
 
     public void validateAndNormalizeAutoModeConfig(RuntimeConfig.AutoModeConfig autoConfig) {

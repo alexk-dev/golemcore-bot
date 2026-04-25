@@ -9,6 +9,7 @@ import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.
 import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.McpConfigDto;
 import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.MemoryConfigDto;
 import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.ModelRouterConfigDto;
+import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.PlanConfigDto;
 import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.RateLimitConfigDto;
 import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.ResilienceConfigDto;
 import me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.RuntimeConfigDto;
@@ -161,23 +162,20 @@ public class RuntimeSettingsWebMapper {
         return copy(source, new RuntimeConfig.McpCatalogEntry());
     }
 
+    public PlanConfigDto toPlanConfigDto(RuntimeConfig.PlanConfig source) {
+        return copy(source, new PlanConfigDto());
+    }
+
+    public RuntimeConfig.PlanConfig toPlanConfig(PlanConfigDto source) {
+        return copy(source, new RuntimeConfig.PlanConfig());
+    }
+
     public HiveConfigDto toHiveConfigDto(RuntimeConfig.HiveConfig source) {
         return copy(source, new HiveConfigDto());
     }
 
     public RuntimeConfig.HiveConfig toHiveConfig(HiveConfigDto source) {
         return copy(source, new RuntimeConfig.HiveConfig());
-    }
-
-    public RuntimeConfig.PlanConfig toPlanConfig(
-            me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.PlanConfigDto source) {
-        return copy(source, new RuntimeConfig.PlanConfig());
-    }
-
-    public me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.PlanConfigDto toPlanConfigDto(
-            RuntimeConfig.PlanConfig source) {
-        return copy(source,
-                new me.golemcore.bot.adapter.inbound.web.dto.settings.RuntimeSettingsWebDtos.PlanConfigDto());
     }
 
     public RuntimeConfig.AutoModeConfig toAutoModeConfig(AutoModeConfigDto source) {

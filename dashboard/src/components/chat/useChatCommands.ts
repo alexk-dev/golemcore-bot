@@ -21,7 +21,6 @@ const CHAT_COMMANDS: CommandDefinition[] = [
   { name: 'diary', description: 'Show diary entries' },
   { name: 'schedule', description: 'Manage schedules' },
   { name: 'plan', description: 'Plan mode control' },
-  { name: 'plans', description: 'List plans' },
 ];
 
 const TIER_VALUES = EXPLICIT_MODEL_TIER_ORDER;
@@ -144,10 +143,8 @@ const SIMPLE_SUBCOMMANDS: Record<string, SuggestionOption[]> = {
   plan: [
     { value: 'on', description: 'Plan mode action' },
     { value: 'off', description: 'Plan mode action' },
+    { value: 'done', description: 'Plan mode action' },
     { value: 'status', description: 'Plan mode action' },
-    { value: 'approve', description: 'Plan mode action' },
-    { value: 'cancel', description: 'Plan mode action' },
-    { value: 'resume', description: 'Plan mode action' },
   ],
   compact: [
     { value: '20', description: 'Keep last N messages during compaction' },
@@ -156,8 +153,6 @@ const SIMPLE_SUBCOMMANDS: Record<string, SuggestionOption[]> = {
   ],
   schedule: [
     { value: 'list', description: 'List active schedules' },
-    { value: 'goal', description: 'Schedule a goal by id' },
-    { value: 'task', description: 'Schedule a task by id' },
     { value: 'delete', description: 'Delete schedule by id' },
     { value: 'help', description: 'Show schedule command help' },
   ],

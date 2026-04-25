@@ -1,8 +1,17 @@
 package me.golemcore.bot.adapter.inbound.web.controller;
 
-import me.golemcore.bot.domain.model.Plan;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
 import me.golemcore.bot.domain.model.SessionIdentity;
-import me.golemcore.bot.domain.service.PlanExecutionService;
 import me.golemcore.bot.domain.service.PlanService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -10,174 +19,71 @@ import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
 import reactor.test.StepVerifier;
 
-import java.time.Instant;
-import java.util.List;
-
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.doThrow;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
-
 class PlansControllerTest {
 
     private PlanService planService;
-    private PlanExecutionService planExecutionService;
     private PlansController controller;
 
     @BeforeEach
     void setUp() {
         planService = mock(PlanService.class);
-        planExecutionService = mock(PlanExecutionService.class);
-        controller = new PlansController(planService, planExecutionService);
+        controller = new PlansController(planService);
     }
 
     @Test
-    void getStateShouldReturnFeatureDisabledWhenPlanFeatureOff() {
-        when(planService.isFeatureEnabled()).thenReturn(false);
+    void getStateShouldReturnEphemeralModeStateWithoutPersistedPlans() {
+        when(planService.isPlanModeActive(any(SessionIdentity.class))).thenReturn(true);
+        when(planService.getActivePlanId(any(SessionIdentity.class))).thenReturn("plan-1");
 
         StepVerifier.create(controller.getState("chat-1"))
                 .assertNext(resp -> {
                     assertEquals(HttpStatus.OK, resp.getStatusCode());
                     PlansController.PlanControlStateResponse body = resp.getBody();
                     assertNotNull(body);
-                    assertFalse(body.featureEnabled());
-                    assertFalse(body.planModeActive());
-                    assertEquals(0, body.plans().size());
-                })
-                .verifyComplete();
-    }
-
-    @Test
-    void getStateShouldReturnPlansSortedByUpdatedAtDesc() {
-        when(planService.isFeatureEnabled()).thenReturn(true);
-        when(planService.isPlanModeActive(any(SessionIdentity.class))).thenReturn(true);
-        when(planService.getActivePlanId(any(SessionIdentity.class))).thenReturn("plan-2");
-
-        Plan older = Plan.builder()
-                .id("plan-1")
-                .status(Plan.PlanStatus.COLLECTING)
-                .createdAt(Instant.parse("2026-02-18T05:00:00Z"))
-                .updatedAt(Instant.parse("2026-02-18T05:10:00Z"))
-                .build();
-
-        Plan newer = Plan.builder()
-                .id("plan-2")
-                .status(Plan.PlanStatus.READY)
-                .createdAt(Instant.parse("2026-02-18T06:00:00Z"))
-                .updatedAt(Instant.parse("2026-02-18T06:10:00Z"))
-                .build();
-
-        when(planService.getPlans(any(SessionIdentity.class))).thenReturn(List.of(older, newer));
-
-        StepVerifier.create(controller.getState("chat-1"))
-                .assertNext(resp -> {
-                    PlansController.PlanControlStateResponse body = resp.getBody();
-                    assertNotNull(body);
                     assertTrue(body.featureEnabled());
-                    assertEquals("plan-2", body.activePlanId());
-                    assertEquals(2, body.plans().size());
-                    assertEquals("plan-2", body.plans().get(0).id());
+                    assertEquals("chat-1", body.sessionId());
+                    assertTrue(body.planModeActive());
+                    assertEquals("plan-1", body.activePlanId());
+                    assertTrue(body.plans().isEmpty());
                 })
                 .verifyComplete();
     }
 
     @Test
-    void enablePlanModeShouldRejectBlankChatId() {
-        when(planService.isFeatureEnabled()).thenReturn(true);
-
+    void enablePlanModeShouldRejectBlankSessionId() {
         ResponseStatusException ex = assertThrows(ResponseStatusException.class,
-                () -> controller.enablePlanMode(new PlansController.PlanModeOnRequest("", null)));
+                () -> controller.enablePlanMode(new PlansController.PlanModeOnRequest("")));
         assertEquals(HttpStatus.BAD_REQUEST, ex.getStatusCode());
 
-        verify(planService, never()).activatePlanMode(any(), any());
+        verify(planService, never()).activatePlanMode(any(), any(), any());
     }
 
     @Test
     void enablePlanModeShouldActivateWhenNotActive() {
-        when(planService.isFeatureEnabled()).thenReturn(true);
         when(planService.isPlanModeActive(any(SessionIdentity.class))).thenReturn(false, true);
-        when(planService.getPlans(any(SessionIdentity.class))).thenReturn(List.of());
 
-        StepVerifier.create(controller.enablePlanMode(new PlansController.PlanModeOnRequest("chat-1", "smart")))
+        StepVerifier.create(controller.enablePlanMode(new PlansController.PlanModeOnRequest("chat-1")))
                 .assertNext(resp -> assertEquals(HttpStatus.OK, resp.getStatusCode()))
                 .verifyComplete();
 
-        verify(planService).activatePlanMode(any(SessionIdentity.class), eq("chat-1"), eq("smart"));
+        verify(planService).activatePlanMode(any(SessionIdentity.class), eq("chat-1"), eq(null));
     }
 
     @Test
-    void enablePlanModeShouldRejectUnknownTier() {
-        when(planService.isFeatureEnabled()).thenReturn(true);
-
-        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
-                () -> controller.enablePlanMode(new PlansController.PlanModeOnRequest("chat-1", "turbo")));
-        assertEquals(HttpStatus.BAD_REQUEST, ex.getStatusCode());
-        assertEquals("modelTier must be a known tier id", ex.getReason());
-
-        verify(planService, never()).activatePlanMode(any(SessionIdentity.class), any(), any());
-    }
-
-    @Test
-    void disablePlanModeShouldDeactivateWhenActive() {
-        when(planService.isFeatureEnabled()).thenReturn(true);
-        when(planService.isPlanModeActive()).thenReturn(true, false);
-        when(planService.getPlans()).thenReturn(List.of());
-
-        StepVerifier.create(controller.disablePlanMode())
+    void disablePlanModeShouldDeactivateSession() {
+        StepVerifier.create(controller.disablePlanMode("chat-1"))
                 .assertNext(resp -> assertEquals(HttpStatus.OK, resp.getStatusCode()))
                 .verifyComplete();
 
-        verify(planService).deactivatePlanMode();
+        verify(planService).deactivatePlanMode(new SessionIdentity("web", "chat-1"));
     }
 
     @Test
-    void approvePlanShouldRunExecution() {
-        when(planService.isFeatureEnabled()).thenReturn(true);
-        when(planService.isPlanModeActive()).thenReturn(false);
-        when(planService.getPlans()).thenReturn(List.of());
-
-        StepVerifier.create(controller.approvePlan("plan-1"))
+    void donePlanModeShouldCompleteSessionPlanMode() {
+        StepVerifier.create(controller.donePlanMode("chat-1"))
                 .assertNext(resp -> assertEquals(HttpStatus.OK, resp.getStatusCode()))
                 .verifyComplete();
 
-        verify(planService).approvePlan("plan-1");
-        verify(planExecutionService).executePlan("plan-1");
-    }
-
-    @Test
-    void approvePlanShouldMapIllegalStateToBadRequest() {
-        when(planService.isFeatureEnabled()).thenReturn(true);
-        doThrow(new IllegalStateException("wrong status")).when(planService).approvePlan("plan-1");
-
-        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
-                () -> controller.approvePlan("plan-1"));
-        assertEquals(HttpStatus.BAD_REQUEST, ex.getStatusCode());
-    }
-
-    @Test
-    void resumePlanShouldMapErrorsToBadRequest() {
-        when(planService.isFeatureEnabled()).thenReturn(true);
-        doThrow(new IllegalArgumentException("missing")).when(planExecutionService).resumePlan("plan-x");
-
-        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
-                () -> controller.resumePlan("plan-x"));
-        assertEquals(HttpStatus.BAD_REQUEST, ex.getStatusCode());
-    }
-
-    @Test
-    void featureDisabledShouldRejectMutations() {
-        when(planService.isFeatureEnabled()).thenReturn(false);
-
-        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
-                () -> controller.donePlanMode());
-        assertEquals(HttpStatus.BAD_REQUEST, ex.getStatusCode());
+        verify(planService).completePlanMode(new SessionIdentity("web", "chat-1"));
     }
 }

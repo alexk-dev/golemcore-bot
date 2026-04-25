@@ -87,16 +87,16 @@ class GoalManagementToolTest {
     }
 
     @Test
-    void createGoalLimitReached() throws Exception {
+    void createGoalFailureShouldReturnServiceError() throws Exception {
         when(autoModeService.createGoal(anyString(), any(), any(), any(), anyBoolean()))
-                .thenThrow(new IllegalStateException("Maximum active goals reached: 3"));
+                .thenThrow(new IllegalStateException("Goal storage unavailable"));
 
         ToolResult result = tool.execute(Map.of(
                 OPERATION, CREATE_GOAL,
-                TITLE, "Too many goals")).get();
+                TITLE, "New goal")).get();
 
         assertFalse(result.isSuccess());
-        assertTrue(result.getError().contains("Maximum active goals reached"));
+        assertTrue(result.getError().contains("Goal storage unavailable"));
     }
 
     @Test

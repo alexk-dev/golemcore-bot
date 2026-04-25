@@ -88,6 +88,7 @@ public class DefaultContextHygieneService implements ContextHygieneService {
         add(values, ContextAttributes.MEMORY_PRESET_ID, ContextScope.SESSION, false, true);
         add(values, ContextAttributes.AUTO_GOAL_ID, ContextScope.SESSION, true, true);
         add(values, ContextAttributes.AUTO_TASK_ID, ContextScope.SESSION, true, true);
+        add(values, ContextAttributes.AUTO_SCHEDULED_TASK_ID, ContextScope.SESSION, true, true);
         return Map.copyOf(values);
     }
 

@@ -21,6 +21,7 @@ import me.golemcore.bot.domain.service.ContextTokenEstimator;
 import me.golemcore.bot.domain.service.DelayedActionPolicyService;
 import me.golemcore.bot.domain.service.MemoryPresetService;
 import me.golemcore.bot.domain.service.ModelSelectionService;
+import me.golemcore.bot.domain.service.PlanModeToolRestrictionService;
 import me.golemcore.bot.domain.service.PlanService;
 import me.golemcore.bot.domain.service.PromptSectionService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
@@ -33,11 +34,9 @@ import me.golemcore.bot.domain.service.UpdateMaintenanceWindow;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.domain.service.WorkspaceInstructionService;
 import me.golemcore.bot.domain.system.AgentSystem;
-import me.golemcore.bot.domain.system.PlanFinalizationSystem;
 import me.golemcore.bot.port.outbound.ChannelRuntimePort;
 import me.golemcore.bot.port.outbound.LlmPort;
 import me.golemcore.bot.port.outbound.McpPort;
-import me.golemcore.bot.port.outbound.PlanReadyNotificationPort;
 import me.golemcore.bot.port.outbound.RagPort;
 import me.golemcore.bot.port.outbound.RateLimitPort;
 import me.golemcore.bot.port.outbound.ReleaseSourcePort;
@@ -77,7 +76,7 @@ class CoreLayerConfigurationTest {
     }
 
     @Test
-    void shouldCreateAgentLoopAndPlanFinalizationSystem() {
+    void shouldCreateAgentLoop() {
         AgentLoop agentLoop = configuration.agentLoop(
                 mock(SessionPort.class),
                 mock(RateLimitPort.class),
@@ -89,12 +88,8 @@ class CoreLayerConfigurationTest {
                 Clock.systemUTC(),
                 mock(TraceService.class),
                 mock(ContextHygieneService.class));
-        PlanFinalizationSystem planFinalizationSystem = configuration.planFinalizationSystem(
-                mock(PlanService.class),
-                mock(PlanReadyNotificationPort.class));
 
         assertNotNull(agentLoop);
-        assertInstanceOf(PlanFinalizationSystem.class, planFinalizationSystem);
     }
 
     @Test
@@ -105,9 +100,12 @@ class CoreLayerConfigurationTest {
         ContextTokenEstimator estimator = CoreLayerConfiguration.contextTokenEstimator();
         ContextCompactionPolicy policy = configuration.contextCompactionPolicy(runtimeConfigService,
                 modelSelectionService);
+        PlanModeToolRestrictionService planModeToolRestrictionService = configuration
+                .planModeToolRestrictionService(mock(PlanService.class));
 
         assertNotNull(estimator);
         assertNotNull(policy);
+        assertNotNull(planModeToolRestrictionService);
     }
 
     @Test
@@ -137,8 +135,8 @@ class CoreLayerConfigurationTest {
         assertNotNull(contextLayerConfiguration.toolLayer(
                 mock(ToolCallExecutionService.class),
                 mock(McpPort.class),
-                mock(PlanService.class),
-                mock(DelayedActionPolicyService.class)));
+                mock(DelayedActionPolicyService.class),
+                mock(PlanModeToolRestrictionService.class)));
         assertNotNull(contextLayerConfiguration.tierAwarenessLayer(mock(UserPreferencesService.class)));
         assertNotNull(contextLayerConfiguration.autoModeLayer(mock(AutoModeService.class)));
         assertNotNull(contextLayerConfiguration.planModeLayer(mock(PlanService.class)));

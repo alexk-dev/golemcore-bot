@@ -24,6 +24,7 @@ import me.golemcore.bot.domain.service.ContextCompactionPolicy;
 import me.golemcore.bot.domain.service.DelayedActionPolicyService;
 import me.golemcore.bot.domain.service.MemoryPresetService;
 import me.golemcore.bot.domain.service.ModelSelectionService;
+import me.golemcore.bot.domain.service.PlanModeToolRestrictionService;
 import me.golemcore.bot.domain.service.PlanService;
 import me.golemcore.bot.domain.service.PromptSectionService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
@@ -90,9 +91,10 @@ public class ContextLayerConfiguration {
     @Bean
     ToolLayer toolLayer(ToolCallExecutionService toolCallExecutionService,
             McpPort mcpPort,
-            PlanService planService,
-            DelayedActionPolicyService delayedActionPolicyService) {
-        return new ToolLayer(toolCallExecutionService, mcpPort, planService, delayedActionPolicyService);
+            DelayedActionPolicyService delayedActionPolicyService,
+            PlanModeToolRestrictionService planModeToolRestrictionService) {
+        return new ToolLayer(toolCallExecutionService, mcpPort, delayedActionPolicyService,
+                planModeToolRestrictionService);
     }
 
     @Bean

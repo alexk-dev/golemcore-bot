@@ -25,7 +25,6 @@ import me.golemcore.bot.domain.service.DelayedSessionActionService;
 import me.golemcore.bot.domain.service.HiveManagedPolicyService;
 import me.golemcore.bot.domain.service.MemoryPresetService;
 import me.golemcore.bot.domain.service.ModelSelectionService;
-import me.golemcore.bot.domain.service.PlanExecutionService;
 import me.golemcore.bot.domain.service.PlanService;
 import me.golemcore.bot.domain.service.PromptSectionService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
@@ -91,10 +90,7 @@ class ApplicationLayerConfigurationTest {
                 mock(ScheduleService.class),
                 mock(DelayedActionPolicyService.class),
                 mock(DelayedSessionActionService.class));
-        PlanCommandService plans = configuration.planCommandService(
-                mock(PlanService.class),
-                mock(PlanExecutionService.class),
-                mock(RuntimeConfigService.class));
+        PlanCommandService plans = configuration.planCommandService(mock(PlanService.class));
 
         assertNotNull(modelSelection);
         assertNotNull(automation);

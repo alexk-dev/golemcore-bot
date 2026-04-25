@@ -71,6 +71,7 @@ me.golemcore.bot.domain.selfevolving.tactic.TacticSearchService
 me.golemcore.bot.domain.selfevolving.tactic.TacticTurnContextService
 me.golemcore.bot.domain.selfevolving.tactic.TacticUsageAttributionService
 me.golemcore.bot.domain.service.ActiveSessionPointerService
+me.golemcore.bot.domain.service.AutoModeMigrationService
 me.golemcore.bot.domain.service.AutoModeService
 me.golemcore.bot.domain.service.AutoRunHistoryService
 me.golemcore.bot.domain.service.CompactionDetailsExtractor
@@ -103,14 +104,17 @@ me.golemcore.bot.domain.service.MemoryRetrievalService
 me.golemcore.bot.domain.service.MemoryService
 me.golemcore.bot.domain.service.MemoryWriteService
 me.golemcore.bot.domain.service.ModelSelectionService
-me.golemcore.bot.domain.service.PlanExecutionService
+me.golemcore.bot.domain.service.PersistentScheduledTaskService
 me.golemcore.bot.domain.service.PlanService
 me.golemcore.bot.domain.service.PluginConfigurationService
 me.golemcore.bot.domain.service.PromptSectionService
 me.golemcore.bot.domain.service.RuntimeConfigService
 me.golemcore.bot.domain.service.RuntimeEventService
+me.golemcore.bot.domain.service.SessionDiaryService
+me.golemcore.bot.domain.service.SessionGoalStorageService
 me.golemcore.bot.domain.service.SessionInspectionService
 me.golemcore.bot.domain.service.SessionRunCoordinator
+me.golemcore.bot.domain.service.SessionScopedGoalService
 me.golemcore.bot.domain.service.SessionSelectionService
 me.golemcore.bot.domain.service.SessionService
 me.golemcore.bot.domain.service.SkillDocumentService

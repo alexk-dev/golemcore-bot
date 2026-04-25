@@ -140,7 +140,7 @@ public class OutgoingResponsePreparationSystem implements AgentSystem {
         Boolean toolLoopLimitReached = context.getAttribute(ContextAttributes.TOOL_LOOP_LIMIT_REACHED);
         if (Boolean.TRUE.equals(toolLoopLimitReached)) {
             TurnLimitReason reason = context.getAttribute(ContextAttributes.TOOL_LOOP_LIMIT_REASON);
-            text = buildToolLoopLimitMessage(reason);
+            text = buildToolLoopLimitMessage(context, reason);
         }
 
         // Voice intent is typed (backward-incompatible: no ContextAttributes.* for
@@ -324,20 +324,27 @@ public class OutgoingResponsePreparationSystem implements AgentSystem {
         return trimmed;
     }
 
-    private String buildToolLoopLimitMessage(TurnLimitReason reason) {
+    private String buildToolLoopLimitMessage(AgentContext context, TurnLimitReason reason) {
         if (reason == null) {
             return preferencesService.getMessage("system.toolloop.limit.unknown");
         }
 
         return switch (reason) {
         case MAX_LLM_CALLS -> preferencesService.getMessage("system.toolloop.limit.maxLlmCalls",
-                runtimeConfigService.getTurnMaxLlmCalls());
+                resolveLimitValue(context, ContextAttributes.TOOL_LOOP_LIMIT_MAX_LLM_CALLS,
+                        runtimeConfigService.getToolLoopMaxLlmCalls()));
         case MAX_TOOL_EXECUTIONS -> preferencesService.getMessage("system.toolloop.limit.maxToolExecutions",
-                runtimeConfigService.getTurnMaxToolExecutions());
+                resolveLimitValue(context, ContextAttributes.TOOL_LOOP_LIMIT_MAX_TOOL_EXECUTIONS,
+                        runtimeConfigService.getToolLoopMaxToolExecutions()));
         case DEADLINE -> preferencesService.getMessage("system.toolloop.limit.deadline",
                 runtimeConfigService.getTurnDeadline().toMinutes());
         case UNKNOWN -> preferencesService.getMessage("system.toolloop.limit.unknown");
         };
+    }
+
+    private int resolveLimitValue(AgentContext context, String attributeName, int fallback) {
+        Integer value = context.getAttribute(attributeName);
+        return value != null && value > 0 ? value : fallback;
     }
 
     private boolean shouldAutoVoiceRespond(AgentContext context) {
