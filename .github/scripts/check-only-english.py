@@ -43,6 +43,9 @@ TEXT_EXTENSIONS = {
 
 EXCLUDED_PATHS = {
     "src/main/resources/messages_ru.properties",
+    "golemcore-bot-app/src/main/resources/messages_ru.properties",
+    "src/main/java/me/golemcore/bot/infrastructure/i18n/MessageService.java",
+    "golemcore-bot-app/src/main/java/me/golemcore/bot/infrastructure/i18n/MessageService.java",
 }
 
 
@@ -93,6 +96,8 @@ def list_changed_files(diff_range: str) -> List[Path]:
         if path.as_posix() in EXCLUDED_PATHS:
             continue
         if path.suffix.lower() in TEXT_EXTENSIONS:
+            if "src/main/resources/static/dashboard/" in path.as_posix():
+                continue
             changed_paths.append(path)
 
     return changed_paths

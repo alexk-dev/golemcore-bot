@@ -1,28 +1,13 @@
 import type { ReactElement } from 'react';
-import { Badge } from '../ui/tailwind-components';
 
-interface SchedulerStatusHeaderProps {
-  featureEnabled: boolean;
-  autoModeEnabled: boolean;
-}
-
-export function SchedulerStatusHeader({
-  featureEnabled,
-  autoModeEnabled,
-}: SchedulerStatusHeaderProps): ReactElement {
+export function SchedulerStatusHeader(): ReactElement {
   return (
-    <div className="section-header d-flex align-items-center justify-content-between">
+    <div className="section-header">
       <div>
         <h4 className="mb-1">Scheduler</h4>
-        <p className="mb-0 text-body-secondary">Manage schedules, edit cron settings, and inspect autonomous run logs.</p>
-      </div>
-      <div className="d-flex align-items-center gap-2">
-        <Badge bg={featureEnabled ? 'success' : 'secondary'}>
-          Feature: {featureEnabled ? 'On' : 'Off'}
-        </Badge>
-        <Badge bg={autoModeEnabled ? 'primary' : 'secondary'}>
-          Auto mode: {autoModeEnabled ? 'On' : 'Off'}
-        </Badge>
+        <p className="mb-0 text-body-secondary">
+          Manage schedules, persistent scheduled tasks, and inspect autonomous run logs.
+        </p>
       </div>
     </div>
   );

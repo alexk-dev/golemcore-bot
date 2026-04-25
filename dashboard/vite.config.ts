@@ -81,7 +81,7 @@ export default defineConfig({
     },
   },
   build: {
-    outDir: '../src/main/resources/static/dashboard',
+    outDir: '../golemcore-bot-app/target/dashboard-dist',
     emptyOutDir: true,
     rollupOptions: {
       output: {

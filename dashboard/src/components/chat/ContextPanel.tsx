@@ -91,7 +91,7 @@ interface Props {
 }
 
 export default function ContextPanel({ tier, tierForce, chatSessionId, onTierChange, onForceChange, forceOpen }: Props) {
-  const { panelOpen, turnMetadata, goals, goalsFeatureEnabled } = useContextPanelStore();
+  const { panelOpen, turnMetadata, goals, standaloneTasks, goalsFeatureEnabled } = useContextPanelStore();
 
   if (forceOpen !== true && !panelOpen) {return null;}
 
@@ -110,6 +110,7 @@ export default function ContextPanel({ tier, tierForce, chatSessionId, onTierCha
           : 'danger';
 
   const activeGoals = goals.filter((g) => g.status === 'ACTIVE');
+  const visibleStandaloneTasks = standaloneTasks.filter((task) => task.status !== 'COMPLETED' && task.status !== 'SKIPPED');
   const fileChanges = normalizeFileChanges(turnMetadata.fileChanges);
   const resolvedTierMeta = getModelTierMeta(turnMetadata.tier ?? tier);
 
@@ -206,17 +207,14 @@ export default function ContextPanel({ tier, tierForce, chatSessionId, onTierCha
       )}
 
       {/* GOALS */}
-      {goalsFeatureEnabled && activeGoals.length > 0 && (
+      {goalsFeatureEnabled && (activeGoals.length > 0 || visibleStandaloneTasks.length > 0) && (
         <div className="context-section">
-          <div className="section-label">GOALS</div>
+          <div className="section-label">GOALS & TASKS</div>
           {activeGoals.map((goal) => (
             <div key={goal.id} className="goal-item">
               <div className="d-flex justify-content-between align-items-center">
                 <div>
                   <strong className="goal-title">{goal.title}</strong>
-                  <div className="small text-body-secondary">
-                    <code>{goal.id}</code>
-                  </div>
                 </div>
                 <small className="text-body-secondary">
                   {goal.completedTasks}/{goal.totalTasks}
@@ -231,9 +229,6 @@ export default function ContextPanel({ tier, tierForce, chatSessionId, onTierCha
                         <div className={task.status === 'COMPLETED' ? 'text-decoration-line-through text-body-secondary' : ''}>
                           {task.title}
                         </div>
-                        <div className="small text-body-secondary">
-                          <code>{task.id}</code>
-                        </div>
                       </div>
                     </li>
                   ))}
@@ -241,6 +236,24 @@ export default function ContextPanel({ tier, tierForce, chatSessionId, onTierCha
               )}
             </div>
           ))}
+          {visibleStandaloneTasks.length > 0 && (
+            <div className="goal-item">
+              <div className="d-flex justify-content-between align-items-center">
+                <strong className="goal-title">Standalone tasks</strong>
+                <small className="text-body-secondary">{visibleStandaloneTasks.length}</small>
+              </div>
+              <ul className="task-list">
+                {visibleStandaloneTasks.map((task) => (
+                  <li key={task.id} className={`task-item ${task.status.toLowerCase()}`}>
+                    <span className={`task-status-icon ${task.status.toLowerCase()}`} />
+                    <div>
+                      <div>{task.title}</div>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </div>
       )}
     </div>

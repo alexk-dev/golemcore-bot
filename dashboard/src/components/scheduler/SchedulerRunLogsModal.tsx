@@ -15,13 +15,13 @@ interface SchedulerRunLogsModalProps {
   runDetailLoading: boolean;
   resolveGoalHref: (goalId: string) => string | null;
   resolveTaskHref: (taskId: string) => string | null;
+  resolveScheduledTaskHref: (scheduledTaskId: string) => string | null;
   onHide: () => void;
   onSelectRun: (runId: string) => void;
 }
 
 interface TargetLinkProps {
   label: string;
-  id: string;
   href: string | null;
   onNavigate: () => void;
 }
@@ -38,6 +38,7 @@ interface RunTranscriptProps {
   runDetailLoading: boolean;
   resolveGoalHref: (goalId: string) => string | null;
   resolveTaskHref: (taskId: string) => string | null;
+  resolveScheduledTaskHref: (scheduledTaskId: string) => string | null;
   onNavigate: () => void;
 }
 
@@ -51,7 +52,7 @@ function resolveStatusVariant(status: string): string {
   return 'secondary';
 }
 
-function TargetLink({ label, id, href, onNavigate }: TargetLinkProps): ReactElement {
+function TargetLink({ label, href, onNavigate }: TargetLinkProps): ReactElement {
   return (
     <div>
       {href != null ? (
@@ -60,8 +61,7 @@ function TargetLink({ label, id, href, onNavigate }: TargetLinkProps): ReactElem
         </Link>
       ) : (
         <>{label}</>
-      )}{' '}
-      · <code>{id}</code>
+      )}
     </div>
   );
 }
@@ -140,7 +140,6 @@ function RunsList({
           {run.taskLabel != null && run.taskLabel.length > 0 && (
             <div className="small mt-2">
               Task: {run.taskLabel}
-              {run.taskId != null && run.taskId.length > 0 && <> · <code>{run.taskId}</code></>}
             </div>
           )}
           <div className="small text-body-secondary mt-1">
@@ -157,6 +156,7 @@ function RunTranscript({
   runDetailLoading,
   resolveGoalHref,
   resolveTaskHref,
+  resolveScheduledTaskHref,
   onNavigate,
 }: RunTranscriptProps): ReactElement {
   if (runDetailLoading) {
@@ -178,17 +178,22 @@ function RunTranscript({
         <div>Conversation: <code>{runDetail.conversationKey}</code></div>
         {runDetail.goalId != null && runDetail.goalId.length > 0 && (
           <TargetLink
-            label={`Goal: ${runDetail.goalLabel ?? runDetail.goalId}`}
-            id={runDetail.goalId}
+            label={`Goal: ${runDetail.goalLabel ?? 'Untitled goal'}`}
             href={resolveGoalHref(runDetail.goalId)}
             onNavigate={onNavigate}
           />
         )}
         {runDetail.taskId != null && runDetail.taskId.length > 0 && (
           <TargetLink
-            label={`Task: ${runDetail.taskLabel ?? runDetail.taskId}`}
-            id={runDetail.taskId}
+            label={`Task: ${runDetail.taskLabel ?? 'Untitled task'}`}
             href={resolveTaskHref(runDetail.taskId)}
+            onNavigate={onNavigate}
+          />
+        )}
+        {runDetail.scheduledTaskId != null && runDetail.scheduledTaskId.length > 0 && (
+          <TargetLink
+            label={`Scheduled task: ${runDetail.scheduledTaskLabel ?? 'Untitled scheduled task'}`}
+            href={resolveScheduledTaskHref(runDetail.scheduledTaskId)}
             onNavigate={onNavigate}
           />
         )}
@@ -214,6 +219,7 @@ export function SchedulerRunLogsModal({
   runDetailLoading,
   resolveGoalHref,
   resolveTaskHref,
+  resolveScheduledTaskHref,
   onHide,
   onSelectRun,
 }: SchedulerRunLogsModalProps): ReactElement {
@@ -253,6 +259,7 @@ export function SchedulerRunLogsModal({
               runDetailLoading={runDetailLoading}
               resolveGoalHref={resolveGoalHref}
               resolveTaskHref={resolveTaskHref}
+              resolveScheduledTaskHref={resolveScheduledTaskHref}
               onNavigate={onHide}
             />
           </div>

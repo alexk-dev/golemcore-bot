@@ -3,7 +3,8 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 TARGET_DIR="${ROOT_DIR}/target"
-EXEC_JAR_PATH="$(find "${TARGET_DIR}" -maxdepth 1 -type f -name 'bot-*-exec.jar' | sort | head -n 1)"
+APP_TARGET_DIR="${ROOT_DIR}/golemcore-bot-app/target"
+EXEC_JAR_PATH="$(find "${APP_TARGET_DIR}" -maxdepth 1 -type f -name 'bot-*-exec.jar' | sort | head -n 1)"
 NATIVE_LAUNCHER_JAR_PATH="${TARGET_DIR}/native-dist/build/jpackage-input/golemcore-bot-launcher.jar"
 
 expect_manifest_value() {
@@ -36,7 +37,7 @@ expect_jar_entry() {
 }
 
 if [[ -z "${EXEC_JAR_PATH}" ]]; then
-  echo "Executable runtime jar not found in ${TARGET_DIR}." >&2
+  echo "Executable runtime jar not found in ${APP_TARGET_DIR}." >&2
   exit 1
 fi
 

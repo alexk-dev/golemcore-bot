@@ -50,7 +50,7 @@ jobs:
         run: mvn -B -ntp -Djgitver.skip=true -f golemcore-plugins/pom.xml -pl extension-api,runtime-api -am install -DskipTests
 
       - name: Build and run tests
-        run: ./mvnw clean verify -DskipGitHooks=true
+        run: ./mvnw -DskipGitHooks=true -Dsurefire.failIfNoSpecifiedTests=false clean verify
 
       - name: Check Codecov token availability
         if: always() && matrix.arch == 'amd64'
@@ -68,7 +68,13 @@ jobs:
         if: always() && matrix.arch == 'amd64' && steps.codecov-token.outputs.available == 'true'
         uses: codecov/codecov-action@v6
         with:
-          files: ./target/site/jacoco/jacoco.xml
+          files: |
+            ./golemcore-bot-contracts/target/site/jacoco/jacoco.xml
+            ./golemcore-bot-self-evolving/target/site/jacoco/jacoco.xml
+            ./golemcore-bot-client/target/site/jacoco/jacoco.xml
+            ./golemcore-bot-hive/target/site/jacoco/jacoco.xml
+            ./golemcore-bot-extensions/target/site/jacoco/jacoco.xml
+            ./golemcore-bot-app/target/site/jacoco/jacoco.xml
           token: ${{ secrets.CODECOV_TOKEN }}
           fail_ci_if_error: false
           handle_no_reports_found: true
@@ -107,6 +113,7 @@ jobs:
           ./mvnw -B -ntp test
           -Dtest=DashboardSecurityIntegrationTest,RuntimeSettingsHttpIntegrationTest,HiveSdlcDefaultSettingsIntegrationTest
           -DskipGitHooks=true
+          -Dsurefire.failIfNoSpecifiedTests=false
 
   native-distribution:
     name: Native Distribution (linux-x64)
@@ -141,9 +148,9 @@ jobs:
       - name: Smoke test standalone JAR
         run: |
           set -euo pipefail
-          runtime_jar="$(find target -maxdepth 1 -type f -name 'bot-*-exec.jar' | sort | head -n 1)"
+          runtime_jar="$(find golemcore-bot-app/target -maxdepth 1 -type f -name 'bot-*-exec.jar' | sort | head -n 1)"
           if [[ -z "${runtime_jar}" ]]; then
-            echo "Executable runtime jar not found in target/." >&2
+            echo "Executable runtime jar not found in golemcore-bot-app/target/." >&2
             exit 1
           fi
 
@@ -316,30 +323,42 @@ jobs:
         run: mvn -B -ntp -Djgitver.skip=true -f golemcore-plugins/pom.xml -pl extension-api,runtime-api -am install -DskipTests
 
       - name: Check formatting
-        run: ./mvnw formatter:validate -DskipGitHooks=true
+        run: ./mvnw -B -ntp -DskipGitHooks=true net.revelc.code.formatter:formatter-maven-plugin:2.29.0:validate
 
       - name: Run PMD
-        run: ./mvnw -P strict pmd:check -DskipGitHooks=true
+        run: ./mvnw -B -ntp -P strict -Dfrontend.skip=true -DskipTests -DskipGitHooks=true test-compile org.apache.maven.plugins:maven-pmd-plugin:3.28.0:check
 
       - name: Run SpotBugs
-        run: ./mvnw -P strict compile spotbugs:check -DskipGitHooks=true
+        run: ./mvnw -B -ntp -P strict -Dfrontend.skip=true -DskipTests -DskipGitHooks=true compile com.github.spotbugs:spotbugs-maven-plugin:4.9.8.3:check
 
       - name: Generate Javadoc
-        run: ./mvnw -B -ntp javadoc:javadoc -DskipGitHooks=true
+        run: ./mvnw -pl ./golemcore-bot-app -am -B -ntp -Dfrontend.skip=true -DskipTests -DskipGitHooks=true test-compile org.apache.maven.plugins:maven-javadoc-plugin:3.12.0:javadoc
 
       - name: Upload PMD report
         if: always()
         uses: actions/upload-artifact@v7
         with:
           name: pmd-report
-          path: target/pmd.xml
+          path: |
+            golemcore-bot-contracts/target/pmd.xml
+            golemcore-bot-self-evolving/target/pmd.xml
+            golemcore-bot-client/target/pmd.xml
+            golemcore-bot-hive/target/pmd.xml
+            golemcore-bot-extensions/target/pmd.xml
+            golemcore-bot-app/target/pmd.xml
 
       - name: Upload SpotBugs report
         if: always()
         uses: actions/upload-artifact@v7
         with:
           name: spotbugs-report
-          path: target/spotbugsXml.xml
+          path: |
+            golemcore-bot-contracts/target/spotbugsXml.xml
+            golemcore-bot-self-evolving/target/spotbugsXml.xml
+            golemcore-bot-client/target/spotbugsXml.xml
+            golemcore-bot-hive/target/spotbugsXml.xml
+            golemcore-bot-extensions/target/spotbugsXml.xml
+            golemcore-bot-app/target/spotbugsXml.xml
 
   sonar:
     name: SonarCloud Analysis
@@ -391,6 +410,7 @@ jobs:
         run: >
           ./mvnw clean verify sonar:sonar
           -DskipGitHooks=true
+          -Dsurefire.failIfNoSpecifiedTests=false
 
       - name: Skip SonarCloud Analysis (missing SONAR_TOKEN)
         if: steps.sonar-token.outputs.available != 'true'
@@ -452,9 +472,15 @@ jobs:
             echo "jib-tags=dev-latest-${ARCH}" >> $GITHUB_OUTPUT
           fi
 
+      - name: Build app artifacts
+        run: |
+          ./mvnw -pl ./golemcore-bot-app -am install \
+            -DskipTests \
+            -DskipGitHooks=true
+
       - name: Build and push app image (${{ matrix.arch }})
         run: |
-          ./mvnw prepare-package jib:build \
+          ./mvnw -f golemcore-bot-app/pom.xml com.google.cloud.tools:jib-maven-plugin:build \
             -DskipTests \
             -DskipGitHooks=true \
             -Djib.from.image=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-base:latest \

@@ -77,7 +77,9 @@ jobs:
           AGENTLOOP_E2E_ENABLED: "true"
         run: >
           ./mvnw -B -ntp
+          -pl ./golemcore-bot-app -am
           -Dtest=AgentLoopContextWindowExternalE2ETest
+          -Dsurefire.failIfNoSpecifiedTests=false
           -Dfrontend.skip=true
           -DskipGitHooks=true
           test

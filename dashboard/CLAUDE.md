@@ -6,7 +6,7 @@
 cd dashboard
 npm install                  # install deps
 npm run dev                  # dev server (Vite, proxies /api → localhost:8080)
-npm run build                # tsc + vite build → ../src/main/resources/static/dashboard
+npm run build                # tsc + vite build → ../golemcore-bot-app/target/dashboard-dist
 npm run lint                 # ESLint strict check
 npm run lint:fix             # ESLint autofix
 ```

@@ -189,6 +189,7 @@ export const mockSchedulerState = {
   autoModeEnabled: false,
   goals: [],
   standaloneTasks: [],
+  scheduledTasks: [],
   schedules: [],
   reportChannelOptions: [],
 };
