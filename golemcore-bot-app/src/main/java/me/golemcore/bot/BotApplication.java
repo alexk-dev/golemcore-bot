@@ -24,12 +24,12 @@ import org.springframework.boot.context.properties.ConfigurationPropertiesScan;
 import org.springframework.scheduling.annotation.EnableAsync;
 
 /**
- * Main application class for Java AI Bot.
+ * Main application class for GolemCore Bot.
  *
  * <p>
- * Java AI Bot is an extensible AI assistant framework built with Spring Boot
- * 3.4.2, supporting multiple LLM providers, LLM-driven skill activation, and
- * powerful tool execution.
+ * GolemCore Bot is an agent runtime built with Spring Boot 4 and Java 25,
+ * supporting channel-connected agents, model routing, skills, memory, MCP
+ * tools, plugin integration, and Hive-connected control flows.
  *
  * <h2>Key Features</h2>
  * <ul>

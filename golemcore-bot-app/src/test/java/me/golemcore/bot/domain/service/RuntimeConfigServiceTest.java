@@ -213,7 +213,7 @@ class RuntimeConfigServiceTest {
     @Test
     void shouldMigrateLegacyFlatModelRouterSectionToCanonicalTierBindings() throws Exception {
         Map<String, Object> legacyModelRouter = new LinkedHashMap<>();
-        legacyModelRouter.put("routingModel", "openai/gpt-5.2-codex");
+        legacyModelRouter.put("routingModel", "openai/gpt-5.2");
         legacyModelRouter.put("routingModelReasoning", "none");
         legacyModelRouter.put("balancedModel", "legacy/balanced");
         legacyModelRouter.put("balancedModelReasoning", "low");
@@ -233,7 +233,7 @@ class RuntimeConfigServiceTest {
         Map<?, ?> routing = castMap(persistedModelRouter.get("routing"));
         Map<?, ?> tiers = castMap(persistedModelRouter.get("tiers"));
 
-        assertPersistedModelId(routing, "openai/gpt-5.2-codex");
+        assertPersistedModelId(routing, "openai/gpt-5.2");
         assertPersistedModelId(castMap(tiers.get("balanced")), "legacy/balanced");
         assertEquals("low", castMap(tiers.get("balanced")).get("reasoning"));
         assertPersistedModelId(castMap(tiers.get("smart")), "legacy/smart");
@@ -2174,6 +2174,459 @@ class RuntimeConfigServiceTest {
         assertTrue(normalized.getDegradationStripTools());
         assertTrue(normalized.getColdRetryEnabled());
         assertEquals(4, normalized.getColdRetryMaxAttempts());
+    }
+
+    @Test
+    void shouldMutateLlmProviderSettingsThroughAdminFacade() {
+        service.addLlmProvider("OpenAI", RuntimeConfig.LlmProviderConfig.builder()
+                .apiKey(Secret.of("existing-key"))
+                .baseUrl("https://old.example.com")
+                .build());
+
+        assertEquals(List.of("openai"), service.getConfiguredLlmProviders());
+        assertEquals(List.of("openai"), service.getConfiguredLlmProvidersWithApiKey());
+        assertTrue(service.hasLlmProviderApiKey("openai"));
+
+        service.updateLlmProvider("OPENAI", RuntimeConfig.LlmProviderConfig.builder()
+                .baseUrl("https://new.example.com")
+                .requestTimeoutSeconds(90)
+                .build());
+
+        RuntimeConfig.LlmProviderConfig updated = service.getLlmProviderConfig("openai");
+        assertEquals("existing-key", Secret.valueOrEmpty(updated.getApiKey()));
+        assertEquals("https://new.example.com", updated.getBaseUrl());
+        assertEquals(90, updated.getRequestTimeoutSeconds());
+
+        assertTrue(service.removeLlmProvider("OPENAI"));
+        assertFalse(service.removeLlmProvider("OPENAI"));
+        assertTrue(service.getConfiguredLlmProvidersWithApiKey().isEmpty());
+    }
+
+    @Test
+    void shouldReplaceManagedPolicySectionsAndRestoreRuntimeSnapshot() {
+        RuntimeConfig snapshot = service.snapshotRuntimeConfig();
+        RuntimeConfig.LlmConfig llmConfig = RuntimeConfig.LlmConfig.builder()
+                .providers(new LinkedHashMap<>(Map.of("managed", RuntimeConfig.LlmProviderConfig.builder()
+                        .apiKey(Secret.of("managed-key"))
+                        .build())))
+                .build();
+        RuntimeConfig.ModelRouterConfig modelRouterConfig = RuntimeConfig.ModelRouterConfig.builder()
+                .routingModel("managed/router")
+                .balancedModel("managed/balanced")
+                .dynamicTierEnabled(false)
+                .build();
+
+        service.replaceManagedPolicySections(llmConfig, modelRouterConfig);
+
+        assertEquals(List.of("managed"), service.getConfiguredLlmProviders());
+        assertEquals("managed/router", service.getRoutingModel());
+        assertEquals("managed/balanced", service.getBalancedModel());
+        assertFalse(service.isDynamicTierEnabled());
+
+        service.replaceManagedPolicySections(null, null);
+
+        assertTrue(service.getConfiguredLlmProviders().isEmpty());
+        assertNull(service.getRoutingModel());
+        assertNull(service.getBalancedModel());
+
+        service.restoreRuntimeConfigSnapshot(snapshot);
+
+        assertEquals(snapshot.getModelRegistry().getBranch(),
+                service.getRuntimeConfig().getModelRegistry().getBranch());
+    }
+
+    @Test
+    void shouldReturnConfiguredFeatureFlagsAndBudgets() {
+        RuntimeConfig config = service.getRuntimeConfig();
+        config.getTelegram().setEnabled(true);
+        config.getTelegram().setToken(Secret.of("telegram-token"));
+        config.getTelegram().setAllowedUsers(List.of("user-1", "user-2"));
+        config.getModelRouter().setRoutingModel("router/model");
+        config.getModelRouter().setRoutingModelReasoning("low");
+        config.getModelRouter().setBalancedModel("balanced/model");
+        config.getModelRouter().setBalancedModelReasoning("medium");
+        config.getModelRouter().setSmartModel("smart/model");
+        config.getModelRouter().setSmartModelReasoning("high");
+        config.getModelRouter().setCodingModel("coding/model");
+        config.getModelRouter().setCodingModelReasoning("xhigh");
+        config.getModelRouter().setDeepModel("deep/model");
+        config.getModelRouter().setDeepModelReasoning("high");
+        config.getModelRouter().setDynamicTierEnabled(false);
+        config.setTools(RuntimeConfig.ToolsConfig.builder()
+                .filesystemEnabled(false)
+                .shellEnabled(false)
+                .skillManagementEnabled(false)
+                .skillTransitionEnabled(false)
+                .tierEnabled(false)
+                .goalManagementEnabled(false)
+                .shellEnvironmentVariables(new java.util.ArrayList<>(List.of(
+                        RuntimeConfig.ShellEnvironmentVariable.builder().name(" API_TOKEN ").value("token").build())))
+                .build());
+        config.setVoice(RuntimeConfig.VoiceConfig.builder()
+                .enabled(true)
+                .apiKey(Secret.of("voice-key"))
+                .voiceId("voice-custom")
+                .ttsModelId("tts-custom")
+                .sttModelId("stt-custom")
+                .speed(1.25f)
+                .telegramRespondWithVoice(true)
+                .telegramTranscribeIncoming(true)
+                .sttProvider("golemcore/whisper")
+                .ttsProvider("golemcore/elevenlabs")
+                .whisperSttUrl("https://stt.example.com")
+                .whisperSttApiKey(Secret.of("stt-key"))
+                .build());
+        config.setAutoMode(RuntimeConfig.AutoModeConfig.builder()
+                .enabled(false)
+                .tickIntervalSeconds(45)
+                .taskTimeLimitMinutes(15)
+                .autoStart(false)
+                .modelTier("smart")
+                .reflectionEnabled(false)
+                .reflectionFailureThreshold(7)
+                .reflectionModelTier("deep")
+                .reflectionTierPriority(true)
+                .notifyMilestones(false)
+                .build());
+        config.setUsage(RuntimeConfig.UsageConfig.builder().enabled(false).build());
+        config.setTelemetry(RuntimeConfig.TelemetryConfig.builder().enabled(false).build());
+        config.setMcp(RuntimeConfig.McpConfig.builder()
+                .enabled(false)
+                .defaultStartupTimeout(12)
+                .defaultIdleTimeout(8)
+                .build());
+        config.setRateLimit(RuntimeConfig.RateLimitConfig.builder()
+                .enabled(true)
+                .userRequestsPerMinute(3)
+                .userRequestsPerHour(30)
+                .userRequestsPerDay(300)
+                .channelMessagesPerSecond(4)
+                .llmRequestsPerMinute(5)
+                .build());
+        config.setSecurity(RuntimeConfig.SecurityConfig.builder()
+                .sanitizeInput(false)
+                .detectPromptInjection(false)
+                .detectCommandInjection(false)
+                .maxInputLength(1234)
+                .allowlistEnabled(false)
+                .toolConfirmationEnabled(true)
+                .toolConfirmationTimeoutSeconds(9)
+                .build());
+        config.setCompaction(RuntimeConfig.CompactionConfig.builder()
+                .enabled(false)
+                .maxContextTokens(12345)
+                .keepLastMessages(6)
+                .triggerMode("token_threshold")
+                .modelThresholdRatio(0.5d)
+                .preserveTurnBoundaries(false)
+                .detailsEnabled(false)
+                .detailsMaxItemsPerCategory(3)
+                .summaryTimeoutMs(4000)
+                .build());
+
+        service.updateRuntimeConfig(config);
+
+        assertTrue(service.isTelegramEnabled());
+        assertEquals("telegram-token", service.getTelegramToken());
+        assertEquals(List.of("user-1", "user-2"), service.getTelegramAllowedUsers());
+        assertEquals("router/model", service.getRoutingModel());
+        assertEquals("low", service.getRoutingModelReasoning());
+        assertEquals("balanced/model", service.getBalancedModel());
+        assertEquals("medium", service.getBalancedModelReasoning());
+        assertEquals("smart/model", service.getSmartModel());
+        assertEquals("high", service.getSmartModelReasoning());
+        assertEquals("coding/model", service.getCodingModel());
+        assertEquals("xhigh", service.getCodingModelReasoning());
+        assertEquals("deep/model", service.getDeepModel());
+        assertEquals("high", service.getDeepModelReasoning());
+        assertFalse(service.isDynamicTierEnabled());
+        assertFalse(service.isFilesystemEnabled());
+        assertFalse(service.isShellEnabled());
+        assertFalse(service.isSkillManagementEnabled());
+        assertFalse(service.isSkillTransitionEnabled());
+        assertFalse(service.isTierToolEnabled());
+        assertFalse(service.isGoalManagementEnabled());
+        assertEquals(Map.of("API_TOKEN", "token"), service.getShellEnvironmentVariables());
+        assertTrue(service.isVoiceEnabled());
+        assertEquals("voice-key", service.getVoiceApiKey());
+        assertEquals("voice-custom", service.getVoiceId());
+        assertEquals("tts-custom", service.getTtsModelId());
+        assertEquals("stt-custom", service.getSttModelId());
+        assertEquals(1.25f, service.getVoiceSpeed(), 0.001f);
+        assertTrue(service.isTelegramRespondWithVoiceEnabled());
+        assertTrue(service.isTelegramTranscribeIncomingEnabled());
+        assertEquals("golemcore/whisper", service.getSttProvider());
+        assertEquals("golemcore/elevenlabs", service.getTtsProvider());
+        assertEquals("https://stt.example.com", service.getWhisperSttUrl());
+        assertEquals("stt-key", service.getWhisperSttApiKey());
+        assertTrue(service.isWhisperSttConfigured());
+        assertFalse(service.isAutoModeEnabled());
+        assertEquals(45, service.getAutoTickIntervalSeconds());
+        assertEquals(15, service.getAutoTaskTimeLimitMinutes());
+        assertFalse(service.isAutoStartEnabled());
+        assertEquals("smart", service.getAutoModelTier());
+        assertFalse(service.isAutoReflectionEnabled());
+        assertEquals(7, service.getAutoReflectionFailureThreshold());
+        assertEquals("deep", service.getAutoReflectionModelTier());
+        assertTrue(service.isAutoReflectionTierPriority());
+        assertFalse(service.isAutoNotifyMilestonesEnabled());
+        assertFalse(service.isUsageEnabled());
+        assertFalse(service.isTelemetryEnabled());
+        assertFalse(service.isMcpEnabled());
+        assertEquals(12, service.getMcpDefaultStartupTimeout());
+        assertEquals(8, service.getMcpDefaultIdleTimeout());
+        assertTrue(service.isRateLimitEnabled());
+        assertEquals(3, service.getUserRequestsPerMinute());
+        assertEquals(30, service.getUserRequestsPerHour());
+        assertEquals(300, service.getUserRequestsPerDay());
+        assertEquals(4, service.getChannelMessagesPerSecond());
+        assertEquals(5, service.getLlmRequestsPerMinute());
+        assertFalse(service.isSanitizeInputEnabled());
+        assertFalse(service.isPromptInjectionDetectionEnabled());
+        assertFalse(service.isCommandInjectionDetectionEnabled());
+        assertEquals(1234, service.getMaxInputLength());
+        assertFalse(service.isAllowlistEnabled());
+        assertTrue(service.isToolConfirmationEnabled());
+        assertEquals(9, service.getToolConfirmationTimeoutSeconds());
+        assertFalse(service.isCompactionEnabled());
+        assertEquals(12345, service.getCompactionMaxContextTokens());
+        assertEquals(6, service.getCompactionKeepLastMessages());
+        assertEquals("token_threshold", service.getCompactionTriggerMode());
+        assertEquals(0.5d, service.getCompactionModelThresholdRatio(), 0.001d);
+        assertFalse(service.isCompactionPreserveTurnBoundariesEnabled());
+        assertFalse(service.isCompactionDetailsEnabled());
+        assertEquals(3, service.getCompactionDetailsMaxItemsPerCategory());
+        assertEquals(4000, service.getCompactionSummaryTimeoutMs());
+    }
+
+    @Test
+    void shouldNormalizeAndExposeSelfEvolvingRuntimeSettings() {
+        RuntimeConfig config = service.getRuntimeConfig();
+        RuntimeConfig.SelfEvolvingTacticEmbeddingsLocalConfig localConfig = RuntimeConfig.SelfEvolvingTacticEmbeddingsLocalConfig
+                .builder()
+                .autoInstall(null)
+                .pullOnStart(null)
+                .requireHealthyRuntime(null)
+                .failOpen(null)
+                .initialRestartBackoffMs(0)
+                .minimumRuntimeVersion(" ")
+                .build();
+        RuntimeConfig.SelfEvolvingTacticSearchConfig searchConfig = RuntimeConfig.SelfEvolvingTacticSearchConfig
+                .builder()
+                .mode("vector")
+                .bm25(RuntimeConfig.SelfEvolvingTacticBm25Config.builder().enabled(null).build())
+                .embeddings(RuntimeConfig.SelfEvolvingTacticEmbeddingsConfig.builder()
+                        .provider(" CustomProvider ")
+                        .baseUrl(" https://embeddings.example.com ")
+                        .model(" custom-model ")
+                        .apiKey(Secret.of("embedding-key"))
+                        .local(localConfig)
+                        .build())
+                .personalization(null)
+                .negativeMemory(null)
+                .queryExpansion(RuntimeConfig.SelfEvolvingTacticQueryExpansionConfig.builder()
+                        .enabled(false)
+                        .tier("deep")
+                        .build())
+                .advisoryCount(9)
+                .build();
+        config.setSelfEvolving(RuntimeConfig.SelfEvolvingConfig.builder()
+                .enabled(true)
+                .managedByProperties(null)
+                .overriddenPaths(List.of("runtime.self-evolving.enabled"))
+                .tactics(RuntimeConfig.SelfEvolvingTacticsConfig.builder()
+                        .enabled(true)
+                        .search(searchConfig)
+                        .build())
+                .capture(RuntimeConfig.SelfEvolvingCaptureConfig.builder()
+                        .llm("bad")
+                        .tool("meta_only")
+                        .context("full")
+                        .skill("bad")
+                        .tier("meta_only")
+                        .infra("bad")
+                        .build())
+                .judge(RuntimeConfig.SelfEvolvingJudgeConfig.builder()
+                        .primaryTier("standard")
+                        .tiebreakerTier("premium")
+                        .evolutionTier("bad")
+                        .requireEvidenceAnchors(null)
+                        .uncertaintyThreshold(2.0d)
+                        .build())
+                .promotion(RuntimeConfig.SelfEvolvingPromotionConfig.builder()
+                        .mode(null)
+                        .allowAutoAccept(null)
+                        .shadowRequired(true)
+                        .canaryRequired(true)
+                        .hiveApprovalPreferred(null)
+                        .build())
+                .evolution(RuntimeConfig.SelfEvolvingEvolutionConfig.builder()
+                        .enabled(null)
+                        .modes(List.of(" fix ", "", "fix", "derive"))
+                        .artifactTypes(List.of(" skill ", "prompt", "skill"))
+                        .build())
+                .benchmark(RuntimeConfig.SelfEvolvingBenchmarkConfig.builder().build())
+                .hive(RuntimeConfig.SelfEvolvingHiveConfig.builder().build())
+                .build());
+
+        service.updateRuntimeConfig(config);
+
+        RuntimeConfig.SelfEvolvingConfig normalized = service.getSelfEvolvingConfig();
+        RuntimeConfig.SelfEvolvingTacticSearchConfig normalizedSearch = normalized.getTactics().getSearch();
+        RuntimeConfig.SelfEvolvingTacticEmbeddingsConfig normalizedEmbeddings = normalizedSearch.getEmbeddings();
+        assertTrue(service.isSelfEvolvingEnabled());
+        assertTrue(service.isSelfEvolvingTracePayloadOverrideEnabled());
+        assertFalse(service.isTacticQueryExpansionEnabled());
+        assertEquals("deep", service.getTacticQueryExpansionTier());
+        assertEquals(5, service.getTacticAdvisoryCount());
+        assertEquals("smart", service.getSelfEvolvingJudgePrimaryTier());
+        assertEquals("deep", service.getSelfEvolvingJudgeTiebreakerTier());
+        assertEquals("deep", service.getSelfEvolvingJudgeEvolutionTier());
+        assertEquals("approval_gate", service.getSelfEvolvingPromotionMode());
+        assertTrue(service.isSelfEvolvingPromotionShadowRequired());
+        assertTrue(service.isSelfEvolvingPromotionCanaryRequired());
+        assertFalse(normalizedEmbeddings.getEnabled());
+        assertEquals("customprovider", normalizedEmbeddings.getProvider());
+        assertEquals("https://embeddings.example.com", normalizedEmbeddings.getBaseUrl());
+        assertEquals("custom-model", normalizedEmbeddings.getModel());
+        assertEquals("embedding-key", Secret.valueOrEmpty(normalizedEmbeddings.getApiKey()));
+        assertEquals(1000, normalizedEmbeddings.getLocal().getInitialRestartBackoffMs());
+        assertEquals("0.19.0", normalizedEmbeddings.getLocal().getMinimumRuntimeVersion());
+        assertEquals("full", normalized.getCapture().getLlm());
+        assertEquals("meta_only", normalized.getCapture().getTool());
+        assertEquals("full", normalized.getCapture().getSkill());
+        assertEquals("meta_only", normalized.getCapture().getTier());
+        assertEquals("meta_only", normalized.getCapture().getInfra());
+        assertTrue(normalized.getJudge().getRequireEvidenceAnchors());
+        assertEquals(0.22d, normalized.getJudge().getUncertaintyThreshold());
+        assertTrue(normalized.getPromotion().getAllowAutoAccept());
+        assertTrue(normalized.getPromotion().getHiveApprovalPreferred());
+        assertEquals(List.of("fix", "derive"), normalized.getEvolution().getModes());
+        assertEquals(List.of("skill", "prompt"), normalized.getEvolution().getArtifactTypes());
+    }
+
+    @Test
+    void shouldReturnConfiguredMemoryDisclosureAndSkillsSettings() {
+        RuntimeConfig config = service.getRuntimeConfig();
+        config.setMemory(RuntimeConfig.MemoryConfig.builder()
+                .version(2)
+                .enabled(false)
+                .softPromptBudgetTokens(900)
+                .maxPromptBudgetTokens(1200)
+                .workingTopK(1)
+                .episodicTopK(2)
+                .semanticTopK(3)
+                .proceduralTopK(4)
+                .promotionEnabled(false)
+                .promotionMinConfidence(0.55d)
+                .decayEnabled(false)
+                .decayDays(45)
+                .retrievalLookbackDays(12)
+                .codeAwareExtractionEnabled(false)
+                .disclosure(RuntimeConfig.MemoryDisclosureConfig.builder()
+                        .mode("selective_detail")
+                        .promptStyle("compact")
+                        .toolExpansionEnabled(false)
+                        .disclosureHintsEnabled(false)
+                        .detailMinScore(0.91d)
+                        .build())
+                .reranking(RuntimeConfig.MemoryRerankingConfig.builder()
+                        .enabled(false)
+                        .profile("aggressive")
+                        .build())
+                .diagnostics(RuntimeConfig.MemoryDiagnosticsConfig.builder()
+                        .verbosity("detailed")
+                        .build())
+                .build());
+        config.setSkills(RuntimeConfig.SkillsConfig.builder()
+                .enabled(false)
+                .progressiveLoading(false)
+                .build());
+
+        service.updateRuntimeConfig(config);
+
+        assertFalse(service.isMemoryEnabled());
+        assertEquals(2, service.getMemoryVersion());
+        assertEquals(900, service.getMemorySoftPromptBudgetTokens());
+        assertEquals(1200, service.getMemoryMaxPromptBudgetTokens());
+        assertEquals(1, service.getMemoryWorkingTopK());
+        assertEquals(2, service.getMemoryEpisodicTopK());
+        assertEquals(3, service.getMemorySemanticTopK());
+        assertEquals(4, service.getMemoryProceduralTopK());
+        assertFalse(service.isMemoryPromotionEnabled());
+        assertEquals(0.55d, service.getMemoryPromotionMinConfidence(), 0.001d);
+        assertFalse(service.isMemoryDecayEnabled());
+        assertEquals(45, service.getMemoryDecayDays());
+        assertEquals(12, service.getMemoryRetrievalLookbackDays());
+        assertFalse(service.isMemoryCodeAwareExtractionEnabled());
+        assertEquals("selective_detail", service.getMemoryDisclosureMode());
+        assertEquals("compact", service.getMemoryPromptStyle());
+        assertFalse(service.isMemoryToolExpansionEnabled());
+        assertFalse(service.isMemoryDisclosureHintsEnabled());
+        assertEquals(0.91d, service.getMemoryDetailMinScore(), 0.001d);
+        assertFalse(service.isMemoryRerankingEnabled());
+        assertEquals("aggressive", service.getMemoryRerankingProfile());
+        assertEquals("detailed", service.getMemoryDiagnosticsVerbosity());
+        assertFalse(service.isSkillsEnabled());
+        assertFalse(service.isSkillsProgressiveLoadingEnabled());
+    }
+
+    @Test
+    void shouldFallbackToDefaultsWhenOptionalCachedSectionsAreMissing() throws Exception {
+        RuntimeConfig config = RuntimeConfig.builder().build();
+        config.setDelayedActions(null);
+        config.setLlm(null);
+        config.setMemory(null);
+        config.setPlan(null);
+        config.setSessionRetention(null);
+        config.setSkills(null);
+        config.setTelemetry(null);
+        config.setToolLoop(null);
+        config.setTracing(null);
+        config.setTurn(null);
+        config.setUpdate(null);
+        setCachedConfig(config);
+
+        assertNotNull(service.getLlmProviderConfig(null));
+        assertTrue(service.getConfiguredLlmProvidersWithApiKey().isEmpty());
+        assertTrue(service.isTelemetryEnabled());
+        assertNull(service.getPlanModelTier());
+        assertTrue(service.isDelayedActionsEnabled());
+        assertEquals(1, service.getDelayedActionsTickSeconds());
+        assertEquals(java.time.Duration.ofDays(30), service.getDelayedActionsMaxDelay());
+        assertEquals(java.time.Duration.ofMinutes(2), service.getDelayedActionsLeaseDuration());
+        assertTrue(service.isAutoUpdateEnabled());
+        assertEquals(60, service.getUpdateCheckIntervalMinutes());
+        assertFalse(service.isUpdateMaintenanceWindowEnabled());
+        assertEquals("00:00", service.getUpdateMaintenanceWindowStartUtc());
+        assertEquals("00:00", service.getUpdateMaintenanceWindowEndUtc());
+        assertTrue(service.isTracingEnabled());
+        assertFalse(service.isPayloadSnapshotsEnabled());
+        assertEquals(128, service.getSessionTraceBudgetMb());
+        assertFalse(service.isTraceInboundPayloadCaptureEnabled());
+        assertFalse(service.isTraceOutboundPayloadCaptureEnabled());
+        assertFalse(service.isTraceToolPayloadCaptureEnabled());
+        assertFalse(service.isTraceLlmPayloadCaptureEnabled());
+        assertEquals(0.0d, service.getTraceResiliencePayloadSampleRate());
+        assertEquals(3, service.getTurnMaxSkillTransitions());
+        assertEquals(200, service.getTurnMaxLlmCalls());
+        assertEquals(500, service.getTurnMaxToolExecutions());
+        assertEquals(200, service.getToolLoopMaxLlmCalls());
+        assertEquals(500, service.getToolLoopMaxToolExecutions());
+        assertEquals(java.time.Duration.ofHours(1), service.getTurnDeadline());
+        assertTrue(service.isTurnAutoRetryEnabled());
+        assertEquals("one-at-a-time", service.getTurnQueueSteeringMode());
+        assertTrue(service.isSessionRetentionEnabled());
+        assertEquals(java.time.Duration.ofDays(30), service.getSessionRetentionMaxAge());
+        assertTrue(service.isMemoryEnabled());
+        assertEquals(1800, service.getMemorySoftPromptBudgetTokens());
+        assertEquals(2, service.getMemoryVersion());
+        assertTrue(service.isMemoryPromotionEnabled());
+        assertEquals("summary", service.getMemoryDisclosureMode());
+        assertTrue(service.isMemoryRerankingEnabled());
+        assertEquals("basic", service.getMemoryDiagnosticsVerbosity());
+        assertTrue(service.isSkillsEnabled());
+        assertTrue(service.isSkillsProgressiveLoadingEnabled());
     }
 
     @SuppressWarnings({ "PMD.AvoidAccessibilityAlteration", "unchecked" })

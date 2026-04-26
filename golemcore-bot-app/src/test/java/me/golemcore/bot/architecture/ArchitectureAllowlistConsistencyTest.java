@@ -20,6 +20,12 @@ class ArchitectureAllowlistConsistencyTest {
 
     private static final List<Path> MAIN_JAVA_ROOTS = List.of(
             Paths.get("src/main/java"),
+            Paths.get("../golemcore-bot-runtime-config/src/main/java"),
+            Paths.get("../golemcore-bot-sessions/src/main/java"),
+            Paths.get("../golemcore-bot-memory/src/main/java"),
+            Paths.get("../golemcore-bot-tools/src/main/java"),
+            Paths.get("../golemcore-bot-tracing/src/main/java"),
+            Paths.get("../golemcore-bot-runtime-core/src/main/java"),
             Paths.get("../golemcore-bot-self-evolving/src/main/java"),
             Paths.get("../golemcore-bot-contracts/src/main/java"),
             Paths.get("../golemcore-bot-client/src/main/java"),

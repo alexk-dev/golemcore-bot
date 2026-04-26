@@ -27,6 +27,7 @@ import me.golemcore.bot.domain.model.DelayedSessionAction;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.ChannelTypes;
 import me.golemcore.bot.port.outbound.DelayedActionRegistryPort;
+import me.golemcore.bot.port.outbound.SessionDelayedActionProtectionPort;
 import org.springframework.stereotype.Service;
 
 import java.time.Clock;
@@ -47,7 +48,7 @@ import java.util.UUID;
  */
 @Service
 @Slf4j
-public class DelayedSessionActionService {
+public class DelayedSessionActionService implements SessionDelayedActionProtectionPort {
 
     private static final int REGISTRY_VERSION = 1;
     private static final int MAX_ACTIVE_ACTIONS_PER_SESSION = 3;
@@ -149,6 +150,7 @@ public class DelayedSessionActionService {
         }
     }
 
+    @Override
     public boolean hasPendingActions(String channelType, String conversationKey) {
         ensureLoaded();
         String normalizedChannel = normalizeChannelType(channelType);

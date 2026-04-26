@@ -23,6 +23,7 @@ import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.RateLimitResult;
 import me.golemcore.bot.domain.model.SkillTransitionRequest;
+import me.golemcore.bot.domain.service.DefaultContextHygieneService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.TraceBudgetService;
 import me.golemcore.bot.domain.service.TraceService;
@@ -178,7 +179,8 @@ class AgentLoopRoutingBddTest {
                 preferencesService,
                 llmPort,
                 clock,
-                new TraceService(new TraceSnapshotCompressionService(), new TraceBudgetService()));
+                new TraceService(new TraceSnapshotCompressionService(), new TraceBudgetService()),
+                new DefaultContextHygieneService());
     }
 
     private static RuntimeConfigService mockRuntimeConfigService(int maxLlmCalls) {

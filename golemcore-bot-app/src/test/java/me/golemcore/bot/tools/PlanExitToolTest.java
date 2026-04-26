@@ -30,7 +30,7 @@ class PlanExitToolTest {
 
     @BeforeEach
     void setUp() {
-        planService = new PlanService(CLOCK);
+        planService = new PlanService(CLOCK, null);
         tool = new PlanExitTool(planService);
         context = AgentContext.builder()
                 .session(AgentSession.builder().channelType("web").chatId("chat-1").build())

@@ -24,8 +24,10 @@ Be respectful, inclusive, and professional. We're all here to build something gr
 
 ### Prerequisites
 
-- Java 17+
+- Java 25
 - Maven 3.x
+- Node.js/npm for dashboard builds, unless the frontend build is explicitly skipped
+- Docker for container and browser-tool workflows
 - Git
 - At least one LLM API key (OpenAI or Anthropic)
 

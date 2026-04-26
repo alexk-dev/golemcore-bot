@@ -38,7 +38,7 @@ GolemCore Bot is an AI assistant framework with intelligent skill routing, multi
 - Isolated from host system
 
 **Without Docker (JAR):**
-- Requires Java 17+ installed
+- Requires Java 25 installed
 - Direct access to host filesystem
 - Simpler for development
 

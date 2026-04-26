@@ -140,8 +140,8 @@ public class ApplicationLayerConfiguration {
                 sessionPort,
                 runtimeConfigService,
                 activeSessionPointerService,
-                planService,
-                delayedSessionActionService,
+                java.util.List.of(planService),
+                java.util.List.of(delayedSessionActionService),
                 clock);
     }
 

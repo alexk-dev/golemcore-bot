@@ -117,7 +117,7 @@ public class AutoConfiguration {
             }
         }
 
-        log.info("Java AI Bot started successfully");
+        log.info("GolemCore Bot started successfully");
     }
 
     private boolean isChannelEnabled(String channelType) {

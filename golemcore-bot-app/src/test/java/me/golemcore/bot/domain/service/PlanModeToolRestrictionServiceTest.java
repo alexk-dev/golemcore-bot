@@ -26,7 +26,7 @@ class PlanModeToolRestrictionServiceTest {
 
     @BeforeEach
     void setUp() {
-        planService = new PlanService(CLOCK);
+        planService = new PlanService(CLOCK, null);
         restrictions = new PlanModeToolRestrictionService(planService);
         context = AgentContext.builder()
                 .session(AgentSession.builder()

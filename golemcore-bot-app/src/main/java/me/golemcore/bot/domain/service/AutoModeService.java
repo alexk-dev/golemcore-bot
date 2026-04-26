@@ -31,8 +31,8 @@ import me.golemcore.bot.domain.model.DiaryEntry;
 import me.golemcore.bot.domain.model.Goal;
 import me.golemcore.bot.domain.model.Skill;
 import me.golemcore.bot.domain.model.ScheduledTask;
+import me.golemcore.bot.port.outbound.SessionGoalCleanupPort;
 import me.golemcore.bot.port.outbound.StoragePort;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 /**
@@ -41,7 +41,7 @@ import org.springframework.stereotype.Service;
  */
 @Service
 @Slf4j
-public class AutoModeService {
+public class AutoModeService implements SessionGoalCleanupPort {
 
     private final StoragePort storagePort;
     private final ObjectMapper objectMapper;
@@ -49,11 +49,9 @@ public class AutoModeService {
     private final SessionScopedGoalService sessionScopedGoalService;
     private final SessionDiaryService sessionDiaryService;
     private final PersistentScheduledTaskService persistentScheduledTaskService;
-    private final String fallbackSessionId;
 
     private volatile boolean enabled = false;
 
-    @Autowired
     public AutoModeService(StoragePort storagePort, ObjectMapper objectMapper,
             RuntimeConfigService runtimeConfigService,
             SessionScopedGoalService sessionScopedGoalService,
@@ -65,48 +63,6 @@ public class AutoModeService {
         this.sessionScopedGoalService = sessionScopedGoalService;
         this.sessionDiaryService = sessionDiaryService;
         this.persistentScheduledTaskService = persistentScheduledTaskService;
-        this.fallbackSessionId = null;
-    }
-
-    AutoModeService(
-            StoragePort storagePort,
-            ObjectMapper objectMapper,
-            RuntimeConfigService runtimeConfigService,
-            PersistentScheduledTaskService persistentScheduledTaskService) {
-        this(
-                storagePort,
-                objectMapper,
-                runtimeConfigService,
-                createLegacySessionScopedGoalService(storagePort, objectMapper, runtimeConfigService),
-                new LegacySessionDiaryService(storagePort, objectMapper),
-                persistentScheduledTaskService,
-                "legacy-test-session");
-    }
-
-    private AutoModeService(StoragePort storagePort, ObjectMapper objectMapper,
-            RuntimeConfigService runtimeConfigService,
-            SessionScopedGoalService sessionScopedGoalService,
-            SessionDiaryService sessionDiaryService,
-            PersistentScheduledTaskService persistentScheduledTaskService,
-            String fallbackSessionId) {
-        this.storagePort = storagePort;
-        this.objectMapper = objectMapper;
-        this.runtimeConfigService = runtimeConfigService;
-        this.sessionScopedGoalService = sessionScopedGoalService;
-        this.sessionDiaryService = sessionDiaryService;
-        this.persistentScheduledTaskService = persistentScheduledTaskService;
-        this.fallbackSessionId = fallbackSessionId;
-    }
-
-    private static SessionScopedGoalService createLegacySessionScopedGoalService(
-            StoragePort storagePort,
-            ObjectMapper objectMapper,
-            RuntimeConfigService runtimeConfigService) {
-        SessionDiaryService diaryService = new LegacySessionDiaryService(storagePort, objectMapper);
-        return new SessionScopedGoalService(
-                new LegacyGoalStorageService(storagePort, objectMapper),
-                runtimeConfigService,
-                diaryService);
     }
 
     public boolean isFeatureEnabled() {
@@ -428,6 +384,7 @@ public class AutoModeService {
         return sessionScopedGoalService.findGoalForTask(sessionId, taskId);
     }
 
+    @Override
     public void deleteSessionGoals(String sessionId) {
         sessionScopedGoalService.replaceGoals(sessionId, List.of());
     }
@@ -583,9 +540,6 @@ public class AutoModeService {
     private String requireCurrentSessionId() {
         AgentContext context = AgentContextHolder.get();
         if (context == null || context.getSession() == null || context.getSession().getId() == null) {
-            if (fallbackSessionId != null) {
-                return fallbackSessionId;
-            }
             throw new IllegalStateException("No current session available for auto mode operation");
         }
         return context.getSession().getId();

@@ -45,8 +45,8 @@ class SessionRetentionCleanupServiceTest {
                 sessionPort,
                 runtimeConfigService,
                 activeSessionPointerService,
-                planService,
-                delayedSessionActionService,
+                List.of(planService),
+                List.of(delayedSessionActionService),
                 Clock.fixed(NOW, ZoneOffset.UTC));
 
         when(runtimeConfigService.isSessionRetentionEnabled()).thenReturn(true);

@@ -117,7 +117,7 @@ class ToolLayerTest {
     @Test
     void shouldHideDisabledToolsAndRenderRestrictionsWhenPlanModeIsActive() {
         PlanService planService = new PlanService(Clock.fixed(
-                Instant.parse("2026-04-23T12:00:00Z"), ZoneOffset.UTC));
+                Instant.parse("2026-04-23T12:00:00Z"), ZoneOffset.UTC), null);
         planService.activatePlanMode(new SessionIdentity("web", "chat-1"), "chat-1", null);
         layer = new ToolLayer(toolCallExecutionService, mcpPort, delayedActionPolicyService,
                 new PlanModeToolRestrictionService(planService));
@@ -157,7 +157,7 @@ class ToolLayerTest {
     @Test
     void shouldNotPromiseUnavailablePlanModeTools() {
         PlanService planService = new PlanService(Clock.fixed(
-                Instant.parse("2026-04-23T12:00:00Z"), ZoneOffset.UTC));
+                Instant.parse("2026-04-23T12:00:00Z"), ZoneOffset.UTC), null);
         planService.activatePlanMode(new SessionIdentity("web", "chat-1"), "chat-1", null);
         layer = new ToolLayer(toolCallExecutionService, mcpPort, delayedActionPolicyService,
                 new PlanModeToolRestrictionService(planService));
@@ -358,7 +358,7 @@ class ToolLayerTest {
     @Test
     void shouldNotAllowMcpToolsToReplacePrivilegedPlanModeTools() {
         PlanService planService = new PlanService(Clock.fixed(
-                Instant.parse("2026-04-23T12:00:00Z"), ZoneOffset.UTC));
+                Instant.parse("2026-04-23T12:00:00Z"), ZoneOffset.UTC), null);
         planService.activatePlanMode(new SessionIdentity("web", "chat-1"), "chat-1", null);
         layer = new ToolLayer(toolCallExecutionService, mcpPort, delayedActionPolicyService,
                 new PlanModeToolRestrictionService(planService));

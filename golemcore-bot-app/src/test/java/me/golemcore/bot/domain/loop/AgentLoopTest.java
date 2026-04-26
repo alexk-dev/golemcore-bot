@@ -34,6 +34,7 @@ import me.golemcore.bot.domain.model.RoutingOutcome;
 import me.golemcore.bot.domain.model.SkillTransitionRequest;
 import me.golemcore.bot.domain.model.ToolResult;
 import me.golemcore.bot.domain.model.TurnOutcome;
+import me.golemcore.bot.domain.service.DefaultContextHygieneService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.TraceBudgetService;
 import me.golemcore.bot.domain.service.TraceService;
@@ -767,7 +768,8 @@ class AgentLoopTest {
                 preferencesService,
                 llmPort,
                 clock,
-                new TraceService(new TraceSnapshotCompressionService(), new TraceBudgetService()));
+                new TraceService(new TraceSnapshotCompressionService(), new TraceBudgetService()),
+                new DefaultContextHygieneService());
 
         Message inbound = Message.builder()
                 .role(ROLE_USER)
@@ -1472,7 +1474,8 @@ class AgentLoopTest {
                 preferencesService,
                 llmPort,
                 clock,
-                new TraceService(new TraceSnapshotCompressionService(), new TraceBudgetService()));
+                new TraceService(new TraceSnapshotCompressionService(), new TraceBudgetService()),
+                new DefaultContextHygieneService());
 
         Message inbound = Message.builder()
                 .role(ROLE_USER)
@@ -1560,7 +1563,8 @@ class AgentLoopTest {
                 preferencesService,
                 llmPort,
                 clock,
-                new TraceService(new TraceSnapshotCompressionService(), new TraceBudgetService()));
+                new TraceService(new TraceSnapshotCompressionService(), new TraceBudgetService()),
+                new DefaultContextHygieneService());
 
         Message inbound = Message.builder()
                 .role(ROLE_USER)
@@ -2064,7 +2068,8 @@ class AgentLoopTest {
                 preferencesService,
                 llmPort,
                 clock,
-                new TraceService(new TraceSnapshotCompressionService(), new TraceBudgetService()));
+                new TraceService(new TraceSnapshotCompressionService(), new TraceBudgetService()),
+                new DefaultContextHygieneService());
 
         Message inbound = Message.builder()
                 .role(ROLE_USER)
@@ -2589,7 +2594,8 @@ class AgentLoopTest {
                 preferencesService,
                 llmPort,
                 clock,
-                new TraceService(new TraceSnapshotCompressionService(), new TraceBudgetService()));
+                new TraceService(new TraceSnapshotCompressionService(), new TraceBudgetService()),
+                new DefaultContextHygieneService());
     }
 
     private static ResponseRoutingSystem createRoutingSystem(ChannelPort channel,

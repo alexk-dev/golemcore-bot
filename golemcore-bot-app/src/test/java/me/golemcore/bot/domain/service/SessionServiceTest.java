@@ -51,7 +51,7 @@ class SessionServiceTest {
         objectMapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
         clock = Clock.fixed(FIXED_TIME, ZoneOffset.UTC);
         sessionRecordCodecAdapter = new ProtoSessionRecordCodecAdapter();
-        service = new SessionService(storagePort, sessionRecordCodecAdapter, clock);
+        service = new SessionService(storagePort, sessionRecordCodecAdapter, clock, List.of());
 
         when(storagePort.getObject(anyString(), anyString()))
                 .thenReturn(CompletableFuture.completedFuture(null));
@@ -160,7 +160,7 @@ class SessionServiceTest {
                 .id("m1")
                 .role("assistant")
                 .content("done")
-                .metadata(new LinkedHashMap<>(Map.of("model", "openai/gpt-5.3-codex",
+                .metadata(new LinkedHashMap<>(Map.of("model", "openai/gpt-5.3-builder",
                         "modelTier", "coding")))
                 .timestamp(FIXED_TIME)
                 .build());
@@ -173,7 +173,7 @@ class SessionServiceTest {
 
         assertTrue(result.isPresent());
         assertEquals(1, result.get().getMessages().size());
-        assertEquals("openai/gpt-5.3-codex", result.get().getMessages().get(0).getMetadata().get("model"));
+        assertEquals("openai/gpt-5.3-builder", result.get().getMessages().get(0).getMetadata().get("model"));
         assertEquals("coding", result.get().getMessages().get(0).getMetadata().get("modelTier"));
     }
 

@@ -25,7 +25,7 @@ class PlanServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new PlanService(CLOCK);
+        service = new PlanService(CLOCK, null);
     }
 
     @Test

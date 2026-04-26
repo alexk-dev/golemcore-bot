@@ -11,9 +11,9 @@ import org.junit.jupiter.api.Test;
 class WorkspaceFileServicesArchitectureTest {
 
     private static final Path WORKSPACE_PATH_SERVICE = Path.of(
-            "src/main/java/me/golemcore/bot/domain/service/WorkspacePathService.java");
+            "../golemcore-bot-tools/src/main/java/me/golemcore/bot/domain/service/WorkspacePathService.java");
     private static final Path TOOL_ARTIFACT_SERVICE = Path.of(
-            "src/main/java/me/golemcore/bot/domain/service/ToolArtifactService.java");
+            "../golemcore-bot-tools/src/main/java/me/golemcore/bot/domain/service/ToolArtifactService.java");
     private static final Path DASHBOARD_FILE_SERVICE = Path.of(
             "src/main/java/me/golemcore/bot/domain/service/DashboardFileService.java");
     private static final Path UPDATE_RUNTIME_CLEANUP_SERVICE = Path.of(

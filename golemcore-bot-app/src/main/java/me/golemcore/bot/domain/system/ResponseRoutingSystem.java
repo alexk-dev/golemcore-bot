@@ -67,7 +67,7 @@ import java.util.concurrent.TimeoutException;
  */
 @Component
 @Slf4j
-public class ResponseRoutingSystem implements AgentSystem {
+public class ResponseRoutingSystem implements ResponseRoutingAgentSystem {
 
     private record VoiceRoutingResult(boolean sentVoice, boolean sentTextFallback, String errorMessage) {
         private static VoiceRoutingResult none() {

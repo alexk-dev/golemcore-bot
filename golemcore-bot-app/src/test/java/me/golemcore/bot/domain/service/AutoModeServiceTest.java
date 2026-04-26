@@ -1,6 +1,9 @@
 package me.golemcore.bot.domain.service;
 
 import me.golemcore.bot.adapter.outbound.storage.JsonScheduledTaskPersistenceAdapter;
+import me.golemcore.bot.domain.loop.AgentContextHolder;
+import me.golemcore.bot.domain.model.AgentContext;
+import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.AutoTask;
 import me.golemcore.bot.domain.model.DiaryEntry;
 import me.golemcore.bot.domain.model.Goal;
@@ -9,6 +12,7 @@ import me.golemcore.bot.domain.model.Skill;
 import me.golemcore.bot.port.outbound.StoragePort;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -37,6 +41,7 @@ class AutoModeServiceTest {
 
     private static final String AUTO_DIR = "auto";
     private static final String GOALS_FILE = "goals.json";
+    private static final String LEGACY_TEST_SESSION = "legacy-test-session";
     private static final String GOAL_ID = "goal-1";
     private static final String TASK_ID = "task-1";
     private static final String DIARY_PREFIX = "diary/";
@@ -68,11 +73,27 @@ class AutoModeServiceTest {
         when(storagePort.getText(anyString(), anyString()))
                 .thenReturn(CompletableFuture.completedFuture(null));
 
+        AgentContextHolder.set(AgentContext.builder()
+                .session(AgentSession.builder()
+                        .id(LEGACY_TEST_SESSION)
+                        .build())
+                .build());
+        SessionDiaryService diaryService = new LegacySessionDiaryService(storagePort, objectMapper);
         service = new AutoModeService(
                 storagePort,
                 objectMapper,
                 runtimeConfigService,
+                new SessionScopedGoalService(
+                        new LegacyGoalStorageService(storagePort, objectMapper),
+                        runtimeConfigService,
+                        diaryService),
+                diaryService,
                 new PersistentScheduledTaskService(new JsonScheduledTaskPersistenceAdapter(storagePort, objectMapper)));
+    }
+
+    @AfterEach
+    void tearDown() {
+        AgentContextHolder.clear();
     }
 
     @Test
