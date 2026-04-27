@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://golemcore.dev/contracts/dashboard-api/tool-permission.v1.schema.json",
+  "title": "ToolPermissionV1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "pluginId", "toolName", "permissions"],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "pluginId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "toolName": {
+      "type": "string",
+      "minLength": 1
+    },
+    "permissions": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["capability", "scope"],
+        "properties": {
+          "capability": {
+            "type": "string",
+            "enum": [
+              "filesystem.read",
+              "filesystem.write",
+              "network.outbound",
+              "browser.automation",
+              "email.access",
+              "calendar.access",
+              "contacts.access",
+              "shell.process",
+              "model.provider",
+              "memory.read",
+              "memory.write",
+              "session.read",
+              "session.write",
+              "secrets.read"
+            ]
+          },
+          "scope": {
+            "type": "object",
+            "additionalProperties": {
+              "type": ["string", "number", "boolean", "array", "object", "null"]
+            }
+          },
+          "confirmationRequired": {
+            "type": "boolean",
+            "default": false
+          }
+        }
+      }
+    }
+  }
+}

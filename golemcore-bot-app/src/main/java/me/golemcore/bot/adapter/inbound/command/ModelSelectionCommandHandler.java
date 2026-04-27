@@ -3,7 +3,6 @@ package me.golemcore.bot.adapter.inbound.command;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.application.command.ModelSelectionCommandService;
 import me.golemcore.bot.domain.model.ModelTierCatalog;
 import me.golemcore.bot.domain.service.UserPreferencesService;
@@ -11,7 +10,6 @@ import me.golemcore.bot.port.inbound.CommandPort;
 import org.springframework.stereotype.Component;
 
 @Component
-@RequiredArgsConstructor
 class ModelSelectionCommandHandler {
 
     private static final int MIN_REASONING_ARGS = 2;
@@ -20,6 +18,13 @@ class ModelSelectionCommandHandler {
 
     private final ModelSelectionCommandService modelSelectionCommandService;
     private final UserPreferencesService preferencesService;
+
+    public ModelSelectionCommandHandler(
+            ModelSelectionCommandService modelSelectionCommandService,
+            UserPreferencesService preferencesService) {
+        this.modelSelectionCommandService = modelSelectionCommandService;
+        this.preferencesService = preferencesService;
+    }
 
     CommandPort.CommandResult handleTier(List<String> args) {
         return handleTier(args, null);

@@ -27,7 +27,6 @@ import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.model.ToolResult;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
@@ -56,13 +55,21 @@ import java.util.concurrent.CompletableFuture;
  * @see me.golemcore.bot.domain.system.SkillPipelineSystem
  */
 @Component
-@RequiredArgsConstructor
 @Slf4j
 public class SkillTransitionTool implements ToolComponent {
 
     private final SkillComponent skillComponent;
     private final RuntimeConfigService runtimeConfigService;
     private final ObjectMapper objectMapper;
+
+    public SkillTransitionTool(
+            SkillComponent skillComponent,
+            RuntimeConfigService runtimeConfigService,
+            ObjectMapper objectMapper) {
+        this.skillComponent = skillComponent;
+        this.runtimeConfigService = runtimeConfigService;
+        this.objectMapper = objectMapper;
+    }
 
     @Override
     public String getToolName() {

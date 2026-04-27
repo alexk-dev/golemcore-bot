@@ -1,6 +1,5 @@
 package me.golemcore.bot.adapter.inbound.web.controller;
 
-import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.domain.model.AutoTask;
 import me.golemcore.bot.domain.model.Goal;
 import me.golemcore.bot.domain.model.ModelTierCatalog;
@@ -31,12 +30,15 @@ import java.util.Locale;
  */
 @RestController
 @RequestMapping("/api")
-@RequiredArgsConstructor
 public class GoalsController {
 
     private static final String FEATURE_DISABLED = "Auto mode feature is disabled";
 
     private final AutoModeService autoModeService;
+
+    public GoalsController(AutoModeService autoModeService) {
+        this.autoModeService = autoModeService;
+    }
 
     @GetMapping("/goals")
     public Mono<ResponseEntity<GoalsResponse>> getGoals(

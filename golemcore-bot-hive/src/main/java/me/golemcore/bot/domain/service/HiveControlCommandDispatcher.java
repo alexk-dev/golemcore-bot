@@ -24,7 +24,6 @@ import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.CompletionException;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.port.outbound.HiveEventPublishPort;
 import me.golemcore.bot.port.outbound.SessionRunDispatchPort;
@@ -36,7 +35,6 @@ import me.golemcore.bot.domain.model.hive.HiveRuntimeContracts;
 import org.springframework.stereotype.Service;
 
 @Service
-@RequiredArgsConstructor
 @Slf4j
 public class HiveControlCommandDispatcher {
 
@@ -46,6 +44,21 @@ public class HiveControlCommandDispatcher {
     private final HiveInspectionCommandHandler hiveInspectionCommandHandler;
     private final HivePolicySyncCommandHandler hivePolicySyncCommandHandler;
     private final Clock clock;
+
+    public HiveControlCommandDispatcher(
+            SessionRunDispatchPort sessionRunCoordinator,
+            HiveControlInboxService hiveControlInboxService,
+            HiveEventPublishPort hiveEventPublishPort,
+            HiveInspectionCommandHandler hiveInspectionCommandHandler,
+            HivePolicySyncCommandHandler hivePolicySyncCommandHandler,
+            Clock clock) {
+        this.sessionRunCoordinator = sessionRunCoordinator;
+        this.hiveControlInboxService = hiveControlInboxService;
+        this.hiveEventPublishPort = hiveEventPublishPort;
+        this.hiveInspectionCommandHandler = hiveInspectionCommandHandler;
+        this.hivePolicySyncCommandHandler = hivePolicySyncCommandHandler;
+        this.clock = clock;
+    }
 
     public void dispatch(HiveControlCommandEnvelope envelope) {
         String eventType = validateEnvelope(envelope);

@@ -18,7 +18,6 @@ package me.golemcore.bot.infrastructure.event;
  * Contact: alex@kuleshov.tech
  */
 
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
@@ -45,11 +44,14 @@ import org.springframework.stereotype.Component;
  * @since 1.0
  */
 @Component
-@RequiredArgsConstructor
 @Slf4j
 public class SpringEventBus {
 
     private final ApplicationEventPublisher eventPublisher;
+
+    public SpringEventBus(ApplicationEventPublisher eventPublisher) {
+        this.eventPublisher = eventPublisher;
+    }
 
     /**
      * Publish an event.

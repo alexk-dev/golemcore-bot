@@ -1,5 +1,8 @@
 package me.golemcore.bot.infrastructure.config;
 
+import java.time.Clock;
+import java.util.List;
+import me.golemcore.bot.domain.component.ToolComponent;
 import me.golemcore.bot.domain.service.CompactionOrchestrationService;
 import me.golemcore.bot.domain.service.ContextCompactionPolicy;
 import me.golemcore.bot.domain.service.ContextTokenEstimator;
@@ -10,6 +13,7 @@ import me.golemcore.bot.domain.service.RuntimeEventService;
 import me.golemcore.bot.domain.service.TraceService;
 import me.golemcore.bot.domain.service.TurnProgressService;
 import me.golemcore.bot.domain.service.ToolCallExecutionService;
+import me.golemcore.bot.domain.service.ToolRegistryService;
 import me.golemcore.bot.domain.system.toolloop.ContextCompactionCoordinator;
 import me.golemcore.bot.domain.system.toolloop.DefaultHistoryWriter;
 import me.golemcore.bot.domain.system.toolloop.DefaultToolLoopSystem;
@@ -37,11 +41,14 @@ import me.golemcore.bot.port.outbound.UsageTrackingPort;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
-import java.time.Clock;
-
 /** Spring wiring for ToolLoopSystem (domain orchestrator + ports). */
 @Configuration
 public class ToolLoopAutoConfiguration {
+
+    @Bean
+    public ToolRegistryService toolRegistryService(List<ToolComponent> toolComponents) {
+        return new ToolRegistryService(toolComponents);
+    }
 
     @Bean
     public ToolExecutorPort toolExecutorPort(ToolCallExecutionService toolCallExecutionService) {

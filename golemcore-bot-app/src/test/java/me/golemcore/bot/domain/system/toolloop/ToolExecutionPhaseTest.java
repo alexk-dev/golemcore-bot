@@ -49,7 +49,7 @@ class ToolExecutionPhaseTest {
         toolExecutor = mock(ToolExecutorPort.class);
         failurePolicy = mock(ToolFailurePolicy.class);
         historyWriter = mock(HistoryWriter.class);
-        planService = new PlanService(clock);
+        planService = new PlanService(clock, null);
         planModeToolRestrictionService = new PlanModeToolRestrictionService(planService);
         ModelSelectionService modelSelectionService = mock(ModelSelectionService.class);
         when(modelSelectionService.resolveMaxInputTokensForContext(any()))

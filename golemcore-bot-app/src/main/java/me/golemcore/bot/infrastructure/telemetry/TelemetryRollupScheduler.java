@@ -2,7 +2,6 @@ package me.golemcore.bot.infrastructure.telemetry;
 
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
@@ -15,7 +14,6 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
 @Component
-@RequiredArgsConstructor
 @Slf4j
 public class TelemetryRollupScheduler {
 
@@ -29,6 +27,13 @@ public class TelemetryRollupScheduler {
         thread.setDaemon(true);
         return thread;
     });
+
+    public TelemetryRollupScheduler(
+            TelemetryRollupStore telemetryRollupStore,
+            TelemetryEventPublisher telemetryEventPublisher) {
+        this.telemetryRollupStore = telemetryRollupStore;
+        this.telemetryEventPublisher = telemetryEventPublisher;
+    }
 
     @PostConstruct
     void start() {

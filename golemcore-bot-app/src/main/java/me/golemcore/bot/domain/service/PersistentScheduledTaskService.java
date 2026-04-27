@@ -27,7 +27,6 @@ import me.golemcore.bot.domain.model.AutoTask;
 import me.golemcore.bot.domain.model.Goal;
 import me.golemcore.bot.domain.model.ScheduledTask;
 import me.golemcore.bot.port.outbound.ScheduledTaskPersistencePort;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 /**
@@ -43,7 +42,6 @@ public class PersistentScheduledTaskService {
 
     private List<ScheduledTask> cache;
 
-    @Autowired
     public PersistentScheduledTaskService(ScheduledTaskPersistencePort scheduledTaskPersistencePort) {
         this.scheduledTaskPersistencePort = scheduledTaskPersistencePort;
     }

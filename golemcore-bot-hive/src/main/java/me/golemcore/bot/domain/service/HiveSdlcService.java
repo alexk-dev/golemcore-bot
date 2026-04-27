@@ -19,7 +19,6 @@
 package me.golemcore.bot.domain.service;
 
 import java.util.List;
-import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.domain.model.HiveSessionState;
 import me.golemcore.bot.domain.model.hive.HiveCardDetail;
 import me.golemcore.bot.domain.model.hive.HiveCardSearchRequest;
@@ -32,12 +31,20 @@ import me.golemcore.bot.port.outbound.RuntimeConfigQueryPort;
 import org.springframework.stereotype.Service;
 
 @Service
-@RequiredArgsConstructor
 public class HiveSdlcService {
 
     private final RuntimeConfigQueryPort runtimeConfigQueryPort;
     private final HiveSessionStateStore hiveSessionStateStore;
     private final HiveGatewayPort hiveGatewayPort;
+
+    public HiveSdlcService(
+            RuntimeConfigQueryPort runtimeConfigQueryPort,
+            HiveSessionStateStore hiveSessionStateStore,
+            HiveGatewayPort hiveGatewayPort) {
+        this.runtimeConfigQueryPort = runtimeConfigQueryPort;
+        this.hiveSessionStateStore = hiveSessionStateStore;
+        this.hiveGatewayPort = hiveGatewayPort;
+    }
 
     public HiveCardDetail getCard(String cardId) {
         HiveSessionState sessionState = resolveSessionState();

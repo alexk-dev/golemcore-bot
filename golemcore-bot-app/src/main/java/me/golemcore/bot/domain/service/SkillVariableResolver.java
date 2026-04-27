@@ -22,7 +22,6 @@ import me.golemcore.bot.domain.model.SkillVariable;
 import me.golemcore.bot.port.outbound.StoragePort;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
@@ -43,7 +42,6 @@ import java.util.*;
  * Supports required variables, secret masking, and validation.
  */
 @Service
-@RequiredArgsConstructor
 @Slf4j
 public class SkillVariableResolver {
 
@@ -56,6 +54,10 @@ public class SkillVariableResolver {
 
     private final StoragePort storagePort;
     private final ObjectMapper objectMapper = new ObjectMapper();
+
+    public SkillVariableResolver(StoragePort storagePort) {
+        this.storagePort = storagePort;
+    }
 
     /**
      * Parse variable definitions from the 'vars' section of YAML frontmatter.

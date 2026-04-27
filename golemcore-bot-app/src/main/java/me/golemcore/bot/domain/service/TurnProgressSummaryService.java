@@ -1,6 +1,5 @@
 package me.golemcore.bot.domain.service;
 
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.LlmRequest;
@@ -23,7 +22,6 @@ import java.util.concurrent.TimeoutException;
  * Builds short user-facing summaries for batched tool executions.
  */
 @Service
-@RequiredArgsConstructor
 @Slf4j
 public class TurnProgressSummaryService {
 
@@ -39,6 +37,15 @@ public class TurnProgressSummaryService {
     private final LlmPort llmPort;
     private final RuntimeConfigService runtimeConfigService;
     private final Clock clock;
+
+    public TurnProgressSummaryService(
+            LlmPort llmPort,
+            RuntimeConfigService runtimeConfigService,
+            Clock clock) {
+        this.llmPort = llmPort;
+        this.runtimeConfigService = runtimeConfigService;
+        this.clock = clock;
+    }
 
     public String summarize(AgentContext context, List<ToolExecutionTrace> traces) {
         if (traces == null || traces.isEmpty()) {

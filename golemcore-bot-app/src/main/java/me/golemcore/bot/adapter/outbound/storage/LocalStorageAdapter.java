@@ -21,7 +21,6 @@ package me.golemcore.bot.adapter.outbound.storage;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.outbound.StoragePort;
 import jakarta.annotation.PostConstruct;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Component;
@@ -65,13 +64,16 @@ import java.util.stream.Stream;
  */
 @Component
 @Primary
-@RequiredArgsConstructor
 @Slf4j
 public class LocalStorageAdapter implements StoragePort {
 
     private final BotProperties properties;
 
     private Path basePath;
+
+    public LocalStorageAdapter(BotProperties properties) {
+        this.properties = properties;
+    }
 
     @PostConstruct
     public void init() {

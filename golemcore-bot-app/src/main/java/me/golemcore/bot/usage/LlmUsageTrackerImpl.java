@@ -30,7 +30,6 @@ import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
@@ -73,7 +72,6 @@ import java.util.stream.Collectors;
  * @since 1.0
  */
 @Component
-@RequiredArgsConstructor
 @Slf4j
 public class LlmUsageTrackerImpl implements UsageTrackingPort {
 
@@ -112,6 +110,15 @@ public class LlmUsageTrackerImpl implements UsageTrackingPort {
         t.setDaemon(true);
         return t;
     });
+
+    public LlmUsageTrackerImpl(
+            StoragePort storagePort,
+            RuntimeConfigService runtimeConfigService,
+            ObjectMapper objectMapper) {
+        this.storagePort = storagePort;
+        this.runtimeConfigService = runtimeConfigService;
+        this.objectMapper = objectMapper;
+    }
 
     @PostConstruct
     void init() {

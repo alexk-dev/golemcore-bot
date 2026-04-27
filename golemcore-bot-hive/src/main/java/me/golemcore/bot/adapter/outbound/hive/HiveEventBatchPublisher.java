@@ -27,7 +27,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.HiveControlCommandEnvelope;
@@ -61,7 +60,6 @@ import me.golemcore.bot.domain.service.HiveSessionStateStore;
 import org.springframework.stereotype.Component;
 
 @Component
-@RequiredArgsConstructor
 @Slf4j
 public class HiveEventBatchPublisher implements HiveEventPublishPort, SelfEvolvingProjectionPublishPort {
 
@@ -72,6 +70,17 @@ public class HiveEventBatchPublisher implements HiveEventPublishPort, SelfEvolvi
     private final HiveApiClient hiveApiClient;
     private final HiveEventOutboxService hiveEventOutboxService;
     private final ObjectMapper objectMapper;
+
+    public HiveEventBatchPublisher(
+            HiveSessionStateStore hiveSessionStateStore,
+            HiveApiClient hiveApiClient,
+            HiveEventOutboxService hiveEventOutboxService,
+            ObjectMapper objectMapper) {
+        this.hiveSessionStateStore = hiveSessionStateStore;
+        this.hiveApiClient = hiveApiClient;
+        this.hiveEventOutboxService = hiveEventOutboxService;
+        this.objectMapper = objectMapper;
+    }
 
     @Override
     public void publishCommandAcknowledged(HiveControlCommandEnvelope envelope) {

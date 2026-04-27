@@ -5,14 +5,12 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.ArrayList;
 import java.util.List;
-import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.domain.model.ScheduleEntry;
 import me.golemcore.bot.port.outbound.SchedulePersistencePort;
 import me.golemcore.bot.port.outbound.StoragePort;
 import org.springframework.stereotype.Component;
 
 @Component
-@RequiredArgsConstructor
 public class StorageSchedulePersistenceAdapter implements SchedulePersistencePort {
 
     private static final String AUTO_DIR = "auto";
@@ -22,6 +20,13 @@ public class StorageSchedulePersistenceAdapter implements SchedulePersistencePor
 
     private final StoragePort storagePort;
     private final ObjectMapper objectMapper;
+
+    public StorageSchedulePersistenceAdapter(
+            StoragePort storagePort,
+            ObjectMapper objectMapper) {
+        this.storagePort = storagePort;
+        this.objectMapper = objectMapper;
+    }
 
     @Override
     public List<ScheduleEntry> loadSchedules() {

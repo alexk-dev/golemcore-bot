@@ -1,7 +1,6 @@
 package me.golemcore.bot.adapter.inbound.web;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.client.dto.LogEntryDto;
 import me.golemcore.bot.adapter.inbound.web.logstream.DashboardLogService;
@@ -22,7 +21,6 @@ import java.util.List;
 import java.util.Map;
 
 @Component
-@RequiredArgsConstructor
 @Slf4j
 public class WebSocketLogsHandler implements WebSocketHandler {
 
@@ -32,6 +30,15 @@ public class WebSocketLogsHandler implements WebSocketHandler {
     private final JwtTokenProvider jwtTokenProvider;
     private final DashboardLogService dashboardLogService;
     private final ObjectMapper objectMapper;
+
+    public WebSocketLogsHandler(
+            JwtTokenProvider jwtTokenProvider,
+            DashboardLogService dashboardLogService,
+            ObjectMapper objectMapper) {
+        this.jwtTokenProvider = jwtTokenProvider;
+        this.dashboardLogService = dashboardLogService;
+        this.objectMapper = objectMapper;
+    }
 
     @Override
     public Mono<Void> handle(WebSocketSession session) {

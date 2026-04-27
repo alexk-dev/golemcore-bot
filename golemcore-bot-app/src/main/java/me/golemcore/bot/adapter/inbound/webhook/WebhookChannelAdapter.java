@@ -22,7 +22,6 @@ import me.golemcore.bot.adapter.inbound.webhook.dto.CallbackPayload;
 import me.golemcore.bot.domain.model.ChannelTypes;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.port.channel.ChannelPort;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
@@ -47,7 +46,6 @@ import java.util.function.Consumer;
  * channel from the channel registry.
  */
 @Component
-@RequiredArgsConstructor
 @Slf4j
 public class WebhookChannelAdapter implements ChannelPort {
 
@@ -66,6 +64,13 @@ public class WebhookChannelAdapter implements ChannelPort {
      * Metadata for pending runs (callbackUrl, runId, startTime) keyed by chatId.
      */
     private final Map<String, RunMetadata> runMetadata = new ConcurrentHashMap<>();
+
+    public WebhookChannelAdapter(
+            WebhookCallbackSender callbackSender,
+            WebhookDeliveryTracker deliveryTracker) {
+        this.callbackSender = callbackSender;
+        this.deliveryTracker = deliveryTracker;
+    }
 
     @Override
     public String getChannelType() {

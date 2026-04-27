@@ -24,7 +24,6 @@ import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.port.outbound.LlmPort;
 
 import java.time.Clock;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
@@ -43,7 +42,6 @@ import java.util.stream.Collectors;
  * simple truncation if LLM is unavailable.
  */
 @Service
-@RequiredArgsConstructor
 @Slf4j
 public class CompactionService {
 
@@ -74,6 +72,15 @@ public class CompactionService {
 
             Keep it factual. Write in the same language the conversation uses.
             Do NOT include greetings, apologies, or meta-commentary. Output only the summary.""";
+
+    public CompactionService(
+            LlmPort llmPort,
+            RuntimeConfigService runtimeConfigService,
+            Clock clock) {
+        this.llmPort = llmPort;
+        this.runtimeConfigService = runtimeConfigService;
+        this.clock = clock;
+    }
 
     /**
      * Summarize a list of messages into a single summary text.

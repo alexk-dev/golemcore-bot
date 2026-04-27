@@ -5,7 +5,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletionException;
 import java.util.NoSuchElementException;
-import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.client.dto.SkillDto;
 import me.golemcore.bot.application.skills.SkillManagementFacade;
 import me.golemcore.bot.domain.model.Skill;
@@ -28,10 +27,13 @@ import reactor.core.publisher.Mono;
 
 @RestController
 @RequestMapping("/api/skills")
-@RequiredArgsConstructor
 public class SkillsController {
 
     private final SkillManagementFacade skillManagementFacade;
+
+    public SkillsController(SkillManagementFacade skillManagementFacade) {
+        this.skillManagementFacade = skillManagementFacade;
+    }
 
     @GetMapping
     public Mono<ResponseEntity<List<SkillDto>>> listSkills() {

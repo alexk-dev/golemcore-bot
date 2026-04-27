@@ -18,7 +18,6 @@ package me.golemcore.bot.domain.system;
  * Contact: alex@kuleshov.tech
  */
 
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.component.MemoryComponent;
 import me.golemcore.bot.domain.model.AgentContext;
@@ -44,11 +43,14 @@ import java.util.Set;
  * Captures user/assistant exchange and selected tool outputs for Memory V2.
  */
 @Component
-@RequiredArgsConstructor
 @Slf4j
 public class MemoryPersistSystem implements AgentSystem {
 
     private final MemoryComponent memoryComponent;
+
+    public MemoryPersistSystem(MemoryComponent memoryComponent) {
+        this.memoryComponent = memoryComponent;
+    }
 
     @Override
     public String getName() {

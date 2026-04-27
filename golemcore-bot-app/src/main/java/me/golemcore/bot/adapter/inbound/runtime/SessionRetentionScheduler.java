@@ -28,14 +28,12 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.SessionRetentionCleanupService;
 import org.springframework.stereotype.Component;
 
 @Component
-@RequiredArgsConstructor
 @Slf4j
 public class SessionRetentionScheduler {
 
@@ -49,6 +47,15 @@ public class SessionRetentionScheduler {
     private final AtomicReference<Instant> lastRunAt = new AtomicReference<>();
 
     private ScheduledExecutorService scheduler;
+
+    public SessionRetentionScheduler(
+            SessionRetentionCleanupService sessionRetentionCleanupService,
+            RuntimeConfigService runtimeConfigService,
+            Clock clock) {
+        this.sessionRetentionCleanupService = sessionRetentionCleanupService;
+        this.runtimeConfigService = runtimeConfigService;
+        this.clock = clock;
+    }
 
     @PostConstruct
     public void init() {

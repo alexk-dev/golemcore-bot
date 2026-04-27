@@ -25,7 +25,6 @@ import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.outbound.LlmPort;
 import jakarta.annotation.PostConstruct;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Component;
@@ -56,7 +55,6 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 @Component
 @Primary
-@RequiredArgsConstructor
 @Slf4j
 public class LlmAdapterFactory implements LlmPort {
 
@@ -67,6 +65,13 @@ public class LlmAdapterFactory implements LlmPort {
 
     private final Map<String, LlmProviderAdapter> adaptersByProvider = new ConcurrentHashMap<>();
     private LlmProviderAdapter activeAdapter;
+
+    public LlmAdapterFactory(
+            BotProperties properties,
+            List<LlmProviderAdapter> adapters) {
+        this.properties = properties;
+        this.adapters = adapters;
+    }
 
     @PostConstruct
     public void init() {

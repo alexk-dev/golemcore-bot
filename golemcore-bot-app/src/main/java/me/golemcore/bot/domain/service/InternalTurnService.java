@@ -6,7 +6,6 @@ package me.golemcore.bot.domain.service;
  * Contact: alex@kuleshov.tech
  */
 
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.AgentSession;
@@ -26,7 +25,6 @@ import java.util.UUID;
  * Schedules internal runtime-only follow-up turns.
  */
 @Service
-@RequiredArgsConstructor
 @Slf4j
 public class InternalTurnService {
 
@@ -42,6 +40,13 @@ public class InternalTurnService {
 
     private final InboundMessageDispatchPort inboundMessageDispatchPort;
     private final Clock clock;
+
+    public InternalTurnService(
+            InboundMessageDispatchPort inboundMessageDispatchPort,
+            Clock clock) {
+        this.inboundMessageDispatchPort = inboundMessageDispatchPort;
+        this.clock = clock;
+    }
 
     public boolean scheduleAutoContinueRetry(AgentContext context, String reasonCode) {
         if (context == null || context.getSession() == null) {

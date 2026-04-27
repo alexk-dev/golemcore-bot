@@ -6,13 +6,11 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import java.util.LinkedHashMap;
 import java.util.Map;
-import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.port.outbound.PluginConfigurationStorePort;
 import me.golemcore.bot.port.outbound.StoragePort;
 import org.springframework.stereotype.Component;
 
 @Component
-@RequiredArgsConstructor
 public class StoragePluginConfigurationStoreAdapter implements PluginConfigurationStorePort {
 
     private static final String PREFERENCES_DIR = "preferences";
@@ -23,6 +21,10 @@ public class StoragePluginConfigurationStoreAdapter implements PluginConfigurati
     private final StoragePort storagePort;
 
     private final ObjectMapper objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
+
+    public StoragePluginConfigurationStoreAdapter(StoragePort storagePort) {
+        this.storagePort = storagePort;
+    }
 
     @Override
     public boolean hasConfig(String pluginId) {

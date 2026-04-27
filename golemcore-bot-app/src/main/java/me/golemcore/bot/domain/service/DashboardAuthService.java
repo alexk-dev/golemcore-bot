@@ -11,7 +11,6 @@ import java.security.SecureRandom;
 import java.time.Instant;
 import lombok.Builder;
 import lombok.Data;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.AdminCredentials;
 import me.golemcore.bot.port.outbound.DashboardAuthSettingsPort;
@@ -26,7 +25,6 @@ import org.springframework.stereotype.Service;
  * MFA.
  */
 @Service
-@RequiredArgsConstructor
 @Slf4j
 public class DashboardAuthService implements DashboardFederatedAuthPort {
 
@@ -45,6 +43,17 @@ public class DashboardAuthService implements DashboardFederatedAuthPort {
             new DefaultCodeGenerator(), new SystemTimeProvider());
 
     private AdminCredentials credentials;
+
+    public DashboardAuthService(
+            DashboardCredentialsPort dashboardCredentialsPort,
+            DashboardAuthSettingsPort settingsPort,
+            DashboardTokenPort dashboardTokenPort,
+            PasswordHashPort passwordHashPort) {
+        this.dashboardCredentialsPort = dashboardCredentialsPort;
+        this.settingsPort = settingsPort;
+        this.dashboardTokenPort = dashboardTokenPort;
+        this.passwordHashPort = passwordHashPort;
+    }
 
     public void init() {
         if (!settingsPort.isDashboardEnabled()) {

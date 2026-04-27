@@ -42,6 +42,12 @@
 
     <modules>
         <module>golemcore-bot-contracts</module>
+        <module>golemcore-bot-runtime-config</module>
+        <module>golemcore-bot-sessions</module>
+        <module>golemcore-bot-memory</module>
+        <module>golemcore-bot-tools</module>
+        <module>golemcore-bot-tracing</module>
+        <module>golemcore-bot-runtime-core</module>
         <module>golemcore-bot-client</module>
         <module>golemcore-bot-self-evolving</module>
         <module>golemcore-bot-hive</module>
@@ -77,6 +83,7 @@
         <sonar.organization>alexk-dev</sonar.organization>
         <sonar.host.url>https://sonarcloud.io</sonar.host.url>
         <sonar.projectKey>alexk-dev_golemcore-bot</sonar.projectKey>
+        <sonar.coverage.jacoco.xmlReportPaths>${maven.multiModuleProjectDirectory}/golemcore-bot-app/target/site/jacoco-aggregate/jacoco.xml</sonar.coverage.jacoco.xmlReportPaths>
     </properties>
 
     <dependencyManagement>
@@ -114,6 +121,30 @@
                 <configuration>
                     <forkCount>2</forkCount>
                     <reuseForks>true</reuseForks>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>com.github.spotbugs</groupId>
+                <artifactId>spotbugs-maven-plugin</artifactId>
+                <version>${spotbugs.version}</version>
+                <configuration>
+                    <effort>Max</effort>
+                    <threshold>Medium</threshold>
+                    <failOnError>true</failOnError>
+                    <excludeFilterFile>${maven.multiModuleProjectDirectory}/misc/spotbugs-exclude.xml</excludeFilterFile>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-pmd-plugin</artifactId>
+                <version>${pmd.version}</version>
+                <configuration>
+                    <failOnViolation>false</failOnViolation>
+                    <printFailingErrors>true</printFailingErrors>
+                    <includeTests>true</includeTests>
+                    <rulesets>
+                        <ruleset>${maven.multiModuleProjectDirectory}/misc/pmd-ruleset.xml</ruleset>
+                    </rulesets>
                 </configuration>
             </plugin>
         </plugins>

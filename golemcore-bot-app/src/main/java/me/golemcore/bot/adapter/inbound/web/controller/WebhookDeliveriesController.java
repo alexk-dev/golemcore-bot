@@ -1,6 +1,5 @@
 package me.golemcore.bot.adapter.inbound.web.controller;
 
-import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.adapter.inbound.webhook.WebhookDeliveryTracker;
 import me.golemcore.bot.adapter.inbound.webhook.WebhookDeliveryTracker.DeliveryDetail;
 import me.golemcore.bot.adapter.inbound.webhook.WebhookDeliveryTracker.DeliverySummary;
@@ -25,12 +24,15 @@ import java.util.List;
  */
 @RestController
 @RequestMapping("/api/webhooks")
-@RequiredArgsConstructor
 public class WebhookDeliveriesController {
 
     private static final int DEFAULT_DURATION_MS = 1;
 
     private final WebhookDeliveryTracker webhookDeliveryTracker;
+
+    public WebhookDeliveriesController(WebhookDeliveryTracker webhookDeliveryTracker) {
+        this.webhookDeliveryTracker = webhookDeliveryTracker;
+    }
 
     @GetMapping("/deliveries")
     public Mono<ResponseEntity<DeliveryListResponse>> listDeliveries(

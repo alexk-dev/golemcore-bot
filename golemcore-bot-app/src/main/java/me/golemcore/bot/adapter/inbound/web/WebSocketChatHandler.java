@@ -1,7 +1,6 @@
 package me.golemcore.bot.adapter.inbound.web;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.Message;
@@ -47,7 +46,6 @@ import java.util.UUID;
  * without mutating shared settings.
  */
 @Component
-@RequiredArgsConstructor
 @Slf4j
 public class WebSocketChatHandler implements WebSocketHandler {
 
@@ -63,6 +61,23 @@ public class WebSocketChatHandler implements WebSocketHandler {
     private final ActiveSessionPointerService pointerService;
     private final UserPreferencesService preferencesService;
     private final MemoryPresetService memoryPresetService;
+
+    public WebSocketChatHandler(
+            JwtTokenProvider jwtTokenProvider,
+            WebChannelAdapter webChannelAdapter,
+            ObjectMapper objectMapper,
+            ObjectProvider<CommandPort> commandRouter,
+            ActiveSessionPointerService pointerService,
+            UserPreferencesService preferencesService,
+            MemoryPresetService memoryPresetService) {
+        this.jwtTokenProvider = jwtTokenProvider;
+        this.webChannelAdapter = webChannelAdapter;
+        this.objectMapper = objectMapper;
+        this.commandRouter = commandRouter;
+        this.pointerService = pointerService;
+        this.preferencesService = preferencesService;
+        this.memoryPresetService = memoryPresetService;
+    }
 
     @Override
     public Mono<Void> handle(WebSocketSession session) {

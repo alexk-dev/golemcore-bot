@@ -29,7 +29,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.AutoTask;
@@ -46,7 +45,6 @@ import org.springframework.stereotype.Service;
  * goals and persistent scheduled tasks.
  */
 @Service
-@RequiredArgsConstructor
 @Slf4j
 public class AutoModeMigrationService {
 
@@ -62,6 +60,21 @@ public class AutoModeMigrationService {
     private final SessionScopedGoalService sessionScopedGoalService;
     private final PersistentScheduledTaskService persistentScheduledTaskService;
     private final SchedulePersistencePort schedulePersistencePort;
+
+    public AutoModeMigrationService(
+            StoragePort storagePort,
+            ObjectMapper objectMapper,
+            SessionPort sessionPort,
+            SessionScopedGoalService sessionScopedGoalService,
+            PersistentScheduledTaskService persistentScheduledTaskService,
+            SchedulePersistencePort schedulePersistencePort) {
+        this.storagePort = storagePort;
+        this.objectMapper = objectMapper;
+        this.sessionPort = sessionPort;
+        this.sessionScopedGoalService = sessionScopedGoalService;
+        this.persistentScheduledTaskService = persistentScheduledTaskService;
+        this.schedulePersistencePort = schedulePersistencePort;
+    }
 
     public synchronized void migrateIfNeeded() {
         try {

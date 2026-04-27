@@ -1,6 +1,5 @@
 package me.golemcore.bot.domain.service;
 
-import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.AutoTask;
 import me.golemcore.bot.domain.model.ContextAttributes;
@@ -23,12 +22,20 @@ import java.util.Optional;
  * persisted session messages by auto run identifier.
  */
 @Service
-@RequiredArgsConstructor
 public class AutoRunHistoryService {
 
     private final SessionPort sessionPort;
     private final ScheduleService scheduleService;
     private final AutoModeService autoModeService;
+
+    public AutoRunHistoryService(
+            SessionPort sessionPort,
+            ScheduleService scheduleService,
+            AutoModeService autoModeService) {
+        this.sessionPort = sessionPort;
+        this.scheduleService = scheduleService;
+        this.autoModeService = autoModeService;
+    }
 
     public List<RunSummary> listRuns(String scheduleId, String goalId, String taskId, int limit) {
         List<RunAggregate> runs = collectRuns();

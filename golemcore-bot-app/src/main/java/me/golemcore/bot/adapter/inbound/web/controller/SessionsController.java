@@ -5,7 +5,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.function.Supplier;
-import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.client.dto.ActiveSessionRequest;
 import me.golemcore.bot.client.dto.ActiveSessionResponse;
 import me.golemcore.bot.client.dto.CreateSessionRequest;
@@ -39,12 +38,20 @@ import reactor.core.publisher.Mono;
  */
 @RestController
 @RequestMapping("/api/sessions")
-@RequiredArgsConstructor
 public class SessionsController {
 
     private final SessionInspectionService sessionInspectionService;
     private final SessionSelectionService sessionSelectionService;
     private final SessionWebDtoMapper sessionWebDtoMapper;
+
+    public SessionsController(
+            SessionInspectionService sessionInspectionService,
+            SessionSelectionService sessionSelectionService,
+            SessionWebDtoMapper sessionWebDtoMapper) {
+        this.sessionInspectionService = sessionInspectionService;
+        this.sessionSelectionService = sessionSelectionService;
+        this.sessionWebDtoMapper = sessionWebDtoMapper;
+    }
 
     @GetMapping
     public Mono<ResponseEntity<List<SessionSummaryDto>>> listSessions(

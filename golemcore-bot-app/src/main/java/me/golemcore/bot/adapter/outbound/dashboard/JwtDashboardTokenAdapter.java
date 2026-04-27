@@ -1,15 +1,17 @@
 package me.golemcore.bot.adapter.outbound.dashboard;
 
-import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.port.outbound.DashboardTokenPort;
 import me.golemcore.bot.infrastructure.security.JwtTokenProvider;
 import org.springframework.stereotype.Component;
 
 @Component
-@RequiredArgsConstructor
 public class JwtDashboardTokenAdapter implements DashboardTokenPort {
 
     private final JwtTokenProvider jwtTokenProvider;
+
+    public JwtDashboardTokenAdapter(JwtTokenProvider jwtTokenProvider) {
+        this.jwtTokenProvider = jwtTokenProvider;
+    }
 
     @Override
     public String generateAccessToken(String username) {

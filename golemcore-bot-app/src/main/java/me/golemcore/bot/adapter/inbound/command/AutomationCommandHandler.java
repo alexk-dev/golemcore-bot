@@ -7,7 +7,6 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.application.command.AutomationCommandService;
 import me.golemcore.bot.domain.model.AutoModeChannelRegisteredEvent;
@@ -23,7 +22,6 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
 
 @Component
-@RequiredArgsConstructor
 @Slf4j
 class AutomationCommandHandler {
 
@@ -37,6 +35,15 @@ class AutomationCommandHandler {
     private final AutomationCommandService automationCommandService;
     private final UserPreferencesService preferencesService;
     private final ApplicationEventPublisher eventPublisher;
+
+    public AutomationCommandHandler(
+            AutomationCommandService automationCommandService,
+            UserPreferencesService preferencesService,
+            ApplicationEventPublisher eventPublisher) {
+        this.automationCommandService = automationCommandService;
+        this.preferencesService = preferencesService;
+        this.eventPublisher = eventPublisher;
+    }
 
     boolean isAutoFeatureEnabled() {
         return automationCommandService.isAutoFeatureEnabled();

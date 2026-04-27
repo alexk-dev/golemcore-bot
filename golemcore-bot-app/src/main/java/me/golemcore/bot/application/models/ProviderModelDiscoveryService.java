@@ -7,7 +7,6 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.Secret;
@@ -17,7 +16,6 @@ import me.golemcore.bot.domain.model.catalog.ModelReasoningProfile;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.port.outbound.ProviderModelDiscoveryPort;
 
-@RequiredArgsConstructor
 @Slf4j
 public class ProviderModelDiscoveryService {
 
@@ -38,6 +36,13 @@ public class ProviderModelDiscoveryService {
 
     private final RuntimeConfigService runtimeConfigService;
     private final ProviderModelDiscoveryPort providerModelDiscoveryPort;
+
+    public ProviderModelDiscoveryService(
+            RuntimeConfigService runtimeConfigService,
+            ProviderModelDiscoveryPort providerModelDiscoveryPort) {
+        this.runtimeConfigService = runtimeConfigService;
+        this.providerModelDiscoveryPort = providerModelDiscoveryPort;
+    }
 
     public List<DiscoveredModel> discoverModels(String providerName) {
         return discoverModelsForProvider(providerName).models();

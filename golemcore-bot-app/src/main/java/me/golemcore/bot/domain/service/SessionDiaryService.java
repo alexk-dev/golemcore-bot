@@ -26,7 +26,6 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.DiaryEntry;
 import me.golemcore.bot.port.outbound.StoragePort;
@@ -36,7 +35,6 @@ import org.springframework.stereotype.Service;
  * Stores diary entries while filtering reads by owning session id.
  */
 @Service
-@RequiredArgsConstructor
 @Slf4j
 public class SessionDiaryService {
 
@@ -44,6 +42,13 @@ public class SessionDiaryService {
 
     private final StoragePort storagePort;
     private final ObjectMapper objectMapper;
+
+    public SessionDiaryService(
+            StoragePort storagePort,
+            ObjectMapper objectMapper) {
+        this.storagePort = storagePort;
+        this.objectMapper = objectMapper;
+    }
 
     public void writeDiary(String sessionId, DiaryEntry entry) {
         if (entry.getTimestamp() == null) {

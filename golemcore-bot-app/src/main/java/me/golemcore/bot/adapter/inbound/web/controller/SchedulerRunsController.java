@@ -1,6 +1,5 @@
 package me.golemcore.bot.adapter.inbound.web.controller;
 
-import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.domain.service.AutoRunHistoryService;
 import me.golemcore.bot.domain.service.StringValueSupport;
 import org.springframework.http.HttpStatus;
@@ -20,10 +19,13 @@ import java.util.List;
  */
 @RestController
 @RequestMapping("/api/scheduler")
-@RequiredArgsConstructor
 public class SchedulerRunsController {
 
     private final AutoRunHistoryService autoRunHistoryService;
+
+    public SchedulerRunsController(AutoRunHistoryService autoRunHistoryService) {
+        this.autoRunHistoryService = autoRunHistoryService;
+    }
 
     @GetMapping("/runs")
     public Mono<ResponseEntity<RunListResponse>> listRuns(

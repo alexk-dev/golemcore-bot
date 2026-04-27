@@ -26,7 +26,6 @@ import com.networknt.schema.Schema;
 import com.networknt.schema.SchemaLocation;
 import com.networknt.schema.SchemaRegistry;
 import com.networknt.schema.SpecificationVersion;
-import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.port.outbound.ResponseJsonSchemaValidatorPort;
 import org.springframework.stereotype.Component;
 
@@ -34,7 +33,6 @@ import java.util.List;
 import java.util.Map;
 
 @Component
-@RequiredArgsConstructor
 public class NetworkntResponseJsonSchemaValidatorAdapter implements ResponseJsonSchemaValidatorPort {
 
     private static final int MAX_REPORTED_SCHEMA_ERRORS = 8;
@@ -46,6 +44,10 @@ public class NetworkntResponseJsonSchemaValidatorAdapter implements ResponseJson
     private final SchemaRegistry schemaRegistry = SchemaRegistry
             .withDefaultDialect(SpecificationVersion.DRAFT_2020_12);
     private final Schema schemaDefinitionSchema = schemaRegistry.getSchema(DRAFT_2020_12_META_SCHEMA);
+
+    public NetworkntResponseJsonSchemaValidatorAdapter(ObjectMapper objectMapper) {
+        this.objectMapper = objectMapper;
+    }
 
     @Override
     public void validateResponseJsonSchema(Map<String, Object> responseJsonSchema) {

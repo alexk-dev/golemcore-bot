@@ -22,7 +22,7 @@ import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.ModelTierCatalog;
 import me.golemcore.bot.domain.model.Plan;
 import me.golemcore.bot.domain.model.SessionIdentity;
-import org.springframework.beans.factory.annotation.Autowired;
+import me.golemcore.bot.port.outbound.SessionPlanProtectionPort;
 import org.springframework.stereotype.Service;
 
 import java.time.Clock;
@@ -44,7 +44,7 @@ import java.util.UUID;
  */
 @Service
 @Slf4j
-public class PlanService {
+public class PlanService implements SessionPlanProtectionPort {
 
     private static final String PLAN_NOT_FOUND = "Plan not found: ";
     private static final String LEGACY_CHANNEL = "legacy";
@@ -60,11 +60,6 @@ public class PlanService {
     private volatile String legacyActivePlanId = NO_ACTIVE_PLAN_ID;
     private volatile String legacyExecutionPlanFilePath;
 
-    public PlanService(Clock clock) {
-        this(clock, null);
-    }
-
-    @Autowired
     public PlanService(Clock clock, RuntimeConfigService runtimeConfigService) {
         this.clock = clock;
         this.runtimeConfigService = runtimeConfigService;
@@ -307,6 +302,7 @@ public class PlanService {
         return buildExecutionContext(planFilePath);
     }
 
+    @Override
     public boolean hasActivePlans(SessionIdentity sessionIdentity) {
         SessionIdentity normalized = normalizeSessionIdentityOrNull(sessionIdentity);
         if (normalized == null) {

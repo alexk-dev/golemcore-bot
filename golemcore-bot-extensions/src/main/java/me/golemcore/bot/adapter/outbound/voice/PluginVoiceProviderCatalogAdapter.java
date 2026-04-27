@@ -1,17 +1,22 @@
 package me.golemcore.bot.adapter.outbound.voice;
 
-import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.plugin.runtime.SttProviderRegistry;
 import me.golemcore.bot.plugin.runtime.TtsProviderRegistry;
 import me.golemcore.bot.port.outbound.VoiceProviderCatalogPort;
 import org.springframework.stereotype.Component;
 
 @Component
-@RequiredArgsConstructor
 public class PluginVoiceProviderCatalogAdapter implements VoiceProviderCatalogPort {
 
     private final SttProviderRegistry sttProviderRegistry;
     private final TtsProviderRegistry ttsProviderRegistry;
+
+    public PluginVoiceProviderCatalogAdapter(
+            SttProviderRegistry sttProviderRegistry,
+            TtsProviderRegistry ttsProviderRegistry) {
+        this.sttProviderRegistry = sttProviderRegistry;
+        this.ttsProviderRegistry = ttsProviderRegistry;
+    }
 
     @Override
     public boolean hasSttProvider(String providerId) {

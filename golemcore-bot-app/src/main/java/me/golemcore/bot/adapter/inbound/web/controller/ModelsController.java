@@ -1,7 +1,6 @@
 package me.golemcore.bot.adapter.inbound.web.controller;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
-import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.application.models.ModelManagementFacade;
 import me.golemcore.bot.application.models.ModelRegistryService;
 import me.golemcore.bot.application.models.ProviderModelDiscoveryService;
@@ -31,10 +30,13 @@ import java.util.NoSuchElementException;
  */
 @RestController
 @RequestMapping("/api/models")
-@RequiredArgsConstructor
 public class ModelsController {
 
     private final ModelManagementFacade modelManagementFacade;
+
+    public ModelsController(ModelManagementFacade modelManagementFacade) {
+        this.modelManagementFacade = modelManagementFacade;
+    }
 
     /**
      * Get full models config (all models + defaults).

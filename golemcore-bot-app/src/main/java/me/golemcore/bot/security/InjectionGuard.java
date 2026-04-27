@@ -20,7 +20,6 @@ package me.golemcore.bot.security;
 
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
-import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
@@ -46,7 +45,6 @@ import java.util.regex.Pattern;
  */
 @Component
 @Slf4j
-@RequiredArgsConstructor
 public class InjectionGuard {
 
     private final RuntimeConfigService runtimeConfigService;
@@ -95,6 +93,10 @@ public class InjectionGuard {
             Pattern.compile("%2e%2e%5c", Pattern.CASE_INSENSITIVE),
             Pattern.compile("/etc/passwd", Pattern.CASE_INSENSITIVE),
             Pattern.compile("C:\\\\Windows", Pattern.CASE_INSENSITIVE));
+
+    public InjectionGuard(RuntimeConfigService runtimeConfigService) {
+        this.runtimeConfigService = runtimeConfigService;
+    }
 
     /**
      * Detect potential prompt injection attempts.

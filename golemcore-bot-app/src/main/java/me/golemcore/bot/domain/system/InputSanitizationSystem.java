@@ -21,7 +21,6 @@ package me.golemcore.bot.domain.system;
 import me.golemcore.bot.domain.component.SanitizerComponent;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.Message;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import me.golemcore.bot.domain.model.ContextAttributes;
@@ -34,11 +33,14 @@ import me.golemcore.bot.domain.model.ContextAttributes;
  * processing if threats are detected.
  */
 @Component
-@RequiredArgsConstructor
 @Slf4j
 public class InputSanitizationSystem implements AgentSystem {
 
     private final SanitizerComponent sanitizerComponent;
+
+    public InputSanitizationSystem(SanitizerComponent sanitizerComponent) {
+        this.sanitizerComponent = sanitizerComponent;
+    }
 
     @Override
     public String getName() {

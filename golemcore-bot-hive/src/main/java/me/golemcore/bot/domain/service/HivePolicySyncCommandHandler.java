@@ -1,14 +1,16 @@
 package me.golemcore.bot.domain.service;
 
-import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.domain.model.HiveControlCommandEnvelope;
 import org.springframework.stereotype.Service;
 
 @Service
-@RequiredArgsConstructor
 public class HivePolicySyncCommandHandler {
 
     private final HiveManagedPolicyService hiveManagedPolicyService;
+
+    public HivePolicySyncCommandHandler(HiveManagedPolicyService hiveManagedPolicyService) {
+        this.hiveManagedPolicyService = hiveManagedPolicyService;
+    }
 
     public void handle(HiveControlCommandEnvelope envelope) {
         if (envelope == null) {

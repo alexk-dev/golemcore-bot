@@ -41,6 +41,7 @@ import me.golemcore.bot.port.outbound.ModelRegistryRemotePort;
 import me.golemcore.bot.port.outbound.ProviderModelDiscoveryPort;
 import me.golemcore.bot.port.outbound.ResponseJsonSchemaValidatorPort;
 import me.golemcore.bot.port.outbound.SessionPort;
+import me.golemcore.bot.port.outbound.SessionRetentionRuntimeConfigPort;
 import me.golemcore.bot.port.outbound.SkillMarketplaceArtifactPort;
 import me.golemcore.bot.port.outbound.SkillMarketplaceCatalogPort;
 import me.golemcore.bot.port.outbound.SkillMarketplaceInstallPort;
@@ -131,7 +132,7 @@ public class ApplicationLayerConfiguration {
     @Bean
     SessionRetentionCleanupService sessionRetentionCleanupService(
             SessionPort sessionPort,
-            RuntimeConfigService runtimeConfigService,
+            SessionRetentionRuntimeConfigPort runtimeConfigService,
             ActiveSessionPointerService activeSessionPointerService,
             PlanService planService,
             DelayedSessionActionService delayedSessionActionService,
@@ -140,8 +141,8 @@ public class ApplicationLayerConfiguration {
                 sessionPort,
                 runtimeConfigService,
                 activeSessionPointerService,
-                planService,
-                delayedSessionActionService,
+                java.util.List.of(planService),
+                java.util.List.of(delayedSessionActionService),
                 clock);
     }
 

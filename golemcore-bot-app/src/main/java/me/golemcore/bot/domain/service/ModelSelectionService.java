@@ -18,7 +18,6 @@ package me.golemcore.bot.domain.service;
  * Contact: alex@kuleshov.tech
  */
 
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.ContextAttributes;
@@ -42,13 +41,21 @@ import java.util.Map;
  * tier-to-model mapping logic.
  */
 @Service
-@RequiredArgsConstructor
 @Slf4j
 public class ModelSelectionService implements ModelSelectionQueryPort {
 
     private final RuntimeConfigService runtimeConfigService;
     private final ModelConfigPort modelConfigService;
     private final UserPreferencesService preferencesService;
+
+    public ModelSelectionService(
+            RuntimeConfigService runtimeConfigService,
+            ModelConfigPort modelConfigService,
+            UserPreferencesService preferencesService) {
+        this.runtimeConfigService = runtimeConfigService;
+        this.modelConfigService = modelConfigService;
+        this.preferencesService = preferencesService;
+    }
 
     /**
      * Resolve the model and reasoning level for a tier. Checks user overrides

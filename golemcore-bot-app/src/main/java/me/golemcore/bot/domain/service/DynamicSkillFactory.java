@@ -18,7 +18,6 @@
 
 package me.golemcore.bot.domain.service;
 
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.McpConfig;
 import me.golemcore.bot.domain.model.RuntimeConfig;
@@ -41,7 +40,6 @@ import java.util.regex.Pattern;
  * the MCP server and its purpose.
  */
 @Service
-@RequiredArgsConstructor
 @Slf4j
 public class DynamicSkillFactory {
 

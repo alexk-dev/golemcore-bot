@@ -2,7 +2,6 @@ package me.golemcore.bot.adapter.outbound.update;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.AvailableRelease;
 import me.golemcore.bot.infrastructure.config.BotProperties;
@@ -31,7 +30,6 @@ import java.util.Optional;
  */
 @Component
 @Order(1)
-@RequiredArgsConstructor
 @Slf4j
 public class MavenCentralReleaseSourceAdapter implements ReleaseSourcePort {
 
@@ -49,6 +47,13 @@ public class MavenCentralReleaseSourceAdapter implements ReleaseSourcePort {
 
     private final ObjectMapper objectMapper;
     private final BotProperties botProperties;
+
+    public MavenCentralReleaseSourceAdapter(
+            ObjectMapper objectMapper,
+            BotProperties botProperties) {
+        this.objectMapper = objectMapper;
+        this.botProperties = botProperties;
+    }
 
     @Override
     public String name() {

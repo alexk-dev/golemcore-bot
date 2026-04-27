@@ -37,13 +37,11 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.ToolArtifactDownload;
 import me.golemcore.bot.port.outbound.ToolArtifactReadPort;
 
-@RequiredArgsConstructor
 @Slf4j
 class Langchain4jMessageConverter {
 
@@ -54,6 +52,13 @@ class Langchain4jMessageConverter {
 
     private final ToolArtifactReadPort toolArtifactReadPort;
     private final ObjectMapper objectMapper;
+
+    public Langchain4jMessageConverter(
+            ToolArtifactReadPort toolArtifactReadPort,
+            ObjectMapper objectMapper) {
+        this.toolArtifactReadPort = toolArtifactReadPort;
+        this.objectMapper = objectMapper;
+    }
 
     MessageConversionResult convertMessages(String systemPrompt, List<Message> requestMessages,
             boolean geminiApiType, boolean visionCapableTarget, boolean disableToolAttachmentHydration) {

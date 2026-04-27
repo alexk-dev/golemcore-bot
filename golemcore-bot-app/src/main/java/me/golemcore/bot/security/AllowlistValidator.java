@@ -20,7 +20,6 @@ package me.golemcore.bot.security;
 
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.infrastructure.config.BotProperties;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
@@ -31,7 +30,6 @@ import java.util.List;
  * controlled only by RuntimeConfig allowlist.
  */
 @Component
-@RequiredArgsConstructor
 @Slf4j
 public class AllowlistValidator {
 
@@ -39,6 +37,13 @@ public class AllowlistValidator {
 
     private final BotProperties properties;
     private final RuntimeConfigService runtimeConfigService;
+
+    public AllowlistValidator(
+            BotProperties properties,
+            RuntimeConfigService runtimeConfigService) {
+        this.properties = properties;
+        this.runtimeConfigService = runtimeConfigService;
+    }
 
     /**
      * Check if a user is allowed to use the bot on a specific channel.
