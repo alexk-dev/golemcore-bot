@@ -15,23 +15,13 @@ import org.junit.jupiter.api.Test;
 class ModuleBoundaryArchitectureTest {
 
     private static final Path MAIN_SOURCES = Paths.get("src/main/java");
-    private static final List<String> FORBIDDEN_APP_BOUNDARY_REFERENCES = List.of(
-            "me.golemcore.bot.adapter.",
-            "me.golemcore.bot.infrastructure.",
-            "me.golemcore.bot.launcher.",
-            "me.golemcore.bot.plugin.",
-            "me.golemcore.bot.proto.",
-            "me.golemcore.bot.ratelimit.",
-            "me.golemcore.bot.security.",
-            "me.golemcore.bot.tools.",
-            "me.golemcore.bot.usage.");
-    private static final List<String> FORBIDDEN_INJECTION_SHORTCUTS = List.of(
-            "import lombok.RequiredArgsConstructor;",
-            "@RequiredArgsConstructor",
-            "import org.springframework.beans.factory.annotation.Autowired;",
-            "import jakarta.annotation.Resource;",
-            "@Autowired",
-            "@Resource");
+    private static final List<String> FORBIDDEN_APP_BOUNDARY_REFERENCES = List.of("me.golemcore.bot.adapter.",
+            "me.golemcore.bot.infrastructure.", "me.golemcore.bot.launcher.", "me.golemcore.bot.plugin.",
+            "me.golemcore.bot.proto.", "me.golemcore.bot.ratelimit.", "me.golemcore.bot.security.",
+            "me.golemcore.bot.tools.", "me.golemcore.bot.usage.");
+    private static final List<String> FORBIDDEN_INJECTION_SHORTCUTS = List.of("import lombok.RequiredArgsConstructor;",
+            "@RequiredArgsConstructor", "import org.springframework.beans.factory.annotation.Autowired;",
+            "import jakarta.annotation.Resource;", "@Autowired", "@Resource");
 
     @Test
     void mainSourcesShouldStayOutsideAppAndAdapterBoundaries() throws IOException {
