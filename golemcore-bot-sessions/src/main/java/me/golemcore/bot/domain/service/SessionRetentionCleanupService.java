@@ -35,6 +35,7 @@ import me.golemcore.bot.domain.model.SessionIdentity;
 import me.golemcore.bot.port.outbound.SessionDelayedActionProtectionPort;
 import me.golemcore.bot.port.outbound.SessionPlanProtectionPort;
 import me.golemcore.bot.port.outbound.SessionPort;
+import me.golemcore.bot.port.outbound.SessionRetentionRuntimeConfigPort;
 
 @Slf4j
 public class SessionRetentionCleanupService {
@@ -42,13 +43,14 @@ public class SessionRetentionCleanupService {
     private static final String LOG_PREFIX = "[SessionRetention]";
 
     private final SessionPort sessionPort;
-    private final RuntimeConfigService runtimeConfigService;
+    private final SessionRetentionRuntimeConfigPort runtimeConfigService;
     private final ActiveSessionPointerService activeSessionPointerService;
     private final List<SessionPlanProtectionPort> planProtectionPorts;
     private final List<SessionDelayedActionProtectionPort> delayedActionProtectionPorts;
     private final Clock clock;
 
-    public SessionRetentionCleanupService(SessionPort sessionPort, RuntimeConfigService runtimeConfigService,
+    public SessionRetentionCleanupService(SessionPort sessionPort,
+            SessionRetentionRuntimeConfigPort runtimeConfigService,
             ActiveSessionPointerService activeSessionPointerService,
             List<SessionPlanProtectionPort> planProtectionPorts,
             List<SessionDelayedActionProtectionPort> delayedActionProtectionPorts, Clock clock) {

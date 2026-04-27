@@ -7,10 +7,10 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import me.golemcore.bot.domain.component.ToolComponent;
 import me.golemcore.bot.domain.loop.AgentContextHolder;
@@ -22,7 +22,6 @@ import me.golemcore.bot.domain.model.ToolArtifact;
 import me.golemcore.bot.domain.model.ToolFailureKind;
 import me.golemcore.bot.domain.model.ToolResult;
 import me.golemcore.bot.port.outbound.ConfirmationPort;
-import me.golemcore.bot.port.outbound.ToolRegistryPort;
 import me.golemcore.bot.port.outbound.ToolRuntimeSettingsPort;
 import org.springframework.stereotype.Component;
 
@@ -33,35 +32,39 @@ import org.springframework.stereotype.Component;
  */
 @Component
 @Slf4j
-public class ToolCallExecutionService implements ToolRegistryPort {
+public class ToolCallExecutionService {
 
     private static final long TOOL_TIMEOUT_SECONDS = 30;
     private static final int MAX_BASE64_LENGTH = 67_000_000;
 
-    private final Map<String, ToolComponent> toolRegistry;
+    private final ToolRegistryService toolRegistryService;
     private final ToolConfirmationPolicy confirmationPolicy;
     private final ConfirmationPort confirmationPort;
     private final ToolRuntimeSettingsPort settingsPort;
     private final ToolArtifactService toolArtifactService;
 
-    public ToolCallExecutionService(List<ToolComponent> toolComponents, ToolConfirmationPolicy confirmationPolicy,
+    public ToolCallExecutionService(ToolRegistryService toolRegistryService, ToolConfirmationPolicy confirmationPolicy,
             ConfirmationPort confirmationPort, ToolRuntimeSettingsPort settingsPort,
             ToolArtifactService toolArtifactService) {
-        this.toolRegistry = new ConcurrentHashMap<>();
-        for (ToolComponent tool : toolComponents) {
-            toolRegistry.put(tool.getToolName(), tool);
-        }
-        this.confirmationPolicy = confirmationPolicy;
-        this.confirmationPort = confirmationPort;
-        this.settingsPort = settingsPort;
-        this.toolArtifactService = toolArtifactService;
+        this.toolRegistryService = Objects.requireNonNull(toolRegistryService, "toolRegistryService must not be null");
+        this.confirmationPolicy = Objects.requireNonNull(confirmationPolicy, "confirmationPolicy must not be null");
+        this.confirmationPort = Objects.requireNonNull(confirmationPort, "confirmationPort must not be null");
+        this.settingsPort = Objects.requireNonNull(settingsPort, "settingsPort must not be null");
+        this.toolArtifactService = Objects.requireNonNull(toolArtifactService, "toolArtifactService must not be null");
     }
 
     public ToolCallExecutionResult execute(AgentContext context, Message.ToolCall toolCall) {
+        return execute(ToolExecutionContext.from(context), toolCall);
+    }
+
+    public ToolCallExecutionResult execute(ToolExecutionContext executionContext, Message.ToolCall toolCall) {
+        ToolExecutionContext safeExecutionContext = Objects.requireNonNull(executionContext,
+                "executionContext must not be null");
+        AgentContext context = safeExecutionContext.agentContext();
         AgentContextHolder.set(context);
         try {
             if (requiresConfirmation(toolCall)) {
-                boolean approved = requestConfirmation(context, toolCall);
+                boolean approved = requestConfirmation(safeExecutionContext, toolCall);
                 if (!approved) {
                     ToolResult denied = ToolResult.failure(ToolFailureKind.CONFIRMATION_DENIED, "Cancelled by user");
                     String content = truncateToolResult("Error: Cancelled by user", toolCall.getName());
@@ -72,7 +75,7 @@ public class ToolCallExecutionService implements ToolRegistryPort {
 
             ToolResult rawResult = executeToolCall(context, toolCall);
             Attachment attachment = extractAttachment(context, rawResult, toolCall.getName());
-            ToolResult result = enrichToolResult(context, rawResult, toolCall.getName(), attachment);
+            ToolResult result = enrichToolResult(safeExecutionContext, rawResult, toolCall.getName(), attachment);
             context.addToolResult(toolCall.getId(), result);
 
             String content = buildToolMessageContent(result);
@@ -83,37 +86,28 @@ public class ToolCallExecutionService implements ToolRegistryPort {
         }
     }
 
-    @Override
     public void registerTool(ToolComponent tool) {
-        toolRegistry.put(tool.getToolName(), tool);
+        toolRegistryService.registerTool(tool);
     }
 
-    @Override
     public void unregisterTools(Collection<String> toolNames) {
-        if (toolNames == null) {
-            return;
-        }
-        for (String name : toolNames) {
-            toolRegistry.remove(name);
-        }
-        log.debug("Unregistered tools: {}", toolNames);
+        toolRegistryService.unregisterTools(toolNames);
     }
 
     public ToolComponent getTool(String name) {
-        return toolRegistry.get(name);
+        return toolRegistryService.getTool(name);
     }
 
     public List<ToolComponent> listTools() {
-        return toolRegistry.values().stream().sorted(java.util.Comparator.comparing(ToolComponent::getToolName))
-                .toList();
+        return toolRegistryService.listTools();
     }
 
     private boolean requiresConfirmation(Message.ToolCall toolCall) {
         return confirmationPolicy.requiresConfirmation(toolCall) && confirmationPort.isAvailable();
     }
 
-    private boolean requestConfirmation(AgentContext context, Message.ToolCall toolCall) {
-        String chatId = SessionIdentitySupport.resolveTransportChatId(context.getSession());
+    private boolean requestConfirmation(ToolExecutionContext executionContext, Message.ToolCall toolCall) {
+        String chatId = executionContext.transportChatId();
         String description = confirmationPolicy.describeAction(toolCall);
 
         log.info("[Tools] Requesting confirmation for '{}': {}", toolCall.getName(), description);
@@ -165,12 +159,12 @@ public class ToolCallExecutionService implements ToolRegistryPort {
                 }
             }
         }
-        return toolRegistry.get(toolName);
+        return toolRegistryService.getTool(toolName);
     }
 
     @SuppressWarnings("unchecked")
     private List<String> resolveAvailableToolNames(AgentContext context) {
-        Set<String> names = new TreeSet<>(toolRegistry.keySet());
+        Set<String> names = new TreeSet<>(toolRegistryService.toolNames());
         if (context != null) {
             Object scopedTools = context.getAttribute(ContextAttributes.CONTEXT_SCOPED_TOOLS);
             if (scopedTools instanceof Map<?, ?> map) {
@@ -300,7 +294,7 @@ public class ToolCallExecutionService implements ToolRegistryPort {
     }
 
     @SuppressWarnings("unchecked")
-    private ToolResult enrichToolResult(AgentContext context, ToolResult result, String toolName,
+    private ToolResult enrichToolResult(ToolExecutionContext executionContext, ToolResult result, String toolName,
             Attachment attachment) {
         if (result == null) {
             return null;
@@ -316,7 +310,7 @@ public class ToolCallExecutionService implements ToolRegistryPort {
         ToolArtifact storedFile = null;
         if (attachment != null) {
             try {
-                storedFile = toolArtifactService.saveArtifact(resolveSessionId(context), toolName,
+                storedFile = toolArtifactService.saveArtifact(resolveSessionId(executionContext), toolName,
                         attachment.getFilename(), attachment.getData(), attachment.getMimeType());
             } catch (RuntimeException ex) {
                 log.warn("[Tools] Failed to persist attachment for '{}': {}", toolName, ex.getMessage());
@@ -366,12 +360,12 @@ public class ToolCallExecutionService implements ToolRegistryPort {
         return mutated;
     }
 
-    private String resolveSessionId(AgentContext context) {
-        if (context == null || context.getSession() == null || context.getSession().getId() == null
-                || context.getSession().getId().isBlank()) {
+    private String resolveSessionId(ToolExecutionContext executionContext) {
+        if (executionContext == null || executionContext.sessionId() == null
+                || executionContext.sessionId().isBlank()) {
             return "session";
         }
-        return context.getSession().getId();
+        return executionContext.sessionId();
     }
 
     private String appendInternalFileLink(String output, ToolArtifact storedFile) {

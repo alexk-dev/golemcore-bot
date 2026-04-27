@@ -38,6 +38,7 @@ import me.golemcore.bot.port.outbound.ManagedPolicyRuntimeConfigPort;
 import me.golemcore.bot.port.outbound.SelfEvolvingBootstrapOverridePort;
 import me.golemcore.bot.port.outbound.SelfEvolvingRuntimeConfigPort;
 import me.golemcore.bot.port.outbound.RuntimeConfigAdminPort;
+import me.golemcore.bot.port.outbound.SessionRetentionRuntimeConfigPort;
 import me.golemcore.bot.port.outbound.RuntimeConfigPersistencePort;
 import org.springframework.stereotype.Service;
 
@@ -59,7 +60,7 @@ import org.springframework.stereotype.Service;
 @Service
 @Slf4j
 public class RuntimeConfigService implements RuntimeConfigQueryPort, RuntimeConfigAdminPort,
-        SelfEvolvingRuntimeConfigPort, ManagedPolicyRuntimeConfigPort {
+        SelfEvolvingRuntimeConfigPort, ManagedPolicyRuntimeConfigPort, SessionRetentionRuntimeConfigPort {
 
     private static final String REASONING_NONE = "none";
     private static final String DEFAULT_BALANCED_MODEL = null;

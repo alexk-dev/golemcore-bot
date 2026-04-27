@@ -1,5 +1,7 @@
 package me.golemcore.bot.infrastructure.config;
 
+import java.util.List;
+import me.golemcore.bot.domain.component.ToolComponent;
 import me.golemcore.bot.domain.service.CompactionOrchestrationService;
 import me.golemcore.bot.domain.service.ContextCompactionPolicy;
 import me.golemcore.bot.domain.service.ContextTokenEstimator;
@@ -10,6 +12,7 @@ import me.golemcore.bot.domain.service.RuntimeEventService;
 import me.golemcore.bot.domain.service.TraceService;
 import me.golemcore.bot.domain.service.TurnProgressService;
 import me.golemcore.bot.domain.service.ToolCallExecutionService;
+import me.golemcore.bot.domain.service.ToolRegistryService;
 import me.golemcore.bot.domain.system.toolloop.ContextCompactionCoordinator;
 import me.golemcore.bot.domain.system.toolloop.DefaultHistoryWriter;
 import me.golemcore.bot.domain.system.toolloop.DefaultToolLoopSystem;
@@ -32,10 +35,21 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 class ToolLoopAutoConfigurationTest {
 
     private final ToolLoopAutoConfiguration configuration = new ToolLoopAutoConfiguration();
+
+    @Test
+    void shouldCreateToolRegistryService() {
+        ToolComponent tool = mock(ToolComponent.class);
+        when(tool.getToolName()).thenReturn("test_tool");
+
+        ToolRegistryService registry = configuration.toolRegistryService(List.of(tool));
+
+        assertNotNull(registry);
+    }
 
     @Test
     void shouldCreateToolExecutorPortAdapter() {

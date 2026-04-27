@@ -27,6 +27,7 @@ import java.util.concurrent.CompletableFuture;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -81,8 +82,8 @@ class ToolCallExecutionServiceTest {
                 });
         when(toolArtifactService.buildThumbnailBase64(anyString())).thenReturn("thumb-base64");
 
-        service = new ToolCallExecutionService(List.of(toolComponent), confirmationPolicy, confirmationPort,
-                settingsPort, toolArtifactService);
+        service = new ToolCallExecutionService(new ToolRegistryService(List.of(toolComponent)), confirmationPolicy,
+                confirmationPort, settingsPort, toolArtifactService);
     }
 
     private ToolRuntimeSettingsPort toolRuntimeSettingsPort() {
@@ -681,6 +682,40 @@ class ToolCallExecutionServiceTest {
     }
 
     // ==================== AgentContextHolder lifecycle ====================
+
+    @Test
+    void shouldExecuteThroughExplicitToolExecutionContext() {
+        AgentContext context = buildContext();
+        context.setAttribute(ContextAttributes.TRANSPORT_CHAT_ID, "transport-chat");
+        Message.ToolCall toolCall = buildToolCall(TOOL_NAME, Map.of());
+        ToolResult successResult = ToolResult.success("ok");
+        when(toolComponent.execute(any())).thenAnswer(invocation -> {
+            assertEquals(context, AgentContextHolder.get());
+            return CompletableFuture.completedFuture(successResult);
+        });
+
+        ToolExecutionContext executionContext = ToolExecutionContext.from(context);
+        ToolCallExecutionResult result = service.execute(executionContext, toolCall);
+
+        assertEquals(CHANNEL_TYPE + ":" + CHAT_ID, executionContext.sessionId());
+        assertEquals(CHANNEL_TYPE, executionContext.channelType());
+        assertEquals("transport-chat", executionContext.transportChatId());
+        assertEquals("ok", result.toolMessageContent());
+        assertNull(AgentContextHolder.get());
+    }
+
+    @Test
+    void shouldSnapshotRuntimeAttributesForToolExecutionContext() {
+        AgentContext context = buildContext();
+        context.setAttribute("runtime.key", "initial");
+
+        ToolExecutionContext executionContext = ToolExecutionContext.from(context);
+        context.setAttribute("runtime.key", "changed");
+
+        assertEquals("initial", executionContext.runtimeAttributes().get("runtime.key"));
+        assertThrows(UnsupportedOperationException.class,
+                () -> executionContext.runtimeAttributes().put("another.key", "value"));
+    }
 
     @Test
     void shouldClearAgentContextHolderAfterExecution() {

@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://golemcore.dev/contracts/dashboard-api/trace-snapshot.v1.schema.json",
+  "title": "TraceSnapshotV1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "traceId", "spans", "redaction"],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "traceId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "sessionId": {
+      "type": ["string", "null"]
+    },
+    "spans": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["spanId", "name", "kind", "status", "startedAt"],
+        "properties": {
+          "spanId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "parentSpanId": {
+            "type": ["string", "null"]
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "kind": {
+            "type": "string",
+            "enum": ["INGRESS", "INTERNAL", "LLM", "TOOL", "STORAGE", "OUTBOUND"]
+          },
+          "status": {
+            "type": "string",
+            "enum": ["UNSET", "OK", "ERROR"]
+          },
+          "startedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "endedAt": {
+            "type": ["string", "null"],
+            "format": "date-time"
+          },
+          "attributes": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "events": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["name", "timestamp", "attributes"],
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "timestamp": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "attributes": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "redaction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["policyVersion", "secretsRedacted", "piiRedacted"],
+      "properties": {
+        "policyVersion": {
+          "type": "string",
+          "minLength": 1
+        },
+        "secretsRedacted": {
+          "type": "boolean"
+        },
+        "piiRedacted": {
+          "type": "boolean"
+        }
+      }
+    }
+  }
+}

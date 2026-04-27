@@ -53,7 +53,6 @@ import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.port.outbound.SessionPort;
 import me.golemcore.bot.domain.system.AgentSystem;
 import me.golemcore.bot.domain.system.ResponseRoutingAgentSystem;
-import me.golemcore.bot.port.outbound.ChannelDeliveryPort;
 import me.golemcore.bot.port.outbound.ChannelRuntimePort;
 import me.golemcore.bot.port.outbound.LlmPort;
 import me.golemcore.bot.port.outbound.RateLimitPort;
@@ -75,9 +74,6 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeoutException;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -98,27 +94,16 @@ public class AgentLoop {
     private final Clock clock;
     private final TraceService traceService;
     private final ContextHygieneService contextHygieneService;
-    private final ChannelRuntimePort channelRuntimePort;
+    private final TurnFeedbackCoordinator feedbackCoordinator;
+    private final TurnPersistenceGuard persistenceGuard;
     private final ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
-    private final ScheduledExecutorService typingExecutor = Executors.newSingleThreadScheduledExecutor(r -> {
-        Thread t = new Thread(r, "typing-indicator");
-        t.setDaemon(true);
-        return t;
-    });
-
-    private static final long TYPING_INTERVAL_SECONDS = 4;
 
     private List<AgentSystem> sortedSystems;
     private AgentSystem routingSystem;
 
     @PreDestroy
     public void shutdown() {
-        typingExecutor.shutdownNow();
-        try {
-            typingExecutor.awaitTermination(2, TimeUnit.SECONDS);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
+        feedbackCoordinator.shutdown();
     }
 
     public AgentLoop(SessionPort sessionService, RateLimitPort rateLimiter, List<AgentSystem> systems,
@@ -128,7 +113,6 @@ public class AgentLoop {
         this.sessionService = sessionService;
         this.rateLimiter = rateLimiter;
         this.systems = systems;
-        this.channelRuntimePort = channelRuntimePort;
         this.runtimeConfigService = runtimeConfigService;
         this.preferencesService = preferencesService;
         this.llmPort = llmPort;
@@ -136,6 +120,9 @@ public class AgentLoop {
         this.traceService = traceService;
         this.contextHygieneService = Objects.requireNonNull(contextHygieneService,
                 "contextHygieneService must not be null");
+        this.feedbackCoordinator = new TurnFeedbackCoordinator(channelRuntimePort, preferencesService);
+        this.persistenceGuard = new TurnPersistenceGuard(sessionService, runtimeConfigService, traceService,
+                contextHygieneService, clock);
     }
 
     public AgentContext processMessage(Message message) {
@@ -158,7 +145,7 @@ public class AgentLoop {
                 RateLimitResult rateLimit = rateLimiter.tryConsume();
                 if (!rateLimit.isAllowed()) {
                     log.warn("Rate limit exceeded");
-                    notifyRateLimited(message);
+                    feedbackCoordinator.notifyRateLimited(message);
                     return null;
                 }
             }
@@ -185,39 +172,19 @@ public class AgentLoop {
             log.info("[AgentLoop] routingSystem resolved: {}",
                     routingSystem != null ? routingSystem.getClass().getName() : "<null>");
 
-            ChannelDeliveryPort channel = channelRuntimePort.findChannel(message.getChannelType()).orElse(null);
-            ScheduledFuture<?> typingTask = null;
-            String typingChatId = resolveTransportChatId(message);
-            if (channel != null && typingChatId != null && !typingChatId.isBlank()) {
-                String chatId = typingChatId;
-                sendTypingIndicator(channel, chatId);
-                typingTask = typingExecutor.scheduleAtFixedRate(() -> sendTypingIndicator(channel, chatId),
-                        TYPING_INTERVAL_SECONDS, TYPING_INTERVAL_SECONDS, TimeUnit.SECONDS);
-            }
-
             log.debug("Starting agent loop (max iterations: {})", context.getMaxIterations());
             try {
-                runLoop(context);
-                ensureFeedback(context);
-                recordAutoRunOutcome(message, context);
-            } finally {
-                if (typingTask != null) {
-                    typingTask.cancel(false);
+                TurnFeedbackCoordinator.TypingHandle typingHandle = feedbackCoordinator.startTyping(message);
+                try (typingHandle) {
+                    runLoop(context);
+                    ensureFeedback(context);
+                    recordAutoRunOutcome(message, context);
                 }
+            } finally {
                 // Guarantee ThreadLocal cleanup even if systems throw unexpectedly
                 AgentContextHolder.clear();
-
-                // Persist the session even if loop/routing fails unexpectedly.
-                // This prevents losing the last inbound message (and any history mutations
-                // already applied)
-                // on restart/crash.
-                try {
-                    contextHygieneService.beforePersist(context);
-                    saveSessionWithTracing(session,
-                            context.getTraceContext() != null ? context.getTraceContext() : rootTraceContext);
-                } catch (Exception e) { // NOSONAR - last resort, must not break finally
-                    log.error("Failed to persist session in finally: {}", session.getId(), e);
-                }
+                persistenceGuard.persist(context, session,
+                        context.getTraceContext() != null ? context.getTraceContext() : rootTraceContext);
             }
 
             log.info("=== MESSAGE PROCESSING COMPLETE ===");
@@ -267,41 +234,6 @@ public class AgentLoop {
             return transportChatId;
         }
         return message != null ? message.getChatId() : null;
-    }
-
-    private void sendTypingIndicator(ChannelDeliveryPort channel, String chatId) {
-        try {
-            channel.showTyping(chatId);
-        } catch (Exception e) {
-            log.debug("Typing indicator failed for chat {}: {}", chatId, e.getMessage());
-        }
-    }
-
-    private void notifyRateLimited(Message message) {
-        if (message == null || message.getChannelType() == null || message.getChannelType().isBlank()) {
-            return;
-        }
-
-        String chatId = resolveTransportChatId(message);
-        if (chatId == null || chatId.isBlank()) {
-            return;
-        }
-
-        ChannelDeliveryPort channel = channelRuntimePort.findChannel(message.getChannelType()).orElse(null);
-        if (channel == null) {
-            return;
-        }
-
-        String text = preferencesService.getMessage("system.rate.limit");
-        if (text == null || text.isBlank()) {
-            text = "Rate limit exceeded. Please wait before sending more messages.";
-        }
-
-        try {
-            channel.sendMessage(chatId, text);
-        } catch (Exception e) { // NOSONAR - user feedback must not break request handling
-            log.debug("Rate limit notification failed for chat {}: {}", chatId, e.getMessage());
-        }
     }
 
     private void applyRuntimeAttributes(AgentContext context, Message message, AgentSession session) {
@@ -761,34 +693,6 @@ public class AgentLoop {
             log.debug("[AgentLoop] LLM error interpretation failed: {}", e.getMessage());
         }
         return null;
-    }
-
-    private void saveSessionWithTracing(AgentSession session, TraceContext parentTraceContext) {
-        TraceContext saveSpan = startSessionSaveSpan(session, parentTraceContext);
-        try {
-            sessionService.save(session);
-            finishSessionSaveSpan(session, saveSpan, TraceStatusCode.OK, null);
-        } catch (RuntimeException e) {
-            finishSessionSaveSpan(session, saveSpan, TraceStatusCode.ERROR, e.getMessage());
-            log.error("Failed to save session {} during traced persistence", session != null ? session.getId() : null,
-                    e);
-        }
-    }
-
-    private TraceContext startSessionSaveSpan(AgentSession session, TraceContext parentTraceContext) {
-        if (!runtimeConfigService.isTracingEnabled() || session == null || parentTraceContext == null) {
-            return null;
-        }
-        return traceService.startSpan(session, parentTraceContext, "session.save", TraceSpanKind.STORAGE,
-                clock.instant(), Map.of("session.id", session.getId()));
-    }
-
-    private void finishSessionSaveSpan(AgentSession session, TraceContext spanContext, TraceStatusCode statusCode,
-            String statusMessage) {
-        if (session == null || spanContext == null) {
-            return;
-        }
-        traceService.finishSpan(session, spanContext, statusCode, statusMessage, clock.instant());
     }
 
     private TraceContext startChildSpan(AgentContext context, String spanName, TraceSpanKind spanKind,

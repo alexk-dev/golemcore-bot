@@ -6,6 +6,7 @@ import me.golemcore.bot.domain.model.SessionIdentity;
 import me.golemcore.bot.port.outbound.SessionDelayedActionProtectionPort;
 import me.golemcore.bot.port.outbound.SessionPlanProtectionPort;
 import me.golemcore.bot.port.outbound.SessionPort;
+import me.golemcore.bot.port.outbound.SessionRetentionRuntimeConfigPort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -30,7 +31,7 @@ class SessionRetentionCleanupServiceTest {
     private static final Instant NOW = Instant.parse("2026-04-19T12:00:00Z");
 
     private SessionPort sessionPort;
-    private RuntimeConfigService runtimeConfigService;
+    private SessionRetentionRuntimeConfigPort runtimeConfigService;
     private ActiveSessionPointerService activeSessionPointerService;
     private SessionPlanProtectionPort planProtectionPort;
     private SessionDelayedActionProtectionPort delayedActionProtectionPort;
@@ -39,7 +40,7 @@ class SessionRetentionCleanupServiceTest {
     @BeforeEach
     void setUp() {
         sessionPort = mock(SessionPort.class);
-        runtimeConfigService = mock(RuntimeConfigService.class);
+        runtimeConfigService = mock(SessionRetentionRuntimeConfigPort.class);
         activeSessionPointerService = mock(ActiveSessionPointerService.class);
         planProtectionPort = mock(SessionPlanProtectionPort.class);
         delayedActionProtectionPort = mock(SessionDelayedActionProtectionPort.class);
