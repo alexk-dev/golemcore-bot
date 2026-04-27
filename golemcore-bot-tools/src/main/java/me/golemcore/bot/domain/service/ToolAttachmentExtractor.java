@@ -11,9 +11,6 @@ public class ToolAttachmentExtractor {
 
     private static final int MAX_BASE64_LENGTH = 67_000_000;
 
-    public ToolAttachmentExtractor() {
-    }
-
     public Attachment extract(ToolResult result, String toolName) {
         if (result == null || !result.isSuccess() || !(result.getData() instanceof Map<?, ?> dataMap)) {
             return null;
@@ -47,7 +44,7 @@ public class ToolAttachmentExtractor {
             byte[] bytes = Base64.getDecoder().decode(base64);
             return Attachment.builder().type(Attachment.Type.IMAGE).data(bytes).filename("screenshot.png")
                     .mimeType("image/png").build();
-        } catch (IllegalArgumentException e) {
+        } catch (IllegalArgumentException _) {
             log.warn("[Tools] Invalid base64 in screenshot from '{}'", toolName);
             return null;
         }

@@ -3,15 +3,20 @@ package me.golemcore.bot.domain.service;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Arrays;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
 import me.golemcore.bot.domain.model.AgentSession;
 
 public class SessionCache {
 
+    private static final int LOCK_STRIPES = 64;
+
     private final Map<String, AgentSession> sessions = new ConcurrentHashMap<>();
+    private final Object[] sessionLocks = new Object[LOCK_STRIPES];
 
     public SessionCache() {
+        Arrays.setAll(sessionLocks, ignored -> new Object());
     }
 
     public AgentSession computeIfAbsent(String sessionId, Function<String, AgentSession> loader) {
@@ -41,6 +46,11 @@ public class SessionCache {
         if (session != null && !StringValueSupport.isBlank(session.getId())) {
             sessions.putIfAbsent(session.getId(), session);
         }
+    }
+
+    public Object lockFor(String sessionId) {
+        int index = Math.floorMod(String.valueOf(sessionId).hashCode(), sessionLocks.length);
+        return sessionLocks[index];
     }
 
     public List<AgentSession> values() {

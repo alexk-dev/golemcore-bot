@@ -10,9 +10,6 @@ public class SessionIdFactory {
     static final String SESSION_ID_SEPARATOR = ":";
     static final String SESSIONS_DIR = "sessions";
 
-    public SessionIdFactory() {
-    }
-
     public String buildSessionId(String channelType, String chatId) {
         return channelType + SESSION_ID_SEPARATOR + chatId;
     }

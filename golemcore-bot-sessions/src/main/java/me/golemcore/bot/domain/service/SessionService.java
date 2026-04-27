@@ -92,7 +92,7 @@ public class SessionService implements SessionPort {
 
     public void clearMessages(String sessionId) {
         sessionCache.get(sessionId).ifPresent(session -> {
-            synchronized (session) {
+            synchronized (sessionCache.lockFor(sessionId)) {
                 session.mutableMessages().clear();
                 save(session);
             }

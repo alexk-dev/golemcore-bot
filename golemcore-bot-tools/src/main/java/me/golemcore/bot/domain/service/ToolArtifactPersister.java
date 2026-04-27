@@ -24,14 +24,12 @@ public class ToolArtifactPersister {
         }
 
         Map<String, Object> dataMap = mutableDataMap(result);
-        boolean mutated = dataMap != null && stripBinaryPayload(dataMap);
+        boolean resultHadDataMap = result.getData() instanceof Map<?, ?>;
+        boolean mutated = resultHadDataMap && stripBinaryPayload(dataMap);
 
         ToolArtifact storedFile = persistAttachment(executionContext, toolName, attachment);
         String output = result.getOutput();
         if (storedFile != null) {
-            if (dataMap == null) {
-                dataMap = new LinkedHashMap<>();
-            }
             enrichAttachment(attachment, storedFile);
             addStoredFileMetadata(dataMap, attachment, storedFile);
             output = appendInternalFileLink(output, storedFile);
@@ -51,7 +49,7 @@ public class ToolArtifactPersister {
         if (result.getData() instanceof Map<?, ?> rawMap) {
             return new LinkedHashMap<>((Map<String, Object>) rawMap);
         }
-        return null;
+        return new LinkedHashMap<>();
     }
 
     private ToolArtifact persistAttachment(ToolExecutionContext executionContext, String toolName,

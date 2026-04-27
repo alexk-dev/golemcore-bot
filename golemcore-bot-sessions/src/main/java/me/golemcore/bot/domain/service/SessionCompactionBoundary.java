@@ -10,9 +10,6 @@ import me.golemcore.bot.domain.model.Message;
 @Slf4j
 public class SessionCompactionBoundary {
 
-    public SessionCompactionBoundary() {
-    }
-
     public int compactMessages(AgentSession session, int keepLast, Consumer<AgentSession> saveSession) {
         if (session == null) {
             return -1;
