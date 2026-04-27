@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class RuntimeConfigSectionOwnershipTest {
 
@@ -31,8 +32,10 @@ class RuntimeConfigSectionOwnershipTest {
     void shouldAssignKnownBoundedContextOwners() {
         assertEquals("LlmConfigService",
                 RuntimeConfigSectionOwnership.ownerOf(RuntimeConfig.ConfigSection.MODEL_ROUTER).ownerService());
-        assertEquals("ToolConfigService",
+        assertEquals("SessionRuntimeConfigService",
                 RuntimeConfigSectionOwnership.ownerOf(RuntimeConfig.ConfigSection.TOOL_LOOP).ownerService());
+        assertEquals("ResilienceConfigService",
+                RuntimeConfigSectionOwnership.ownerOf(RuntimeConfig.ConfigSection.RESILIENCE).ownerService());
         assertEquals("HiveConfigService",
                 RuntimeConfigSectionOwnership.ownerOf(RuntimeConfig.ConfigSection.HIVE).ownerService());
         assertEquals("SelfEvolvingConfigService",
@@ -47,6 +50,17 @@ class RuntimeConfigSectionOwnershipTest {
     void shouldKeepSectionOwnershipOutOfTheCompatibilityFacade() {
         for (RuntimeConfigSectionOwnership.SectionOwnership ownership : RuntimeConfigSectionOwnership.all().values()) {
             assertNotEquals("RuntimeConfigService", ownership.ownerService());
+        }
+    }
+
+    @Test
+    void shouldBackDeclaredOwnersWithConcreteSectionServices() throws ClassNotFoundException {
+        RuntimeConfigNormalizer normalizer = new RuntimeConfigNormalizer();
+
+        for (RuntimeConfigSectionOwnership.SectionOwnership ownership : RuntimeConfigSectionOwnership.all().values()) {
+            Class.forName("me.golemcore.bot.domain.service." + ownership.ownerService());
+            assertTrue(normalizer.hasSectionService(ownership.ownerService()),
+                    () -> ownership.ownerService() + " must be registered in RuntimeConfigNormalizer");
         }
     }
 

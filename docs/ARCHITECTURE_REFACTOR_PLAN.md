@@ -44,6 +44,7 @@ This checklist tracks the next architecture-hardening pass after the modular run
 - [x] Add trace snapshot schema versioning.
 - [x] Add runtime config section schema versioning and migration rules.
 - [x] Split `RuntimeConfigService` cache, API redaction, and mutation rollback into dedicated collaborators.
+- [x] Split runtime config defaults and section normalization into concrete section owner services.
 - [x] Split `SessionService` lifecycle internals into repository, cache, id factory, compaction, inheritance, and deletion collaborators.
 - [x] Split tool execution from registry, result post-processing, attachment extraction, and artifact persistence.
 

@@ -2,6 +2,7 @@ package me.golemcore.bot.infrastructure.config;
 
 import java.util.List;
 import me.golemcore.bot.domain.service.RuntimeConfigMutationService;
+import me.golemcore.bot.domain.service.RuntimeConfigNormalizer;
 import me.golemcore.bot.domain.service.RuntimeConfigRedactor;
 import me.golemcore.bot.domain.service.RuntimeConfigSnapshotProvider;
 import me.golemcore.bot.domain.service.SessionCache;
@@ -40,6 +41,11 @@ public class RuntimeBoundaryConfiguration {
     @Bean
     RuntimeConfigRedactor runtimeConfigRedactor() {
         return new RuntimeConfigRedactor();
+    }
+
+    @Bean
+    RuntimeConfigNormalizer runtimeConfigNormalizer() {
+        return new RuntimeConfigNormalizer();
     }
 
     @Bean

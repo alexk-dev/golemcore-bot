@@ -62,7 +62,8 @@ class RuntimeConfigServiceTest {
                 storagePort);
         snapshotProvider = new RuntimeConfigSnapshotProvider();
         service = new RuntimeConfigService(persistenceAdapter, RuntimeConfigTestOverrides.noop(), snapshotProvider,
-                new RuntimeConfigMutationService(persistenceAdapter, snapshotProvider), new RuntimeConfigRedactor());
+                new RuntimeConfigMutationService(persistenceAdapter, snapshotProvider), new RuntimeConfigRedactor(),
+                new RuntimeConfigNormalizer());
         objectMapper = new ObjectMapper();
         objectMapper.registerModule(new JavaTimeModule());
     }

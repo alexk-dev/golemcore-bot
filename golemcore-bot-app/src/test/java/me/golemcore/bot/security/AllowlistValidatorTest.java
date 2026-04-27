@@ -2,6 +2,7 @@ package me.golemcore.bot.security;
 
 import me.golemcore.bot.adapter.outbound.config.StorageRuntimeConfigPersistenceAdapter;
 import me.golemcore.bot.domain.service.RuntimeConfigMutationService;
+import me.golemcore.bot.domain.service.RuntimeConfigNormalizer;
 import me.golemcore.bot.domain.service.RuntimeConfigRedactor;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.RuntimeConfigSnapshotProvider;
@@ -210,7 +211,8 @@ class AllowlistValidatorTest {
                             me.golemcore.bot.support.TestPorts.settings(new BotProperties())),
                     snapshotProvider,
                     new RuntimeConfigMutationService(persistenceAdapter, snapshotProvider),
-                    new RuntimeConfigRedactor());
+                    new RuntimeConfigRedactor(),
+                    new RuntimeConfigNormalizer());
         }
 
         @Override
