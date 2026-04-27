@@ -63,7 +63,7 @@
         <json.schema.validator.version>3.0.2</json.schema.validator.version>
         <picocli.version>4.0.4</picocli.version>
         <pty4j.version>0.13.12</pty4j.version>
-        <lombok.version>1.18.42</lombok.version>
+        <lombok.version>1.18.46</lombok.version>
 
         <spotbugs.version>4.9.8.3</spotbugs.version>
         <pmd.version>3.28.0</pmd.version>
