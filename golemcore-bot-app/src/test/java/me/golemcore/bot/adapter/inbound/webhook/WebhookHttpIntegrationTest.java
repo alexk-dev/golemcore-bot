@@ -1,5 +1,6 @@
 package me.golemcore.bot.adapter.inbound.webhook;
 
+import me.golemcore.bot.domain.service.TraceService;
 import me.golemcore.bot.adapter.inbound.web.security.DashboardSecurityConfig;
 import me.golemcore.bot.adapter.inbound.web.security.JwtAuthenticationFilter;
 import me.golemcore.bot.domain.model.Secret;
@@ -64,7 +65,7 @@ class WebhookHttpIntegrationTest {
                 new MemoryPresetService(),
                 mock(ApplicationEventPublisher.class),
                 mock(me.golemcore.bot.port.outbound.SessionPort.class),
-                mock(me.golemcore.bot.domain.service.TraceService.class),
+                mock(TraceService.class),
                 new InputSanitizer());
 
         JwtTokenProvider jwtTokenProvider = new JwtTokenProvider(properties);

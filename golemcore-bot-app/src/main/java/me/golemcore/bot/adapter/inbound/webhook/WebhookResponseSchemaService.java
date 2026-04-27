@@ -31,7 +31,7 @@ import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.LlmRequest;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
-import me.golemcore.bot.domain.service.ModelSelectionService;
+import me.golemcore.bot.domain.model.ModelSelectionService;
 import me.golemcore.bot.port.outbound.LlmPort;
 import org.springframework.stereotype.Service;
 

@@ -2,7 +2,7 @@ package me.golemcore.bot.application.settings;
 
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.UserPreferences;
-import me.golemcore.bot.domain.service.ModelSelectionService;
+import me.golemcore.bot.domain.model.ModelSelectionService;
 import me.golemcore.bot.adapter.outbound.voice.PluginVoiceProviderCatalogAdapter;
 import me.golemcore.bot.port.outbound.ResponseJsonSchemaValidatorPort;
 import me.golemcore.bot.port.outbound.VoiceProviderCatalogPort;

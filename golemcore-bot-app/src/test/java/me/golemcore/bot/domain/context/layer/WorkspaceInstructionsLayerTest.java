@@ -2,7 +2,7 @@ package me.golemcore.bot.domain.context.layer;
 
 import me.golemcore.bot.domain.context.ContextLayerResult;
 import me.golemcore.bot.domain.model.AgentContext;
-import me.golemcore.bot.domain.service.WorkspaceInstructionService;
+import me.golemcore.bot.domain.workspace.WorkspaceInstructionService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 

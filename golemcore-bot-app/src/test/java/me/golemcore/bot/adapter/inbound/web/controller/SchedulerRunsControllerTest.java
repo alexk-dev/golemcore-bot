@@ -1,6 +1,6 @@
 package me.golemcore.bot.adapter.inbound.web.controller;
 
-import me.golemcore.bot.domain.service.AutoRunHistoryService;
+import me.golemcore.bot.domain.auto.AutoRunHistoryService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;

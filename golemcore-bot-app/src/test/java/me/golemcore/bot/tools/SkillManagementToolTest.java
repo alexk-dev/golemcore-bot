@@ -5,7 +5,7 @@ import me.golemcore.bot.domain.component.SkillComponent;
 import me.golemcore.bot.domain.model.Skill;
 import me.golemcore.bot.domain.model.ToolResult;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
-import me.golemcore.bot.domain.service.SkillDocumentService;
+import me.golemcore.bot.domain.skills.SkillDocumentService;
 import me.golemcore.bot.port.outbound.StoragePort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;

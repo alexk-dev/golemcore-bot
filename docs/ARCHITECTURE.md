@@ -47,3 +47,29 @@ golemcore-bot-parent
 - Runtime and feature modules must not depend on app adapters, web controllers, launchers, or security configuration.
 - Adapters implement ports; domain/runtime code depends on ports and contracts.
 - New module dependencies must follow the graph above and be covered by architecture tests.
+- `golemcore-bot-app` domain code is grouped by bounded-context package; new production classes must not be added to `me.golemcore.bot.domain.service`.
+
+## App Domain Contexts
+
+The app module keeps only adapter-facing or composition-root domain services that are not ready for a dedicated Maven module. These services are grouped by ownership:
+
+```text
+domain.auto
+domain.context.compaction
+domain.dashboard
+domain.events
+domain.model
+domain.planning
+domain.progress
+domain.prompt
+domain.resilience
+domain.runtime
+domain.scheduling
+domain.session
+domain.skills
+domain.tools
+domain.tracing
+domain.update
+domain.voice
+domain.workspace
+```

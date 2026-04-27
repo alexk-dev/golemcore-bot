@@ -3,7 +3,7 @@ package me.golemcore.bot.domain.system.toolloop.view;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.Message;
-import me.golemcore.bot.domain.service.ContextTokenEstimator;
+import me.golemcore.bot.domain.context.compaction.ContextTokenEstimator;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;

@@ -29,7 +29,7 @@ import java.util.stream.Stream;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
-import me.golemcore.bot.domain.service.SkillDocumentService;
+import me.golemcore.bot.domain.skills.SkillDocumentService;
 import me.golemcore.bot.domain.service.WorkspacePathService;
 import me.golemcore.bot.port.outbound.SkillMarketplaceCatalogPort.MarketplaceArtifactData;
 import me.golemcore.bot.port.outbound.SkillMarketplaceCatalogPort.MarketplaceSourceRef;

@@ -1,5 +1,6 @@
 package me.golemcore.bot.adapter.inbound.web.controller;
 
+import me.golemcore.bot.domain.model.ModelSelectionService;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import me.golemcore.bot.application.models.ModelManagementFacade;
 import me.golemcore.bot.application.models.ModelRegistryService;
@@ -101,7 +102,7 @@ public class ModelsController {
      */
     @GetMapping("/available")
     public Mono<ResponseEntity<Map<String, List<AvailableModelDto>>>> getAvailableModels() {
-        Map<String, List<me.golemcore.bot.domain.service.ModelSelectionService.AvailableModel>> grouped = modelManagementFacade
+        Map<String, List<ModelSelectionService.AvailableModel>> grouped = modelManagementFacade
                 .getAvailableModels();
         Map<String, List<AvailableModelDto>> result = new LinkedHashMap<>();
         grouped.forEach((provider, models) -> result.put(provider, models.stream()

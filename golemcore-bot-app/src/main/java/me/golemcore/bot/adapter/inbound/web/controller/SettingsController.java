@@ -35,7 +35,7 @@ import me.golemcore.bot.domain.model.MemoryPreset;
 import me.golemcore.bot.domain.model.ModelTierCatalog;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.UserPreferences;
-import me.golemcore.bot.domain.service.ModelSelectionService;
+import me.golemcore.bot.domain.model.ModelSelectionService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;

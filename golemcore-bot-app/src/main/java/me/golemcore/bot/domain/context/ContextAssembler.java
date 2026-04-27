@@ -23,7 +23,7 @@ import me.golemcore.bot.domain.context.resolution.SkillResolver;
 import me.golemcore.bot.domain.context.resolution.TierResolver;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.ContextAttributes;
-import me.golemcore.bot.domain.service.ContextCompactionPolicy;
+import me.golemcore.bot.domain.context.compaction.ContextCompactionPolicy;
 
 import java.util.Comparator;
 import java.util.List;

@@ -9,7 +9,7 @@ package me.golemcore.bot.domain.resilience.autoproceed;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.resilience.AbstractClassifierService;
 import me.golemcore.bot.domain.resilience.ClassifierPromptBuilder;
-import me.golemcore.bot.domain.service.ModelSelectionService;
+import me.golemcore.bot.domain.model.ModelSelectionService;
 import me.golemcore.bot.port.outbound.LlmPort;
 import org.slf4j.Logger;
 import org.springframework.stereotype.Service;

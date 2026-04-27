@@ -29,8 +29,8 @@ import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.MemoryPresetIds;
 import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.model.ToolNames;
-import me.golemcore.bot.domain.service.DelayedActionPolicyService;
-import me.golemcore.bot.domain.service.PlanModeToolRestrictionService;
+import me.golemcore.bot.domain.scheduling.DelayedActionPolicyService;
+import me.golemcore.bot.domain.tools.PlanModeToolRestrictionService;
 import me.golemcore.bot.domain.service.ToolCallExecutionService;
 import me.golemcore.bot.port.outbound.McpPort;
 

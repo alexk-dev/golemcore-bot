@@ -1,6 +1,6 @@
 package me.golemcore.bot.adapter.inbound.web.controller;
 
-import me.golemcore.bot.domain.service.AutoRunHistoryService;
+import me.golemcore.bot.domain.auto.AutoRunHistoryService;
 import me.golemcore.bot.domain.service.StringValueSupport;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;

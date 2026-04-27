@@ -12,7 +12,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import me.golemcore.bot.domain.model.SessionIdentity;
-import me.golemcore.bot.domain.service.PlanService;
+import me.golemcore.bot.domain.planning.PlanService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;

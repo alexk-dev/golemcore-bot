@@ -1,0 +1,308 @@
+package me.golemcore.bot.domain.dashboard;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import me.golemcore.bot.adapter.outbound.dashboard.BCryptPasswordHashAdapter;
+import me.golemcore.bot.adapter.outbound.dashboard.StorageDashboardCredentialsAdapter;
+import java.util.List;
+import me.golemcore.bot.domain.model.AdminCredentials;
+import me.golemcore.bot.port.outbound.DashboardFederatedAuthPort;
+import me.golemcore.bot.port.outbound.DashboardAuthSettingsPort;
+import me.golemcore.bot.port.outbound.DashboardTokenPort;
+import me.golemcore.bot.port.outbound.PasswordHashPort;
+import me.golemcore.bot.port.outbound.StoragePort;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+
+import java.util.concurrent.CompletableFuture;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
+
+class DashboardAuthServiceTest {
+
+    private static final String PASSWORD = "my-password";
+    private static final String OLD_PASSWORD = "old-password";
+    private static final String NEW_PASSWORD = "new-password";
+    private static final String EXISTING_PASSWORD = "existing-password";
+    private static final BCryptPasswordEncoder TEST_ENCODER = new BCryptPasswordEncoder(4);
+    private static final String EXISTING_PASSWORD_HASH = TEST_ENCODER.encode(EXISTING_PASSWORD);
+
+    private DashboardAuthService authService;
+    private StoragePort storagePort;
+    private DashboardAuthSettingsPort settingsPort;
+    private DashboardTokenPort tokenPort;
+    private PasswordHashPort passwordHashPort;
+
+    @BeforeEach
+    void setUp() {
+        storagePort = mock(StoragePort.class);
+        settingsPort = mock(DashboardAuthSettingsPort.class);
+        tokenPort = mock(DashboardTokenPort.class);
+
+        ObjectMapper objectMapper = new ObjectMapper();
+        objectMapper.findAndRegisterModules();
+
+        // Default: no existing credentials in storage
+        when(storagePort.exists(anyString(), anyString()))
+                .thenReturn(CompletableFuture.completedFuture(false));
+        when(storagePort.putText(anyString(), anyString(), anyString()))
+                .thenReturn(CompletableFuture.completedFuture(null));
+        when(settingsPort.isDashboardEnabled()).thenReturn(true);
+        when(settingsPort.getConfiguredAdminPassword()).thenReturn(null);
+        when(tokenPort.generateAccessToken(anyString()))
+                .thenAnswer(invocation -> "access-" + invocation.getArgument(0, String.class));
+        when(tokenPort.generateRefreshToken(anyString()))
+                .thenAnswer(invocation -> "refresh-" + invocation.getArgument(0, String.class));
+        when(tokenPort.validateToken(anyString()))
+                .thenAnswer(invocation -> invocation.getArgument(0, String.class).startsWith("refresh-"));
+        when(tokenPort.isRefreshToken(anyString()))
+                .thenAnswer(invocation -> invocation.getArgument(0, String.class).startsWith("refresh-"));
+        when(tokenPort.getUsernameFromToken(anyString()))
+                .thenAnswer(invocation -> invocation.getArgument(0, String.class).replaceFirst("^refresh-", ""));
+        passwordHashPort = new BCryptPasswordHashAdapter();
+
+        authService = new DashboardAuthService(
+                new StorageDashboardCredentialsAdapter(storagePort, objectMapper),
+                settingsPort,
+                tokenPort,
+                passwordHashPort);
+    }
+
+    @Test
+    void shouldGenerateTempPasswordOnInit() {
+        authService.init();
+
+        AdminCredentials creds = authService.getCredentials();
+        assertNotNull(creds);
+        assertNotNull(creds.getPasswordHash());
+        assertFalse(creds.isMfaEnabled());
+    }
+
+    @Test
+    void shouldUseConfiguredPlaintextPassword() {
+        when(settingsPort.getConfiguredAdminPassword()).thenReturn(PASSWORD);
+
+        authService.init();
+
+        AdminCredentials creds = authService.getCredentials();
+        assertNotNull(creds);
+        assertTrue(TEST_ENCODER.matches(PASSWORD, creds.getPasswordHash()));
+    }
+
+    @Test
+    void shouldLoadExistingCredentials() throws Exception {
+        String json = new ObjectMapper().findAndRegisterModules().writeValueAsString(
+                AdminCredentials.builder().passwordHash(EXISTING_PASSWORD_HASH).build());
+
+        when(storagePort.exists(anyString(), anyString()))
+                .thenReturn(CompletableFuture.completedFuture(true));
+        when(storagePort.getText(anyString(), anyString()))
+                .thenReturn(CompletableFuture.completedFuture(json));
+
+        authService.init();
+
+        AdminCredentials creds = authService.getCredentials();
+        assertNotNull(creds);
+        assertEquals(EXISTING_PASSWORD_HASH, creds.getPasswordHash());
+    }
+
+    @Test
+    void shouldAuthenticateWithCorrectPassword() {
+        when(settingsPort.getConfiguredAdminPassword()).thenReturn(PASSWORD);
+        authService.init();
+
+        DashboardAuthService.TokenPair tokens = authService.authenticate(PASSWORD, null);
+        assertNotNull(tokens);
+        assertNotNull(tokens.getAccessToken());
+        assertNotNull(tokens.getRefreshToken());
+    }
+
+    @Test
+    void shouldRejectWrongPassword() {
+        when(settingsPort.getConfiguredAdminPassword()).thenReturn(PASSWORD);
+        authService.init();
+
+        DashboardAuthService.TokenPair tokens = authService.authenticate("wrong-password", null);
+        assertNull(tokens);
+    }
+
+    @Test
+    void shouldReturnNullWhenNoCredentials() {
+        // Don't call init — credentials remain null
+        DashboardAuthService.TokenPair tokens = authService.authenticate("any", null);
+        assertNull(tokens);
+    }
+
+    @Test
+    void shouldReturnMfaDisabledByDefault() {
+        authService.init();
+        assertFalse(authService.isMfaEnabled());
+    }
+
+    @Test
+    void shouldSetupMfa() {
+        authService.init();
+
+        DashboardAuthService.MfaSetupResult result = authService.setupMfa();
+        assertNotNull(result);
+        assertNotNull(result.getSecret());
+        assertNotNull(result.getQrUri());
+        assertTrue(result.getQrUri().startsWith("otpauth://totp/GolemCore:admin"));
+        assertTrue(result.getQrUri().contains("secret=" + result.getSecret()));
+    }
+
+    @Test
+    void shouldRejectInvalidMfaVerificationCode() {
+        authService.init();
+
+        authService.enableMfa("JBSWY3DPEHPK3PXP", "000000");
+        // TOTP code is time-based, this will almost certainly be wrong
+        // but the test verifies the flow works without exceptions
+        assertNotNull(authService.getCredentials());
+    }
+
+    @Test
+    void shouldChangePassword() {
+        when(settingsPort.getConfiguredAdminPassword()).thenReturn(OLD_PASSWORD);
+        authService.init();
+
+        boolean changed = authService.changePassword(OLD_PASSWORD, NEW_PASSWORD);
+        assertTrue(changed);
+
+        // Verify new password works
+        DashboardAuthService.TokenPair tokens = authService.authenticate(NEW_PASSWORD, null);
+        assertNotNull(tokens);
+
+        // Verify old password no longer works
+        DashboardAuthService.TokenPair oldTokens = authService.authenticate(OLD_PASSWORD, null);
+        assertNull(oldTokens);
+    }
+
+    @Test
+    void shouldRejectPasswordChangeWithWrongOldPassword() {
+        when(settingsPort.getConfiguredAdminPassword()).thenReturn(OLD_PASSWORD);
+        authService.init();
+
+        boolean changed = authService.changePassword("wrong-old-password", "new-password");
+        assertFalse(changed);
+    }
+
+    @Test
+    void shouldDisableMfaWithCorrectPassword() {
+        when(settingsPort.getConfiguredAdminPassword()).thenReturn(PASSWORD);
+        authService.init();
+
+        // Manually enable MFA
+        AdminCredentials creds = authService.getCredentials();
+        creds.setMfaEnabled(true);
+        creds.setMfaSecret("JBSWY3DPEHPK3PXP");
+
+        boolean disabled = authService.disableMfa(PASSWORD);
+        assertTrue(disabled);
+        assertFalse(authService.isMfaEnabled());
+    }
+
+    @Test
+    void shouldRejectMfaDisableWithWrongPassword() {
+        when(settingsPort.getConfiguredAdminPassword()).thenReturn(PASSWORD);
+        authService.init();
+
+        boolean disabled = authService.disableMfa("wrong-password");
+        assertFalse(disabled);
+    }
+
+    @Test
+    void shouldRefreshAccessToken() {
+        when(settingsPort.getConfiguredAdminPassword()).thenReturn(PASSWORD);
+        authService.init();
+
+        DashboardAuthService.TokenPair original = authService.authenticate(PASSWORD, null);
+        assertNotNull(original);
+
+        DashboardAuthService.TokenPair refreshed = authService.refreshAccessToken(original.getRefreshToken());
+        assertNotNull(refreshed);
+        assertNotNull(refreshed.getAccessToken());
+    }
+
+    @Test
+    void shouldRejectInvalidRefreshToken() {
+        authService.init();
+
+        DashboardAuthService.TokenPair result = authService.refreshAccessToken("invalid-token");
+        assertNull(result);
+    }
+
+    @Test
+    void shouldRejectAccessTokenAsRefreshToken() {
+        when(settingsPort.getConfiguredAdminPassword()).thenReturn(PASSWORD);
+        authService.init();
+
+        DashboardAuthService.TokenPair tokens = authService.authenticate(PASSWORD, null);
+        assertNotNull(tokens);
+
+        // Using access token as refresh token should fail
+        DashboardAuthService.TokenPair result = authService.refreshAccessToken(tokens.getAccessToken());
+        assertNull(result);
+    }
+
+    @Test
+    void shouldSkipInitWhenDashboardDisabled() {
+        when(settingsPort.isDashboardEnabled()).thenReturn(false);
+        authService.init();
+        assertNull(authService.getCredentials());
+    }
+
+    @Test
+    void shouldRejectMfaWhenMfaEnabledButNoCodeProvided() {
+        when(settingsPort.getConfiguredAdminPassword()).thenReturn(PASSWORD);
+        authService.init();
+
+        // Enable MFA manually
+        AdminCredentials creds = authService.getCredentials();
+        creds.setMfaEnabled(true);
+        creds.setMfaSecret("JBSWY3DPEHPK3PXP");
+
+        // Attempt login without MFA code
+        DashboardAuthService.TokenPair tokens = authService.authenticate(PASSWORD, null);
+        assertNull(tokens);
+
+        // Attempt login with blank MFA code
+        DashboardAuthService.TokenPair tokens2 = authService.authenticate(PASSWORD, "  ");
+        assertNull(tokens2);
+    }
+
+    @Test
+    void shouldAuthenticateFederatedAdminOperator() {
+        authService.init();
+
+        DashboardAuthService.TokenPair tokens = authService.authenticateFederatedPrincipal(
+                new DashboardFederatedAuthPort.DashboardFederatedPrincipal(
+                        "admin",
+                        "Hive Admin",
+                        List.of("ADMIN")));
+
+        assertNotNull(tokens);
+        assertEquals("access-admin", tokens.getAccessToken());
+    }
+
+    @Test
+    void shouldRejectFederatedViewerOperator() {
+        authService.init();
+
+        DashboardAuthService.TokenPair tokens = authService.authenticateFederatedPrincipal(
+                new DashboardFederatedAuthPort.DashboardFederatedPrincipal(
+                        "viewer",
+                        "Hive Viewer",
+                        List.of("VIEWER")));
+
+        assertNull(tokens);
+    }
+
+}

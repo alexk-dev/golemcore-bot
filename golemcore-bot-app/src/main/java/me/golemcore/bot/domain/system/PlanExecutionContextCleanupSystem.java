@@ -5,7 +5,7 @@ import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.FinishReason;
 import me.golemcore.bot.domain.model.SessionIdentity;
 import me.golemcore.bot.domain.model.TurnOutcome;
-import me.golemcore.bot.domain.service.PlanService;
+import me.golemcore.bot.domain.planning.PlanService;
 import me.golemcore.bot.domain.service.SessionIdentitySupport;
 
 public class PlanExecutionContextCleanupSystem implements AgentSystem {

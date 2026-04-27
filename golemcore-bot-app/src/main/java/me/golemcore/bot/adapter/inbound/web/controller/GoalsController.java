@@ -4,7 +4,7 @@ import me.golemcore.bot.domain.model.AutoTask;
 import me.golemcore.bot.domain.model.Goal;
 import me.golemcore.bot.domain.model.ModelTierCatalog;
 import me.golemcore.bot.domain.model.SessionIdentity;
-import me.golemcore.bot.domain.service.AutoModeService;
+import me.golemcore.bot.domain.auto.AutoModeService;
 import me.golemcore.bot.domain.service.SessionIdentitySupport;
 import me.golemcore.bot.domain.service.StringValueSupport;
 import org.springframework.http.HttpStatus;

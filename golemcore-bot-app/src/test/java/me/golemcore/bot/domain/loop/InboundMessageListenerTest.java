@@ -2,7 +2,7 @@ package me.golemcore.bot.adapter.inbound.runtime;
 
 import me.golemcore.bot.domain.loop.AgentLoop;
 import me.golemcore.bot.domain.model.Message;
-import me.golemcore.bot.domain.service.SessionRunCoordinator;
+import me.golemcore.bot.domain.session.SessionRunCoordinator;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 

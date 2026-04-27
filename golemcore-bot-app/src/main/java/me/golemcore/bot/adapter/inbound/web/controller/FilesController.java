@@ -12,7 +12,7 @@ import me.golemcore.bot.client.inlineedit.InlineEditFacade;
 import me.golemcore.bot.domain.model.DashboardFileContent;
 import me.golemcore.bot.domain.model.DashboardFileNode;
 import me.golemcore.bot.domain.model.ToolArtifactDownload;
-import me.golemcore.bot.domain.service.DashboardFileService;
+import me.golemcore.bot.domain.dashboard.DashboardFileService;
 import me.golemcore.bot.domain.service.ToolArtifactService;
 import org.springframework.core.io.buffer.DataBuffer;
 import org.springframework.core.io.buffer.DataBufferUtils;

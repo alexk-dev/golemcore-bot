@@ -1,6 +1,6 @@
 package me.golemcore.bot.adapter.outbound.update;
 
-import me.golemcore.bot.domain.service.JvmExitService;
+import me.golemcore.bot.domain.runtime.JvmExitService;
 import me.golemcore.bot.port.outbound.UpdateRestartPort;
 import org.springframework.boot.SpringApplication;
 import org.springframework.context.ApplicationContext;

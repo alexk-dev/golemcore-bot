@@ -4,7 +4,7 @@ import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.ModelTierCatalog;
 import me.golemcore.bot.domain.model.UserPreferences;
-import me.golemcore.bot.domain.service.ModelSelectionService;
+import me.golemcore.bot.domain.model.ModelSelectionService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.port.outbound.SessionPort;

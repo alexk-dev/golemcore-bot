@@ -9,7 +9,7 @@ import me.golemcore.bot.domain.model.MemoryPreset;
 import me.golemcore.bot.domain.model.policy.ManagedPolicyBindingState;
 import me.golemcore.bot.port.outbound.ManagedPolicyQueryPort;
 import me.golemcore.bot.domain.service.MemoryPresetService;
-import me.golemcore.bot.domain.service.ModelSelectionService;
+import me.golemcore.bot.domain.model.ModelSelectionService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.port.outbound.VoiceProviderCatalogPort;

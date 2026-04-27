@@ -8,7 +8,7 @@ import me.golemcore.bot.domain.model.DelayedActionKind;
 import me.golemcore.bot.domain.model.DelayedSessionAction;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.RuntimeConfig;
-import me.golemcore.bot.domain.service.DelayedSessionActionService;
+import me.golemcore.bot.domain.scheduling.DelayedSessionActionService;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
