@@ -278,8 +278,8 @@ final class ToolConfigService implements RuntimeConfigSectionService {
         if (cfg.getTools() == null) {
             cfg.setTools(RuntimeConfig.ToolsConfig.builder().build());
         }
-        cfg.getTools().setShellEnvironmentVariables(normalizeShellEnvironmentVariables(
-                cfg.getTools().getShellEnvironmentVariables()));
+        cfg.getTools().setShellEnvironmentVariables(
+                normalizeShellEnvironmentVariables(cfg.getTools().getShellEnvironmentVariables()));
         if (cfg.getMcp() == null) {
             cfg.setMcp(new RuntimeConfig.McpConfig());
         }
@@ -749,8 +749,8 @@ final class ResilienceConfigService implements RuntimeConfigSectionService {
         if (resilienceConfig.getDegradationDowngradeModel() == null) {
             resilienceConfig.setDegradationDowngradeModel(defaults.getDegradationDowngradeModel());
         }
-        resilienceConfig.setDegradationFallbackModelTier(normalizeResilienceFallbackTier(
-                resilienceConfig.getDegradationFallbackModelTier()));
+        resilienceConfig.setDegradationFallbackModelTier(
+                normalizeResilienceFallbackTier(resilienceConfig.getDegradationFallbackModelTier()));
         if (resilienceConfig.getDegradationStripTools() == null) {
             resilienceConfig.setDegradationStripTools(defaults.getDegradationStripTools());
         }
@@ -905,10 +905,10 @@ final class SelfEvolvingConfigService implements RuntimeConfigSectionService {
             embeddingsConfig.setEnabled(DEFAULT_SELF_EVOLVING_TACTIC_EMBEDDINGS_ENABLED);
         }
         embeddingsConfig.setEnabled("hybrid".equalsIgnoreCase(searchConfig.getMode()));
-        embeddingsConfig.setProvider(normalizeSelfEvolvingEmbeddingProvider(embeddingsConfig.getProvider(),
-                searchConfig.getMode()));
-        embeddingsConfig.setBaseUrl(normalizeSelfEvolvingEmbeddingBaseUrl(embeddingsConfig.getBaseUrl(),
-                embeddingsConfig.getProvider()));
+        embeddingsConfig.setProvider(
+                normalizeSelfEvolvingEmbeddingProvider(embeddingsConfig.getProvider(), searchConfig.getMode()));
+        embeddingsConfig.setBaseUrl(
+                normalizeSelfEvolvingEmbeddingBaseUrl(embeddingsConfig.getBaseUrl(), embeddingsConfig.getProvider()));
         if (DEFAULT_SELF_EVOLVING_TACTIC_EMBEDDINGS_PROVIDER.equals(embeddingsConfig.getProvider())) {
             embeddingsConfig.setModel(RuntimeConfigSupport.normalizeNonBlankString(embeddingsConfig.getModel(),
                     DEFAULT_SELF_EVOLVING_TACTIC_LOCAL_MODEL));
