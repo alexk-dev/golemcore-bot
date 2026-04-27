@@ -133,4 +133,4 @@ Key rule: dependencies should not point into `golemcore-bot-app`. The app module
 - [x] Unit tests live in their owning Maven modules.
 - [x] Architecture tests cover the new boundaries.
 - [x] Local strict or focused verification passes.
-- [ ] GitHub checks pass on the epic PR.
+- [x] GitHub checks pass on the epic PR.
