@@ -18,7 +18,6 @@
 
 package me.golemcore.bot.adapter.inbound.webhook;
 
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.adapter.inbound.webhook.dto.CallbackPayload;
 import me.golemcore.bot.infrastructure.config.BotProperties;
@@ -42,7 +41,6 @@ import java.util.UUID;
  * retry operations.
  */
 @Component
-@RequiredArgsConstructor
 @Slf4j
 public class WebhookDeliveryTracker {
 
@@ -72,6 +70,13 @@ public class WebhookDeliveryTracker {
     private final Object lock = new Object();
     private final Map<String, DeliveryState> deliveriesById = new LinkedHashMap<>();
     private final Deque<String> deliveryOrder = new ArrayDeque<>();
+
+    public WebhookDeliveryTracker(
+            WebhookCallbackSender callbackSender,
+            BotProperties botProperties) {
+        this.callbackSender = callbackSender;
+        this.botProperties = botProperties;
+    }
 
     /**
      * Register a callback delivery for an accepted webhook run.

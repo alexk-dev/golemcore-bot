@@ -3,7 +3,6 @@ package me.golemcore.bot.domain.service;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.ChannelTypes;
@@ -13,7 +12,6 @@ import me.golemcore.bot.port.outbound.SessionPort;
 import org.springframework.stereotype.Service;
 
 @Service
-@RequiredArgsConstructor
 @Slf4j
 public class SessionSelectionService {
 
@@ -24,6 +22,11 @@ public class SessionSelectionService {
 
     private final SessionPort sessionPort;
     private final ActiveSessionPointerService pointerService;
+
+    public SessionSelectionService(SessionPort sessionPort, ActiveSessionPointerService pointerService) {
+        this.sessionPort = sessionPort;
+        this.pointerService = pointerService;
+    }
 
     public List<SessionSummaryView> listRecentSessions(String channel, String clientInstanceId, String transportChatId,
             String principalName, int limit) {

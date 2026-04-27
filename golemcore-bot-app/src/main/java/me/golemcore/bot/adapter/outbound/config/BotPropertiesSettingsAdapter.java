@@ -1,7 +1,6 @@
 package me.golemcore.bot.adapter.outbound.config;
 
 import java.util.Map;
-import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.outbound.HiveBootstrapSettingsPort;
 import me.golemcore.bot.port.outbound.HttpSettingsPort;
@@ -19,13 +18,16 @@ import org.springframework.stereotype.Component;
  * Maps Spring-bound {@link BotProperties} into domain-facing settings records.
  */
 @Component
-@RequiredArgsConstructor
 public class BotPropertiesSettingsAdapter
         implements MemorySettingsPort, SkillSettingsPort, PromptSettingsPort, ToolRuntimeSettingsPort,
         UpdateSettingsPort, WorkspaceSettingsPort, StorageSettingsPort, SelfEvolvingBootstrapSettingsPort,
         HiveBootstrapSettingsPort, HttpSettingsPort {
 
     private final BotProperties botProperties;
+
+    public BotPropertiesSettingsAdapter(BotProperties botProperties) {
+        this.botProperties = botProperties;
+    }
 
     @Override
     public MemorySettings memory() {

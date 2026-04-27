@@ -18,7 +18,6 @@ package me.golemcore.bot.domain.memory.persistence;
  * Contact: alex@kuleshov.tech
  */
 
-import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.domain.model.MemoryItem;
 import me.golemcore.bot.domain.model.TurnMemoryEvent;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
@@ -40,7 +39,6 @@ import java.util.regex.Pattern;
  * Extracts episodic and derived memory candidates from finalized turn events.
  */
 @Service
-@RequiredArgsConstructor
 public class TurnMemoryExtractionOrchestrator {
 
     private static final Pattern TEST_REFERENCE_PATTERN = Pattern
@@ -48,6 +46,12 @@ public class TurnMemoryExtractionOrchestrator {
 
     private final RuntimeConfigService runtimeConfigService;
     private final MemoryNormalizationService memoryNormalizationService;
+
+    public TurnMemoryExtractionOrchestrator(RuntimeConfigService runtimeConfigService,
+            MemoryNormalizationService memoryNormalizationService) {
+        this.runtimeConfigService = runtimeConfigService;
+        this.memoryNormalizationService = memoryNormalizationService;
+    }
 
     /**
      * Extract candidate memory items from a turn event.

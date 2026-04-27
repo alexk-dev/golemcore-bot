@@ -18,7 +18,6 @@ package me.golemcore.bot.domain.service;
  * Contact: alex@kuleshov.tech
  */
 
-import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.domain.memory.disclosure.MemoryDisclosurePlanner;
 import me.golemcore.bot.domain.memory.disclosure.MemoryPackRenderer;
 import me.golemcore.bot.domain.memory.disclosure.MemorySectionAssembler;
@@ -43,13 +42,21 @@ import java.util.Map;
  * Builds prompt-ready memory packs using budget selection followed by progressive disclosure.
  */
 @Service
-@RequiredArgsConstructor
 public class MemoryPromptPackService {
 
     private final RuntimeConfigService runtimeConfigService;
     private final MemoryDisclosurePlanner memoryDisclosurePlanner;
     private final MemorySectionAssembler memorySectionAssembler;
     private final MemoryPackRenderer memoryPackRenderer;
+
+    public MemoryPromptPackService(RuntimeConfigService runtimeConfigService,
+            MemoryDisclosurePlanner memoryDisclosurePlanner, MemorySectionAssembler memorySectionAssembler,
+            MemoryPackRenderer memoryPackRenderer) {
+        this.runtimeConfigService = runtimeConfigService;
+        this.memoryDisclosurePlanner = memoryDisclosurePlanner;
+        this.memorySectionAssembler = memorySectionAssembler;
+        this.memoryPackRenderer = memoryPackRenderer;
+    }
 
     public MemoryPack build(MemoryQuery query, List<MemoryScoredItem> candidates) {
         MemoryDisclosureMode disclosureMode = MemoryDisclosureMode

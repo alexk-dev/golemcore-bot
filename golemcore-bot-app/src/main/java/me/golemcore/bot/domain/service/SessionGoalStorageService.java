@@ -23,7 +23,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.Goal;
 import me.golemcore.bot.port.outbound.StoragePort;
@@ -34,7 +33,6 @@ import org.springframework.stereotype.Service;
  * keeping their lifecycle tied to a concrete session identifier.
  */
 @Service
-@RequiredArgsConstructor
 @Slf4j
 public class SessionGoalStorageService {
 
@@ -46,6 +44,13 @@ public class SessionGoalStorageService {
 
     private final StoragePort storagePort;
     private final ObjectMapper objectMapper;
+
+    public SessionGoalStorageService(
+            StoragePort storagePort,
+            ObjectMapper objectMapper) {
+        this.storagePort = storagePort;
+        this.objectMapper = objectMapper;
+    }
 
     public List<Goal> loadGoals(String sessionId) {
         requireSessionId(sessionId);

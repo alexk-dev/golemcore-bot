@@ -3,7 +3,6 @@ package me.golemcore.bot.domain.service;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.Optional;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.hive.HivePolicyApplyResult;
@@ -17,7 +16,6 @@ import me.golemcore.bot.port.outbound.ModelCatalogAdminPort;
 import org.springframework.stereotype.Service;
 
 @Service
-@RequiredArgsConstructor
 @Slf4j
 public class HiveManagedPolicyService implements ManagedPolicyQueryPort {
 
@@ -31,6 +29,17 @@ public class HiveManagedPolicyService implements ManagedPolicyQueryPort {
     private final ModelCatalogAdminPort modelCatalogAdminPort;
     private final ManagedPolicyStatePort managedPolicyStatePort;
     private final Clock clock;
+
+    public HiveManagedPolicyService(
+            ManagedPolicyRuntimeConfigPort runtimeConfigPort,
+            ModelCatalogAdminPort modelCatalogAdminPort,
+            ManagedPolicyStatePort managedPolicyStatePort,
+            Clock clock) {
+        this.runtimeConfigPort = runtimeConfigPort;
+        this.modelCatalogAdminPort = modelCatalogAdminPort;
+        this.managedPolicyStatePort = managedPolicyStatePort;
+        this.clock = clock;
+    }
 
     @Override
     public Optional<ManagedPolicyBindingState> findBindingState() {

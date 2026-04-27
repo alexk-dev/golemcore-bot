@@ -12,6 +12,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.stream.Collectors;
@@ -47,21 +48,28 @@ class MavenModuleDependencyArchitectureTest {
                             "golemcore-bot-memory", "golemcore-bot-tools", "golemcore-bot-tracing",
                             "golemcore-bot-runtime-core", "golemcore-bot-client", "golemcore-bot-self-evolving",
                             "golemcore-bot-hive", "golemcore-bot-extensions")));
-    private static final Set<String> PROJECT_ARTIFACT_IDS = ALLOWED_PROJECT_DEPENDENCIES.values().stream()
-            .flatMap(Set::stream)
-            .collect(Collectors.collectingAndThen(Collectors.toCollection(HashSet::new),
-                    MavenModuleDependencyArchitectureTest::withModuleArtifactIds));
+
+    @Test
+    void allowed_dependency_graph_should_cover_every_parent_maven_module() {
+        Set<String> parentModules = new TreeSet<>(readParentModules());
+        Set<String> documentedModules = new TreeSet<>(ALLOWED_PROJECT_DEPENDENCIES.keySet());
+
+        assertTrue(parentModules.equals(documentedModules),
+                () -> "Every parent Maven module must be represented in the dependency graph. parent=" + parentModules
+                        + ", documented=" + documentedModules);
+    }
 
     @Test
     void production_maven_module_dependencies_should_follow_target_graph() {
+        Set<String> projectArtifactIds = projectArtifactIds();
         Map<String, String> moduleArtifactIds = new LinkedHashMap<>();
         Map<String, Set<String>> violations = new LinkedHashMap<>();
-        for (String module : ALLOWED_PROJECT_DEPENDENCIES.keySet()) {
+        for (String module : readParentModules()) {
             ModulePom modulePom = readModulePom(module);
             moduleArtifactIds.put(module, modulePom.artifactId());
             Set<String> allowed = ALLOWED_PROJECT_DEPENDENCIES.get(module);
             Set<String> illegalDependencies = modulePom.productionProjectDependencies().stream()
-                    .filter(PROJECT_ARTIFACT_IDS::contains)
+                    .filter(projectArtifactIds::contains)
                     .filter(dependency -> !allowed.contains(dependency))
                     .collect(Collectors.toCollection(TreeSet::new));
             if (!illegalDependencies.isEmpty()) {
@@ -79,7 +87,7 @@ class MavenModuleDependencyArchitectureTest {
 
     @Test
     void feature_modules_should_not_depend_on_app_module() {
-        Set<String> offenders = ALLOWED_PROJECT_DEPENDENCIES.keySet().stream()
+        Set<String> offenders = readParentModules().stream()
                 .filter(module -> !"golemcore-bot-app".equals(module))
                 .filter(module -> readModulePom(module).productionProjectDependencies().contains(APP_ARTIFACT_ID))
                 .collect(Collectors.toCollection(TreeSet::new));
@@ -94,7 +102,8 @@ class MavenModuleDependencyArchitectureTest {
         String annotationPrefix = "@";
         List<String> forbiddenPatterns = List.of("org.springframework.stereotype.", annotationPrefix + "Service",
                 annotationPrefix + "Component", annotationPrefix + "Configuration", annotationPrefix + "Bean",
-                annotationPrefix + "Autowired", annotationPrefix + "Resource");
+                annotationPrefix + "Autowired", annotationPrefix + "Resource",
+                annotationPrefix + "RequiredArgsConstructor");
         Set<String> violations = new TreeSet<>();
         try (Stream<Path> paths = Files.walk(contractsMain)) {
             for (Path path : paths.filter(path -> path.toString().endsWith(".java")).toList()) {
@@ -113,6 +122,35 @@ class MavenModuleDependencyArchitectureTest {
     }
 
     @Test
+    void production_sources_should_use_explicit_injection_constructors() throws IOException {
+        List<String> forbiddenPatterns = List.of("import lombok.RequiredArgsConstructor;",
+                "@RequiredArgsConstructor", "import org.springframework.beans.factory.annotation.Autowired;",
+                "import jakarta.annotation.Resource;", "@Autowired", "@Resource");
+        Set<String> violations = new TreeSet<>();
+        for (String module : readParentModules()) {
+            Path mainSources = REPO_ROOT.resolve(module).resolve("src/main/java");
+            if (!Files.exists(mainSources)) {
+                continue;
+            }
+            try (Stream<Path> paths = Files.walk(mainSources)) {
+                for (Path path : paths.filter(path -> path.toString().endsWith(".java")).toList()) {
+                    String source = Files.readString(path);
+                    for (String forbiddenPattern : forbiddenPatterns) {
+                        if (source.contains(forbiddenPattern)) {
+                            violations.add(module + "/" + mainSources.relativize(path) + " contains "
+                                    + forbiddenPattern);
+                        }
+                    }
+                }
+            }
+        }
+
+        assertTrue(violations.isEmpty(),
+                () -> "Production beans must use private final fields and explicit constructors:\n"
+                        + String.join("\n", violations));
+    }
+
+    @Test
     void ci_should_publish_dependency_report_for_review_visibility() throws IOException {
         String workflow = Files.readString(REPO_ROOT.resolve(".github/workflows/docker-publish.yml"));
 
@@ -120,16 +158,41 @@ class MavenModuleDependencyArchitectureTest {
                 .contains("dependency-report"), "CI must generate and upload a Maven dependency report artifact");
     }
 
+    private List<String> readParentModules() {
+        Path pom = REPO_ROOT.resolve("pom.xml");
+        try (InputStream inputStream = Files.newInputStream(pom)) {
+            Document document = newDocumentBuilderFactory().newDocumentBuilder().parse(inputStream);
+            Element project = document.getDocumentElement();
+            Element modules = directChild(project, "modules");
+            if (modules == null) {
+                return List.of();
+            }
+            NodeList moduleNodes = modules.getChildNodes();
+            List<String> result = new java.util.ArrayList<>();
+            for (int index = 0; index < moduleNodes.getLength(); index++) {
+                Node moduleNode = moduleNodes.item(index);
+                if (moduleNode instanceof Element module && "module".equals(module.getTagName())) {
+                    result.add(module.getTextContent().trim());
+                }
+            }
+            return List.copyOf(result);
+        } catch (Exception exception) {
+            throw new IllegalStateException("Failed to parse parent Maven POM: " + pom, exception);
+        }
+    }
+
+    private Set<String> projectArtifactIds() {
+        return readParentModules().stream()
+                .map(this::readModulePom)
+                .map(ModulePom::artifactId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toCollection(HashSet::new));
+    }
+
     private ModulePom readModulePom(String module) {
         Path pom = REPO_ROOT.resolve(module).resolve("pom.xml");
         try (InputStream inputStream = Files.newInputStream(pom)) {
-            DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
-            factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
-            factory.setFeature("http://xml.org/sax/features/external-general-entities", false);
-            factory.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
-            factory.setXIncludeAware(false);
-            factory.setExpandEntityReferences(false);
-            Document document = factory.newDocumentBuilder().parse(inputStream);
+            Document document = newDocumentBuilderFactory().newDocumentBuilder().parse(inputStream);
             Element project = document.getDocumentElement();
             String artifactId = directChildText(project, "artifactId");
             Set<String> productionProjectDependencies = new TreeSet<>();
@@ -152,6 +215,16 @@ class MavenModuleDependencyArchitectureTest {
         }
     }
 
+    private static DocumentBuilderFactory newDocumentBuilderFactory() throws Exception {
+        DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
+        factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+        factory.setFeature("http://xml.org/sax/features/external-general-entities", false);
+        factory.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+        factory.setXIncludeAware(false);
+        factory.setExpandEntityReferences(false);
+        return factory;
+    }
+
     private static Element directChild(Element parent, String tagName) {
         NodeList childNodes = parent.getChildNodes();
         for (int index = 0; index < childNodes.getLength(); index++) {
@@ -166,13 +239,6 @@ class MavenModuleDependencyArchitectureTest {
     private static String directChildText(Element parent, String tagName) {
         Element child = directChild(parent, tagName);
         return child != null ? child.getTextContent().trim() : "";
-    }
-
-    private static Set<String> withModuleArtifactIds(Set<String> artifactIds) {
-        artifactIds.add(APP_ARTIFACT_ID);
-        artifactIds.addAll(ALLOWED_PROJECT_DEPENDENCIES.keySet());
-        artifactIds.remove("golemcore-bot-app");
-        return Set.copyOf(artifactIds);
     }
 
     private record ModulePom(String artifactId, Set<String> productionProjectDependencies) {

@@ -2,14 +2,12 @@ package me.golemcore.bot.domain.service;
 
 import java.util.ArrayList;
 import java.util.Optional;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.HiveSessionState;
 import me.golemcore.bot.port.outbound.HiveSessionStatePort;
 import org.springframework.stereotype.Service;
 
 @Service
-@RequiredArgsConstructor
 @Slf4j
 public class HiveSessionStateStore {
 
@@ -18,6 +16,10 @@ public class HiveSessionStateStore {
     private final Object lock = new Object();
     private HiveSessionState cachedState;
     private volatile boolean loaded;
+
+    public HiveSessionStateStore(HiveSessionStatePort hiveSessionStatePort) {
+        this.hiveSessionStatePort = hiveSessionStatePort;
+    }
 
     public Optional<HiveSessionState> load() {
         ensureLoaded();

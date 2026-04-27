@@ -2,7 +2,6 @@ package me.golemcore.bot.domain.service;
 
 import me.golemcore.bot.domain.model.ToolArtifact;
 import me.golemcore.bot.domain.model.ToolArtifactDownload;
-import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.port.outbound.ToolArtifactReadPort;
 import me.golemcore.bot.port.outbound.WorkspaceFilePort;
 import org.springframework.stereotype.Service;
@@ -21,7 +20,6 @@ import java.time.Instant;
 import java.util.UUID;
 
 @Service
-@RequiredArgsConstructor
 public class ToolArtifactService implements ToolArtifactReadPort {
 
     private static final String TOOL_ARTIFACTS_DIR = ".golemcore/tool-artifacts";
@@ -32,6 +30,11 @@ public class ToolArtifactService implements ToolArtifactReadPort {
 
     private final WorkspacePathService workspacePathService;
     private final WorkspaceFilePort workspaceFilePort;
+
+    public ToolArtifactService(WorkspacePathService workspacePathService, WorkspaceFilePort workspaceFilePort) {
+        this.workspacePathService = workspacePathService;
+        this.workspaceFilePort = workspaceFilePort;
+    }
 
     public ToolArtifact saveArtifact(String sessionId, String toolName, String filename, byte[] data, String mimeType) {
         if (data == null || data.length == 0) {

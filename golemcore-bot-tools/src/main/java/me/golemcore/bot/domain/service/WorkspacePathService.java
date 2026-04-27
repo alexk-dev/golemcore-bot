@@ -6,14 +6,12 @@ import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Locale;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.port.outbound.WorkspaceFilePort;
 import me.golemcore.bot.port.outbound.WorkspaceSettingsPort;
 import org.springframework.stereotype.Service;
 
 @Service
-@RequiredArgsConstructor
 @Slf4j
 public class WorkspacePathService {
 
@@ -21,6 +19,11 @@ public class WorkspacePathService {
     private final WorkspaceFilePort workspaceFilePort;
 
     private Path workspaceRoot;
+
+    public WorkspacePathService(WorkspaceSettingsPort settingsPort, WorkspaceFilePort workspaceFilePort) {
+        this.settingsPort = settingsPort;
+        this.workspaceFilePort = workspaceFilePort;
+    }
 
     @PostConstruct
     public void init() {

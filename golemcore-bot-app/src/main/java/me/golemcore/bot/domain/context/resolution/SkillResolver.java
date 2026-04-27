@@ -18,7 +18,6 @@ package me.golemcore.bot.domain.context.resolution;
  * Contact: alex@kuleshov.tech
  */
 
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.component.SkillComponent;
 import me.golemcore.bot.domain.model.AgentContext;
@@ -49,11 +48,14 @@ import java.util.Optional;
  * subsequent turns continue with the same skill ("sticky activation"). If the
  * resolved skill is not found or unavailable, the persisted state is cleared.
  */
-@RequiredArgsConstructor
 @Slf4j
 public class SkillResolver {
 
     private final SkillComponent skillComponent;
+
+    public SkillResolver(SkillComponent skillComponent) {
+        this.skillComponent = skillComponent;
+    }
 
     /**
      * Resolves the active skill for the given context and persists the selection to

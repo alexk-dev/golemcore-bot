@@ -37,7 +37,6 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.PromptSection;
 import me.golemcore.bot.domain.model.UserPreferences;
@@ -53,7 +52,6 @@ import org.springframework.stereotype.Service;
  * code changes.
  */
 @Service
-@RequiredArgsConstructor
 @Slf4j
 public class PromptSectionService {
 
@@ -147,6 +145,17 @@ public class PromptSectionService {
 
     private final Map<String, PromptSection> sectionRegistry = new ConcurrentHashMap<>();
     private final ObjectMapper yamlMapper = new ObjectMapper(new YAMLFactory());
+
+    public PromptSectionService(
+            StoragePort storagePort,
+            PromptSettingsPort settingsPort,
+            RuntimeConfigService runtimeConfigService,
+            SkillTemplateEngine templateEngine) {
+        this.storagePort = storagePort;
+        this.settingsPort = settingsPort;
+        this.runtimeConfigService = runtimeConfigService;
+        this.templateEngine = templateEngine;
+    }
 
     @PostConstruct
     public void init() {

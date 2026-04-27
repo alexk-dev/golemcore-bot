@@ -1,6 +1,5 @@
 package me.golemcore.bot.client.inlineedit;
 
-import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.client.dto.InlineEditRequest;
 import me.golemcore.bot.client.dto.InlineEditResponse;
 import me.golemcore.bot.domain.model.ContextAttributes;
@@ -19,7 +18,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
 @Component
-@RequiredArgsConstructor
 public class InlineEditFacade {
 
     private static final int MAX_TOKENS = 1200;
@@ -28,6 +26,15 @@ public class InlineEditFacade {
     private final WorkspaceEditorPort workspaceEditorPort;
     private final LlmPort llmPort;
     private final InlineEditPromptFactory promptFactory;
+
+    public InlineEditFacade(
+            WorkspaceEditorPort workspaceEditorPort,
+            LlmPort llmPort,
+            InlineEditPromptFactory promptFactory) {
+        this.workspaceEditorPort = workspaceEditorPort;
+        this.llmPort = llmPort;
+        this.promptFactory = promptFactory;
+    }
 
     public InlineEditResponse createInlineEdit(InlineEditRequest request, String clientInstanceId) {
         if (request == null) {

@@ -4,7 +4,6 @@ import java.util.Arrays;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
-import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.outbound.DashboardPublicPathPort;
 import org.springframework.context.annotation.Bean;
@@ -26,12 +25,20 @@ import org.springframework.web.cors.reactive.UrlBasedCorsConfigurationSource;
  */
 @Configuration
 @EnableWebFluxSecurity
-@RequiredArgsConstructor
 public class DashboardSecurityConfig {
 
     private final BotProperties botProperties;
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
     private final List<DashboardPublicPathPort> dashboardPublicPathPorts;
+
+    public DashboardSecurityConfig(
+            BotProperties botProperties,
+            JwtAuthenticationFilter jwtAuthenticationFilter,
+            List<DashboardPublicPathPort> dashboardPublicPathPorts) {
+        this.botProperties = botProperties;
+        this.jwtAuthenticationFilter = jwtAuthenticationFilter;
+        this.dashboardPublicPathPorts = dashboardPublicPathPorts;
+    }
 
     @Bean
     public SecurityWebFilterChain securityWebFilterChain(ServerHttpSecurity http) {

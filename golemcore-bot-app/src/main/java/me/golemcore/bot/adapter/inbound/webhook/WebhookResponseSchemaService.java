@@ -27,7 +27,6 @@ import com.networknt.schema.Schema;
 import com.networknt.schema.SchemaLocation;
 import com.networknt.schema.SchemaRegistry;
 import com.networknt.schema.SpecificationVersion;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.LlmRequest;
 import me.golemcore.bot.domain.model.LlmResponse;
@@ -56,7 +55,6 @@ import java.util.concurrent.TimeoutException;
  * </p>
  */
 @Service
-@RequiredArgsConstructor
 @Slf4j
 public class WebhookResponseSchemaService {
 
@@ -74,6 +72,15 @@ public class WebhookResponseSchemaService {
     private final SchemaRegistry schemaRegistry = SchemaRegistry
             .withDefaultDialect(SpecificationVersion.DRAFT_2020_12);
     private final Schema schemaDefinitionSchema = schemaRegistry.getSchema(DRAFT_2020_12_META_SCHEMA);
+
+    public WebhookResponseSchemaService(
+            ObjectMapper objectMapper,
+            ModelSelectionService modelSelectionService,
+            LlmPort llmPort) {
+        this.objectMapper = objectMapper;
+        this.modelSelectionService = modelSelectionService;
+        this.llmPort = llmPort;
+    }
 
     /**
      * Returns whether a webhook response schema is configured.

@@ -29,7 +29,6 @@ import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.AutoTask;
 import me.golemcore.bot.domain.model.DiaryEntry;
@@ -40,7 +39,6 @@ import org.springframework.stereotype.Service;
  * Business operations for session-scoped goals/tasks.
  */
 @Service
-@RequiredArgsConstructor
 @Slf4j
 public class SessionScopedGoalService {
 
@@ -60,6 +58,15 @@ public class SessionScopedGoalService {
     private final SessionGoalStorageService sessionGoalStorageService;
     private final RuntimeConfigService runtimeConfigService;
     private final SessionDiaryService sessionDiaryService;
+
+    public SessionScopedGoalService(
+            SessionGoalStorageService sessionGoalStorageService,
+            RuntimeConfigService runtimeConfigService,
+            SessionDiaryService sessionDiaryService) {
+        this.sessionGoalStorageService = sessionGoalStorageService;
+        this.runtimeConfigService = runtimeConfigService;
+        this.sessionDiaryService = sessionDiaryService;
+    }
 
     public Goal createGoal(String sessionId, String title, String description, String prompt,
             String reflectionModelTier, boolean reflectionTierPriority) {

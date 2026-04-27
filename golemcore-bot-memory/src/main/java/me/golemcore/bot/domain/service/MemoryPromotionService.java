@@ -18,7 +18,6 @@ package me.golemcore.bot.domain.service;
  * Contact: alex@kuleshov.tech
  */
 
-import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.domain.model.MemoryItem;
 import org.springframework.stereotype.Service;
 
@@ -29,10 +28,13 @@ import java.util.List;
  * Promotion policy for Memory V2 layer transitions.
  */
 @Service
-@RequiredArgsConstructor
 public class MemoryPromotionService {
 
     private final RuntimeConfigService runtimeConfigService;
+
+    public MemoryPromotionService(RuntimeConfigService runtimeConfigService) {
+        this.runtimeConfigService = runtimeConfigService;
+    }
 
     public boolean isPromotionEnabled() {
         return runtimeConfigService.isMemoryPromotionEnabled();

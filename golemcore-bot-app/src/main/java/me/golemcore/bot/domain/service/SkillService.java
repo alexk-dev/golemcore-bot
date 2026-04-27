@@ -29,7 +29,6 @@ import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.component.SkillComponent;
 import me.golemcore.bot.domain.model.McpConfig;
@@ -49,7 +48,6 @@ import org.springframework.stereotype.Service;
  * runtime.
  */
 @Service
-@RequiredArgsConstructor
 @Slf4j
 public class SkillService implements SkillComponent {
 
@@ -65,6 +63,19 @@ public class SkillService implements SkillComponent {
     private final SkillDocumentService skillDocumentService;
 
     private final Map<String, Skill> skillRegistry = new ConcurrentHashMap<>();
+
+    public SkillService(
+            StoragePort storagePort,
+            SkillSettingsPort settingsPort,
+            SkillVariableResolver variableResolver,
+            RuntimeConfigService runtimeConfigService,
+            SkillDocumentService skillDocumentService) {
+        this.storagePort = storagePort;
+        this.settingsPort = settingsPort;
+        this.variableResolver = variableResolver;
+        this.runtimeConfigService = runtimeConfigService;
+        this.skillDocumentService = skillDocumentService;
+    }
 
     @PostConstruct
     public void init() {

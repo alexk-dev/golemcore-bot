@@ -4,7 +4,6 @@ import java.time.Instant;
 import java.util.Locale;
 import java.util.Map;
 import java.util.NoSuchElementException;
-import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.domain.model.HiveControlCommandEnvelope;
 import me.golemcore.bot.domain.model.HiveInspectionRequestBody;
 import me.golemcore.bot.domain.model.HiveInspectionResponse;
@@ -15,7 +14,6 @@ import me.golemcore.bot.port.outbound.HiveInspectionPayloadPort;
 import org.springframework.stereotype.Service;
 
 @Service
-@RequiredArgsConstructor
 public class HiveInspectionCommandHandler {
 
     private static final int DEFAULT_MESSAGE_LIMIT = 50;
@@ -24,6 +22,15 @@ public class HiveInspectionCommandHandler {
     private final SessionInspectionQueryPort sessionInspectionPort;
     private final HiveEventPublishPort hiveEventPublishPort;
     private final HiveInspectionPayloadPort hiveInspectionPayloadPort;
+
+    public HiveInspectionCommandHandler(
+            SessionInspectionQueryPort sessionInspectionPort,
+            HiveEventPublishPort hiveEventPublishPort,
+            HiveInspectionPayloadPort hiveInspectionPayloadPort) {
+        this.sessionInspectionPort = sessionInspectionPort;
+        this.hiveEventPublishPort = hiveEventPublishPort;
+        this.hiveInspectionPayloadPort = hiveInspectionPayloadPort;
+    }
 
     public void handle(HiveControlCommandEnvelope envelope) {
         String operation = resolveOperation(envelope);

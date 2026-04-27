@@ -18,7 +18,6 @@
 
 package me.golemcore.bot.tools;
 
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.application.skills.SkillMarketplaceService;
 import me.golemcore.bot.domain.component.SkillComponent;
@@ -46,7 +45,6 @@ import java.util.stream.Collectors;
  * are stored as SKILL.md files with YAML frontmatter in the skills workspace.
  */
 @Component
-@RequiredArgsConstructor
 @Slf4j
 public class SkillManagementTool implements ToolComponent {
 
@@ -73,6 +71,19 @@ public class SkillManagementTool implements ToolComponent {
     private final SkillComponent skillComponent;
     private final SkillMarketplaceService skillMarketplaceService;
     private final SkillDocumentService skillDocumentService;
+
+    public SkillManagementTool(
+            RuntimeConfigService runtimeConfigService,
+            StoragePort storagePort,
+            SkillComponent skillComponent,
+            SkillMarketplaceService skillMarketplaceService,
+            SkillDocumentService skillDocumentService) {
+        this.runtimeConfigService = runtimeConfigService;
+        this.storagePort = storagePort;
+        this.skillComponent = skillComponent;
+        this.skillMarketplaceService = skillMarketplaceService;
+        this.skillDocumentService = skillDocumentService;
+    }
 
     @Override
     public boolean isEnabled() {

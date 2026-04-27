@@ -1,7 +1,6 @@
 package me.golemcore.bot.adapter.inbound.web.terminal;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.infrastructure.security.JwtTokenProvider;
@@ -43,7 +42,6 @@ import java.util.concurrent.locks.LockSupport;
  * enforced through {@link TerminalSessionLimiter}.
  */
 @Component
-@RequiredArgsConstructor
 @Slf4j
 public class TerminalWebSocketHandler implements WebSocketHandler {
 
@@ -56,6 +54,17 @@ public class TerminalWebSocketHandler implements WebSocketHandler {
     private final ObjectMapper objectMapper;
     private final TerminalSessionLimiter limiter;
     private final BotProperties botProperties;
+
+    public TerminalWebSocketHandler(
+            JwtTokenProvider jwtTokenProvider,
+            ObjectMapper objectMapper,
+            TerminalSessionLimiter limiter,
+            BotProperties botProperties) {
+        this.jwtTokenProvider = jwtTokenProvider;
+        this.objectMapper = objectMapper;
+        this.limiter = limiter;
+        this.botProperties = botProperties;
+    }
 
     @Override
     public Mono<Void> handle(WebSocketSession session) {

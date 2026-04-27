@@ -132,9 +132,9 @@ See **[Coding Guide](docs/CODING_GUIDE.md)** for the full reference. Key rules:
 
 - **Conventional Commits** — `feat:`, `fix:`, `refactor:`, `chore:`, etc.
 - **Explicit types** — No `var`, always declare the type
-- **Constructor injection** — `@RequiredArgsConstructor` + `private final` fields, never `@Autowired`
+- **Constructor injection** — explicit constructor + `private final` fields, never `@Autowired`
 - **Imports** — No wildcards, organize logically
-- **Lombok** — `@Data`, `@Builder`, `@Slf4j`, `@RequiredArgsConstructor`
+- **Lombok** — `@Data`, `@Builder`, `@Slf4j`
 - **Logging** — Parametrized messages only, no string concatenation
 
 ### Static Analysis

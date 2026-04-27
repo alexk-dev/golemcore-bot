@@ -1,6 +1,5 @@
 package me.golemcore.bot.adapter.inbound.web.controller;
 
-import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.client.dto.FileContentResponse;
 import me.golemcore.bot.client.dto.FileCreateRequest;
 import me.golemcore.bot.client.dto.FileRenameRequest;
@@ -41,7 +40,6 @@ import java.util.List;
 
 @RestController
 @RequestMapping("/api/files")
-@RequiredArgsConstructor
 public class FilesController {
 
     private static final String CLIENT_INSTANCE_HEADER = "X-Golem-Client-Instance-Id";
@@ -49,6 +47,15 @@ public class FilesController {
     private final DashboardFileService dashboardFileService;
     private final ToolArtifactService toolArtifactService;
     private final InlineEditFacade inlineEditFacade;
+
+    public FilesController(
+            DashboardFileService dashboardFileService,
+            ToolArtifactService toolArtifactService,
+            InlineEditFacade inlineEditFacade) {
+        this.dashboardFileService = dashboardFileService;
+        this.toolArtifactService = toolArtifactService;
+        this.inlineEditFacade = inlineEditFacade;
+    }
 
     public Mono<ResponseEntity<List<FileTreeNodeDto>>> getTree(String path) {
         try {

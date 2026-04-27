@@ -18,7 +18,6 @@
 
 package me.golemcore.bot.tools;
 
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.component.SkillComponent;
 import me.golemcore.bot.domain.component.ToolComponent;
@@ -63,13 +62,21 @@ import java.util.stream.Collectors;
  * propagated.
  */
 @Component
-@RequiredArgsConstructor
 @Slf4j
 public class DiscoverMcpServerTool implements ToolComponent {
 
     private final RuntimeConfigService runtimeConfigService;
     private final DynamicSkillFactory dynamicSkillFactory;
     private final SkillComponent skillComponent;
+
+    public DiscoverMcpServerTool(
+            RuntimeConfigService runtimeConfigService,
+            DynamicSkillFactory dynamicSkillFactory,
+            SkillComponent skillComponent) {
+        this.runtimeConfigService = runtimeConfigService;
+        this.dynamicSkillFactory = dynamicSkillFactory;
+        this.skillComponent = skillComponent;
+    }
 
     @Override
     public String getToolName() {

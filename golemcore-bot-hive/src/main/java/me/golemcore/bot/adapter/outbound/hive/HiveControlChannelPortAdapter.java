@@ -1,7 +1,6 @@
 package me.golemcore.bot.adapter.outbound.hive;
 
 import java.util.function.Consumer;
-import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.domain.model.HiveControlCommandEnvelope;
 import me.golemcore.bot.domain.model.HiveSessionState;
 import me.golemcore.bot.domain.model.hive.HiveControlChannelStatusSnapshot;
@@ -9,10 +8,13 @@ import me.golemcore.bot.port.outbound.HiveControlChannelPort;
 import org.springframework.stereotype.Component;
 
 @Component
-@RequiredArgsConstructor
 public class HiveControlChannelPortAdapter implements HiveControlChannelPort {
 
     private final HiveControlChannelClient hiveControlChannelClient;
+
+    public HiveControlChannelPortAdapter(HiveControlChannelClient hiveControlChannelClient) {
+        this.hiveControlChannelClient = hiveControlChannelClient;
+    }
 
     @Override
     public void connect(HiveSessionState sessionState, Consumer<HiveControlCommandEnvelope> commandConsumer) {

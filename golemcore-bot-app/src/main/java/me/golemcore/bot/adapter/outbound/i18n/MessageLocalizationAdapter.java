@@ -1,6 +1,5 @@
 package me.golemcore.bot.adapter.outbound.i18n;
 
-import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.infrastructure.i18n.MessageService;
 import me.golemcore.bot.port.outbound.LocalizationPort;
 import org.springframework.stereotype.Component;
@@ -9,10 +8,13 @@ import org.springframework.stereotype.Component;
  * Outbound localization adapter over {@link MessageService}.
  */
 @Component
-@RequiredArgsConstructor
 public class MessageLocalizationAdapter implements LocalizationPort {
 
     private final MessageService messageService;
+
+    public MessageLocalizationAdapter(MessageService messageService) {
+        this.messageService = messageService;
+    }
 
     @Override
     public String defaultLanguage() {

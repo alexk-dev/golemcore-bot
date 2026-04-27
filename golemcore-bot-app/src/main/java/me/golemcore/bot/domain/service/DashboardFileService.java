@@ -1,6 +1,5 @@
 package me.golemcore.bot.domain.service;
 
-import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.domain.model.DashboardFileContent;
 import me.golemcore.bot.domain.model.DashboardFileNode;
 import me.golemcore.bot.domain.model.ToolArtifactDownload;
@@ -23,13 +22,19 @@ import java.util.List;
 import java.util.Locale;
 
 @Service
-@RequiredArgsConstructor
 public class DashboardFileService implements WorkspaceEditorPort {
 
     private static final int DEFAULT_TREE_DEPTH = Integer.MAX_VALUE;
 
     private final WorkspacePathService workspacePathService;
     private final WorkspaceFilePort workspaceFilePort;
+
+    public DashboardFileService(
+            WorkspacePathService workspacePathService,
+            WorkspaceFilePort workspaceFilePort) {
+        this.workspacePathService = workspacePathService;
+        this.workspaceFilePort = workspaceFilePort;
+    }
 
     public List<DashboardFileNode> getTree(String relativePath) {
         return getTree(relativePath, DEFAULT_TREE_DEPTH, true);

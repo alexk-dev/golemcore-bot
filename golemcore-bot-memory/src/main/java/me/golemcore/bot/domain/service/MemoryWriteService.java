@@ -18,7 +18,6 @@ package me.golemcore.bot.domain.service;
  * Contact: alex@kuleshov.tech
  */
 
-import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.domain.memory.orchestrator.MemoryLifecycleOrchestrator;
 import me.golemcore.bot.domain.model.MemoryItem;
 import me.golemcore.bot.domain.model.TurnMemoryEvent;
@@ -28,10 +27,13 @@ import org.springframework.stereotype.Service;
  * Compatibility bridge for legacy callers that still depend on the historical memory write service entry points.
  */
 @Service
-@RequiredArgsConstructor
 public class MemoryWriteService {
 
     private final MemoryLifecycleOrchestrator memoryLifecycleOrchestrator;
+
+    public MemoryWriteService(MemoryLifecycleOrchestrator memoryLifecycleOrchestrator) {
+        this.memoryLifecycleOrchestrator = memoryLifecycleOrchestrator;
+    }
 
     /**
      * Persist finalized turn memory through the lifecycle orchestrator.

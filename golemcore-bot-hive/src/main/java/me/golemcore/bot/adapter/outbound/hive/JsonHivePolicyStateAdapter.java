@@ -3,7 +3,6 @@ package me.golemcore.bot.adapter.outbound.hive;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
 import java.util.Optional;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.policy.ManagedPolicyBindingState;
 import me.golemcore.bot.port.outbound.ManagedPolicyStatePort;
@@ -11,7 +10,6 @@ import me.golemcore.bot.port.outbound.StoragePort;
 import org.springframework.stereotype.Component;
 
 @Component
-@RequiredArgsConstructor
 @Slf4j
 public class JsonHivePolicyStateAdapter implements ManagedPolicyStatePort {
 
@@ -24,6 +22,13 @@ public class JsonHivePolicyStateAdapter implements ManagedPolicyStatePort {
     private final Object lock = new Object();
     private Optional<ManagedPolicyBindingState> cachedState = Optional.empty();
     private volatile boolean loaded;
+
+    public JsonHivePolicyStateAdapter(
+            StoragePort storagePort,
+            ObjectMapper objectMapper) {
+        this.storagePort = storagePort;
+        this.objectMapper = objectMapper;
+    }
 
     @Override
     public Optional<ManagedPolicyBindingState> load() {

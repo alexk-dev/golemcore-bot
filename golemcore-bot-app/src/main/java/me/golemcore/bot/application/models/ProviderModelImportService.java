@@ -8,14 +8,12 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.catalog.ModelCatalogEntry;
 import me.golemcore.bot.domain.model.catalog.ModelReasoningLevel;
 import me.golemcore.bot.domain.model.catalog.ModelReasoningProfile;
 import me.golemcore.bot.port.outbound.ModelConfigAdminPort;
 
-@RequiredArgsConstructor
 @Slf4j
 public class ProviderModelImportService {
 
@@ -23,6 +21,13 @@ public class ProviderModelImportService {
 
     private final ProviderModelDiscoveryService providerModelDiscoveryService;
     private final ModelConfigAdminPort modelConfigAdminPort;
+
+    public ProviderModelImportService(
+            ProviderModelDiscoveryService providerModelDiscoveryService,
+            ModelConfigAdminPort modelConfigAdminPort) {
+        this.providerModelDiscoveryService = providerModelDiscoveryService;
+        this.modelConfigAdminPort = modelConfigAdminPort;
+    }
 
     public ProviderImportResult importMissingModels(String providerName, List<String> selectedModelIds) {
         List<String> addedModels = new ArrayList<>();

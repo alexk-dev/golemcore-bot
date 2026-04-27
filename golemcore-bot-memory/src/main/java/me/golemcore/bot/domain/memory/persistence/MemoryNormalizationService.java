@@ -18,7 +18,6 @@ package me.golemcore.bot.domain.memory.persistence;
  * Contact: alex@kuleshov.tech
  */
 
-import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.domain.model.MemoryItem;
 import me.golemcore.bot.domain.service.MemoryScopeSupport;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
@@ -40,10 +39,13 @@ import java.util.UUID;
  * Applies canonical normalization, identity matching, merge, and decay rules for structured memory records.
  */
 @Service
-@RequiredArgsConstructor
 public class MemoryNormalizationService {
 
     private final RuntimeConfigService runtimeConfigService;
+
+    public MemoryNormalizationService(RuntimeConfigService runtimeConfigService) {
+        this.runtimeConfigService = runtimeConfigService;
+    }
 
     /**
      * Normalize extracted items before episodic persistence and promotion.

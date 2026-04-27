@@ -6,18 +6,20 @@ import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.AppenderBase;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
-import lombok.RequiredArgsConstructor;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 @Component
-@RequiredArgsConstructor
 public class DashboardLogAppenderRegistrar {
 
     private static final String APPENDER_NAME = "DASHBOARD_LOG_STREAM";
 
     private final DashboardLogService dashboardLogService;
     private AppenderBase<ILoggingEvent> appender;
+
+    public DashboardLogAppenderRegistrar(DashboardLogService dashboardLogService) {
+        this.dashboardLogService = dashboardLogService;
+    }
 
     @PostConstruct
     void registerAppender() {

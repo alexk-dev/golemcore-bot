@@ -18,7 +18,6 @@ package me.golemcore.bot.domain.memory.orchestrator;
  * Contact: alex@kuleshov.tech
  */
 
-import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.domain.memory.diagnostics.MemoryDiagnosticsAssembler;
 import me.golemcore.bot.domain.memory.model.MemoryAssemblyResult;
 import me.golemcore.bot.domain.memory.model.MemoryContextRequest;
@@ -43,7 +42,6 @@ import java.util.Map;
  * prompt pack, and publish prompt diagnostics.
  */
 @Service
-@RequiredArgsConstructor
 public class MemoryContextOrchestrator {
 
     private final RuntimeConfigService runtimeConfigService;
@@ -51,6 +49,16 @@ public class MemoryContextOrchestrator {
     private final MemoryRetrievalService memoryRetrievalService;
     private final MemoryPromptPackService memoryPromptPackService;
     private final MemoryDiagnosticsAssembler memoryDiagnosticsAssembler;
+
+    public MemoryContextOrchestrator(RuntimeConfigService runtimeConfigService, MemoryQueryFactory memoryQueryFactory,
+            MemoryRetrievalService memoryRetrievalService, MemoryPromptPackService memoryPromptPackService,
+            MemoryDiagnosticsAssembler memoryDiagnosticsAssembler) {
+        this.runtimeConfigService = runtimeConfigService;
+        this.memoryQueryFactory = memoryQueryFactory;
+        this.memoryRetrievalService = memoryRetrievalService;
+        this.memoryPromptPackService = memoryPromptPackService;
+        this.memoryDiagnosticsAssembler = memoryDiagnosticsAssembler;
+    }
 
     /**
      * Build the prompt-facing memory pack for a turn.

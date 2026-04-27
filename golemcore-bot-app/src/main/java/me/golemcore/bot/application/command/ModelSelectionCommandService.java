@@ -1,6 +1,5 @@
 package me.golemcore.bot.application.command;
 
-import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.ModelTierCatalog;
 import me.golemcore.bot.domain.model.UserPreferences;
@@ -17,7 +16,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
-@RequiredArgsConstructor
 public class ModelSelectionCommandService {
 
     private static final String ERR_PROVIDER_NOT_CONFIGURED = "provider.not.configured";
@@ -27,6 +25,17 @@ public class ModelSelectionCommandService {
     private final ModelSelectionService modelSelectionService;
     private final RuntimeConfigService runtimeConfigService;
     private final SessionPort sessionPort;
+
+    public ModelSelectionCommandService(
+            UserPreferencesService preferencesService,
+            ModelSelectionService modelSelectionService,
+            RuntimeConfigService runtimeConfigService,
+            SessionPort sessionPort) {
+        this.preferencesService = preferencesService;
+        this.modelSelectionService = modelSelectionService;
+        this.runtimeConfigService = runtimeConfigService;
+        this.sessionPort = sessionPort;
+    }
 
     public TierOutcome handleTier(TierRequest request) {
         if (request instanceof ShowTierStatus showTierStatus) {

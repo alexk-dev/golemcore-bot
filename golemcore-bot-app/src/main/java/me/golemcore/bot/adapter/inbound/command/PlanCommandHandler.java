@@ -2,7 +2,6 @@ package me.golemcore.bot.adapter.inbound.command;
 
 import java.util.List;
 import java.util.Locale;
-import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.application.command.PlanCommandService;
 import me.golemcore.bot.domain.model.SessionIdentity;
 import me.golemcore.bot.domain.service.UserPreferencesService;
@@ -10,13 +9,19 @@ import me.golemcore.bot.port.inbound.CommandPort;
 import org.springframework.stereotype.Component;
 
 @Component
-@RequiredArgsConstructor
 class PlanCommandHandler {
 
     private static final String CMD_STATUS = "status";
 
     private final PlanCommandService planCommandService;
     private final UserPreferencesService preferencesService;
+
+    public PlanCommandHandler(
+            PlanCommandService planCommandService,
+            UserPreferencesService preferencesService) {
+        this.planCommandService = planCommandService;
+        this.preferencesService = preferencesService;
+    }
 
     boolean isFeatureEnabled() {
         return true;

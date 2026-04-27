@@ -1,6 +1,5 @@
 package me.golemcore.bot.adapter.inbound.web.config;
 
-import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.adapter.inbound.web.WebSocketChatHandler;
 import me.golemcore.bot.adapter.inbound.web.WebSocketLogsHandler;
 import me.golemcore.bot.adapter.inbound.web.terminal.TerminalWebSocketHandler;
@@ -20,13 +19,23 @@ import java.util.Map;
  * WebFlux WebSocket configuration for the dashboard chat endpoint.
  */
 @Configuration
-@RequiredArgsConstructor
 public class WebSocketConfig {
 
     private final WebSocketChatHandler webSocketChatHandler;
     private final WebSocketLogsHandler webSocketLogsHandler;
     private final TerminalWebSocketHandler terminalWebSocketHandler;
     private final BotProperties botProperties;
+
+    public WebSocketConfig(
+            WebSocketChatHandler webSocketChatHandler,
+            WebSocketLogsHandler webSocketLogsHandler,
+            TerminalWebSocketHandler terminalWebSocketHandler,
+            BotProperties botProperties) {
+        this.webSocketChatHandler = webSocketChatHandler;
+        this.webSocketLogsHandler = webSocketLogsHandler;
+        this.terminalWebSocketHandler = terminalWebSocketHandler;
+        this.botProperties = botProperties;
+    }
 
     @Bean
     public HandlerMapping webSocketHandlerMapping() {

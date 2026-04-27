@@ -23,7 +23,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.ChannelTypes;
 import me.golemcore.bot.port.outbound.StoragePort;
@@ -41,7 +40,6 @@ import java.util.concurrent.ConcurrentHashMap;
  * Stores active conversation pointers per channel/transport identity.
  */
 @Service
-@RequiredArgsConstructor
 @Slf4j
 public class ActiveSessionPointerService {
 
@@ -56,6 +54,11 @@ public class ActiveSessionPointerService {
     private final Map<String, String> pointers = new ConcurrentHashMap<>();
 
     private volatile boolean loaded = false;
+
+    public ActiveSessionPointerService(StoragePort storagePort, ObjectMapper objectMapper) {
+        this.storagePort = storagePort;
+        this.objectMapper = objectMapper;
+    }
 
     public String buildWebPointerKey(String username, String clientInstanceId) {
         return ChannelTypes.WEB + KEY_SEPARATOR + normalizeSegment(username) + KEY_SEPARATOR

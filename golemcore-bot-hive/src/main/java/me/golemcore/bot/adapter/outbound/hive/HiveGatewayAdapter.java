@@ -2,7 +2,6 @@ package me.golemcore.bot.adapter.outbound.hive;
 
 import java.util.List;
 import java.util.Set;
-import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.domain.model.hive.HiveAuthSession;
 import me.golemcore.bot.domain.model.hive.HiveCapabilitySnapshot;
 import me.golemcore.bot.domain.model.hive.HiveCardDetail;
@@ -16,10 +15,13 @@ import me.golemcore.bot.port.outbound.HiveGatewayPort;
 import org.springframework.stereotype.Component;
 
 @Component
-@RequiredArgsConstructor
 public class HiveGatewayAdapter implements HiveGatewayPort {
 
     private final HiveApiClient hiveApiClient;
+
+    public HiveGatewayAdapter(HiveApiClient hiveApiClient) {
+        this.hiveApiClient = hiveApiClient;
+    }
 
     @Override
     public HiveAuthSession registerGolem(

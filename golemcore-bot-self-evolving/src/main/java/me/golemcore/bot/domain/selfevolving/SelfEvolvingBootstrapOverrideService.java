@@ -18,7 +18,6 @@ package me.golemcore.bot.domain.selfevolving;
  * Contact: alex@kuleshov.tech
  */
 
-import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.Secret;
 import me.golemcore.bot.port.outbound.SelfEvolvingBootstrapOverridePort;
@@ -33,7 +32,6 @@ import java.util.List;
  * onto the effective runtime config without changing persisted preferences.
  */
 @Service
-@RequiredArgsConstructor
 public class SelfEvolvingBootstrapOverrideService implements SelfEvolvingBootstrapOverridePort {
 
     private static final String PATH_ENABLED = "enabled";
@@ -56,6 +54,10 @@ public class SelfEvolvingBootstrapOverrideService implements SelfEvolvingBootstr
     private static final String PATH_TACTICS_SEARCH_NEGATIVE_MEMORY_ENABLED = "tactics.search.negativeMemory.enabled";
 
     private final SelfEvolvingBootstrapSettingsPort settingsPort;
+
+    public SelfEvolvingBootstrapOverrideService(SelfEvolvingBootstrapSettingsPort settingsPort) {
+        this.settingsPort = settingsPort;
+    }
 
     @Override
     public void apply(RuntimeConfig runtimeConfig) {

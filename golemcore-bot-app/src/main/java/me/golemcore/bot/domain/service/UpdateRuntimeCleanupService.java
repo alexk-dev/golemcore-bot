@@ -5,7 +5,6 @@ import java.nio.file.Path;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.port.outbound.UpdateSettingsPort;
 import me.golemcore.bot.port.outbound.WorkspaceFilePort;
@@ -24,7 +23,6 @@ import org.springframework.stereotype.Service;
  * </p>
  */
 @Service
-@RequiredArgsConstructor
 @Slf4j
 public class UpdateRuntimeCleanupService {
 
@@ -35,6 +33,13 @@ public class UpdateRuntimeCleanupService {
     private final UpdateSettingsPort settingsPort;
     private final WorkspaceFilePort workspaceFilePort;
     private final RuntimeVersionSupport runtimeVersionSupport = new RuntimeVersionSupport();
+
+    public UpdateRuntimeCleanupService(
+            UpdateSettingsPort settingsPort,
+            WorkspaceFilePort workspaceFilePort) {
+        this.settingsPort = settingsPort;
+        this.workspaceFilePort = workspaceFilePort;
+    }
 
     /**
      * Run startup cleanup without comparing against an explicitly supplied running

@@ -1,6 +1,5 @@
 package me.golemcore.bot.adapter.inbound.telegram;
 
-import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.plugin.runtime.TelegramWebhookUpdateBridge;
@@ -21,13 +20,19 @@ import java.util.concurrent.CompletableFuture;
  */
 @RestController
 @RequestMapping("/api/telegram")
-@RequiredArgsConstructor
 public class TelegramWebhookController {
 
     private static final String SECRET_HEADER = "X-Telegram-Bot-Api-Secret-Token";
 
     private final RuntimeConfigService runtimeConfigService;
     private final TelegramWebhookUpdateBridge updateBridge;
+
+    public TelegramWebhookController(
+            RuntimeConfigService runtimeConfigService,
+            TelegramWebhookUpdateBridge updateBridge) {
+        this.runtimeConfigService = runtimeConfigService;
+        this.updateBridge = updateBridge;
+    }
 
     @PostMapping("/webhook")
     public Mono<ResponseEntity<Void>> webhook(

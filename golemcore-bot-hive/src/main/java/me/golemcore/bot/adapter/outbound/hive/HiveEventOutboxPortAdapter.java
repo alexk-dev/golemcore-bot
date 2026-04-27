@@ -1,17 +1,22 @@
 package me.golemcore.bot.adapter.outbound.hive;
 
-import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.domain.model.HiveSessionState;
 import me.golemcore.bot.domain.model.hive.HiveOutboxSummary;
 import me.golemcore.bot.port.outbound.HiveEventOutboxPort;
 import org.springframework.stereotype.Component;
 
 @Component
-@RequiredArgsConstructor
 public class HiveEventOutboxPortAdapter implements HiveEventOutboxPort {
 
     private final HiveEventOutboxService hiveEventOutboxService;
     private final HiveApiClient hiveApiClient;
+
+    public HiveEventOutboxPortAdapter(
+            HiveEventOutboxService hiveEventOutboxService,
+            HiveApiClient hiveApiClient) {
+        this.hiveEventOutboxService = hiveEventOutboxService;
+        this.hiveApiClient = hiveApiClient;
+    }
 
     @Override
     public HiveOutboxSummary getSummary() {

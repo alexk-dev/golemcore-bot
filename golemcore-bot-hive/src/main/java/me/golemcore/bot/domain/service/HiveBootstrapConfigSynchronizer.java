@@ -20,7 +20,6 @@ package me.golemcore.bot.domain.service;
 
 import jakarta.annotation.PostConstruct;
 import java.util.Objects;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.port.outbound.HiveBootstrapSettingsPort;
@@ -29,12 +28,18 @@ import me.golemcore.bot.port.outbound.RuntimeConfigAdminPort;
 import org.springframework.stereotype.Service;
 
 @Service
-@RequiredArgsConstructor
 @Slf4j
 public class HiveBootstrapConfigSynchronizer {
 
     private final HiveBootstrapSettingsPort hiveBootstrapSettingsPort;
     private final RuntimeConfigAdminPort runtimeConfigAdminPort;
+
+    public HiveBootstrapConfigSynchronizer(
+            HiveBootstrapSettingsPort hiveBootstrapSettingsPort,
+            RuntimeConfigAdminPort runtimeConfigAdminPort) {
+        this.hiveBootstrapSettingsPort = hiveBootstrapSettingsPort;
+        this.runtimeConfigAdminPort = runtimeConfigAdminPort;
+    }
 
     @PostConstruct
     void init() {

@@ -3,7 +3,6 @@ package me.golemcore.bot.plugin.runtime;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 import lombok.Data;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.plugin.runtime.config.PluginRuntimeProperties;
 import me.golemcore.plugin.api.extension.spi.PluginDescriptor;
@@ -47,7 +46,6 @@ import java.util.stream.Stream;
  * artifacts into the runtime plugin directory.
  */
 @Service
-@RequiredArgsConstructor
 @Slf4j
 public class PluginMarketplaceService {
 
@@ -75,6 +73,17 @@ public class PluginMarketplaceService {
     private final Object remoteCatalogLock = new Object();
 
     private final AtomicReference<RemoteCatalogCache> remoteCatalogCache = new AtomicReference<>();
+
+    public PluginMarketplaceService(
+            PluginRuntimeProperties pluginRuntimeProperties,
+            ObjectProvider<BuildProperties> buildPropertiesProvider,
+            PluginManager pluginManager,
+            PluginSettingsRegistry pluginSettingsRegistry) {
+        this.pluginRuntimeProperties = pluginRuntimeProperties;
+        this.buildPropertiesProvider = buildPropertiesProvider;
+        this.pluginManager = pluginManager;
+        this.pluginSettingsRegistry = pluginSettingsRegistry;
+    }
 
     public PluginMarketplaceCatalog getCatalog() {
         if (!pluginRuntimeProperties.getMarketplace().isEnabled()) {

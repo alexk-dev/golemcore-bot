@@ -3,7 +3,6 @@ package me.golemcore.bot.adapter.outbound.hive;
 import java.lang.management.ManagementFactory;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
-import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.port.outbound.HiveRuntimeMetadataPort;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.info.BuildProperties;
@@ -11,11 +10,17 @@ import org.springframework.boot.info.GitProperties;
 import org.springframework.stereotype.Component;
 
 @Component
-@RequiredArgsConstructor
 public class HiveRuntimeMetadataAdapter implements HiveRuntimeMetadataPort {
 
     private final ObjectProvider<BuildProperties> buildPropertiesProvider;
     private final ObjectProvider<GitProperties> gitPropertiesProvider;
+
+    public HiveRuntimeMetadataAdapter(
+            ObjectProvider<BuildProperties> buildPropertiesProvider,
+            ObjectProvider<GitProperties> gitPropertiesProvider) {
+        this.buildPropertiesProvider = buildPropertiesProvider;
+        this.gitPropertiesProvider = gitPropertiesProvider;
+    }
 
     @Override
     public String runtimeVersion() {

@@ -27,7 +27,6 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.port.outbound.WorkspaceFilePort;
 import me.golemcore.bot.port.outbound.WorkspaceSettingsPort;
@@ -41,7 +40,6 @@ import org.springframework.stereotype.Service;
  * overrides broader" ordering by placing deeper files later in output.
  */
 @Service
-@RequiredArgsConstructor
 @Slf4j
 public class WorkspaceInstructionService {
 
@@ -61,6 +59,13 @@ public class WorkspaceInstructionService {
 
     private volatile long cacheTimestampMs;
     private volatile String cachedContext = "";
+
+    public WorkspaceInstructionService(
+            WorkspaceSettingsPort settingsPort,
+            WorkspaceFilePort workspaceFilePort) {
+        this.settingsPort = settingsPort;
+        this.workspaceFilePort = workspaceFilePort;
+    }
 
     /**
      * Builds formatted instruction context to inject into system prompt.

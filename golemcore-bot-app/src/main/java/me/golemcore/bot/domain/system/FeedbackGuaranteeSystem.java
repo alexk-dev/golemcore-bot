@@ -25,7 +25,6 @@ import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.OutgoingResponse;
 import me.golemcore.bot.domain.model.SkillTransitionRequest;
 import me.golemcore.bot.domain.service.UserPreferencesService;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
@@ -50,11 +49,14 @@ import org.springframework.stereotype.Component;
  * </p>
  */
 @Component
-@RequiredArgsConstructor
 @Slf4j
 public class FeedbackGuaranteeSystem implements AgentSystem {
 
     private final UserPreferencesService preferencesService;
+
+    public FeedbackGuaranteeSystem(UserPreferencesService preferencesService) {
+        this.preferencesService = preferencesService;
+    }
 
     @Override
     public String getName() {

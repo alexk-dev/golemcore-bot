@@ -9,14 +9,12 @@ import java.util.List;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.HiveControlCommandEnvelope;
 import me.golemcore.bot.port.outbound.StoragePort;
 import org.springframework.stereotype.Service;
 
 @Service
-@RequiredArgsConstructor
 @Slf4j
 public class HiveControlInboxService {
 
@@ -30,6 +28,13 @@ public class HiveControlInboxService {
     private final Object lock = new Object();
     private InboxState cachedState;
     private boolean loaded;
+
+    public HiveControlInboxService(
+            StoragePort storagePort,
+            ObjectMapper objectMapper) {
+        this.storagePort = storagePort;
+        this.objectMapper = objectMapper;
+    }
 
     public RecordResult recordReceived(HiveControlCommandEnvelope envelope) {
         validateEnvelope(envelope);

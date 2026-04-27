@@ -23,7 +23,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import jakarta.annotation.PostConstruct;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.plugin.runtime.ChannelRegistry;
@@ -57,7 +56,6 @@ import java.time.Clock;
  * @since 1.0
  */
 @Configuration
-@RequiredArgsConstructor
 @Slf4j
 public class AutoConfiguration {
 
@@ -68,6 +66,23 @@ public class AutoConfiguration {
     private final PluginManager pluginManager;
     private final ObjectProvider<BuildProperties> buildPropertiesProvider;
     private final ObjectProvider<GitProperties> gitPropertiesProvider;
+
+    public AutoConfiguration(
+            BotProperties properties,
+            ChannelRegistry channelRegistry,
+            RuntimeConfigService runtimeConfigService,
+            me.golemcore.bot.domain.service.LegacyPluginConfigurationMigrationService legacyPluginConfigurationMigrationService,
+            PluginManager pluginManager,
+            ObjectProvider<BuildProperties> buildPropertiesProvider,
+            ObjectProvider<GitProperties> gitPropertiesProvider) {
+        this.properties = properties;
+        this.channelRegistry = channelRegistry;
+        this.runtimeConfigService = runtimeConfigService;
+        this.legacyPluginConfigurationMigrationService = legacyPluginConfigurationMigrationService;
+        this.pluginManager = pluginManager;
+        this.buildPropertiesProvider = buildPropertiesProvider;
+        this.gitPropertiesProvider = gitPropertiesProvider;
+    }
 
     @Bean
     public static Clock clock() {

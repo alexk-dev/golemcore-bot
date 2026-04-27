@@ -1,6 +1,5 @@
 package me.golemcore.bot.domain.service;
 
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.ChannelTypes;
@@ -37,7 +36,6 @@ import java.util.Optional;
 import java.util.regex.Pattern;
 
 @Service
-@RequiredArgsConstructor
 @Slf4j
 public class SessionInspectionService implements SessionInspectionQueryPort {
 
@@ -50,6 +48,13 @@ public class SessionInspectionService implements SessionInspectionQueryPort {
     private final SessionPort sessionPort;
     private final ActiveSessionPointerService pointerService;
     private final TraceSnapshotCompressionService traceSnapshotCompressionService;
+
+    public SessionInspectionService(SessionPort sessionPort, ActiveSessionPointerService pointerService,
+            TraceSnapshotCompressionService traceSnapshotCompressionService) {
+        this.sessionPort = sessionPort;
+        this.pointerService = pointerService;
+        this.traceSnapshotCompressionService = traceSnapshotCompressionService;
+    }
 
     public List<SessionSummaryView> listSessions(String channel) {
         List<AgentSession> sessions = StringValueSupport.isBlank(channel) ? sessionPort.listAll()

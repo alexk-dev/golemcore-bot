@@ -18,7 +18,6 @@ package me.golemcore.bot.domain.memory.orchestrator;
  * Contact: alex@kuleshov.tech
  */
 
-import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.domain.model.MemoryItem;
 import me.golemcore.bot.domain.model.MemoryPack;
 import me.golemcore.bot.domain.model.MemoryQuery;
@@ -34,11 +33,16 @@ import java.util.List;
  * specialized orchestrators.
  */
 @Service
-@RequiredArgsConstructor
 public class MemoryOrchestratorService {
 
     private final MemoryContextOrchestrator memoryContextOrchestrator;
     private final MemoryLifecycleOrchestrator memoryLifecycleOrchestrator;
+
+    public MemoryOrchestratorService(MemoryContextOrchestrator memoryContextOrchestrator,
+            MemoryLifecycleOrchestrator memoryLifecycleOrchestrator) {
+        this.memoryContextOrchestrator = memoryContextOrchestrator;
+        this.memoryLifecycleOrchestrator = memoryLifecycleOrchestrator;
+    }
 
     /**
      * Build a prompt-ready memory pack.

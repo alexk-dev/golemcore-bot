@@ -2,7 +2,6 @@ package me.golemcore.bot.adapter.outbound.hive;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.Optional;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.HiveSessionState;
 import me.golemcore.bot.port.outbound.HiveSessionStatePort;
@@ -10,7 +9,6 @@ import me.golemcore.bot.port.outbound.StoragePort;
 import org.springframework.stereotype.Component;
 
 @Component
-@RequiredArgsConstructor
 @Slf4j
 public class StorageHiveSessionStateAdapter implements HiveSessionStatePort {
 
@@ -19,6 +17,13 @@ public class StorageHiveSessionStateAdapter implements HiveSessionStatePort {
 
     private final StoragePort storagePort;
     private final ObjectMapper objectMapper;
+
+    public StorageHiveSessionStateAdapter(
+            StoragePort storagePort,
+            ObjectMapper objectMapper) {
+        this.storagePort = storagePort;
+        this.objectMapper = objectMapper;
+    }
 
     @Override
     public Optional<HiveSessionState> load() {

@@ -25,7 +25,6 @@ import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.Skill;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchResult;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
@@ -40,7 +39,6 @@ import java.time.Instant;
  * SkillTransitionTool.
  */
 @Component
-@RequiredArgsConstructor
 @Slf4j
 public class SkillPipelineSystem implements AgentSystem {
 
@@ -48,6 +46,10 @@ public class SkillPipelineSystem implements AgentSystem {
     private static final String PIPELINE_DEPTH_KEY = "skill.pipeline.depth";
 
     private final SkillComponent skillComponent;
+
+    public SkillPipelineSystem(SkillComponent skillComponent) {
+        this.skillComponent = skillComponent;
+    }
 
     @Override
     public String getName() {

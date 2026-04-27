@@ -39,6 +39,7 @@ Key rule: dependencies should not point into `golemcore-bot-app`. The app module
 - [x] Update stale application comments and startup messages.
 - [x] Remove production `@Autowired` constructor annotations.
 - [x] Remove test `@Autowired` usage or replace it with explicit test wiring that does not weaken production rules.
+- [x] Replace generated injection constructors with explicit constructors and `private final` fields.
 - [x] Add the recommended Maven modules to the parent build.
 - [x] Wire app dependencies so `golemcore-bot-app` remains the composition root.
 
@@ -56,6 +57,7 @@ Key rule: dependencies should not point into `golemcore-bot-app`. The app module
 - [x] Move loop-level runtime orchestration into `golemcore-bot-runtime-core`.
 - [x] Keep adapter and channel implementations out of `golemcore-bot-runtime-core`.
 - [x] Characterize observable `processMessage` behavior before changing the loop internals.
+- [x] Move `AgentLoop` unit and BDD tests into `golemcore-bot-runtime-core`.
 - [ ] Reduce direct loop knowledge of fallback text, trace naming, typing scheduler, session identity, and persistence semantics.
 
 ### P0: Runtime Config
@@ -65,6 +67,7 @@ Key rule: dependencies should not point into `golemcore-bot-app`. The app module
 - [ ] Introduce section ownership boundaries for defaults, validation, persistence, and query/admin views.
 - [x] Keep self-evolving startup overrides behind a port boundary.
 - [x] Add tests for stable defaults, section persistence, secret redaction, and missing sections.
+- [x] Move runtime-config service tests into `golemcore-bot-runtime-config`.
 
 ### P0: Sessions
 
@@ -73,6 +76,7 @@ Key rule: dependencies should not point into `golemcore-bot-app`. The app module
 - [x] Separate repository/cache/policy/facade responsibilities where it can be done safely.
 - [x] Keep session goal cleanup behind a port boundary.
 - [x] Add tests for cache/storage consistency, delete rollback, compaction, and model settings inheritance.
+- [x] Move session lifecycle tests into `golemcore-bot-sessions`.
 
 ### P1: Memory
 
@@ -80,6 +84,7 @@ Key rule: dependencies should not point into `golemcore-bot-app`. The app module
 - [x] Ensure memory does not depend on dashboard or concrete channels.
 - [x] Keep memory persistence and retrieval behind ports.
 - [x] Add tests for retrieval planning, disclosure rendering, write normalization, and promotion.
+- [x] Move memory tests into `golemcore-bot-memory`.
 
 ### P1: Tools
 
@@ -88,18 +93,21 @@ Key rule: dependencies should not point into `golemcore-bot-app`. The app module
 - [ ] Introduce explicit tool execution context as the primary contract.
 - [x] Keep ThreadLocal context only as compatibility behavior.
 - [x] Add tests for registry, confirmation gating, timeout behavior, artifact extraction, and truncation.
+- [x] Move tool service tests into `golemcore-bot-tools`.
 
 ### P1: Tracing
 
 - [x] Move trace lifecycle, snapshot compression, budgets, MDC helpers, and naming helpers into `golemcore-bot-tracing`.
 - [x] Ensure tracing does not depend on a concrete channel.
 - [x] Add tests for span lifecycle, snapshot compression, budget pruning, and redaction-friendly views.
+- [x] Move tracing tests into `golemcore-bot-tracing`.
 
 ### P1: Contracts
 
 - [x] Keep `golemcore-bot-contracts` limited to DTOs, value objects, events, ports, shared views, and stable helpers.
 - [x] Move runtime behavior out of contracts when a narrower module owns it.
 - [x] Add tests that reject Spring service/component stereotypes in contracts.
+- [x] Move contract/model/helper tests into `golemcore-bot-contracts`.
 
 ### P2: Follow-Up Boundaries
 
@@ -114,7 +122,7 @@ Key rule: dependencies should not point into `golemcore-bot-app`. The app module
 - [x] Maven build includes the recommended modules.
 - [x] `golemcore-bot-app` is the only module that wires all runtime/feature modules together.
 - [x] No feature module depends on `golemcore-bot-app`.
-- [x] No `@Autowired` or `@Resource` usage remains.
+- [x] No production source uses `@Autowired`, `@Resource`, or generated injection constructors.
 - [x] Runtime config is owned by `golemcore-bot-runtime-config`.
 - [x] Session lifecycle is owned by `golemcore-bot-sessions`.
 - [x] Memory logic is owned by `golemcore-bot-memory`.
@@ -122,6 +130,7 @@ Key rule: dependencies should not point into `golemcore-bot-app`. The app module
 - [x] Trace lifecycle is owned by `golemcore-bot-tracing`.
 - [x] Runtime loop orchestration is owned by `golemcore-bot-runtime-core`.
 - [x] App remains responsible for adapters, security, launchers, and packaging.
-- [x] Unit and architecture tests cover the new boundaries.
+- [x] Unit tests live in their owning Maven modules.
+- [x] Architecture tests cover the new boundaries.
 - [x] Local strict or focused verification passes.
-- [x] GitHub checks pass on the epic PR.
+- [ ] GitHub checks pass on the epic PR.

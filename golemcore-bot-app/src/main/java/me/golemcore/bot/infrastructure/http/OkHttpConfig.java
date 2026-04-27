@@ -19,7 +19,6 @@ package me.golemcore.bot.infrastructure.http;
  */
 
 import me.golemcore.bot.infrastructure.config.BotProperties;
-import lombok.RequiredArgsConstructor;
 import okhttp3.ConnectionPool;
 import okhttp3.OkHttpClient;
 import org.springframework.context.annotation.Bean;
@@ -47,10 +46,13 @@ import java.util.concurrent.TimeUnit;
  * @since 1.0
  */
 @Configuration
-@RequiredArgsConstructor
 public class OkHttpConfig {
 
     private final BotProperties properties;
+
+    public OkHttpConfig(BotProperties properties) {
+        this.properties = properties;
+    }
 
     @Bean
     public OkHttpClient okHttpClient() {

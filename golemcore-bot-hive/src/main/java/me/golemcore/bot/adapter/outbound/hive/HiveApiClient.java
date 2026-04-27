@@ -8,7 +8,6 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
-import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.domain.model.hive.HiveCapabilitySnapshot;
 import me.golemcore.bot.domain.model.hive.HiveCardDetail;
 import me.golemcore.bot.domain.model.hive.HiveCardSearchRequest;
@@ -27,7 +26,6 @@ import okhttp3.Response;
 import org.springframework.stereotype.Component;
 
 @Component
-@RequiredArgsConstructor
 public class HiveApiClient {
 
     private static final MediaType JSON_MEDIA_TYPE = MediaType.parse("application/json; charset=utf-8");
@@ -35,6 +33,13 @@ public class HiveApiClient {
 
     private final OkHttpClient okHttpClient;
     private final ObjectMapper objectMapper;
+
+    public HiveApiClient(
+            OkHttpClient okHttpClient,
+            ObjectMapper objectMapper) {
+        this.okHttpClient = okHttpClient;
+        this.objectMapper = objectMapper;
+    }
 
     public GolemAuthResponse register(
             String serverUrl,

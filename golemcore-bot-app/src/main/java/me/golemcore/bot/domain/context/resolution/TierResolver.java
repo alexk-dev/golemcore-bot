@@ -18,7 +18,6 @@ package me.golemcore.bot.domain.context.resolution;
  * Contact: alex@kuleshov.tech
  */
 
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.component.SkillComponent;
 import me.golemcore.bot.domain.model.AgentContext;
@@ -64,7 +63,6 @@ import java.util.Optional;
  * {@code MODEL_TIER_MODEL_ID}, {@code MODEL_TIER_REASONING}) is published to
  * {@link ContextAttributes} for observability.
  */
-@RequiredArgsConstructor
 @Slf4j
 public class TierResolver {
 
@@ -72,6 +70,17 @@ public class TierResolver {
     private final ModelSelectionService modelSelectionService;
     private final RuntimeConfigService runtimeConfigService;
     private final SkillComponent skillComponent;
+
+    public TierResolver(
+            UserPreferencesService userPreferencesService,
+            ModelSelectionService modelSelectionService,
+            RuntimeConfigService runtimeConfigService,
+            SkillComponent skillComponent) {
+        this.userPreferencesService = userPreferencesService;
+        this.modelSelectionService = modelSelectionService;
+        this.runtimeConfigService = runtimeConfigService;
+        this.skillComponent = skillComponent;
+    }
 
     /**
      * Resolves the model tier for the given context and publishes tier metadata to

@@ -1,16 +1,21 @@
 package me.golemcore.bot.domain.service;
 
-import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.domain.model.UpdateBlockedReason;
 import me.golemcore.bot.port.outbound.AutoExecutionStatusPort;
 import org.springframework.stereotype.Service;
 
 @Service
-@RequiredArgsConstructor
 public class UpdateActivityGate {
 
     private final SessionRunCoordinator sessionRunCoordinator;
     private final AutoExecutionStatusPort autoExecutionStatusPort;
+
+    public UpdateActivityGate(
+            SessionRunCoordinator sessionRunCoordinator,
+            AutoExecutionStatusPort autoExecutionStatusPort) {
+        this.sessionRunCoordinator = sessionRunCoordinator;
+        this.autoExecutionStatusPort = autoExecutionStatusPort;
+    }
 
     public Result getStatus() {
         if (autoExecutionStatusPort.isAutoJobExecuting()) {

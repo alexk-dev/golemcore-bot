@@ -26,7 +26,6 @@ import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.MemoryItem;
 import me.golemcore.bot.domain.service.MemoryScopeSupport;
@@ -39,7 +38,6 @@ import org.springframework.stereotype.Service;
  * Persists memory items into the JSONL-backed stores used by Memory V2.
  */
 @Service
-@RequiredArgsConstructor
 @Slf4j
 public class MemoryPersistenceOrchestrator {
 
@@ -52,6 +50,16 @@ public class MemoryPersistenceOrchestrator {
     private final RuntimeConfigService runtimeConfigService;
     private final MemoryNormalizationService memoryNormalizationService;
     private final ObjectMapper objectMapper;
+
+    public MemoryPersistenceOrchestrator(StoragePort storagePort, MemorySettingsPort settingsPort,
+            RuntimeConfigService runtimeConfigService, MemoryNormalizationService memoryNormalizationService,
+            ObjectMapper objectMapper) {
+        this.storagePort = storagePort;
+        this.settingsPort = settingsPort;
+        this.runtimeConfigService = runtimeConfigService;
+        this.memoryNormalizationService = memoryNormalizationService;
+        this.objectMapper = objectMapper;
+    }
 
     /**
      * Append episodic items to the dated JSONL store for the target scope.

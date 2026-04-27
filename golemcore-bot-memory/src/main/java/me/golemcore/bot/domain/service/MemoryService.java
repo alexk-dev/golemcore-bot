@@ -18,7 +18,6 @@ package me.golemcore.bot.domain.service;
  * Contact: alex@kuleshov.tech
  */
 
-import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.domain.component.MemoryComponent;
 import me.golemcore.bot.domain.memory.orchestrator.MemoryOrchestratorService;
 import me.golemcore.bot.domain.model.MemoryItem;
@@ -34,10 +33,13 @@ import java.util.List;
  * new orchestration layer.
  */
 @Service
-@RequiredArgsConstructor
 public class MemoryService implements MemoryComponent {
 
     private final MemoryOrchestratorService memoryOrchestratorService;
+
+    public MemoryService(MemoryOrchestratorService memoryOrchestratorService) {
+        this.memoryOrchestratorService = memoryOrchestratorService;
+    }
 
     @Override
     public String getComponentType() {

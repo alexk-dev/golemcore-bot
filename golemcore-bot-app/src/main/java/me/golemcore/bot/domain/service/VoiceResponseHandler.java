@@ -20,7 +20,6 @@ package me.golemcore.bot.domain.service;
 
 import me.golemcore.bot.port.outbound.ChannelDeliveryPort;
 import me.golemcore.bot.port.outbound.VoicePort;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
@@ -36,11 +35,14 @@ import java.util.concurrent.TimeUnit;
  * should fall back to text delivery.
  */
 @Component
-@RequiredArgsConstructor
 @Slf4j
 public class VoiceResponseHandler {
 
     private final VoicePort voicePort;
+
+    public VoiceResponseHandler(VoicePort voicePort) {
+        this.voicePort = voicePort;
+    }
 
     /**
      * Result of a voice send attempt.

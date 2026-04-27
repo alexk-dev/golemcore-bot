@@ -3,14 +3,12 @@ package me.golemcore.bot.domain.service;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.Optional;
-import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.domain.model.HiveSessionState;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.hive.HiveSsoTokenResponse;
 import me.golemcore.bot.port.outbound.HiveGatewayPort;
 import me.golemcore.bot.port.outbound.RuntimeConfigQueryPort;
 
-@RequiredArgsConstructor
 public class HiveSsoService {
 
     private static final String CALLBACK_PATH = "/api/auth/hive/callback";
@@ -18,6 +16,15 @@ public class HiveSsoService {
     private final RuntimeConfigQueryPort runtimeConfigQueryPort;
     private final HiveSessionStateStore hiveSessionStateStore;
     private final HiveGatewayPort hiveGatewayPort;
+
+    public HiveSsoService(
+            RuntimeConfigQueryPort runtimeConfigQueryPort,
+            HiveSessionStateStore hiveSessionStateStore,
+            HiveGatewayPort hiveGatewayPort) {
+        this.runtimeConfigQueryPort = runtimeConfigQueryPort;
+        this.hiveSessionStateStore = hiveSessionStateStore;
+        this.hiveGatewayPort = hiveGatewayPort;
+    }
 
     public HiveSsoStatus getStatus() {
         RuntimeConfig.HiveConfig hiveConfig = HiveRuntimeConfigSupport

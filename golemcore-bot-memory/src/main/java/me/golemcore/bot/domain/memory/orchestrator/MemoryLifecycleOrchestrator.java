@@ -18,7 +18,6 @@ package me.golemcore.bot.domain.memory.orchestrator;
  * Contact: alex@kuleshov.tech
  */
 
-import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.domain.memory.persistence.MemoryNormalizationService;
 import me.golemcore.bot.domain.memory.persistence.MemoryPersistenceOrchestrator;
 import me.golemcore.bot.domain.memory.persistence.MemoryPromotionOrchestrator;
@@ -38,7 +37,6 @@ import java.util.List;
  * write services.
  */
 @Service
-@RequiredArgsConstructor
 public class MemoryLifecycleOrchestrator {
 
     private final RuntimeConfigService runtimeConfigService;
@@ -46,6 +44,18 @@ public class MemoryLifecycleOrchestrator {
     private final MemoryNormalizationService memoryNormalizationService;
     private final MemoryPersistenceOrchestrator memoryPersistenceOrchestrator;
     private final MemoryPromotionOrchestrator memoryPromotionOrchestrator;
+
+    public MemoryLifecycleOrchestrator(RuntimeConfigService runtimeConfigService,
+            TurnMemoryExtractionOrchestrator turnMemoryExtractionOrchestrator,
+            MemoryNormalizationService memoryNormalizationService,
+            MemoryPersistenceOrchestrator memoryPersistenceOrchestrator,
+            MemoryPromotionOrchestrator memoryPromotionOrchestrator) {
+        this.runtimeConfigService = runtimeConfigService;
+        this.turnMemoryExtractionOrchestrator = turnMemoryExtractionOrchestrator;
+        this.memoryNormalizationService = memoryNormalizationService;
+        this.memoryPersistenceOrchestrator = memoryPersistenceOrchestrator;
+        this.memoryPromotionOrchestrator = memoryPromotionOrchestrator;
+    }
 
     /**
      * Persist turn memory into the structured stores.

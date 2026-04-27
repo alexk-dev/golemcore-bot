@@ -1,6 +1,5 @@
 package me.golemcore.bot.adapter.inbound.web.controller;
 
-import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.domain.model.SessionIdentity;
 import me.golemcore.bot.domain.service.ConversationKeyValidator;
 import me.golemcore.bot.domain.service.PlanService;
@@ -22,12 +21,15 @@ import java.util.List;
  */
 @RestController
 @RequestMapping("/api/plans")
-@RequiredArgsConstructor
 public class PlansController {
 
     private static final String CHANNEL_TYPE_WEB = "web";
 
     private final PlanService planService;
+
+    public PlansController(PlanService planService) {
+        this.planService = planService;
+    }
 
     @GetMapping
     public Mono<ResponseEntity<PlanControlStateResponse>> getState(@RequestParam String sessionId) {

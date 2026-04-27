@@ -29,7 +29,6 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.SessionIdentity;
@@ -37,7 +36,6 @@ import me.golemcore.bot.port.outbound.SessionDelayedActionProtectionPort;
 import me.golemcore.bot.port.outbound.SessionPlanProtectionPort;
 import me.golemcore.bot.port.outbound.SessionPort;
 
-@RequiredArgsConstructor
 @Slf4j
 public class SessionRetentionCleanupService {
 
@@ -49,6 +47,18 @@ public class SessionRetentionCleanupService {
     private final List<SessionPlanProtectionPort> planProtectionPorts;
     private final List<SessionDelayedActionProtectionPort> delayedActionProtectionPorts;
     private final Clock clock;
+
+    public SessionRetentionCleanupService(SessionPort sessionPort, RuntimeConfigService runtimeConfigService,
+            ActiveSessionPointerService activeSessionPointerService,
+            List<SessionPlanProtectionPort> planProtectionPorts,
+            List<SessionDelayedActionProtectionPort> delayedActionProtectionPorts, Clock clock) {
+        this.sessionPort = sessionPort;
+        this.runtimeConfigService = runtimeConfigService;
+        this.activeSessionPointerService = activeSessionPointerService;
+        this.planProtectionPorts = planProtectionPorts;
+        this.delayedActionProtectionPorts = delayedActionProtectionPorts;
+        this.clock = clock;
+    }
 
     public SessionRetentionCleanupResult cleanupExpiredSessions() {
         boolean enabled = runtimeConfigService.isSessionRetentionEnabled();

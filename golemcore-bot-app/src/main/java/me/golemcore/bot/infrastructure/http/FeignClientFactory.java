@@ -23,7 +23,6 @@ import feign.Feign;
 import feign.jackson.JacksonDecoder;
 import feign.jackson.JacksonEncoder;
 import feign.okhttp.OkHttpClient;
-import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 /**
@@ -49,11 +48,17 @@ import org.springframework.stereotype.Component;
  * @since 1.0
  */
 @Component
-@RequiredArgsConstructor
 public class FeignClientFactory {
 
     private final okhttp3.OkHttpClient okHttpClient;
     private final ObjectMapper objectMapper;
+
+    public FeignClientFactory(
+            okhttp3.OkHttpClient okHttpClient,
+            ObjectMapper objectMapper) {
+        this.okHttpClient = okHttpClient;
+        this.objectMapper = objectMapper;
+    }
 
     /**
      * Create a Feign client for the given API interface.

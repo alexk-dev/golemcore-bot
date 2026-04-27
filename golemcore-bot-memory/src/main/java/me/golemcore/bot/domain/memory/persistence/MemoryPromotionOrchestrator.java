@@ -18,7 +18,6 @@ package me.golemcore.bot.domain.memory.persistence;
  * Contact: alex@kuleshov.tech
  */
 
-import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.domain.model.MemoryItem;
 import me.golemcore.bot.domain.service.MemoryPromotionService;
 import me.golemcore.bot.domain.service.MemoryScopeSupport;
@@ -32,11 +31,16 @@ import java.util.List;
  * Promotes extracted episodic memories into longer-lived semantic or procedural stores when policy allows.
  */
 @Service
-@RequiredArgsConstructor
 public class MemoryPromotionOrchestrator {
 
     private final MemoryPromotionService memoryPromotionService;
     private final MemoryPersistenceOrchestrator memoryPersistenceOrchestrator;
+
+    public MemoryPromotionOrchestrator(MemoryPromotionService memoryPromotionService,
+            MemoryPersistenceOrchestrator memoryPersistenceOrchestrator) {
+        this.memoryPromotionService = memoryPromotionService;
+        this.memoryPersistenceOrchestrator = memoryPersistenceOrchestrator;
+    }
 
     /**
      * Promote extracted episodic items into durable memory layers.

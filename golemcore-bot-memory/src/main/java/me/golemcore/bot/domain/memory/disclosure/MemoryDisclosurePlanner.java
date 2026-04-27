@@ -18,7 +18,6 @@ package me.golemcore.bot.domain.memory.disclosure;
  * Contact: alex@kuleshov.tech
  */
 
-import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.domain.memory.model.MemoryDisclosureInput;
 import me.golemcore.bot.domain.memory.model.MemoryDisclosurePlan;
 import org.springframework.stereotype.Service;
@@ -27,10 +26,13 @@ import org.springframework.stereotype.Service;
  * Builds the concrete disclosure plan used by section assembly and rendering.
  */
 @Service
-@RequiredArgsConstructor
 public class MemoryDisclosurePlanner {
 
     private final MemoryDisclosurePolicy memoryDisclosurePolicy;
+
+    public MemoryDisclosurePlanner(MemoryDisclosurePolicy memoryDisclosurePolicy) {
+        this.memoryDisclosurePolicy = memoryDisclosurePolicy;
+    }
 
     /**
      * Plan the progressive-disclosure output for a selected memory set.
