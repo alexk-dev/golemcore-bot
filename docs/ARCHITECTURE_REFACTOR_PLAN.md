@@ -30,25 +30,25 @@ This checklist tracks the next architecture-hardening pass after the modular run
 - [x] Move memory architecture tests into `golemcore-bot-memory`.
 - [x] Move tools architecture tests into `golemcore-bot-tools`.
 - [x] Move tracing architecture tests into `golemcore-bot-tracing`.
-- [ ] Evaluate whether scheduling is stable enough for a dedicated Maven module.
-- [ ] Keep `golemcore-bot-app` focused on bootstrapping, adapters, security, launchers, and wiring.
+- [x] Evaluate whether scheduling is stable enough for a dedicated Maven module.
+- [x] Keep `golemcore-bot-app` focused on bootstrapping, adapters, security, launchers, and wiring.
 
 ## P2 - Platform Contracts
 
 - [x] Add dashboard API contract checks.
-- [ ] Decide whether dashboard should use generated OpenAPI or generated JSON-schema TypeScript contracts.
-- [ ] Define runtime events as a first-class internal API.
-- [ ] Define plugin permissions for filesystem, network, browser, mail, calendar, memory, trace, and config mutation.
-- [ ] Add trace snapshot schema versioning.
-- [ ] Add runtime config section schema versioning and migration rules.
+- [x] Decide whether dashboard should use generated OpenAPI or generated JSON-schema TypeScript contracts.
+- [x] Define runtime events as a first-class internal API.
+- [x] Define plugin permissions for filesystem, network, browser, mail, calendar, memory, trace, and config mutation.
+- [x] Add trace snapshot schema versioning.
+- [x] Add runtime config section schema versioning and migration rules.
 
 ## Definition Of Done
 
 - [x] Maven module names map to clear reasons for change.
-- [ ] `golemcore-bot-app` contains composition-root code, not core runtime implementation.
+- [x] `golemcore-bot-app` contains composition-root code, not core runtime implementation.
 - [x] `domain/service` is no longer a bucket package in `golemcore-bot-app`.
-- [ ] `AgentLoop` remains a thin turn-lifecycle orchestrator.
-- [ ] Runtime config ownership is split by section behind a compatible facade.
+- [x] `AgentLoop` remains a thin turn-lifecycle orchestrator.
+- [x] Runtime config ownership is split by section behind a compatible facade.
 - [x] Session lifecycle can be tested separately from storage adapters.
 - [x] Tool execution can be tested separately from registry, confirmation, and artifact persistence.
 - [x] `golemcore-bot-contracts` has no Spring/runtime implementation details.

@@ -27,6 +27,7 @@ import me.golemcore.bot.port.outbound.ReleaseSourcePort;
 import me.golemcore.bot.port.outbound.ScheduleCronPort;
 import me.golemcore.bot.port.outbound.SchedulePersistencePort;
 import me.golemcore.bot.port.outbound.SessionPort;
+import me.golemcore.bot.port.outbound.TraceSnapshotCodecPort;
 import me.golemcore.bot.port.outbound.UpdateArtifactStorePort;
 import me.golemcore.bot.port.outbound.UpdateRestartPort;
 import me.golemcore.bot.port.outbound.UpdateRuntimeConfigPort;
@@ -100,6 +101,7 @@ public class CoreLayerConfiguration {
             LlmPort llmPort,
             Clock clock,
             TraceService traceService,
+            TraceSnapshotCodecPort traceSnapshotCodecPort,
             ContextHygieneService contextHygieneService) {
         return new AgentLoop(
                 sessionService,
@@ -111,6 +113,7 @@ public class CoreLayerConfiguration {
                 llmPort,
                 clock,
                 traceService,
+                traceSnapshotCodecPort,
                 contextHygieneService);
     }
 

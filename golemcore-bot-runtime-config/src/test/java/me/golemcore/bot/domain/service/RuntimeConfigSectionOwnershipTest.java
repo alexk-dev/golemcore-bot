@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 
 class RuntimeConfigSectionOwnershipTest {
 
@@ -36,6 +37,17 @@ class RuntimeConfigSectionOwnershipTest {
                 RuntimeConfigSectionOwnership.ownerOf(RuntimeConfig.ConfigSection.HIVE).ownerService());
         assertEquals("SelfEvolvingConfigService",
                 RuntimeConfigSectionOwnership.ownerOf(RuntimeConfig.ConfigSection.SELF_EVOLVING).ownerService());
+        assertEquals("DelayedActionsConfigService",
+                RuntimeConfigSectionOwnership.ownerOf(RuntimeConfig.ConfigSection.DELAYED_ACTIONS).ownerService());
+        assertEquals("TelegramConfigService",
+                RuntimeConfigSectionOwnership.ownerOf(RuntimeConfig.ConfigSection.TELEGRAM).ownerService());
+    }
+
+    @Test
+    void shouldKeepSectionOwnershipOutOfTheCompatibilityFacade() {
+        for (RuntimeConfigSectionOwnership.SectionOwnership ownership : RuntimeConfigSectionOwnership.all().values()) {
+            assertNotEquals("RuntimeConfigService", ownership.ownerService());
+        }
     }
 
     @Test

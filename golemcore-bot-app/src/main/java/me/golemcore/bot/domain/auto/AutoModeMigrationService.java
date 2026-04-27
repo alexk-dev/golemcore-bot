@@ -20,6 +20,7 @@ package me.golemcore.bot.domain.auto;
 
 import me.golemcore.bot.domain.session.SessionScopedGoalService;
 import me.golemcore.bot.domain.scheduling.PersistentScheduledTaskService;
+import me.golemcore.bot.domain.scheduling.ScheduleMigrationPort;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
@@ -48,7 +49,7 @@ import org.springframework.stereotype.Service;
  */
 @Service
 @Slf4j
-public class AutoModeMigrationService {
+public class AutoModeMigrationService implements ScheduleMigrationPort {
 
     private static final String AUTO_DIR = "auto";
     private static final String LEGACY_GOALS_FILE = "goals.json";

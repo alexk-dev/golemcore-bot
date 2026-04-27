@@ -43,6 +43,7 @@ import me.golemcore.bot.port.outbound.ReleaseSourcePort;
 import me.golemcore.bot.port.outbound.ScheduleCronPort;
 import me.golemcore.bot.port.outbound.SchedulePersistencePort;
 import me.golemcore.bot.port.outbound.SessionPort;
+import me.golemcore.bot.port.outbound.TraceSnapshotCodecPort;
 import me.golemcore.bot.port.outbound.UpdateArtifactStorePort;
 import me.golemcore.bot.port.outbound.UpdateRestartPort;
 import me.golemcore.bot.port.outbound.UpdateRuntimeConfigPort;
@@ -87,6 +88,7 @@ class CoreLayerConfigurationTest {
                 mock(LlmPort.class),
                 Clock.systemUTC(),
                 mock(TraceService.class),
+                mock(TraceSnapshotCodecPort.class),
                 mock(ContextHygieneService.class));
 
         assertNotNull(agentLoop);

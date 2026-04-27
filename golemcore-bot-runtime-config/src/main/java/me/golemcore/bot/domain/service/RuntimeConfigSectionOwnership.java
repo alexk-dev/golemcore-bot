@@ -47,7 +47,12 @@ public final class RuntimeConfigSectionOwnership {
             case TRACING, TELEMETRY, USAGE -> "ObservabilityConfigService";
             case SESSION_RETENTION, COMPACTION, TURN -> "SessionRuntimeConfigService";
             case SECURITY -> "SecurityConfigService";
-            case TELEGRAM, AUTO_MODE, UPDATE, SKILLS, PLAN, DELAYED_ACTIONS -> "RuntimeConfigService";
+            case TELEGRAM -> "TelegramConfigService";
+            case AUTO_MODE -> "AutoModeConfigService";
+            case UPDATE -> "UpdateConfigService";
+            case SKILLS -> "SkillConfigService";
+            case PLAN -> "PlanConfigService";
+            case DELAYED_ACTIONS -> "DelayedActionsConfigService";
         };
     }
 

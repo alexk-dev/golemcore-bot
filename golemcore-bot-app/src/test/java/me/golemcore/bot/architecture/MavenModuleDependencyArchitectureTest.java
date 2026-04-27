@@ -37,6 +37,8 @@ class MavenModuleDependencyArchitectureTest {
                     Set.of("golemcore-bot-contracts", "golemcore-bot-runtime-config", "golemcore-bot-tracing")),
             Map.entry("golemcore-bot-memory", Set.of("golemcore-bot-contracts", "golemcore-bot-runtime-config")),
             Map.entry("golemcore-bot-tools", Set.of("golemcore-bot-contracts", "golemcore-bot-runtime-config")),
+            Map.entry("golemcore-bot-scheduling",
+                    Set.of("golemcore-bot-contracts", "golemcore-bot-runtime-config", "golemcore-bot-tracing")),
             Map.entry("golemcore-bot-runtime-core",
                     Set.of("golemcore-bot-contracts", "golemcore-bot-runtime-config", "golemcore-bot-tracing")),
             Map.entry("golemcore-bot-client", Set.of("golemcore-bot-contracts")),
@@ -46,8 +48,8 @@ class MavenModuleDependencyArchitectureTest {
             Map.entry("golemcore-bot-app",
                     Set.of("golemcore-bot-contracts", "golemcore-bot-runtime-config", "golemcore-bot-sessions",
                             "golemcore-bot-memory", "golemcore-bot-tools", "golemcore-bot-tracing",
-                            "golemcore-bot-runtime-core", "golemcore-bot-client", "golemcore-bot-self-evolving",
-                            "golemcore-bot-hive", "golemcore-bot-extensions")));
+                            "golemcore-bot-scheduling", "golemcore-bot-runtime-core", "golemcore-bot-client",
+                            "golemcore-bot-self-evolving", "golemcore-bot-hive", "golemcore-bot-extensions")));
 
     @Test
     void allowed_dependency_graph_should_cover_every_parent_maven_module() {

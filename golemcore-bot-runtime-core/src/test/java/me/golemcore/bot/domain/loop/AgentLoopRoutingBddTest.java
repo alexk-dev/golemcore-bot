@@ -37,8 +37,10 @@ import me.golemcore.bot.port.outbound.ChannelRuntimePort;
 import me.golemcore.bot.port.outbound.LlmPort;
 import me.golemcore.bot.port.outbound.RateLimitPort;
 import me.golemcore.bot.port.outbound.SessionPort;
+import me.golemcore.bot.port.outbound.TraceSnapshotCodecPort;
 import org.junit.jupiter.api.Test;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
@@ -149,8 +151,22 @@ class AgentLoopRoutingBddTest {
             UserPreferencesService preferencesService, LlmPort llmPort, Clock clock) {
         return new AgentLoop(sessionPort, rateLimitPort, systems, runtime(channels), runtimeConfigService,
                 preferencesService, llmPort, clock,
-                new TraceService(new TraceSnapshotCompressionService(), new TraceBudgetService()),
+                new TraceService(new TraceSnapshotCompressionService(), new TraceBudgetService()), traceSnapshotCodec(),
                 new DefaultContextHygieneService());
+    }
+
+    private static TraceSnapshotCodecPort traceSnapshotCodec() {
+        return new TraceSnapshotCodecPort() {
+            @Override
+            public byte[] encodeJson(Object payload) {
+                return payload != null ? String.valueOf(payload).getBytes(StandardCharsets.UTF_8) : new byte[0];
+            }
+
+            @Override
+            public <T> T decodeJson(String payload, Class<T> targetType) {
+                throw new UnsupportedOperationException("decodeJson is not needed by these tests");
+            }
+        };
     }
 
     private static ChannelRuntimePort runtime(List<ChannelPort> channels) {

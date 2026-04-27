@@ -47,6 +47,7 @@
         <module>golemcore-bot-memory</module>
         <module>golemcore-bot-tools</module>
         <module>golemcore-bot-tracing</module>
+        <module>golemcore-bot-scheduling</module>
         <module>golemcore-bot-runtime-core</module>
         <module>golemcore-bot-client</module>
         <module>golemcore-bot-self-evolving</module>

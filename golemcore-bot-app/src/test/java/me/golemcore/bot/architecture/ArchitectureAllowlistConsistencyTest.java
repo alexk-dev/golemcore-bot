@@ -25,6 +25,7 @@ class ArchitectureAllowlistConsistencyTest {
             Paths.get("../golemcore-bot-memory/src/main/java"),
             Paths.get("../golemcore-bot-tools/src/main/java"),
             Paths.get("../golemcore-bot-tracing/src/main/java"),
+            Paths.get("../golemcore-bot-scheduling/src/main/java"),
             Paths.get("../golemcore-bot-runtime-core/src/main/java"),
             Paths.get("../golemcore-bot-self-evolving/src/main/java"),
             Paths.get("../golemcore-bot-contracts/src/main/java"),

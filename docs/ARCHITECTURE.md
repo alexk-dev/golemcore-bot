@@ -12,6 +12,7 @@ sessions         -> contracts + session/storage ports + runtime-config where pol
 memory           -> contracts + memory/storage ports + runtime-config
 tools            -> contracts + tool ports + runtime-config, no session persistence ownership
 tracing          -> contracts + trace persistence/snapshot ports
+scheduling       -> contracts + runtime-config + tracing, no app or adapter ownership
 client           -> contracts
 extensions       -> contracts + plugin API
 hive             -> contracts + client
@@ -31,6 +32,7 @@ golemcore-bot-parent
 ├── golemcore-bot-memory
 ├── golemcore-bot-tools
 ├── golemcore-bot-tracing
+├── golemcore-bot-scheduling
 ├── golemcore-bot-client
 ├── golemcore-bot-extensions
 ├── golemcore-bot-hive
@@ -57,16 +59,15 @@ The app module keeps only adapter-facing or composition-root domain services tha
 domain.auto
 domain.context.compaction
 domain.dashboard
-domain.events
 domain.model
 domain.planning
 domain.progress
 domain.prompt
 domain.resilience
 domain.runtime
-domain.scheduling
 domain.session
 domain.skills
+domain.system
 domain.tools
 domain.tracing
 domain.update
