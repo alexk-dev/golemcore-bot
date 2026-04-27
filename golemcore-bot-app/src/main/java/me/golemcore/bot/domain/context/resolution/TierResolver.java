@@ -20,6 +20,7 @@ package me.golemcore.bot.domain.context.resolution;
 
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.component.SkillComponent;
+import me.golemcore.bot.domain.context.ContextResolver;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.Message;
@@ -64,7 +65,7 @@ import java.util.Optional;
  * {@link ContextAttributes} for observability.
  */
 @Slf4j
-public class TierResolver {
+public class TierResolver implements ContextResolver {
 
     private final UserPreferencesService userPreferencesService;
     private final ModelSelectionService modelSelectionService;

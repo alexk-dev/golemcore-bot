@@ -31,7 +31,9 @@ This checklist tracks the next architecture-hardening pass after the modular run
 - [x] Move tools architecture tests into `golemcore-bot-tools`.
 - [x] Move tracing architecture tests into `golemcore-bot-tracing`.
 - [x] Evaluate whether scheduling is stable enough for a dedicated Maven module.
+- [x] Move reusable context assembly (`ContextAssembler`, `PromptComposer`, `ContextBuildingSystem`) and their tests into `golemcore-bot-runtime-core`.
 - [x] Keep `golemcore-bot-app` focused on bootstrapping, adapters, security, launchers, and wiring.
+- [x] Keep concrete context layers and app-dependent resolvers in `golemcore-bot-app` until their dependencies are port-only.
 
 ## P2 - Platform Contracts
 
@@ -41,6 +43,9 @@ This checklist tracks the next architecture-hardening pass after the modular run
 - [x] Define plugin permissions for filesystem, network, browser, mail, calendar, memory, trace, and config mutation.
 - [x] Add trace snapshot schema versioning.
 - [x] Add runtime config section schema versioning and migration rules.
+- [x] Split `RuntimeConfigService` cache, API redaction, and mutation rollback into dedicated collaborators.
+- [x] Split `SessionService` lifecycle internals into repository, cache, id factory, compaction, inheritance, and deletion collaborators.
+- [x] Split tool execution from registry, result post-processing, attachment extraction, and artifact persistence.
 
 ## Definition Of Done
 
@@ -48,6 +53,7 @@ This checklist tracks the next architecture-hardening pass after the modular run
 - [x] `golemcore-bot-app` contains composition-root code, not core runtime implementation.
 - [x] `domain/service` is no longer a bucket package in `golemcore-bot-app`.
 - [x] `AgentLoop` remains a thin turn-lifecycle orchestrator.
+- [x] Context assembly and its pipeline system are owned by `golemcore-bot-runtime-core`, with app retaining only concrete layer wiring.
 - [x] Runtime config ownership is split by section behind a compatible facade.
 - [x] Session lifecycle can be tested separately from storage adapters.
 - [x] Tool execution can be tested separately from registry, confirmation, and artifact persistence.

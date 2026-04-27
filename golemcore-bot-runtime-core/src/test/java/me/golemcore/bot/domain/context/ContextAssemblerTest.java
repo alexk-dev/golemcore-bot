@@ -1,7 +1,5 @@
 package me.golemcore.bot.domain.context;
 
-import me.golemcore.bot.domain.context.resolution.SkillResolver;
-import me.golemcore.bot.domain.context.resolution.TierResolver;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.Skill;
@@ -20,14 +18,14 @@ import static org.mockito.Mockito.when;
 
 class ContextAssemblerTest {
 
-    private SkillResolver skillResolver;
-    private TierResolver tierResolver;
+    private ContextResolver skillResolver;
+    private ContextResolver tierResolver;
     private PromptComposer promptComposer;
 
     @BeforeEach
     void setUp() {
-        skillResolver = mock(SkillResolver.class);
-        tierResolver = mock(TierResolver.class);
+        skillResolver = mock(ContextResolver.class);
+        tierResolver = mock(ContextResolver.class);
         promptComposer = new PromptComposer();
     }
 
@@ -36,7 +34,7 @@ class ContextAssemblerTest {
         ContextLayer layer = stubLayer("test", 10, true, "test content");
 
         ContextAssembler assembler = new ContextAssembler(
-                skillResolver, tierResolver, List.of(layer), promptComposer);
+                skillResolver, tierResolver, List.of(layer), promptComposer, null);
 
         AgentContext context = AgentContext.builder().build();
         assembler.assemble(context);
@@ -51,7 +49,7 @@ class ContextAssemblerTest {
         ContextLayer layerA = stubLayer("first", 10, true, "# First");
 
         ContextAssembler assembler = new ContextAssembler(
-                skillResolver, tierResolver, List.of(layerB, layerA), promptComposer);
+                skillResolver, tierResolver, List.of(layerB, layerA), promptComposer, null);
 
         AgentContext context = AgentContext.builder().build();
         assembler.assemble(context);
@@ -67,7 +65,7 @@ class ContextAssemblerTest {
         ContextLayer skipped = stubLayer("no", 20, false, "excluded");
 
         ContextAssembler assembler = new ContextAssembler(
-                skillResolver, tierResolver, List.of(applicable, skipped), promptComposer);
+                skillResolver, tierResolver, List.of(applicable, skipped), promptComposer, null);
 
         AgentContext context = AgentContext.builder().build();
         assembler.assemble(context);
@@ -87,7 +85,7 @@ class ContextAssemblerTest {
         ContextLayer healthy = stubLayer("ok", 20, true, "healthy content");
 
         ContextAssembler assembler = new ContextAssembler(
-                skillResolver, tierResolver, List.of(failing, healthy), promptComposer);
+                skillResolver, tierResolver, List.of(failing, healthy), promptComposer, null);
 
         AgentContext context = AgentContext.builder().build();
         assembler.assemble(context);
@@ -100,7 +98,7 @@ class ContextAssemblerTest {
         ContextLayer empty = stubLayer("empty", 10, true, null);
 
         ContextAssembler assembler = new ContextAssembler(
-                skillResolver, tierResolver, List.of(empty), promptComposer);
+                skillResolver, tierResolver, List.of(empty), promptComposer, null);
 
         AgentContext context = AgentContext.builder().build();
         assembler.assemble(context);
@@ -113,7 +111,7 @@ class ContextAssemblerTest {
         ContextLayer layer = stubLayer("test", 10, true, "content");
 
         ContextAssembler assembler = new ContextAssembler(
-                skillResolver, tierResolver, List.of(layer), promptComposer);
+                skillResolver, tierResolver, List.of(layer), promptComposer, null);
 
         Skill skill = Skill.builder().name("coding").description("Code skill").build();
         AgentContext context = AgentContext.builder().activeSkill(skill).build();

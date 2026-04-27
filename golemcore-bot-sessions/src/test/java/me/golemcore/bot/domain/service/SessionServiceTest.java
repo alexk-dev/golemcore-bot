@@ -53,7 +53,17 @@ class SessionServiceTest {
         objectMapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
         clock = Clock.fixed(FIXED_TIME, ZoneOffset.UTC);
         sessionRecordCodecAdapter = new JsonSessionRecordCodec();
-        service = new SessionService(storagePort, sessionRecordCodecAdapter, clock, List.of());
+        SessionIdFactory sessionIdFactory = new SessionIdFactory();
+        SessionCache sessionCache = new SessionCache();
+        SessionRepository sessionRepository = new SessionRepository(storagePort, sessionRecordCodecAdapter,
+                sessionIdFactory);
+        SessionCompactionBoundary sessionCompactionBoundary = new SessionCompactionBoundary();
+        SessionModelSettingsInheritancePolicy inheritancePolicy = new SessionModelSettingsInheritancePolicy(
+                sessionCache, sessionRepository);
+        SessionDeletionCoordinator deletionCoordinator = new SessionDeletionCoordinator(sessionCache,
+                sessionRepository, List.of());
+        service = new SessionService(sessionIdFactory, sessionCache, sessionRepository, sessionCompactionBoundary,
+                inheritancePolicy, deletionCoordinator, clock);
 
         when(storagePort.getObject(anyString(), anyString())).thenReturn(CompletableFuture.completedFuture(null));
         when(storagePort.getText(anyString(), anyString())).thenReturn(CompletableFuture.completedFuture(null));

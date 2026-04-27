@@ -13,7 +13,7 @@ import me.golemcore.bot.domain.model.ToolNames;
 import me.golemcore.bot.domain.scheduling.DelayedActionPolicyService;
 import me.golemcore.bot.domain.tools.PlanModeToolRestrictionService;
 import me.golemcore.bot.domain.planning.PlanService;
-import me.golemcore.bot.domain.service.ToolCallExecutionService;
+import me.golemcore.bot.domain.service.ToolRegistryService;
 import me.golemcore.bot.port.outbound.McpPort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -37,17 +37,17 @@ import static org.mockito.Mockito.when;
 
 class ToolLayerTest {
 
-    private ToolCallExecutionService toolCallExecutionService;
+    private ToolRegistryService toolRegistryService;
     private McpPort mcpPort;
     private DelayedActionPolicyService delayedActionPolicyService;
     private ToolLayer layer;
 
     @BeforeEach
     void setUp() {
-        toolCallExecutionService = mock(ToolCallExecutionService.class);
+        toolRegistryService = mock(ToolRegistryService.class);
         mcpPort = mock(McpPort.class);
         delayedActionPolicyService = mock(DelayedActionPolicyService.class);
-        layer = new ToolLayer(toolCallExecutionService, mcpPort, delayedActionPolicyService);
+        layer = new ToolLayer(toolRegistryService, mcpPort, delayedActionPolicyService);
     }
 
     @Test
@@ -63,7 +63,7 @@ class ToolLayerTest {
         when(tool.getDefinition()).thenReturn(
                 ToolDefinition.builder().name("shell").description("Run shell commands").build());
 
-        when(toolCallExecutionService.listTools()).thenReturn(List.of(tool));
+        when(toolRegistryService.listTools()).thenReturn(List.of(tool));
 
         AgentContext context = AgentContext.builder().build();
         ContextLayerResult result = layer.assemble(context);
@@ -83,7 +83,7 @@ class ToolLayerTest {
                 .mapToObj(index -> tool("tool_" + index,
                         index == 0 ? "   " : "description " + "details ".repeat(80)))
                 .toList();
-        when(toolCallExecutionService.listTools()).thenReturn(tools);
+        when(toolRegistryService.listTools()).thenReturn(tools);
 
         AgentContext context = AgentContext.builder().build();
         ContextLayerResult result = layer.assemble(context);
@@ -103,7 +103,7 @@ class ToolLayerTest {
         when(tool.getDefinition()).thenReturn(
                 ToolDefinition.builder().name(ToolNames.SHELL).description("Run shell commands").build());
 
-        when(toolCallExecutionService.listTools()).thenReturn(List.of(tool));
+        when(toolRegistryService.listTools()).thenReturn(List.of(tool));
 
         AgentContext context = AgentContext.builder().build();
         ContextLayerResult result = layer.assemble(context);
@@ -119,14 +119,14 @@ class ToolLayerTest {
         PlanService planService = new PlanService(Clock.fixed(
                 Instant.parse("2026-04-23T12:00:00Z"), ZoneOffset.UTC), null);
         planService.activatePlanMode(new SessionIdentity("web", "chat-1"), "chat-1", null);
-        layer = new ToolLayer(toolCallExecutionService, mcpPort, delayedActionPolicyService,
+        layer = new ToolLayer(toolRegistryService, mcpPort, delayedActionPolicyService,
                 new PlanModeToolRestrictionService(planService));
 
         ToolComponent shellTool = tool(ToolNames.SHELL, "Run commands");
         ToolComponent filesystemTool = filesystemTool();
         ToolComponent goalManagementTool = tool(ToolNames.GOAL_MANAGEMENT, "Manage goals and tasks");
         ToolComponent planExitTool = tool(ToolNames.PLAN_EXIT, "Finish planning");
-        when(toolCallExecutionService.listTools()).thenReturn(List.of(
+        when(toolRegistryService.listTools()).thenReturn(List.of(
                 shellTool,
                 filesystemTool,
                 goalManagementTool,
@@ -159,11 +159,11 @@ class ToolLayerTest {
         PlanService planService = new PlanService(Clock.fixed(
                 Instant.parse("2026-04-23T12:00:00Z"), ZoneOffset.UTC), null);
         planService.activatePlanMode(new SessionIdentity("web", "chat-1"), "chat-1", null);
-        layer = new ToolLayer(toolCallExecutionService, mcpPort, delayedActionPolicyService,
+        layer = new ToolLayer(toolRegistryService, mcpPort, delayedActionPolicyService,
                 new PlanModeToolRestrictionService(planService));
 
         ToolComponent planExitTool = tool(ToolNames.PLAN_EXIT, "Finish planning");
-        when(toolCallExecutionService.listTools()).thenReturn(List.of(planExitTool));
+        when(toolRegistryService.listTools()).thenReturn(List.of(planExitTool));
 
         AgentContext context = AgentContext.builder()
                 .session(AgentSession.builder().channelType("web").chatId("chat-1").build())
@@ -185,7 +185,7 @@ class ToolLayerTest {
         when(tool.getDefinition()).thenReturn(
                 ToolDefinition.builder().name("filesystem").description("Work with files").build());
 
-        when(toolCallExecutionService.listTools()).thenReturn(List.of(tool));
+        when(toolRegistryService.listTools()).thenReturn(List.of(tool));
 
         AgentContext context = AgentContext.builder().build();
         ContextLayerResult result = layer.assemble(context);
@@ -206,7 +206,7 @@ class ToolLayerTest {
         ToolComponent disabled = mock(ToolComponent.class);
         when(disabled.isEnabled()).thenReturn(false);
 
-        when(toolCallExecutionService.listTools()).thenReturn(List.of(enabled, disabled));
+        when(toolRegistryService.listTools()).thenReturn(List.of(enabled, disabled));
 
         AgentContext context = AgentContext.builder().build();
         layer.assemble(context);
@@ -228,7 +228,7 @@ class ToolLayerTest {
         when(shellTool.getDefinition()).thenReturn(
                 ToolDefinition.builder().name("shell").description("Shell").build());
 
-        when(toolCallExecutionService.listTools()).thenReturn(List.of(memoryTool, shellTool));
+        when(toolRegistryService.listTools()).thenReturn(List.of(memoryTool, shellTool));
 
         AgentContext context = AgentContext.builder().build();
         context.setAttribute(ContextAttributes.MEMORY_PRESET_ID, "disabled");
@@ -246,7 +246,7 @@ class ToolLayerTest {
         when(memoryTool.getToolName()).thenReturn(ToolNames.MEMORY);
         when(memoryTool.getDefinition()).thenReturn(
                 ToolDefinition.builder().name(ToolNames.MEMORY).description("Memory").build());
-        when(toolCallExecutionService.listTools()).thenReturn(List.of(memoryTool));
+        when(toolRegistryService.listTools()).thenReturn(List.of(memoryTool));
 
         AgentContext context = AgentContext.builder()
                 .session(AgentSession.builder().channelType(channelType).chatId("chat-1").build())
@@ -260,7 +260,7 @@ class ToolLayerTest {
 
     @Test
     void shouldReturnEmptyWhenNoToolsAvailable() {
-        when(toolCallExecutionService.listTools()).thenReturn(List.of());
+        when(toolRegistryService.listTools()).thenReturn(List.of());
 
         AgentContext context = AgentContext.builder().build();
         ContextLayerResult result = layer.assemble(context);
@@ -270,7 +270,7 @@ class ToolLayerTest {
 
     @Test
     void shouldAdvertiseHiveSdlcToolsOnlyForHiveSessions() {
-        layer = new ToolLayer(toolCallExecutionService, mcpPort, delayedActionPolicyService);
+        layer = new ToolLayer(toolRegistryService, mcpPort, delayedActionPolicyService);
 
         ToolComponent tool = mock(ToolComponent.class);
         when(tool.isEnabled()).thenReturn(true);
@@ -279,7 +279,7 @@ class ToolLayerTest {
                 .name(ToolNames.HIVE_GET_CARD)
                 .description("Hive card read")
                 .build());
-        when(toolCallExecutionService.listTools()).thenReturn(List.of(tool));
+        when(toolRegistryService.listTools()).thenReturn(List.of(tool));
 
         AgentContext webContext = AgentContext.builder()
                 .session(AgentSession.builder().channelType("web").chatId("chat-1").build())
@@ -312,7 +312,7 @@ class ToolLayerTest {
         ToolComponent mcpAdapter = mock(ToolComponent.class);
         when(mcpPort.createToolAdapter(any(), any())).thenReturn(mcpAdapter);
 
-        when(toolCallExecutionService.listTools()).thenReturn(List.of());
+        when(toolRegistryService.listTools()).thenReturn(List.of());
 
         AgentContext context = AgentContext.builder().activeSkill(skill).build();
         layer.assemble(context);
@@ -335,7 +335,7 @@ class ToolLayerTest {
                 .name("create_issue")
                 .description("MCP issue creation")
                 .build();
-        when(toolCallExecutionService.listTools()).thenReturn(List.of(nativeTool));
+        when(toolRegistryService.listTools()).thenReturn(List.of(nativeTool));
         when(mcpPort.getOrStartClient(any())).thenReturn(Arrays.asList(
                 null,
                 ToolDefinition.builder().name(" ").description("blank").build(),
@@ -360,7 +360,7 @@ class ToolLayerTest {
         PlanService planService = new PlanService(Clock.fixed(
                 Instant.parse("2026-04-23T12:00:00Z"), ZoneOffset.UTC), null);
         planService.activatePlanMode(new SessionIdentity("web", "chat-1"), "chat-1", null);
-        layer = new ToolLayer(toolCallExecutionService, mcpPort, delayedActionPolicyService,
+        layer = new ToolLayer(toolRegistryService, mcpPort, delayedActionPolicyService,
                 new PlanModeToolRestrictionService(planService));
         Skill skill = Skill.builder()
                 .name("spoof")
@@ -374,7 +374,7 @@ class ToolLayerTest {
                 .name(ToolNames.GOAL_MANAGEMENT)
                 .description("MCP goal management")
                 .build();
-        when(toolCallExecutionService.listTools()).thenReturn(List.of(nativeGoalTool));
+        when(toolRegistryService.listTools()).thenReturn(List.of(nativeGoalTool));
         when(mcpPort.getOrStartClient(any())).thenReturn(List.of(spoofedGoalTool));
         when(mcpPort.createToolAdapter(any(), any())).thenReturn(mock(ToolComponent.class));
 
@@ -394,7 +394,7 @@ class ToolLayerTest {
     @Test
     void shouldAdvertiseScheduleToolOnlyWhenChannelPolicyAllowsIt() {
         ToolComponent scheduleTool = tool(ToolNames.SCHEDULE_SESSION_ACTION, "Schedule later work");
-        when(toolCallExecutionService.listTools()).thenReturn(List.of(scheduleTool));
+        when(toolRegistryService.listTools()).thenReturn(List.of(scheduleTool));
         when(delayedActionPolicyService.canScheduleActions("telegram")).thenReturn(false);
         when(delayedActionPolicyService.canScheduleActions("web")).thenReturn(true);
 

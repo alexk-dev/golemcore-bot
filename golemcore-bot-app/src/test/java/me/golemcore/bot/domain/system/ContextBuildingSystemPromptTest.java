@@ -39,7 +39,7 @@ import me.golemcore.bot.domain.planning.PlanService;
 import me.golemcore.bot.domain.prompt.PromptSectionService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.skills.SkillTemplateEngine;
-import me.golemcore.bot.domain.service.ToolCallExecutionService;
+import me.golemcore.bot.domain.service.ToolRegistryService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.domain.workspace.WorkspaceInstructionService;
 import me.golemcore.bot.port.outbound.McpPort;
@@ -75,7 +75,7 @@ class ContextBuildingSystemPromptTest {
     private SkillComponent skillComponent;
     private SkillTemplateEngine templateEngine;
     private McpPort mcpPort;
-    private ToolCallExecutionService toolCallExecutionService;
+    private ToolRegistryService toolRegistryService;
     private RagPort ragPort;
     private AutoModeService autoModeService;
     private DelayedActionPolicyService delayedActionPolicyService;
@@ -95,7 +95,7 @@ class ContextBuildingSystemPromptTest {
         skillComponent = mock(SkillComponent.class);
         templateEngine = new SkillTemplateEngine();
         mcpPort = mock(McpPort.class);
-        toolCallExecutionService = mock(ToolCallExecutionService.class);
+        toolRegistryService = mock(ToolRegistryService.class);
         ragPort = mock(RagPort.class);
         autoModeService = mock(AutoModeService.class);
         delayedActionPolicyService = mock(DelayedActionPolicyService.class);
@@ -114,7 +114,7 @@ class ContextBuildingSystemPromptTest {
                 .renderedContext("")
                 .build());
         when(skillComponent.getSkillsSummary()).thenReturn("");
-        when(toolCallExecutionService.listTools()).thenReturn(List.of());
+        when(toolRegistryService.listTools()).thenReturn(List.of());
         when(ragPort.isAvailable()).thenReturn(false);
         when(workspaceInstructionService.getWorkspaceInstructionsContext()).thenReturn("");
         when(userPreferencesService.getPreferences())
@@ -135,13 +135,14 @@ class ContextBuildingSystemPromptTest {
                 new MemoryLayer(memoryComponent, runtimeConfigService, new MemoryPresetService()),
                 new RagLayer(ragPort),
                 new SkillLayer(skillComponent, templateEngine),
-                new ToolLayer(toolCallExecutionService, mcpPort, delayedActionPolicyService),
+                new ToolLayer(toolRegistryService, mcpPort, delayedActionPolicyService),
                 new TierAwarenessLayer(userPreferencesService),
                 new AutoModeLayer(autoModeService),
                 new PlanModeLayer(planService),
                 new WebhookResponseSchemaLayer());
 
-        ContextAssembler contextAssembler = new ContextAssembler(skillResolver, tierResolver, layers, promptComposer);
+        ContextAssembler contextAssembler = new ContextAssembler(skillResolver, tierResolver, layers, promptComposer,
+                null);
         return new ContextBuildingSystem(contextAssembler);
     }
 
@@ -325,7 +326,7 @@ class ContextBuildingSystemPromptTest {
                 .description("A test tool")
                 .inputSchema(Map.of("type", "object"))
                 .build());
-        when(toolCallExecutionService.listTools()).thenReturn(List.of(tool));
+        when(toolRegistryService.listTools()).thenReturn(List.of(tool));
 
         system = buildSystem();
 
@@ -706,7 +707,7 @@ class ContextBuildingSystemPromptTest {
         ctx.setActiveSkill(skill);
         system.process(ctx);
 
-        verify(toolCallExecutionService, never()).registerTool(any());
+        verify(toolRegistryService, never()).registerTool(any());
         assertTrue(ctx.getAvailableTools().contains(mcpTool));
         assertTrue(ctx.getSystemPrompt().contains("github_search"));
         Object scopedTools = ctx.getAttribute(ContextAttributes.CONTEXT_SCOPED_TOOLS);
@@ -726,7 +727,7 @@ class ContextBuildingSystemPromptTest {
         ToolComponent globalTool = mock(ToolComponent.class);
         when(globalTool.isEnabled()).thenReturn(true);
         when(globalTool.getDefinition()).thenReturn(globalToolDefinition);
-        when(toolCallExecutionService.listTools()).thenReturn(List.of(globalTool));
+        when(toolRegistryService.listTools()).thenReturn(List.of(globalTool));
 
         McpConfig mcpConfig = McpConfig.builder().command("npx server").build();
         Skill skill = Skill.builder()

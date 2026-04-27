@@ -6,7 +6,7 @@ GolemCore Bot uses a hexagonal architecture with Maven modules as bounded-contex
 
 ```text
 contracts        -> no dependency on app, adapters, infrastructure, Spring Web, Telegram, dashboard
-runtime-core     -> contracts + runtime-config + tracing, no inbound/outbound adapters
+runtime-core     -> contracts + runtime-config + tracing, turn lifecycle and context assembly, no inbound/outbound adapters
 runtime-config   -> contracts + config persistence ports
 sessions         -> contracts + session/storage ports + runtime-config where policy needs it
 memory           -> contracts + memory/storage ports + runtime-config
@@ -50,6 +50,7 @@ golemcore-bot-parent
 - Adapters implement ports; domain/runtime code depends on ports and contracts.
 - New module dependencies must follow the graph above and be covered by architecture tests.
 - `golemcore-bot-app` domain code is grouped by bounded-context package; new production classes must not be added to `me.golemcore.bot.domain.service`.
+- Reusable context assembly (`ContextAssembler`, `PromptComposer`, and the `ContextBuildingSystem` pipeline step) lives in `golemcore-bot-runtime-core`; app owns only concrete context layers and resolver wiring that still depend on app services.
 
 ## App Domain Contexts
 
@@ -58,6 +59,8 @@ The app module keeps only adapter-facing or composition-root domain services tha
 ```text
 domain.auto
 domain.context.compaction
+domain.context.layer
+domain.context.resolution
 domain.dashboard
 domain.model
 domain.planning

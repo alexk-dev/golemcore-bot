@@ -1,6 +1,7 @@
 package me.golemcore.bot.domain.context.compaction;
 
 import me.golemcore.bot.domain.model.ModelSelectionService;
+import me.golemcore.bot.domain.context.SystemPromptBudgetPolicy;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.model.AgentContext;
 import lombok.extern.slf4j.Slf4j;
@@ -13,7 +14,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * and full LLM request preflight.
  */
 @Slf4j
-public class ContextCompactionPolicy {
+public class ContextCompactionPolicy implements SystemPromptBudgetPolicy {
 
     private static final String TRIGGER_MODE_MODEL_RATIO = "model_ratio";
     private static final String TRIGGER_MODE_TOKEN_THRESHOLD = "token_threshold";
@@ -108,6 +109,7 @@ public class ContextCompactionPolicy {
      * layered prompt content from consuming the entire provider request window
      * before conversation history and tool schemas are added.
      */
+    @Override
     public int resolveSystemPromptThreshold(AgentContext context) {
         int fullRequestThreshold = resolveFullRequestThreshold(context);
         if (fullRequestThreshold == Integer.MAX_VALUE) {

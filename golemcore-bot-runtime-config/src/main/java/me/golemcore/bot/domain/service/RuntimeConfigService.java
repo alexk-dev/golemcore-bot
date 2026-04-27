@@ -25,8 +25,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
-import java.util.concurrent.atomic.AtomicReference;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.FallbackModes;
 import me.golemcore.bot.domain.model.ModelTierCatalog;
@@ -230,13 +230,22 @@ public class RuntimeConfigService implements RuntimeConfigQueryPort, RuntimeConf
     private static final boolean DEFAULT_SELF_EVOLVING_READONLY_INSPECTION = true;
     private final RuntimeConfigPersistencePort runtimeConfigPersistencePort;
     private final SelfEvolvingBootstrapOverridePort selfEvolvingBootstrapOverrideService;
-
-    private final AtomicReference<RuntimeConfig> configRef = new AtomicReference<>();
+    private final RuntimeConfigSnapshotProvider snapshotProvider;
+    private final RuntimeConfigMutationService mutationService;
+    private final RuntimeConfigRedactor redactor;
 
     public RuntimeConfigService(RuntimeConfigPersistencePort runtimeConfigPersistencePort,
-            SelfEvolvingBootstrapOverridePort selfEvolvingBootstrapOverrideService) {
-        this.runtimeConfigPersistencePort = runtimeConfigPersistencePort;
-        this.selfEvolvingBootstrapOverrideService = selfEvolvingBootstrapOverrideService;
+            SelfEvolvingBootstrapOverridePort selfEvolvingBootstrapOverrideService,
+            RuntimeConfigSnapshotProvider snapshotProvider,
+            RuntimeConfigMutationService mutationService,
+            RuntimeConfigRedactor redactor) {
+        this.runtimeConfigPersistencePort = Objects.requireNonNull(runtimeConfigPersistencePort,
+                "runtimeConfigPersistencePort must not be null");
+        this.selfEvolvingBootstrapOverrideService = Objects.requireNonNull(selfEvolvingBootstrapOverrideService,
+                "selfEvolvingBootstrapOverrideService must not be null");
+        this.snapshotProvider = Objects.requireNonNull(snapshotProvider, "snapshotProvider must not be null");
+        this.mutationService = Objects.requireNonNull(mutationService, "mutationService must not be null");
+        this.redactor = Objects.requireNonNull(redactor, "redactor must not be null");
     }
 
     // ==================== Section Validation ====================
@@ -259,29 +268,19 @@ public class RuntimeConfigService implements RuntimeConfigQueryPort, RuntimeConf
      * Get current RuntimeConfig (lazy-loaded, cached).
      */
     public RuntimeConfig getRuntimeConfig() {
-        RuntimeConfig current = configRef.get();
-        if (current == null) {
-            synchronized (this) {
-                current = configRef.get();
-                if (current == null) {
-                    current = buildEffectiveRuntimeConfig(loadOrCreate());
-                    configRef.set(current);
-                }
-            }
-        }
-        return current;
+        return snapshotProvider.getOrLoad(() -> buildEffectiveRuntimeConfig(loadOrCreate()));
     }
 
     public RuntimeConfig getRuntimeConfigForApi() {
         RuntimeConfig source = getRuntimeConfig();
         try {
             RuntimeConfig copy = copyRuntimeConfig(source);
-            redactSecrets(copy);
+            redactor.redactSecrets(copy);
             return copy;
         } catch (RuntimeException e) {
             log.warn("[RuntimeConfig] Failed to build redacted runtime config: {}", e.getMessage());
             RuntimeConfig fallback = RuntimeConfig.builder().build();
-            redactSecrets(fallback);
+            redactor.redactSecrets(fallback);
             return fallback;
         }
     }
@@ -305,21 +304,11 @@ public class RuntimeConfigService implements RuntimeConfigQueryPort, RuntimeConf
         clearSelfEvolvingRuntimeMetadata(persistedConfig);
         normalizeRuntimeConfig(persistedConfig);
         RuntimeConfig effectiveConfig = buildEffectiveRuntimeConfig(persistedConfig);
-        RuntimeConfig oldConfig = this.configRef.get();
-        this.configRef.set(effectiveConfig);
-        try {
-            runtimeConfigPersistencePort.persist(persistedConfig);
-        } catch (Exception e) {
-            // Rollback in-memory change on persist failure
-            this.configRef.set(oldConfig);
-            throw e;
-        }
+        mutationService.persist(persistedConfig, effectiveConfig);
     }
 
     public RuntimeConfig reloadRuntimeConfig() {
-        RuntimeConfig reloaded = buildEffectiveRuntimeConfig(loadOrCreate());
-        configRef.set(reloaded);
-        return reloaded;
+        return snapshotProvider.reload(() -> buildEffectiveRuntimeConfig(loadOrCreate()));
     }
 
     public void replaceManagedPolicySections(RuntimeConfig.LlmConfig llmConfig,
@@ -2717,29 +2706,4 @@ public class RuntimeConfigService implements RuntimeConfigQueryPort, RuntimeConf
         return secret;
     }
 
-    private void redactSecrets(RuntimeConfig cfg) {
-        cfg.getTelegram().setToken(Secret.redacted(cfg.getTelegram().getToken()));
-        cfg.getVoice().setApiKey(Secret.redacted(cfg.getVoice().getApiKey()));
-        cfg.getVoice().setWhisperSttApiKey(Secret.redacted(cfg.getVoice().getWhisperSttApiKey()));
-
-        if (cfg.getLlm() != null && cfg.getLlm().getProviders() != null) {
-            for (RuntimeConfig.LlmProviderConfig providerConfig : cfg.getLlm().getProviders().values()) {
-                if (providerConfig != null) {
-                    providerConfig.setApiKey(Secret.redacted(providerConfig.getApiKey()));
-                }
-            }
-        }
-        redactSelfEvolvingEmbeddingsApiKey(cfg);
-    }
-
-    private void redactSelfEvolvingEmbeddingsApiKey(RuntimeConfig cfg) {
-        if (cfg.getSelfEvolving() == null || cfg.getSelfEvolving().getTactics() == null
-                || cfg.getSelfEvolving().getTactics().getSearch() == null
-                || cfg.getSelfEvolving().getTactics().getSearch().getEmbeddings() == null) {
-            return;
-        }
-        RuntimeConfig.SelfEvolvingTacticEmbeddingsConfig embeddings = cfg.getSelfEvolving().getTactics().getSearch()
-                .getEmbeddings();
-        embeddings.setApiKey(Secret.redacted(embeddings.getApiKey()));
-    }
 }

@@ -28,7 +28,7 @@ import me.golemcore.bot.domain.planning.PlanService;
 import me.golemcore.bot.domain.prompt.PromptSectionService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.skills.SkillTemplateEngine;
-import me.golemcore.bot.domain.service.ToolCallExecutionService;
+import me.golemcore.bot.domain.service.ToolRegistryService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.domain.workspace.WorkspaceInstructionService;
 import me.golemcore.bot.port.outbound.McpPort;
@@ -88,11 +88,11 @@ public class ContextLayerConfiguration {
     }
 
     @Bean
-    ToolLayer toolLayer(ToolCallExecutionService toolCallExecutionService,
+    ToolLayer toolLayer(ToolRegistryService toolRegistryService,
             McpPort mcpPort,
             DelayedActionPolicyService delayedActionPolicyService,
             PlanModeToolRestrictionService planModeToolRestrictionService) {
-        return new ToolLayer(toolCallExecutionService, mcpPort, delayedActionPolicyService,
+        return new ToolLayer(toolRegistryService, mcpPort, delayedActionPolicyService,
                 planModeToolRestrictionService);
     }
 

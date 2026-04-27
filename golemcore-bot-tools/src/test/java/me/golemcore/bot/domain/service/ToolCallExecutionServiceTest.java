@@ -18,7 +18,6 @@ import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.Base64;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -50,6 +49,9 @@ class ToolCallExecutionServiceTest {
     private ConfirmationPort confirmationPort;
     private ToolRuntimeSettingsPort settingsPort;
     private ToolArtifactService toolArtifactService;
+    private ToolRegistryService toolRegistryService;
+    private ToolAttachmentExtractor attachmentExtractor;
+    private ToolResultPostProcessor resultPostProcessor;
     private ToolCallExecutionService service;
     private int maxToolResultChars;
 
@@ -82,8 +84,12 @@ class ToolCallExecutionServiceTest {
                 });
         when(toolArtifactService.buildThumbnailBase64(anyString())).thenReturn("thumb-base64");
 
-        service = new ToolCallExecutionService(new ToolRegistryService(List.of(toolComponent)), confirmationPolicy,
-                confirmationPort, settingsPort, toolArtifactService);
+        toolRegistryService = new ToolRegistryService(List.of(toolComponent));
+        attachmentExtractor = new ToolAttachmentExtractor();
+        ToolArtifactPersister artifactPersister = new ToolArtifactPersister(toolArtifactService);
+        resultPostProcessor = new ToolResultPostProcessor(settingsPort);
+        service = new ToolCallExecutionService(toolRegistryService, confirmationPolicy, confirmationPort,
+                attachmentExtractor, artifactPersister, resultPostProcessor);
     }
 
     private ToolRuntimeSettingsPort toolRuntimeSettingsPort() {
@@ -223,49 +229,6 @@ class ToolCallExecutionServiceTest {
         assertTrue(result.toolMessageContent().contains("Error: Something went wrong"));
     }
 
-    // ==================== registerTool / getTool ====================
-
-    @Test
-    void shouldRegisterAndGetTool() {
-        ToolComponent newTool = mock(ToolComponent.class);
-        when(newTool.getToolName()).thenReturn("new_tool");
-
-        service.registerTool(newTool);
-        ToolComponent retrieved = service.getTool("new_tool");
-
-        assertNotNull(retrieved);
-        assertEquals(newTool, retrieved);
-    }
-
-    @Test
-    void shouldReturnNullForUnknownTool() {
-        ToolComponent retrieved = service.getTool("nonexistent");
-        assertNull(retrieved);
-    }
-
-    // ==================== unregisterTools ====================
-
-    @Test
-    void shouldUnregisterTools() {
-        assertNotNull(service.getTool(TOOL_NAME));
-
-        service.unregisterTools(List.of(TOOL_NAME));
-
-        assertNull(service.getTool(TOOL_NAME));
-    }
-
-    @Test
-    void shouldHandleNullInUnregisterTools() {
-        service.unregisterTools(null);
-        assertNotNull(service.getTool(TOOL_NAME));
-    }
-
-    @Test
-    void shouldHandleEmptyCollectionInUnregisterTools() {
-        service.unregisterTools(Collections.emptyList());
-        assertNotNull(service.getTool(TOOL_NAME));
-    }
-
     // ==================== sanitizeToolName ====================
 
     @Test
@@ -275,7 +238,7 @@ class ToolCallExecutionServiceTest {
         when(shellTool.isEnabled()).thenReturn(true);
         ToolResult successResult = ToolResult.success("done");
         when(shellTool.execute(any())).thenReturn(CompletableFuture.completedFuture(successResult));
-        service.registerTool(shellTool);
+        toolRegistryService.registerTool(shellTool);
 
         AgentContext context = buildContext();
         Message.ToolCall toolCall = buildToolCall("shell<|channel|>", Map.of());
@@ -481,7 +444,7 @@ class ToolCallExecutionServiceTest {
         AgentContext context = buildContext();
         ToolResult failureResult = ToolResult.failure("error");
 
-        Attachment attachment = service.extractAttachment(context, failureResult, TOOL_NAME);
+        Attachment attachment = attachmentExtractor.extract(failureResult, TOOL_NAME);
 
         assertNull(attachment);
     }
@@ -490,7 +453,7 @@ class ToolCallExecutionServiceTest {
     void shouldReturnNullAttachmentWhenResultIsNull() {
         AgentContext context = buildContext();
 
-        Attachment attachment = service.extractAttachment(context, null, TOOL_NAME);
+        Attachment attachment = attachmentExtractor.extract(null, TOOL_NAME);
 
         assertNull(attachment);
     }
@@ -500,7 +463,7 @@ class ToolCallExecutionServiceTest {
         AgentContext context = buildContext();
         ToolResult successResult = ToolResult.builder().success(true).output("ok").data("not a map").build();
 
-        Attachment attachment = service.extractAttachment(context, successResult, TOOL_NAME);
+        Attachment attachment = attachmentExtractor.extract(successResult, TOOL_NAME);
 
         assertNull(attachment);
     }
@@ -614,7 +577,7 @@ class ToolCallExecutionServiceTest {
 
     @Test
     void shouldReturnNullWhenTruncatingNullContent() {
-        String result = service.truncateToolResult(null, TOOL_NAME);
+        String result = resultPostProcessor.truncateToolResult(null, TOOL_NAME);
         assertNull(result);
     }
 
@@ -623,7 +586,7 @@ class ToolCallExecutionServiceTest {
         maxToolResultChars = 0;
         String content = "a".repeat(10000);
 
-        String result = service.truncateToolResult(content, TOOL_NAME);
+        String result = resultPostProcessor.truncateToolResult(content, TOOL_NAME);
 
         assertEquals(content, result);
     }

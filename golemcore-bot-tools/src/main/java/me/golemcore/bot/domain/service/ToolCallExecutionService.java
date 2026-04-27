@@ -1,11 +1,7 @@
 package me.golemcore.bot.domain.service;
 
 import lombok.extern.slf4j.Slf4j;
-import java.util.Base64;
-import java.util.Collection;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -18,11 +14,9 @@ import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.Attachment;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.Message;
-import me.golemcore.bot.domain.model.ToolArtifact;
 import me.golemcore.bot.domain.model.ToolFailureKind;
 import me.golemcore.bot.domain.model.ToolResult;
 import me.golemcore.bot.port.outbound.ConfirmationPort;
-import me.golemcore.bot.port.outbound.ToolRuntimeSettingsPort;
 import org.springframework.stereotype.Component;
 
 /**
@@ -35,22 +29,23 @@ import org.springframework.stereotype.Component;
 public class ToolCallExecutionService {
 
     private static final long TOOL_TIMEOUT_SECONDS = 30;
-    private static final int MAX_BASE64_LENGTH = 67_000_000;
 
     private final ToolRegistryService toolRegistryService;
     private final ToolConfirmationPolicy confirmationPolicy;
     private final ConfirmationPort confirmationPort;
-    private final ToolRuntimeSettingsPort settingsPort;
-    private final ToolArtifactService toolArtifactService;
+    private final ToolAttachmentExtractor attachmentExtractor;
+    private final ToolArtifactPersister artifactPersister;
+    private final ToolResultPostProcessor resultPostProcessor;
 
     public ToolCallExecutionService(ToolRegistryService toolRegistryService, ToolConfirmationPolicy confirmationPolicy,
-            ConfirmationPort confirmationPort, ToolRuntimeSettingsPort settingsPort,
-            ToolArtifactService toolArtifactService) {
+            ConfirmationPort confirmationPort, ToolAttachmentExtractor attachmentExtractor,
+            ToolArtifactPersister artifactPersister, ToolResultPostProcessor resultPostProcessor) {
         this.toolRegistryService = Objects.requireNonNull(toolRegistryService, "toolRegistryService must not be null");
         this.confirmationPolicy = Objects.requireNonNull(confirmationPolicy, "confirmationPolicy must not be null");
         this.confirmationPort = Objects.requireNonNull(confirmationPort, "confirmationPort must not be null");
-        this.settingsPort = Objects.requireNonNull(settingsPort, "settingsPort must not be null");
-        this.toolArtifactService = Objects.requireNonNull(toolArtifactService, "toolArtifactService must not be null");
+        this.attachmentExtractor = Objects.requireNonNull(attachmentExtractor, "attachmentExtractor must not be null");
+        this.artifactPersister = Objects.requireNonNull(artifactPersister, "artifactPersister must not be null");
+        this.resultPostProcessor = Objects.requireNonNull(resultPostProcessor, "resultPostProcessor must not be null");
     }
 
     public ToolCallExecutionResult execute(AgentContext context, Message.ToolCall toolCall) {
@@ -67,39 +62,25 @@ public class ToolCallExecutionService {
                 boolean approved = requestConfirmation(safeExecutionContext, toolCall);
                 if (!approved) {
                     ToolResult denied = ToolResult.failure(ToolFailureKind.CONFIRMATION_DENIED, "Cancelled by user");
-                    String content = truncateToolResult("Error: Cancelled by user", toolCall.getName());
+                    String content = resultPostProcessor.truncateToolResult("Error: Cancelled by user",
+                            toolCall.getName());
                     context.addToolResult(toolCall.getId(), denied);
                     return new ToolCallExecutionResult(toolCall.getId(), toolCall.getName(), denied, content, null);
                 }
             }
 
             ToolResult rawResult = executeToolCall(context, toolCall);
-            Attachment attachment = extractAttachment(context, rawResult, toolCall.getName());
-            ToolResult result = enrichToolResult(safeExecutionContext, rawResult, toolCall.getName(), attachment);
+            Attachment attachment = attachmentExtractor.extract(rawResult, toolCall.getName());
+            ToolResult result = artifactPersister.enrich(safeExecutionContext, rawResult, toolCall.getName(),
+                    attachment);
             context.addToolResult(toolCall.getId(), result);
 
-            String content = buildToolMessageContent(result);
-            content = truncateToolResult(content, toolCall.getName());
+            String content = resultPostProcessor.buildToolMessageContent(result);
+            content = resultPostProcessor.truncateToolResult(content, toolCall.getName());
             return new ToolCallExecutionResult(toolCall.getId(), toolCall.getName(), result, content, attachment);
         } finally {
             AgentContextHolder.clear();
         }
-    }
-
-    public void registerTool(ToolComponent tool) {
-        toolRegistryService.registerTool(tool);
-    }
-
-    public void unregisterTools(Collection<String> toolNames) {
-        toolRegistryService.unregisterTools(toolNames);
-    }
-
-    public ToolComponent getTool(String name) {
-        return toolRegistryService.getTool(name);
-    }
-
-    public List<ToolComponent> listTools() {
-        return toolRegistryService.listTools();
     }
 
     private boolean requiresConfirmation(Message.ToolCall toolCall) {
@@ -215,168 +196,4 @@ public class ToolCallExecutionService {
         return sanitized;
     }
 
-    private String buildToolMessageContent(ToolResult result) {
-        if (result == null) {
-            return null;
-        }
-        if (result.isSuccess()) {
-            return result.getOutput();
-        }
-        if (result.getOutput() != null && !result.getOutput().isBlank()) {
-            return result.getOutput();
-        }
-        return "Error: " + result.getError();
-    }
-
-    /**
-     * Truncate tool result content that exceeds the configured max length.
-     */
-    public String truncateToolResult(String content, String toolName) {
-        if (content == null) {
-            return null;
-        }
-        int maxChars = settingsPort.toolExecution().maxToolResultChars();
-        if (maxChars <= 0 || content.length() <= maxChars) {
-            return content;
-        }
-
-        String suffix = "\n\n[OUTPUT TRUNCATED: " + content.length() + " chars total, showing first " + maxChars
-                + " chars. The full result is too large for the context window."
-                + " Try a more specific query, use filtering/pagination, or process the data in smaller chunks.]";
-        int cutPoint = Math.max(0, maxChars - suffix.length());
-        log.warn("[Tools] Truncating '{}' result: {} chars -> ~{} chars", toolName, content.length(),
-                cutPoint + suffix.length());
-        return content.substring(0, cutPoint) + suffix;
-    }
-
-    @SuppressWarnings("unchecked")
-    public Attachment extractAttachment(AgentContext context, ToolResult result, String toolName) {
-        if (result == null || !result.isSuccess() || !(result.getData() instanceof Map<?, ?> dataMap)) {
-            return null;
-        }
-
-        Attachment attachment = null;
-
-        Object attachmentObj = dataMap.get("attachment");
-        if (attachmentObj instanceof Attachment a) {
-            attachment = a;
-        }
-
-        if (attachment == null) {
-            Object screenshotB64 = dataMap.get("screenshot_base64");
-            if (screenshotB64 instanceof String b64) {
-                if (b64.length() > MAX_BASE64_LENGTH) {
-                    log.warn("[Tools] Base64 data too large ({} chars) from '{}', skipping", b64.length(), toolName);
-                } else {
-                    try {
-                        byte[] bytes = Base64.getDecoder().decode(b64);
-                        attachment = Attachment.builder().type(Attachment.Type.IMAGE).data(bytes)
-                                .filename("screenshot.png").mimeType("image/png").build();
-                    } catch (IllegalArgumentException e) {
-                        log.warn("[Tools] Invalid base64 in screenshot from '{}'", toolName);
-                    }
-                }
-            }
-        }
-
-        if (attachment == null) {
-            Object fileBytes = dataMap.get("file_bytes");
-            if (fileBytes instanceof byte[] bytes) {
-                String filename = dataMap.containsKey("filename") ? dataMap.get("filename").toString() : "file";
-                String mimeType = dataMap.containsKey("mime_type") ? dataMap.get("mime_type").toString()
-                        : "application/octet-stream";
-                Attachment.Type type = mimeType.startsWith("image/") ? Attachment.Type.IMAGE : Attachment.Type.DOCUMENT;
-                attachment = Attachment.builder().type(type).data(bytes).filename(filename).mimeType(mimeType).build();
-            }
-        }
-
-        return attachment;
-    }
-
-    @SuppressWarnings("unchecked")
-    private ToolResult enrichToolResult(ToolExecutionContext executionContext, ToolResult result, String toolName,
-            Attachment attachment) {
-        if (result == null) {
-            return null;
-        }
-
-        Map<String, Object> dataMap = null;
-        boolean mutated = false;
-        if (result.getData() instanceof Map<?, ?> rawMap) {
-            dataMap = new LinkedHashMap<>((Map<String, Object>) rawMap);
-            mutated = stripBinaryPayload(dataMap) || mutated;
-        }
-
-        ToolArtifact storedFile = null;
-        if (attachment != null) {
-            try {
-                storedFile = toolArtifactService.saveArtifact(resolveSessionId(executionContext), toolName,
-                        attachment.getFilename(), attachment.getData(), attachment.getMimeType());
-            } catch (RuntimeException ex) {
-                log.warn("[Tools] Failed to persist attachment for '{}': {}", toolName, ex.getMessage());
-            }
-        }
-
-        String output = result.getOutput();
-        if (storedFile != null) {
-            attachment.setDownloadUrl(storedFile.getDownloadUrl());
-            attachment.setInternalFilePath(storedFile.getPath());
-            attachment.setFilename(storedFile.getFilename());
-            attachment.setMimeType(storedFile.getMimeType());
-            if (attachment.getType() == Attachment.Type.IMAGE) {
-                attachment.setThumbnailBase64(toolArtifactService.buildThumbnailBase64(storedFile.getPath()));
-            }
-            if (dataMap == null) {
-                dataMap = new LinkedHashMap<>();
-            }
-            dataMap.put("internal_file_path", storedFile.getPath());
-            dataMap.put("internal_file_url", storedFile.getDownloadUrl());
-            dataMap.put("internal_file_name", storedFile.getFilename());
-            dataMap.put("internal_file_mime_type", storedFile.getMimeType());
-            dataMap.put("internal_file_size", storedFile.getSize());
-            if (attachment.getType() != null) {
-                dataMap.put("internal_file_kind", attachment.getType().name().toLowerCase(Locale.ROOT));
-            }
-            if (attachment.getThumbnailBase64() != null && !attachment.getThumbnailBase64().isBlank()) {
-                dataMap.put("internal_file_thumbnail_base64", attachment.getThumbnailBase64());
-            }
-            output = appendInternalFileLink(output, storedFile);
-            mutated = true;
-        }
-
-        if (!mutated) {
-            return result;
-        }
-
-        return ToolResult.builder().success(result.isSuccess()).output(output).data(dataMap).error(result.getError())
-                .failureKind(result.getFailureKind()).build();
-    }
-
-    private boolean stripBinaryPayload(Map<String, Object> dataMap) {
-        boolean mutated = false;
-        mutated = dataMap.remove("attachment") != null || mutated;
-        mutated = dataMap.remove("screenshot_base64") != null || mutated;
-        mutated = dataMap.remove("file_bytes") != null || mutated;
-        return mutated;
-    }
-
-    private String resolveSessionId(ToolExecutionContext executionContext) {
-        if (executionContext == null || executionContext.sessionId() == null
-                || executionContext.sessionId().isBlank()) {
-            return "session";
-        }
-        return executionContext.sessionId();
-    }
-
-    private String appendInternalFileLink(String output, ToolArtifact storedFile) {
-        String linkBlock = "Internal file: [" + storedFile.getFilename() + "](" + storedFile.getDownloadUrl() + ")\n"
-                + "Workspace path: `" + storedFile.getPath() + "`";
-        if (output == null || output.isBlank()) {
-            return linkBlock;
-        }
-        if (output.contains(storedFile.getDownloadUrl())) {
-            return output;
-        }
-        return output + "\n\n" + linkBlock;
-    }
 }

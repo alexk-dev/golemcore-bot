@@ -34,6 +34,7 @@ class RuntimeConfigServiceTest {
 
     private StoragePort storagePort;
     private RuntimeConfigService service;
+    private RuntimeConfigSnapshotProvider snapshotProvider;
     private ObjectMapper objectMapper;
     /** Per-file storage for modular config sections */
     private Map<String, String> persistedSections;
@@ -57,8 +58,11 @@ class RuntimeConfigServiceTest {
             return CompletableFuture.completedFuture(persistedSections.get(fileName));
         });
 
-        service = new RuntimeConfigService(new StorageRuntimeConfigPersistenceAdapter(storagePort),
-                RuntimeConfigTestOverrides.noop());
+        StorageRuntimeConfigPersistenceAdapter persistenceAdapter = new StorageRuntimeConfigPersistenceAdapter(
+                storagePort);
+        snapshotProvider = new RuntimeConfigSnapshotProvider();
+        service = new RuntimeConfigService(persistenceAdapter, RuntimeConfigTestOverrides.noop(), snapshotProvider,
+                new RuntimeConfigMutationService(persistenceAdapter, snapshotProvider), new RuntimeConfigRedactor());
         objectMapper = new ObjectMapper();
         objectMapper.registerModule(new JavaTimeModule());
     }
@@ -2326,13 +2330,8 @@ class RuntimeConfigServiceTest {
         assertTrue(service.isSkillsProgressiveLoadingEnabled());
     }
 
-    @SuppressWarnings({ "PMD.AvoidAccessibilityAlteration", "unchecked" })
-    private void setCachedConfig(RuntimeConfig config) throws Exception {
-        java.lang.reflect.Field field = RuntimeConfigService.class.getDeclaredField("configRef");
-        field.setAccessible(true);
-        java.util.concurrent.atomic.AtomicReference<RuntimeConfig> ref = (java.util.concurrent.atomic.AtomicReference<RuntimeConfig>) field
-                .get(service);
-        ref.set(config);
+    private void setCachedConfig(RuntimeConfig config) {
+        snapshotProvider.replace(config);
     }
 
     @SuppressWarnings("unchecked")

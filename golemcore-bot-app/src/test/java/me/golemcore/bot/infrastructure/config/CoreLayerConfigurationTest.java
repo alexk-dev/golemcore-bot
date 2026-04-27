@@ -27,7 +27,7 @@ import me.golemcore.bot.domain.prompt.PromptSectionService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.scheduling.ScheduleService;
 import me.golemcore.bot.domain.skills.SkillTemplateEngine;
-import me.golemcore.bot.domain.service.ToolCallExecutionService;
+import me.golemcore.bot.domain.service.ToolRegistryService;
 import me.golemcore.bot.domain.service.TraceService;
 import me.golemcore.bot.domain.update.UpdateActivityGate;
 import me.golemcore.bot.domain.update.UpdateMaintenanceWindow;
@@ -135,7 +135,7 @@ class CoreLayerConfigurationTest {
                 mock(SkillComponent.class),
                 mock(SkillTemplateEngine.class)));
         assertNotNull(contextLayerConfiguration.toolLayer(
-                mock(ToolCallExecutionService.class),
+                mock(ToolRegistryService.class),
                 mock(McpPort.class),
                 mock(DelayedActionPolicyService.class),
                 mock(PlanModeToolRestrictionService.class)));

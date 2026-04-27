@@ -19,11 +19,8 @@ package me.golemcore.bot.domain.context;
  */
 
 import lombok.extern.slf4j.Slf4j;
-import me.golemcore.bot.domain.context.resolution.SkillResolver;
-import me.golemcore.bot.domain.context.resolution.TierResolver;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.ContextAttributes;
-import me.golemcore.bot.domain.context.compaction.ContextCompactionPolicy;
 
 import java.util.Comparator;
 import java.util.List;
@@ -42,8 +39,8 @@ import java.util.List;
  * <h2>Assembly Pipeline</h2>
  *
  * <pre>
- * 1. Resolve active skill       ({@link SkillResolver})
- * 2. Resolve model tier          ({@link TierResolver})
+ * 1. Resolve active skill       ({@link ContextResolver})
+ * 2. Resolve model tier          ({@link ContextResolver})
  * 3. Collect context layers      (each {@link ContextLayer#assemble})
  * 4. Compose system prompt       ({@link PromptComposer})
  * 5. Publish metadata            ({@link ContextAttributes})
@@ -65,29 +62,22 @@ import java.util.List;
 @Slf4j
 public class ContextAssembler {
 
-    private final SkillResolver skillResolver;
-    private final TierResolver tierResolver;
+    private final ContextResolver skillResolver;
+    private final ContextResolver tierResolver;
     private final List<ContextLayer> layers;
     private final PromptComposer promptComposer;
-    private final ContextCompactionPolicy contextCompactionPolicy;
+    private final SystemPromptBudgetPolicy systemPromptBudgetPolicy;
 
-    public ContextAssembler(SkillResolver skillResolver,
-            TierResolver tierResolver,
-            List<ContextLayer> layers,
-            PromptComposer promptComposer) {
-        this(skillResolver, tierResolver, layers, promptComposer, null);
-    }
-
-    public ContextAssembler(SkillResolver skillResolver,
-            TierResolver tierResolver,
+    public ContextAssembler(ContextResolver skillResolver,
+            ContextResolver tierResolver,
             List<ContextLayer> layers,
             PromptComposer promptComposer,
-            ContextCompactionPolicy contextCompactionPolicy) {
+            SystemPromptBudgetPolicy systemPromptBudgetPolicy) {
         this.skillResolver = skillResolver;
         this.tierResolver = tierResolver;
         this.layers = layers;
         this.promptComposer = promptComposer;
-        this.contextCompactionPolicy = contextCompactionPolicy;
+        this.systemPromptBudgetPolicy = systemPromptBudgetPolicy;
     }
 
     /**
@@ -167,9 +157,9 @@ public class ContextAssembler {
     }
 
     private int resolvePromptBudget(AgentContext context) {
-        if (contextCompactionPolicy == null) {
+        if (systemPromptBudgetPolicy == null) {
             return Integer.MAX_VALUE;
         }
-        return contextCompactionPolicy.resolveSystemPromptThreshold(context);
+        return systemPromptBudgetPolicy.resolveSystemPromptThreshold(context);
     }
 }
