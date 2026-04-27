@@ -78,7 +78,7 @@ public class WorkspacePathService {
 
     public String resolveMimeType(Path path, String requestedMimeType) {
         if (requestedMimeType != null && !requestedMimeType.isBlank()) {
-            return requestedMimeType;
+            return requestedMimeType.trim();
         }
         try {
             String detected = workspaceFilePort.probeContentType(path);

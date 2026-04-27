@@ -12,6 +12,21 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 class TraceNamingSupportTest {
 
     @Test
+    void shouldReturnGoalTraceNameForNullOrGoalSchedule() {
+        assertEquals("auto.schedule.goal", TraceNamingSupport.autoSchedule(null));
+        assertEquals("auto.schedule.goal", TraceNamingSupport
+                .autoSchedule(ScheduleEntry.builder().type(ScheduleEntry.ScheduleType.GOAL).targetId("goal-1").build()));
+    }
+
+    @Test
+    void shouldReturnTaskTraceNameForTaskSchedule() {
+        ScheduleEntry schedule = ScheduleEntry.builder().type(ScheduleEntry.ScheduleType.TASK).targetId("task-1")
+                .build();
+
+        assertEquals("auto.schedule.task", TraceNamingSupport.autoSchedule(schedule));
+    }
+
+    @Test
     void shouldReturnFollowThroughTraceNameForInternalFollowThroughMessage() {
         Message message = Message.builder().channelType("telegram").chatId("chat-1")
                 .metadata(Map.of(ContextAttributes.MESSAGE_INTERNAL_KIND,
@@ -38,6 +53,36 @@ class TraceNamingSupportTest {
                 .build();
 
         assertEquals(TraceNamingSupport.DELAYED_ACTION, TraceNamingSupport.inboundMessage(message));
+    }
+
+    @Test
+    void shouldReturnAutoContinueTraceNameForInternalAutoContinueMessage() {
+        Message message = Message.builder().channelType("telegram").chatId("chat-1").metadata(
+                Map.of(ContextAttributes.MESSAGE_INTERNAL_KIND, ContextAttributes.MESSAGE_INTERNAL_KIND_AUTO_CONTINUE))
+                .build();
+
+        assertEquals(TraceNamingSupport.INTERNAL_AUTO_CONTINUE, TraceNamingSupport.inboundMessage(message));
+    }
+
+    @Test
+    void shouldPreferExplicitTraceNameFromMetadata() {
+        Message message = Message.builder().channelType("telegram").chatId("chat-1")
+                .metadata(Map.of(ContextAttributes.TRACE_NAME, "custom.trace")).build();
+
+        assertEquals("custom.trace", TraceNamingSupport.inboundMessage(message));
+    }
+
+    @Test
+    void shouldFallbackToMessageWhenMessageOrChannelIsMissing() {
+        assertEquals("message", TraceNamingSupport.inboundMessage(null));
+        assertEquals("message", TraceNamingSupport.inboundMessage(Message.builder().channelType(" ").build()));
+    }
+
+    @Test
+    void shouldBuildChannelMessageNameUsingLowercaseChannelType() {
+        Message message = Message.builder().channelType("WebHook").chatId("chat-1").metadata(Map.of()).build();
+
+        assertEquals("webhook.message", TraceNamingSupport.inboundMessage(message));
     }
 
     @Test

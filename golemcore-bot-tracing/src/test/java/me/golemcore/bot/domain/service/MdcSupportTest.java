@@ -19,12 +19,75 @@ import java.util.concurrent.atomic.AtomicReference;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class MdcSupportTest {
 
     @AfterEach
     void clearMdc() {
         MDC.clear();
+    }
+
+    @Test
+    void captureReturnsEmptyMapWhenMdcIsEmpty() {
+        assertTrue(MdcSupport.capture().isEmpty());
+    }
+
+    @Test
+    void captureReturnsDefensiveCopyOfCurrentMdc() {
+        MDC.put("trace", "trace-copy");
+
+        Map<String, String> captured = MdcSupport.capture();
+        MDC.put("trace", "trace-mutated");
+
+        assertEquals("trace-copy", captured.get("trace"));
+        assertEquals("trace-mutated", MDC.get("trace"));
+    }
+
+    @Test
+    void withContextMergesContextAndRestoresPreviousValues() {
+        MDC.put("trace", "trace-before");
+        MDC.put("span", "span-before");
+
+        try (MdcSupport.Scope ignored = MdcSupport.withContext(Map.of("span", "span-current", "run", "run-1"))) {
+            assertEquals("trace-before", MDC.get("trace"));
+            assertEquals("span-current", MDC.get("span"));
+            assertEquals("run-1", MDC.get("run"));
+        }
+
+        assertEquals("trace-before", MDC.get("trace"));
+        assertEquals("span-before", MDC.get("span"));
+        assertNull(MDC.get("run"));
+    }
+
+    @Test
+    void restoreClearsMdcWhenContextIsNullOrEmpty() {
+        MDC.put("trace", "trace-clear");
+
+        MdcSupport.restore(null);
+
+        assertNull(MDC.get("trace"));
+
+        MDC.put("span", "span-clear");
+
+        MdcSupport.restore(Map.of());
+
+        assertNull(MDC.get("span"));
+    }
+
+    @Test
+    void runWithContextRestoresPreviousValuesAfterFailure() {
+        MDC.put("trace", "trace-before");
+
+        IllegalStateException exception = assertThrows(IllegalStateException.class,
+                () -> MdcSupport.runWithContext(Map.of("trace", "trace-current"), () -> {
+                    assertEquals("trace-current", MDC.get("trace"));
+                    throw new IllegalStateException("boom");
+                }));
+
+        assertEquals("boom", exception.getMessage());
+        assertEquals("trace-before", MDC.get("trace"));
     }
 
     @Test
