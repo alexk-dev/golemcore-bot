@@ -236,8 +236,7 @@ public class RuntimeConfigService implements RuntimeConfigQueryPort, RuntimeConf
 
     public RuntimeConfigService(RuntimeConfigPersistencePort runtimeConfigPersistencePort,
             SelfEvolvingBootstrapOverridePort selfEvolvingBootstrapOverrideService,
-            RuntimeConfigSnapshotProvider snapshotProvider,
-            RuntimeConfigMutationService mutationService,
+            RuntimeConfigSnapshotProvider snapshotProvider, RuntimeConfigMutationService mutationService,
             RuntimeConfigRedactor redactor) {
         this.runtimeConfigPersistencePort = Objects.requireNonNull(runtimeConfigPersistencePort,
                 "runtimeConfigPersistencePort must not be null");

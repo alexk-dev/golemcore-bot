@@ -25,8 +25,7 @@ class ContextBuildingSystemTest {
     @Test
     void shouldDelegateToContextAssembler() {
         AgentContext context = AgentContext.builder()
-                .session(AgentSession.builder().id("session-1").chatId("chat-1").build())
-                .build();
+                .session(AgentSession.builder().id("session-1").chatId("chat-1").build()).build();
         when(assembler.assemble(context)).thenReturn(context);
 
         AgentContext result = system.process(context);
@@ -38,8 +37,7 @@ class ContextBuildingSystemTest {
     @Test
     void shouldReturnNullWhenAssemblerReturnsNull() {
         AgentContext context = AgentContext.builder()
-                .session(AgentSession.builder().id("session-2").chatId("chat-2").build())
-                .build();
+                .session(AgentSession.builder().id("session-2").chatId("chat-2").build()).build();
         when(assembler.assemble(context)).thenReturn(null);
 
         AgentContext result = system.process(context);

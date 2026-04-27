@@ -24,8 +24,8 @@ public class SessionRepository {
 
     public Optional<AgentSession> load(String sessionId) {
         try {
-            byte[] bytes = storagePort.getObject(SessionIdFactory.SESSIONS_DIR,
-                    sessionIdFactory.storageFileName(sessionId)).join();
+            byte[] bytes = storagePort
+                    .getObject(SessionIdFactory.SESSIONS_DIR, sessionIdFactory.storageFileName(sessionId)).join();
             if (bytes != null && bytes.length > 0) {
                 AgentSession loaded = sessionRecordCodecPort.decode(bytes);
                 sessionIdFactory.enrichSessionFields(loaded, sessionIdFactory.storageFileName(sessionId));
@@ -43,8 +43,9 @@ public class SessionRepository {
     public void save(AgentSession session) {
         try {
             byte[] proto = sessionRecordCodecPort.encode(session);
-            storagePort.putObject(SessionIdFactory.SESSIONS_DIR, sessionIdFactory.storageFileName(session.getId()),
-                    proto).join();
+            storagePort
+                    .putObject(SessionIdFactory.SESSIONS_DIR, sessionIdFactory.storageFileName(session.getId()), proto)
+                    .join();
             log.debug("Saved session: {}", session.getId());
         } catch (Exception e) {
             log.error("Failed to save session: {}", session.getId(), e);

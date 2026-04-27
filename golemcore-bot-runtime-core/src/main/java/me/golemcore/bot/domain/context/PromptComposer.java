@@ -30,16 +30,12 @@ import java.util.Set;
 
 /**
  * Composes a {@link ContextBlueprint} into the final system prompt string.
- *
  * <p>
- * The composer iterates over all {@link ContextLayerResult results} in the
- * blueprint that carry non-blank content, joining them with double newlines.
- * The result is a trimmed, ready-to-send system prompt.
- *
+ * The composer iterates over all {@link ContextLayerResult results} in the blueprint that carry non-blank content,
+ * joining them with double newlines. The result is a trimmed, ready-to-send system prompt.
  * <p>
- * If no layers contribute content, a minimal fallback prompt is used to ensure
- * the LLM always receives a system instruction.
- *
+ * If no layers contribute content, a minimal fallback prompt is used to ensure the LLM always receives a system
+ * instruction.
  * <h2>Example</h2>
  *
  * <pre>
@@ -58,14 +54,13 @@ public class PromptComposer {
 
     /**
      * Composes the final system prompt from the given blueprint.
-     *
      * <p>
-     * Iterates over all results with content in blueprint order, joins them with
-     * double newlines, and trims the result. If no layers contributed content,
-     * returns a minimal fallback prompt.
+     * Iterates over all results with content in blueprint order, joins them with double newlines, and trims the result.
+     * If no layers contributed content, returns a minimal fallback prompt.
      *
      * @param blueprint
      *            the assembled context blueprint
+     *
      * @return the composed system prompt, never {@code null} or blank
      */
     public String compose(ContextBlueprint blueprint) {
@@ -74,16 +69,15 @@ public class PromptComposer {
 
     /**
      * Composes the final system prompt while enforcing a global token budget.
-     *
      * <p>
-     * Required layers are always included. Optional layers are selected by priority
-     * and per-layer budget first, then rendered back in blueprint order so prompt
-     * structure remains stable.
+     * Required layers are always included. Optional layers are selected by priority and per-layer budget first, then
+     * rendered back in blueprint order so prompt structure remains stable.
      *
      * @param blueprint
      *            the assembled context blueprint
      * @param maxPromptTokens
      *            global system-prompt token cap; non-positive values mean unlimited
+     *
      * @return the composed system prompt, never {@code null} or blank
      */
     public String compose(ContextBlueprint blueprint, int maxPromptTokens) {
@@ -99,8 +93,8 @@ public class PromptComposer {
 
         List<ContextLayerResult> selectedResults = selectResults(contentResults, maxPromptTokens);
         String prompt = renderWithinBudget(selectedResults, maxPromptTokens);
-        log.debug("[PromptComposer] Composed prompt from {} of {} layers, {} chars",
-                selectedResults.size(), contentResults.size(), prompt.length());
+        log.debug("[PromptComposer] Composed prompt from {} of {} layers, {} chars", selectedResults.size(),
+                contentResults.size(), prompt.length());
         return prompt;
     }
 
@@ -125,9 +119,7 @@ public class PromptComposer {
                 optionalResults.add(result);
             }
         }
-        optionalResults.sort(Comparator
-                .comparingInt(ContextLayerResult::getPriority)
-                .reversed());
+        optionalResults.sort(Comparator.comparingInt(ContextLayerResult::getPriority).reversed());
 
         for (ContextLayerResult result : optionalResults) {
             int tokens = positiveTokens(result);
@@ -216,8 +208,8 @@ public class PromptComposer {
         }
         if (TokenEstimator.estimate(prompt) > maxPromptTokens) {
             if (selectedResults.stream().anyMatch(this::isUntrimmable)) {
-                throw new IllegalStateException("Pinned untrimmable prompt layers exceed system prompt budget "
-                        + maxPromptTokens);
+                throw new IllegalStateException(
+                        "Pinned untrimmable prompt layers exceed system prompt budget " + maxPromptTokens);
             }
             return trimToTokenBudget(prompt, maxPromptTokens, "prompt");
         }
@@ -279,19 +271,18 @@ public class PromptComposer {
     }
 
     private boolean mustSelect(ContextLayerResult result) {
-        return result != null
-                && (result.isRequired() || result.getCriticality() != LayerCriticality.OPTIONAL);
+        return result != null && (result.isRequired() || result.getCriticality() != LayerCriticality.OPTIONAL);
     }
 
     private boolean isUntrimmable(ContextLayerResult result) {
         return result != null && result.getCriticality() == LayerCriticality.PINNED_UNTRIMMABLE;
     }
 
-    private IllegalStateException promptBudgetExceeded(ContextLayerResult result,
-            int maxPromptTokens, int remainingTokens) {
+    private IllegalStateException promptBudgetExceeded(ContextLayerResult result, int maxPromptTokens,
+            int remainingTokens) {
         return new IllegalStateException("Pinned untrimmable context layer '" + safeLayerName(result.getLayerName())
-                + "' exceeds system prompt budget " + maxPromptTokens
-                + " with remaining budget " + Math.max(0, remainingTokens));
+                + "' exceeds system prompt budget " + maxPromptTokens + " with remaining budget "
+                + Math.max(0, remainingTokens));
     }
 
     private int normalizeLayerBudget(int tokenBudget) {

@@ -15,10 +15,8 @@ class PromptComposerTest {
     @Test
     void shouldJoinLayerContentWithDoubleNewlines() {
         ContextBlueprint blueprint = ContextBlueprint.create();
-        blueprint.add(ContextLayerResult.builder()
-                .layerName("identity").content("# Identity\nYou are Bot.").build());
-        blueprint.add(ContextLayerResult.builder()
-                .layerName("memory").content("# Memory\nUser prefers Java.").build());
+        blueprint.add(ContextLayerResult.builder().layerName("identity").content("# Identity\nYou are Bot.").build());
+        blueprint.add(ContextLayerResult.builder().layerName("memory").content("# Memory\nUser prefers Java.").build());
 
         String result = composer.compose(blueprint);
 
@@ -30,11 +28,9 @@ class PromptComposerTest {
     @Test
     void shouldSkipEmptyLayerResults() {
         ContextBlueprint blueprint = ContextBlueprint.create();
-        blueprint.add(ContextLayerResult.builder()
-                .layerName("identity").content("# Identity").build());
+        blueprint.add(ContextLayerResult.builder().layerName("identity").content("# Identity").build());
         blueprint.add(ContextLayerResult.empty("memory"));
-        blueprint.add(ContextLayerResult.builder()
-                .layerName("tools").content("# Tools").build());
+        blueprint.add(ContextLayerResult.builder().layerName("tools").content("# Tools").build());
 
         String result = composer.compose(blueprint);
 
@@ -62,8 +58,7 @@ class PromptComposerTest {
     @Test
     void shouldTrimWhitespace() {
         ContextBlueprint blueprint = ContextBlueprint.create();
-        blueprint.add(ContextLayerResult.builder()
-                .layerName("test").content("  content  ").build());
+        blueprint.add(ContextLayerResult.builder().layerName("test").content("  content  ").build());
 
         String result = composer.compose(blueprint);
         assertEquals("content", result);
@@ -72,25 +67,12 @@ class PromptComposerTest {
     @Test
     void shouldKeepRequiredAndHigherPriorityOptionalLayersWithinBudget() {
         ContextBlueprint blueprint = ContextBlueprint.create();
-        blueprint.add(ContextLayerResult.builder()
-                .layerName("identity")
-                .content("# Identity")
-                .estimatedTokens(200)
-                .required(true)
-                .priority(100)
-                .build());
-        blueprint.add(ContextLayerResult.builder()
-                .layerName("memory")
-                .content("# Memory")
-                .estimatedTokens(500)
-                .priority(40)
-                .build());
-        blueprint.add(ContextLayerResult.builder()
-                .layerName("tool")
-                .content("# Tools")
-                .estimatedTokens(300)
-                .priority(70)
-                .build());
+        blueprint.add(ContextLayerResult.builder().layerName("identity").content("# Identity").estimatedTokens(200)
+                .required(true).priority(100).build());
+        blueprint.add(ContextLayerResult.builder().layerName("memory").content("# Memory").estimatedTokens(500)
+                .priority(40).build());
+        blueprint.add(ContextLayerResult.builder().layerName("tool").content("# Tools").estimatedTokens(300)
+                .priority(70).build());
 
         String result = composer.compose(blueprint, 500);
 
@@ -104,20 +86,10 @@ class PromptComposerTest {
     @Test
     void shouldDropOptionalLayerThatExceedsItsOwnBudget() {
         ContextBlueprint blueprint = ContextBlueprint.create();
-        blueprint.add(ContextLayerResult.builder()
-                .layerName("identity")
-                .content("# Identity")
-                .estimatedTokens(100)
-                .required(true)
-                .priority(100)
-                .build());
-        blueprint.add(ContextLayerResult.builder()
-                .layerName("rag")
-                .content("# Relevant Memory")
-                .estimatedTokens(600)
-                .priority(90)
-                .tokenBudget(300)
-                .build());
+        blueprint.add(ContextLayerResult.builder().layerName("identity").content("# Identity").estimatedTokens(100)
+                .required(true).priority(100).build());
+        blueprint.add(ContextLayerResult.builder().layerName("rag").content("# Relevant Memory").estimatedTokens(600)
+                .priority(90).tokenBudget(300).build());
 
         String result = composer.compose(blueprint, 1_000);
 
@@ -128,19 +100,10 @@ class PromptComposerTest {
     @Test
     void shouldKeepRequiredLayerEvenWhenItExceedsGlobalBudget() {
         ContextBlueprint blueprint = ContextBlueprint.create();
-        blueprint.add(ContextLayerResult.builder()
-                .layerName("identity")
-                .content("# Identity")
-                .estimatedTokens(2_000)
-                .required(true)
-                .priority(100)
-                .build());
-        blueprint.add(ContextLayerResult.builder()
-                .layerName("memory")
-                .content("# Memory")
-                .estimatedTokens(10)
-                .priority(40)
-                .build());
+        blueprint.add(ContextLayerResult.builder().layerName("identity").content("# Identity").estimatedTokens(2_000)
+                .required(true).priority(100).build());
+        blueprint.add(ContextLayerResult.builder().layerName("memory").content("# Memory").estimatedTokens(10)
+                .priority(40).build());
 
         String result = composer.compose(blueprint, 100);
 
@@ -151,13 +114,9 @@ class PromptComposerTest {
     @Test
     void shouldTruncateRequiredLayerToEnforceHardBudget() {
         ContextBlueprint blueprint = ContextBlueprint.create();
-        blueprint.add(ContextLayerResult.builder()
-                .layerName("identity")
-                .content("# Identity\n" + "required ".repeat(2_000))
-                .estimatedTokens(2_000)
-                .required(true)
-                .priority(100)
-                .build());
+        blueprint.add(
+                ContextLayerResult.builder().layerName("identity").content("# Identity\n" + "required ".repeat(2_000))
+                        .estimatedTokens(2_000).required(true).priority(100).build());
 
         String result = composer.compose(blueprint, 120);
 
@@ -168,17 +127,11 @@ class PromptComposerTest {
     @Test
     void shouldFailFastWhenPinnedUntrimmableLayerExceedsHardBudget() {
         ContextBlueprint blueprint = ContextBlueprint.create();
-        blueprint.add(ContextLayerResult.builder()
-                .layerName("identity")
-                .content("# Identity\n" + "invariant ".repeat(2_000))
-                .estimatedTokens(2_000)
-                .required(true)
-                .priority(100)
-                .criticality(LayerCriticality.PINNED_UNTRIMMABLE)
-                .build());
+        blueprint.add(ContextLayerResult.builder().layerName("identity")
+                .content("# Identity\n" + "invariant ".repeat(2_000)).estimatedTokens(2_000).required(true)
+                .priority(100).criticality(LayerCriticality.PINNED_UNTRIMMABLE).build());
 
-        IllegalStateException error = assertThrows(IllegalStateException.class,
-                () -> composer.compose(blueprint, 120));
+        IllegalStateException error = assertThrows(IllegalStateException.class, () -> composer.compose(blueprint, 120));
 
         assertTrue(error.getMessage().contains("Pinned untrimmable context layer 'identity'"));
     }
@@ -193,13 +146,8 @@ class PromptComposerTest {
     @Test
     void shouldKeepHighestPriorityLayerWhenBudgetSelectionWouldOtherwiseBeEmpty() {
         ContextBlueprint blueprint = ContextBlueprint.create();
-        blueprint.add(ContextLayerResult.builder()
-                .layerName("optional")
-                .content("optional ".repeat(1_000))
-                .estimatedTokens(1_000)
-                .priority(10)
-                .tokenBudget(20)
-                .build());
+        blueprint.add(ContextLayerResult.builder().layerName("optional").content("optional ".repeat(1_000))
+                .estimatedTokens(1_000).priority(10).tokenBudget(20).build());
 
         String result = composer.compose(blueprint, 12);
 
@@ -210,22 +158,12 @@ class PromptComposerTest {
     @Test
     void shouldFailWhenLaterPinnedLayerHasNoRemainingBudget() {
         ContextBlueprint blueprint = ContextBlueprint.create();
-        blueprint.add(ContextLayerResult.builder()
-                .layerName("required")
-                .content("required ".repeat(80))
-                .estimatedTokens(80)
-                .required(true)
-                .criticality(LayerCriticality.REQUIRED_COMPRESSIBLE)
-                .build());
-        blueprint.add(ContextLayerResult.builder()
-                .layerName(null)
-                .content("# Protocol")
-                .estimatedTokens(10)
-                .criticality(LayerCriticality.PINNED_UNTRIMMABLE)
-                .build());
+        blueprint.add(ContextLayerResult.builder().layerName("required").content("required ".repeat(80))
+                .estimatedTokens(80).required(true).criticality(LayerCriticality.REQUIRED_COMPRESSIBLE).build());
+        blueprint.add(ContextLayerResult.builder().layerName(null).content("# Protocol").estimatedTokens(10)
+                .criticality(LayerCriticality.PINNED_UNTRIMMABLE).build());
 
-        IllegalStateException error = assertThrows(IllegalStateException.class,
-                () -> composer.compose(blueprint, 20));
+        IllegalStateException error = assertThrows(IllegalStateException.class, () -> composer.compose(blueprint, 20));
 
         assertTrue(error.getMessage().contains("unknown"));
     }

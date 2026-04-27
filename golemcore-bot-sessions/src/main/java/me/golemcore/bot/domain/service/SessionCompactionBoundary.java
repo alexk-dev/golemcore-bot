@@ -51,8 +51,8 @@ public class SessionCompactionBoundary {
         messages.add(summaryMessage);
         messages.addAll(kept);
         saveSession.accept(session);
-        log.info("Compacted session {} with summary: removed {} messages, kept {} + summary", session.getId(),
-                toRemove, kept.size());
+        log.info("Compacted session {} with summary: removed {} messages, kept {} + summary", session.getId(), toRemove,
+                kept.size());
         return toRemove;
     }
 

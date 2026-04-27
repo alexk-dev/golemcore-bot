@@ -44,8 +44,8 @@ class RuntimeConfigMutationServiceTest {
         }
 
         @Override
-        public <T> T loadSection(RuntimeConfig.ConfigSection section, Class<T> configClass,
-                Supplier<T> defaultSupplier, boolean persistDefault) {
+        public <T> T loadSection(RuntimeConfig.ConfigSection section, Class<T> configClass, Supplier<T> defaultSupplier,
+                boolean persistDefault) {
             throw new UnsupportedOperationException();
         }
     }

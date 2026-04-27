@@ -33,8 +33,8 @@ class ContextAssemblerTest {
     void shouldInvokeResolversBeforeLayers() {
         ContextLayer layer = stubLayer("test", 10, true, "test content");
 
-        ContextAssembler assembler = new ContextAssembler(
-                skillResolver, tierResolver, List.of(layer), promptComposer, null);
+        ContextAssembler assembler = new ContextAssembler(skillResolver, tierResolver, List.of(layer), promptComposer,
+                null);
 
         AgentContext context = AgentContext.builder().build();
         assembler.assemble(context);
@@ -48,8 +48,8 @@ class ContextAssemblerTest {
         ContextLayer layerB = stubLayer("second", 20, true, "# Second");
         ContextLayer layerA = stubLayer("first", 10, true, "# First");
 
-        ContextAssembler assembler = new ContextAssembler(
-                skillResolver, tierResolver, List.of(layerB, layerA), promptComposer, null);
+        ContextAssembler assembler = new ContextAssembler(skillResolver, tierResolver, List.of(layerB, layerA),
+                promptComposer, null);
 
         AgentContext context = AgentContext.builder().build();
         assembler.assemble(context);
@@ -64,8 +64,8 @@ class ContextAssemblerTest {
         ContextLayer applicable = stubLayer("yes", 10, true, "included");
         ContextLayer skipped = stubLayer("no", 20, false, "excluded");
 
-        ContextAssembler assembler = new ContextAssembler(
-                skillResolver, tierResolver, List.of(applicable, skipped), promptComposer, null);
+        ContextAssembler assembler = new ContextAssembler(skillResolver, tierResolver, List.of(applicable, skipped),
+                promptComposer, null);
 
         AgentContext context = AgentContext.builder().build();
         assembler.assemble(context);
@@ -84,8 +84,8 @@ class ContextAssemblerTest {
 
         ContextLayer healthy = stubLayer("ok", 20, true, "healthy content");
 
-        ContextAssembler assembler = new ContextAssembler(
-                skillResolver, tierResolver, List.of(failing, healthy), promptComposer, null);
+        ContextAssembler assembler = new ContextAssembler(skillResolver, tierResolver, List.of(failing, healthy),
+                promptComposer, null);
 
         AgentContext context = AgentContext.builder().build();
         assembler.assemble(context);
@@ -97,8 +97,8 @@ class ContextAssemblerTest {
     void shouldUseFallbackPromptWhenNoLayersContribute() {
         ContextLayer empty = stubLayer("empty", 10, true, null);
 
-        ContextAssembler assembler = new ContextAssembler(
-                skillResolver, tierResolver, List.of(empty), promptComposer, null);
+        ContextAssembler assembler = new ContextAssembler(skillResolver, tierResolver, List.of(empty), promptComposer,
+                null);
 
         AgentContext context = AgentContext.builder().build();
         assembler.assemble(context);
@@ -110,8 +110,8 @@ class ContextAssemblerTest {
     void shouldPublishActiveSkillNameToAttributes() {
         ContextLayer layer = stubLayer("test", 10, true, "content");
 
-        ContextAssembler assembler = new ContextAssembler(
-                skillResolver, tierResolver, List.of(layer), promptComposer, null);
+        ContextAssembler assembler = new ContextAssembler(skillResolver, tierResolver, List.of(layer), promptComposer,
+                null);
 
         Skill skill = Skill.builder().name("coding").description("Code skill").build();
         AgentContext context = AgentContext.builder().activeSkill(skill).build();
@@ -128,11 +128,8 @@ class ContextAssemblerTest {
 
         ContextLayerResult result;
         if (content != null) {
-            result = ContextLayerResult.builder()
-                    .layerName(name)
-                    .content(content)
-                    .estimatedTokens((int) Math.ceil(content.length() / 3.5))
-                    .build();
+            result = ContextLayerResult.builder().layerName(name).content(content)
+                    .estimatedTokens((int) Math.ceil(content.length() / 3.5)).build();
         } else {
             result = ContextLayerResult.empty(name);
         }

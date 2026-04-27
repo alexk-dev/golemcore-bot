@@ -26,24 +26,18 @@ import java.util.Map;
 import java.util.Optional;
 
 /**
- * A declarative description of all context layers that were assembled for a
- * single agent turn.
- *
+ * A declarative description of all context layers that were assembled for a single agent turn.
  * <p>
- * The blueprint is built incrementally by {@link ContextAssembler} as each
- * {@link ContextLayer} produces its {@link ContextLayerResult}. It serves two
- * purposes:
+ * The blueprint is built incrementally by {@link ContextAssembler} as each {@link ContextLayer} produces its
+ * {@link ContextLayerResult}. It serves two purposes:
  * <ol>
- * <li>Input to {@link PromptComposer} for composing the final system prompt
- * string from ordered layer results.</li>
- * <li>Diagnostic artifact — downstream systems can inspect which layers
- * contributed, their token estimates, and attached metadata.</li>
+ * <li>Input to {@link PromptComposer} for composing the final system prompt string from ordered layer results.</li>
+ * <li>Diagnostic artifact — downstream systems can inspect which layers contributed, their token estimates, and
+ * attached metadata.</li>
  * </ol>
- *
  * <p>
- * Results are stored in insertion order, which must match the layer ordering
- * enforced by the assembler. Use {@link #getResults()} for the ordered list and
- * {@link #getResult(String)} to look up by layer name.
+ * Results are stored in insertion order, which must match the layer ordering enforced by the assembler. Use
+ * {@link #getResults()} for the ordered list and {@link #getResult(String)} to look up by layer name.
  */
 public class ContextBlueprint {
 
@@ -89,6 +83,7 @@ public class ContextBlueprint {
      *
      * @param layerName
      *            the layer name
+     *
      * @return the result if present
      */
     public Optional<ContextLayerResult> getResult(String layerName) {
@@ -101,9 +96,7 @@ public class ContextBlueprint {
      * @return sum of all layer token estimates
      */
     public int getTotalEstimatedTokens() {
-        return results.stream()
-                .mapToInt(ContextLayerResult::getEstimatedTokens)
-                .sum();
+        return results.stream().mapToInt(ContextLayerResult::getEstimatedTokens).sum();
     }
 
     /**
@@ -112,8 +105,6 @@ public class ContextBlueprint {
      * @return unmodifiable list of results with content
      */
     public List<ContextLayerResult> getContentResults() {
-        return results.stream()
-                .filter(ContextLayerResult::hasContent)
-                .toList();
+        return results.stream().filter(ContextLayerResult::hasContent).toList();
     }
 }

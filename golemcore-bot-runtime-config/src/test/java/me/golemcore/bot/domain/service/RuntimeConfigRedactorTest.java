@@ -21,20 +21,15 @@ class RuntimeConfigRedactorTest {
         cfg.getVoice().setWhisperSttApiKey(Secret.of("whisper-token"));
 
         RuntimeConfig.LlmProviderConfig llmProvider = RuntimeConfig.LlmProviderConfig.builder()
-                .apiKey(Secret.of("llm-token"))
-                .build();
+                .apiKey(Secret.of("llm-token")).build();
         cfg.getLlm().setProviders(new LinkedHashMap<>());
         cfg.getLlm().getProviders().put("default", llmProvider);
 
         RuntimeConfig.SelfEvolvingTacticEmbeddingsConfig embeddings = RuntimeConfig.SelfEvolvingTacticEmbeddingsConfig
-                .builder()
-                .apiKey(Secret.of("embeddings-token"))
-                .build();
+                .builder().apiKey(Secret.of("embeddings-token")).build();
         cfg.setSelfEvolving(RuntimeConfig.SelfEvolvingConfig.builder()
                 .tactics(RuntimeConfig.SelfEvolvingTacticsConfig.builder()
-                        .search(RuntimeConfig.SelfEvolvingTacticSearchConfig.builder()
-                                .embeddings(embeddings)
-                                .build())
+                        .search(RuntimeConfig.SelfEvolvingTacticSearchConfig.builder().embeddings(embeddings).build())
                         .build())
                 .build());
 

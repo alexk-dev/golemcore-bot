@@ -60,8 +60,8 @@ class SessionServiceTest {
         SessionCompactionBoundary sessionCompactionBoundary = new SessionCompactionBoundary();
         SessionModelSettingsInheritancePolicy inheritancePolicy = new SessionModelSettingsInheritancePolicy(
                 sessionCache, sessionRepository);
-        SessionDeletionCoordinator deletionCoordinator = new SessionDeletionCoordinator(sessionCache,
-                sessionRepository, List.of());
+        SessionDeletionCoordinator deletionCoordinator = new SessionDeletionCoordinator(sessionCache, sessionRepository,
+                List.of());
         service = new SessionService(sessionIdFactory, sessionCache, sessionRepository, sessionCompactionBoundary,
                 inheritancePolicy, deletionCoordinator, clock);
 

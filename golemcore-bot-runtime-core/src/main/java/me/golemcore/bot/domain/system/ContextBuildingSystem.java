@@ -24,11 +24,9 @@ import org.springframework.stereotype.Component;
 
 /**
  * Pipeline system for assembling the complete LLM context (order=20).
- *
  * <p>
- * Delegates all context assembly work to {@link ContextAssembler}, which
- * orchestrates layered context construction via skill/tier resolution and
- * composable {@code ContextLayer} implementations.
+ * Delegates all context assembly work to {@link ContextAssembler}, which orchestrates layered context construction via
+ * skill/tier resolution and composable {@code ContextLayer} implementations.
  *
  * @see ContextAssembler
  */
