@@ -14,8 +14,8 @@ class TraceNamingSupportTest {
     @Test
     void shouldReturnGoalTraceNameForNullOrGoalSchedule() {
         assertEquals("auto.schedule.goal", TraceNamingSupport.autoSchedule(null));
-        assertEquals("auto.schedule.goal", TraceNamingSupport
-                .autoSchedule(ScheduleEntry.builder().type(ScheduleEntry.ScheduleType.GOAL).targetId("goal-1").build()));
+        assertEquals("auto.schedule.goal", TraceNamingSupport.autoSchedule(
+                ScheduleEntry.builder().type(ScheduleEntry.ScheduleType.GOAL).targetId("goal-1").build()));
     }
 
     @Test

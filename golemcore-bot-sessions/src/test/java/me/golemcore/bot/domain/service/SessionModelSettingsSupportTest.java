@@ -41,7 +41,8 @@ class SessionModelSettingsSupportTest {
     void shouldDetectModelSettingsWhenTierOrForceFlagIsPresent() {
         assertFalse(SessionModelSettingsSupport.hasModelSettings(null));
         assertFalse(SessionModelSettingsSupport.hasModelSettings(AgentSession.builder().metadata(null).build()));
-        assertFalse(SessionModelSettingsSupport.hasModelSettings(AgentSession.builder().metadata(new HashMap<>()).build()));
+        assertFalse(
+                SessionModelSettingsSupport.hasModelSettings(AgentSession.builder().metadata(new HashMap<>()).build()));
 
         AgentSession tierOnly = AgentSession.builder()
                 .metadata(new HashMap<>(Map.of(ContextAttributes.SESSION_MODEL_TIER, "coding"))).build();
@@ -106,9 +107,8 @@ class SessionModelSettingsSupportTest {
 
     @Test
     void shouldInheritModelSettingsOnlyIntoUnsetTarget() {
-        AgentSession source = AgentSession.builder()
-                .metadata(new HashMap<>(Map.of(ContextAttributes.SESSION_MODEL_TIER, "deep",
-                        ContextAttributes.SESSION_MODEL_TIER_FORCE, true)))
+        AgentSession source = AgentSession.builder().metadata(new HashMap<>(
+                Map.of(ContextAttributes.SESSION_MODEL_TIER, "deep", ContextAttributes.SESSION_MODEL_TIER_FORCE, true)))
                 .build();
         AgentSession target = AgentSession.builder().metadata(null).build();
 

@@ -70,7 +70,8 @@ class WorkspacePathServiceTest {
 
     @Test
     void shouldConvertWorkspacePathToSlashSeparatedRelativePath() {
-        assertEquals("nested/report.txt", service.toRelativePath(workspaceRoot.resolve("nested").resolve("report.txt")));
+        assertEquals("nested/report.txt",
+                service.toRelativePath(workspaceRoot.resolve("nested").resolve("report.txt")));
     }
 
     @Test
