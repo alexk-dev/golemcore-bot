@@ -41,9 +41,10 @@ public final class RuntimeConfigSectionSchemaRegistry {
         Map<RuntimeConfig.ConfigSection, SectionSchema> schemas = new EnumMap<>(RuntimeConfig.ConfigSection.class);
         for (RuntimeConfig.ConfigSection section : RuntimeConfig.ConfigSection.values()) {
             RuntimeConfigSectionOwnership.SectionOwnership ownership = RuntimeConfigSectionOwnership.ownerOf(section);
-            schemas.put(section, new SectionSchema(section, CURRENT_SCHEMA_VERSION,
-                    "runtime-config." + section.getFileId() + ".v" + CURRENT_SCHEMA_VERSION,
-                    ownership.ownerService() + ".migration"));
+            schemas.put(section,
+                    new SectionSchema(section, CURRENT_SCHEMA_VERSION,
+                            "runtime-config." + section.getFileId() + ".v" + CURRENT_SCHEMA_VERSION,
+                            ownership.ownerService() + ".migration"));
         }
         return Map.copyOf(schemas);
     }
