@@ -24,6 +24,9 @@ import me.golemcore.bot.domain.model.FailureKind;
 import me.golemcore.bot.domain.model.FailureSource;
 import me.golemcore.bot.domain.model.LlmRequest;
 import me.golemcore.bot.domain.model.LlmResponse;
+import me.golemcore.bot.domain.model.RoutingOutcome;
+import me.golemcore.bot.domain.model.TurnOutcome;
+import me.golemcore.bot.domain.model.trace.TraceContext;
 import me.golemcore.bot.domain.runtimeconfig.ModelRoutingConfigView;
 import me.golemcore.bot.port.outbound.LlmPort;
 import org.junit.jupiter.api.AfterEach;
@@ -91,6 +94,31 @@ class OptionalLlmErrorExplanationProviderTest {
     }
 
     @Test
+    void shouldSkipWhenContextIsMissing() {
+        System.setProperty(ENABLED_PROPERTY, "true");
+        LlmPort llmPort = mock(LlmPort.class);
+        when(llmPort.isAvailable()).thenReturn(true);
+        OptionalLlmErrorExplanationProvider provider = new OptionalLlmErrorExplanationProvider(
+                mock(ModelRoutingConfigView.class), llmPort, CLOCK);
+
+        Optional<String> explanation = provider.explain(null);
+
+        assertTrue(explanation.isEmpty());
+        verify(llmPort, never()).chat(any());
+    }
+
+    @Test
+    void shouldSkipWhenLlmPortIsMissing() {
+        System.setProperty(ENABLED_PROPERTY, "true");
+        OptionalLlmErrorExplanationProvider provider = new OptionalLlmErrorExplanationProvider(
+                mock(ModelRoutingConfigView.class), null, CLOCK);
+
+        Optional<String> explanation = provider.explain(contextWithFailure("token=secret-value"));
+
+        assertTrue(explanation.isEmpty());
+    }
+
+    @Test
     void shouldSkipWhenLlmIsUnavailable() {
         System.setProperty(ENABLED_PROPERTY, "true");
         LlmPort llmPort = mock(LlmPort.class);
@@ -121,6 +149,21 @@ class OptionalLlmErrorExplanationProviderTest {
     }
 
     @Test
+    void shouldReturnEmptyWhenLlmResponseIsMissing() {
+        System.setProperty(ENABLED_PROPERTY, "true");
+        ModelRoutingConfigView configView = mock(ModelRoutingConfigView.class);
+        LlmPort llmPort = mock(LlmPort.class);
+        when(llmPort.isAvailable()).thenReturn(true);
+        when(llmPort.chat(any())).thenReturn(CompletableFuture.completedFuture(null));
+        OptionalLlmErrorExplanationProvider provider = new OptionalLlmErrorExplanationProvider(configView, llmPort,
+                CLOCK);
+
+        Optional<String> explanation = provider.explain(contextWithFailure("password=sensitive"));
+
+        assertTrue(explanation.isEmpty());
+    }
+
+    @Test
     void shouldReturnEmptyWhenLlmExplanationTimesOut() {
         System.setProperty(ENABLED_PROPERTY, "true");
         ModelRoutingConfigView configView = mock(ModelRoutingConfigView.class);
@@ -133,6 +176,35 @@ class OptionalLlmErrorExplanationProviderTest {
         Optional<String> explanation = provider.explain(contextWithFailure("secret=value"));
 
         assertTrue(explanation.isEmpty());
+    }
+
+    @Test
+    void shouldExplainRoutingOutcomeWithTraceMetadata() {
+        System.setProperty(ENABLED_PROPERTY, "true");
+        ModelRoutingConfigView configView = mock(ModelRoutingConfigView.class);
+        when(configView.getRoutingModel()).thenReturn("gpt-test");
+        LlmPort llmPort = mock(LlmPort.class);
+        when(llmPort.isAvailable()).thenReturn(true);
+        when(llmPort.chat(any())).thenReturn(
+                CompletableFuture.completedFuture(LlmResponse.builder().content("A routed explanation").build()));
+        OptionalLlmErrorExplanationProvider provider = new OptionalLlmErrorExplanationProvider(configView, llmPort,
+                CLOCK);
+        AgentContext context = AgentContext.builder().session(AgentSession.builder().id("session-1").build()).build();
+        context.setTraceContext(TraceContext.builder().traceId("trace-1").spanId("span-1").parentSpanId("parent-1")
+                .rootKind("turn").build());
+        context.setTurnOutcome(TurnOutcome.builder()
+                .routingOutcome(RoutingOutcome.builder().errorMessage("Bearer abc.def").build()).build());
+
+        Optional<String> explanation = provider.explain(context);
+
+        assertEquals(Optional.of("A routed explanation"), explanation);
+        ArgumentCaptor<LlmRequest> captor = ArgumentCaptor.forClass(LlmRequest.class);
+        verify(llmPort).chat(captor.capture());
+        assertEquals("trace-1", captor.getValue().getTraceId());
+        assertEquals("span-1", captor.getValue().getTraceSpanId());
+        assertEquals("parent-1", captor.getValue().getTraceParentSpanId());
+        assertEquals("turn", captor.getValue().getTraceRootKind());
+        assertTrue(captor.getValue().getMessages().getFirst().getContent().contains("Bearer <redacted>"));
     }
 
     private static AgentContext contextWithFailure(String message) {
