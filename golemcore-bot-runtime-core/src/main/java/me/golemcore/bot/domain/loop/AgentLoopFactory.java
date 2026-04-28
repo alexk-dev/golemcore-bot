@@ -27,30 +27,23 @@ public final class AgentLoopFactory {
         AgentPipelineRunner pipelineRunner = new AgentPipelineRunner(plan, safeServices.runtimeConfigService(),
                 safeServices.runtimeConfigService(), safeServices.preferencesService(), safeServices.clock(),
                 safeServices.traceService(), safeServices.contextHygieneService());
-        return new AgentLoop(safePorts.sessionService(), safePorts.rateLimiter(),
-                new AgentLoop.AgentLoopCollaborators(
-                        new TurnFeedbackCoordinator(safePorts.channelRuntimePort(), safeServices.preferencesService()),
-                        new TurnPersistenceGuard(safePorts.sessionService(), safeServices.runtimeConfigService(),
-                                safeServices.traceService(), safeServices.contextHygieneService(),
-                                safeServices.clock(), safeServices.runtimeEventService()),
-                        new TurnContextFactory(
-                                safeServices.runtimeConfigService(), safeServices.runtimeConfigService(),
-                                safeServices.traceService(), safeServices.clock(),
-                                safeServices.traceSnapshotCodecPort()),
-                        pipelineRunner,
-                        new TurnFeedbackGuarantee(new UnsentResponseDetector(),
-                                new SafeErrorFeedbackRenderer(safeServices.preferencesService()),
-                                new GenericFallbackRouter(pipelineRunner),
-                                new OptionalLlmErrorExplanationProvider(safeServices.runtimeConfigService(),
-                                        safePorts.llmPort(), safeServices.clock())),
-                        new AutoRunOutcomeRecorder()));
+        return new AgentLoop(safePorts.sessionService(), safePorts.rateLimiter(), new AgentLoop.AgentLoopCollaborators(
+                new TurnFeedbackCoordinator(safePorts.channelRuntimePort(), safeServices.preferencesService()),
+                new TurnPersistenceGuard(safePorts.sessionService(), safeServices.runtimeConfigService(),
+                        safeServices.traceService(), safeServices.contextHygieneService(), safeServices.clock(),
+                        safeServices.runtimeEventService()),
+                new TurnContextFactory(safeServices.runtimeConfigService(), safeServices.runtimeConfigService(),
+                        safeServices.traceService(), safeServices.clock(), safeServices.traceSnapshotCodecPort()),
+                pipelineRunner,
+                new TurnFeedbackGuarantee(new UnsentResponseDetector(),
+                        new SafeErrorFeedbackRenderer(safeServices.preferencesService()),
+                        new GenericFallbackRouter(pipelineRunner), new OptionalLlmErrorExplanationProvider(
+                                safeServices.runtimeConfigService(), safePorts.llmPort(), safeServices.clock())),
+                new AutoRunOutcomeRecorder()));
     }
 
-    public record AgentLoopPorts(
-            SessionPort sessionService,
-            RateLimitPort rateLimiter,
-            ChannelRuntimePort channelRuntimePort,
-            LlmPort llmPort) {
+    public record AgentLoopPorts(SessionPort sessionService, RateLimitPort rateLimiter,
+            ChannelRuntimePort channelRuntimePort, LlmPort llmPort) {
 
         public AgentLoopPorts {
             Objects.requireNonNull(sessionService, "sessionService must not be null");
@@ -59,13 +52,9 @@ public final class AgentLoopFactory {
         }
     }
 
-    public record AgentLoopRuntimeServices(
-            RuntimeConfigService runtimeConfigService,
-            UserPreferencesService preferencesService,
-            Clock clock,
-            TraceService traceService,
-            TraceSnapshotCodecPort traceSnapshotCodecPort,
-            ContextHygieneService contextHygieneService,
+    public record AgentLoopRuntimeServices(RuntimeConfigService runtimeConfigService,
+            UserPreferencesService preferencesService, Clock clock, TraceService traceService,
+            TraceSnapshotCodecPort traceSnapshotCodecPort, ContextHygieneService contextHygieneService,
             RuntimeEventService runtimeEventService) {
 
         public AgentLoopRuntimeServices {

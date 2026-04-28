@@ -127,13 +127,9 @@ public class AgentLoop {
         return text.substring(0, maxLen) + "...";
     }
 
-    record AgentLoopCollaborators(
-            TurnFeedbackCoordinator feedbackCoordinator,
-            TurnPersistenceGuard persistenceGuard,
-            TurnContextFactory contextFactory,
-            AgentPipelineRunner pipelineRunner,
-            TurnFeedbackGuarantee feedbackGuarantee,
-            AutoRunOutcomeRecorder outcomeRecorder) {
+    record AgentLoopCollaborators(TurnFeedbackCoordinator feedbackCoordinator, TurnPersistenceGuard persistenceGuard,
+            TurnContextFactory contextFactory, AgentPipelineRunner pipelineRunner,
+            TurnFeedbackGuarantee feedbackGuarantee, AutoRunOutcomeRecorder outcomeRecorder) {
 
         AgentLoopCollaborators {
             Objects.requireNonNull(feedbackCoordinator, "feedbackCoordinator must not be null");

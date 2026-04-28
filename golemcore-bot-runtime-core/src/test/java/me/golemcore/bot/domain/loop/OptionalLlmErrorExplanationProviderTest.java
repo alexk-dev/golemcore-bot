@@ -57,8 +57,8 @@ class OptionalLlmErrorExplanationProviderTest {
         when(configView.getRoutingModelReasoning()).thenReturn("low");
         LlmPort llmPort = mock(LlmPort.class);
         when(llmPort.isAvailable()).thenReturn(true);
-        when(llmPort.chat(any())).thenReturn(CompletableFuture.completedFuture(
-                LlmResponse.builder().content("A safe explanation").build()));
+        when(llmPort.chat(any())).thenReturn(
+                CompletableFuture.completedFuture(LlmResponse.builder().content("A safe explanation").build()));
         OptionalLlmErrorExplanationProvider provider = new OptionalLlmErrorExplanationProvider(configView, llmPort,
                 CLOCK);
 
@@ -88,12 +88,10 @@ class OptionalLlmErrorExplanationProviderTest {
     }
 
     private static AgentContext contextWithFailure(String message) {
-        AgentContext context = AgentContext.builder()
-                .session(AgentSession.builder().id("session-1").build())
-                .build();
+        AgentContext context = AgentContext.builder().session(AgentSession.builder().id("session-1").build()).build();
         context.setAttribute(ContextAttributes.LLM_ERROR, message);
-        context.addFailure(new FailureEvent(FailureSource.SYSTEM, "test", FailureKind.EXCEPTION, message,
-                CLOCK.instant()));
+        context.addFailure(
+                new FailureEvent(FailureSource.SYSTEM, "test", FailureKind.EXCEPTION, message, CLOCK.instant()));
         return context;
     }
 }
