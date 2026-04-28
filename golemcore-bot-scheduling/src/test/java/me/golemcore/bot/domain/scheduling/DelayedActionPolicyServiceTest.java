@@ -1,7 +1,7 @@
 package me.golemcore.bot.domain.scheduling;
 
-import me.golemcore.bot.domain.service.UserPreferencesService;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.runtimeconfig.UserPreferencesService;
+import me.golemcore.bot.domain.runtimeconfig.RuntimeConfigService;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.ProgressUpdate;
 import me.golemcore.bot.domain.model.RuntimeEvent;

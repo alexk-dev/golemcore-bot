@@ -27,7 +27,7 @@ import java.util.List;
 import java.util.Optional;
 import me.golemcore.bot.domain.selfevolving.artifact.ArtifactBundleService;
 import me.golemcore.bot.port.outbound.SelfEvolvingRuntimeConfigPort;
-import me.golemcore.bot.domain.service.StringValueSupport;
+import me.golemcore.bot.domain.support.StringValueSupport;
 
 /**
  * Orchestrates promotion planning and execution for stored evolution

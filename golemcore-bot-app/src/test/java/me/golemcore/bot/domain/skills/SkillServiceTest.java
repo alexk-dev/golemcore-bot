@@ -1,6 +1,6 @@
 package me.golemcore.bot.domain.skills;
 
-import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.runtimeconfig.RuntimeConfigService;
 import me.golemcore.bot.domain.model.Skill;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.outbound.StoragePort;

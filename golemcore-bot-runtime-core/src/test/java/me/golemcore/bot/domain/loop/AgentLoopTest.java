@@ -26,7 +26,6 @@ import me.golemcore.bot.domain.model.FailureEvent;
 import me.golemcore.bot.domain.model.FailureKind;
 import me.golemcore.bot.domain.model.FailureSource;
 import me.golemcore.bot.domain.model.FinishReason;
-import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.OutgoingResponse;
 import me.golemcore.bot.domain.model.RateLimitResult;
@@ -34,12 +33,13 @@ import me.golemcore.bot.domain.model.RoutingOutcome;
 import me.golemcore.bot.domain.model.SkillTransitionRequest;
 import me.golemcore.bot.domain.model.ToolResult;
 import me.golemcore.bot.domain.model.TurnOutcome;
-import me.golemcore.bot.domain.service.DefaultContextHygieneService;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
-import me.golemcore.bot.domain.service.TraceBudgetService;
-import me.golemcore.bot.domain.service.TraceService;
-import me.golemcore.bot.domain.service.TraceSnapshotCompressionService;
-import me.golemcore.bot.domain.service.UserPreferencesService;
+import me.golemcore.bot.domain.context.hygiene.DefaultContextHygieneService;
+import me.golemcore.bot.domain.events.RuntimeEventService;
+import me.golemcore.bot.domain.runtimeconfig.RuntimeConfigService;
+import me.golemcore.bot.domain.tracing.TraceBudgetService;
+import me.golemcore.bot.domain.tracing.TraceService;
+import me.golemcore.bot.domain.tracing.TraceSnapshotCompressionService;
+import me.golemcore.bot.domain.runtimeconfig.UserPreferencesService;
 import me.golemcore.bot.domain.system.AgentSystem;
 import me.golemcore.bot.domain.system.ResponseRoutingAgentSystem;
 import me.golemcore.bot.domain.model.trace.TraceContext;
@@ -669,11 +669,9 @@ class AgentLoopTest {
             }
         };
 
-        AgentLoop loop = new AgentLoop(sessionPort, rateLimitPort,
+        AgentLoop loop = createLoop(sessionPort, rateLimitPort,
                 List.of(transitionSystem, responseRoutingSystem(List.of(channel), preferencesService)),
-                runtime(List.of(channel)), mockRuntimeConfigService(1), preferencesService, llmPort, clock,
-                new TraceService(new TraceSnapshotCompressionService(), new TraceBudgetService()), traceSnapshotCodec(),
-                new DefaultContextHygieneService());
+                List.of(channel), mockRuntimeConfigService(1), preferencesService, llmPort, clock);
 
         Message inbound = Message.builder().role(ROLE_USER).content("pipeline").channelType(CHANNEL_TYPE).chatId("1")
                 .senderId("u1").timestamp(clock.instant()).build();
@@ -938,9 +936,6 @@ class AgentLoopTest {
 
         LlmPort llmPort = mock(LlmPort.class);
         when(llmPort.isAvailable()).thenReturn(true);
-        LlmResponse llmResponse = LlmResponse.builder().content("interpreted error").build();
-        when(llmPort.chat(any())).thenReturn(CompletableFuture.completedFuture(llmResponse));
-
         Clock clock = Clock.fixed(Instant.parse(FIXED_INSTANT), ZoneOffset.UTC);
 
         AgentSession session = AgentSession.builder().id("s1").channelType(CHANNEL_TYPE).chatId("1")
@@ -990,9 +985,10 @@ class AgentLoopTest {
         // Act
         loop.processMessage(inbound);
 
-        // Assert — the LLM was called to interpret errors and a response was sent
-        verify(llmPort).chat(any());
-        verify(channel, atLeastOnce()).sendMessage(eq("1"), eq("Error: interpreted"), any());
+        // Assert: safe deterministic fallback is used without sending raw failure details
+        // to the LLM.
+        verify(llmPort, never()).chat(any());
+        verify(channel, atLeastOnce()).sendMessage(eq("1"), eq(MSG_GENERIC), any());
     }
 
     @Test
@@ -1221,10 +1217,8 @@ class AgentLoopTest {
 
         ResponseRoutingAgentSystem routingSystem = createRoutingSystem(channel, preferencesService);
 
-        AgentLoop loop = new AgentLoop(sessionPort, rateLimitPort, List.of(turnOutcomeSystem, routingSystem),
-                runtime(List.of(channel)), mockRuntimeConfigService(1), preferencesService, llmPort, clock,
-                new TraceService(new TraceSnapshotCompressionService(), new TraceBudgetService()), traceSnapshotCodec(),
-                new DefaultContextHygieneService());
+        AgentLoop loop = createLoop(sessionPort, rateLimitPort, List.of(turnOutcomeSystem, routingSystem),
+                List.of(channel), mockRuntimeConfigService(1), preferencesService, llmPort, clock);
 
         Message inbound = Message.builder().role(ROLE_USER).content("hi").channelType(CHANNEL_TYPE).chatId("1")
                 .senderId("u1").timestamp(clock.instant()).build();
@@ -1289,11 +1283,8 @@ class AgentLoopTest {
 
         ResponseRoutingAgentSystem routingSystem = responseRoutingSystem(List.of(channel), preferencesService);
 
-        AgentLoop loop = new AgentLoop(sessionPort, rateLimitPort,
-                List.of(routingOutcomeAttributeSystem, routingSystem), runtime(List.of(channel)),
-                mockRuntimeConfigService(1), preferencesService, llmPort, clock,
-                new TraceService(new TraceSnapshotCompressionService(), new TraceBudgetService()), traceSnapshotCodec(),
-                new DefaultContextHygieneService());
+        AgentLoop loop = createLoop(sessionPort, rateLimitPort, List.of(routingOutcomeAttributeSystem, routingSystem),
+                List.of(channel), mockRuntimeConfigService(1), preferencesService, llmPort, clock);
 
         Message inbound = Message.builder().role(ROLE_USER).content("hi").channelType(CHANNEL_TYPE).chatId("1")
                 .senderId("u1").timestamp(clock.instant()).build();
@@ -1746,10 +1737,8 @@ class AgentLoopTest {
             }
         };
 
-        AgentLoop loop = new AgentLoop(sessionPort, rateLimitPort, List.of(attachmentsOnlySystem),
-                runtime(List.of(channel)), mockRuntimeConfigService(1), preferencesService, llmPort, clock,
-                new TraceService(new TraceSnapshotCompressionService(), new TraceBudgetService()), traceSnapshotCodec(),
-                new DefaultContextHygieneService());
+        AgentLoop loop = createLoop(sessionPort, rateLimitPort, List.of(attachmentsOnlySystem), List.of(channel),
+                mockRuntimeConfigService(1), preferencesService, llmPort, clock);
 
         Message inbound = Message.builder().role(ROLE_USER).content("send image").channelType(CHANNEL_TYPE).chatId("1")
                 .senderId("u1").timestamp(clock.instant()).build();
@@ -2144,8 +2133,9 @@ class AgentLoopTest {
     void shouldCaptureBalancedTraceDefaultsWhenContextIsNull() {
         UserPreferencesService preferencesService = mock(UserPreferencesService.class);
         Clock clock = Clock.fixed(Instant.parse(FIXED_INSTANT), ZoneOffset.UTC);
-        AgentPipelineRunner pipelineRunner = new AgentPipelineRunner(List.of(), mockRuntimeConfigService(1),
-                preferencesService, clock,
+        AgentPipelinePlan plan = new AgentPipelinePlanFactory().create(List.of());
+        AgentPipelineRunner pipelineRunner = new AgentPipelineRunner(plan, mockRuntimeConfigService(1),
+                mockRuntimeConfigService(1), preferencesService, clock,
                 new TraceService(new TraceSnapshotCompressionService(), new TraceBudgetService()),
                 new DefaultContextHygieneService());
 
@@ -2158,10 +2148,13 @@ class AgentLoopTest {
     private static AgentLoop createLoop(SessionPort sessionPort, RateLimitPort rateLimitPort, List<AgentSystem> systems,
             List<ChannelPort> channels, RuntimeConfigService runtimeConfigService,
             UserPreferencesService preferencesService, LlmPort llmPort, Clock clock) {
-        return new AgentLoop(sessionPort, rateLimitPort, systems, runtime(channels), runtimeConfigService,
-                preferencesService, llmPort, clock,
-                new TraceService(new TraceSnapshotCompressionService(), new TraceBudgetService()), traceSnapshotCodec(),
-                new DefaultContextHygieneService());
+        return new AgentLoopFactory().create(
+                new AgentLoopFactory.AgentLoopPorts(sessionPort, rateLimitPort, runtime(channels), llmPort),
+                new AgentLoopFactory.AgentLoopRuntimeServices(runtimeConfigService, runtimeConfigService,
+                        runtimeConfigService, preferencesService, clock,
+                        new TraceService(new TraceSnapshotCompressionService(), new TraceBudgetService()),
+                        traceSnapshotCodec(), new DefaultContextHygieneService(), new RuntimeEventService(clock)),
+                systems);
     }
 
     private static TraceSnapshotCodecPort traceSnapshotCodec() {

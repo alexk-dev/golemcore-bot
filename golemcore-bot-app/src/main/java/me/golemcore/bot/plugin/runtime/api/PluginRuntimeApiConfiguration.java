@@ -21,7 +21,7 @@ public class PluginRuntimeApiConfiguration {
 
     @Bean
     public ActiveSessionPointerService pluginActiveSessionPointerService(
-            me.golemcore.bot.domain.service.ActiveSessionPointerService delegate) {
+            me.golemcore.bot.domain.sessions.ActiveSessionPointerService delegate) {
         return new ActiveSessionPointerService() {
             @Override
             public String buildTelegramPointerKey(String transportChatId) {
@@ -128,7 +128,7 @@ public class PluginRuntimeApiConfiguration {
 
     @Bean
     public RuntimeConfigService pluginRuntimeConfigService(
-            me.golemcore.bot.domain.service.RuntimeConfigService delegate,
+            me.golemcore.bot.domain.runtimeconfig.RuntimeConfigService delegate,
             PluginRuntimeApiMapper mapper) {
         return new RuntimeConfigService() {
             @Override
@@ -264,7 +264,7 @@ public class PluginRuntimeApiConfiguration {
 
     @Bean
     public PluginConfigurationService pluginRuntimePluginConfigurationService(
-            me.golemcore.bot.domain.service.PluginConfigurationService delegate) {
+            me.golemcore.bot.domain.extensions.PluginConfigurationService delegate) {
         return new PluginConfigurationService() {
             @Override
             public boolean hasPluginConfig(String pluginId) {
@@ -290,7 +290,7 @@ public class PluginRuntimeApiConfiguration {
 
     @Bean
     public UserPreferencesService pluginUserPreferencesService(
-            me.golemcore.bot.domain.service.UserPreferencesService delegate,
+            me.golemcore.bot.domain.runtimeconfig.UserPreferencesService delegate,
             PluginRuntimeApiMapper mapper) {
         return new UserPreferencesService() {
             @Override

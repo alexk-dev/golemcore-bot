@@ -19,8 +19,8 @@ package me.golemcore.bot.domain.memory.persistence;
  */
 
 import me.golemcore.bot.domain.model.MemoryItem;
-import me.golemcore.bot.domain.service.MemoryPromotionService;
-import me.golemcore.bot.domain.service.MemoryScopeSupport;
+import me.golemcore.bot.domain.memory.MemoryPromotionService;
+import me.golemcore.bot.domain.memory.MemoryScopeSupport;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;

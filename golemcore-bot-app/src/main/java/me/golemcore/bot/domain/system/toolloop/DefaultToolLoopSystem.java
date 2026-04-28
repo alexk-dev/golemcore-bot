@@ -27,10 +27,10 @@ import me.golemcore.bot.domain.context.compaction.ContextCompactionPolicy;
 import me.golemcore.bot.domain.context.compaction.ContextTokenEstimator;
 import me.golemcore.bot.domain.model.ModelSelectionService;
 import me.golemcore.bot.domain.tools.PlanModeToolRestrictionService;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.runtimeconfig.RuntimeConfigService;
 import me.golemcore.bot.domain.events.RuntimeEventService;
-import me.golemcore.bot.domain.service.TraceRuntimeConfigSupport;
-import me.golemcore.bot.domain.service.TraceService;
+import me.golemcore.bot.domain.tracing.TraceRuntimeConfigSupport;
+import me.golemcore.bot.domain.tracing.TraceService;
 import me.golemcore.bot.domain.progress.TurnProgressService;
 import me.golemcore.bot.domain.system.toolloop.view.ConversationViewBuilder;
 import me.golemcore.bot.port.outbound.LlmPort;
@@ -223,7 +223,8 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
     private TurnState initializeTurn(AgentContext context) {
         ensureMessageLists(context);
         emitRuntimeEvent(context, RuntimeEventType.TURN_STARTED, eventPayload());
-        RuntimeConfig.TracingConfig tracingConfig = TraceRuntimeConfigSupport.resolve(runtimeConfigService);
+        RuntimeConfig.TracingConfig tracingConfig = TraceRuntimeConfigSupport.resolve(runtimeConfigService,
+                shouldForceTracingPayloadCapture());
 
         int maxLlmCalls = resolveMaxLlmCalls();
         int maxToolExecutions = resolveMaxToolExecutions();
@@ -293,6 +294,12 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
             return false;
         }
         return runtimeConfigService.isTurnAutoRetryEnabled();
+    }
+
+    private boolean shouldForceTracingPayloadCapture() {
+        return runtimeConfigService != null
+                && runtimeConfigService.isSelfEvolvingEnabled()
+                && runtimeConfigService.isSelfEvolvingTracePayloadOverrideEnabled();
     }
 
     // ==================== Utility ====================

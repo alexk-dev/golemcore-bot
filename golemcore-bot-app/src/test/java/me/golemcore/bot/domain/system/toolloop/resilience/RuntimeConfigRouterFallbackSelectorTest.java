@@ -4,7 +4,7 @@ import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.FallbackModes;
 import me.golemcore.bot.domain.model.RuntimeConfig;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.runtimeconfig.RuntimeConfigService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 

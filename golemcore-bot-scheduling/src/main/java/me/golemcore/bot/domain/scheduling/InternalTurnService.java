@@ -6,8 +6,8 @@ package me.golemcore.bot.domain.scheduling;
  * Contact: alex@kuleshov.tech
  */
 
-import me.golemcore.bot.domain.service.TraceNamingSupport;
-import me.golemcore.bot.domain.service.TraceContextSupport;
+import me.golemcore.bot.domain.tracing.TraceNamingSupport;
+import me.golemcore.bot.domain.tracing.TraceContextSupport;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.AgentSession;

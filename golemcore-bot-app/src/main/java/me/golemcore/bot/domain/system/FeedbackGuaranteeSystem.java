@@ -24,7 +24,7 @@ import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.OutgoingResponse;
 import me.golemcore.bot.domain.model.SkillTransitionRequest;
-import me.golemcore.bot.domain.service.UserPreferencesService;
+import me.golemcore.bot.domain.runtimeconfig.UserPreferencesService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 

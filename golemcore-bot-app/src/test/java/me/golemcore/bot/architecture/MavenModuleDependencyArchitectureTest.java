@@ -124,6 +124,24 @@ class MavenModuleDependencyArchitectureTest {
     }
 
     @Test
+    void contracts_ports_should_not_expose_agent_context_runtime_internals() throws IOException {
+        Path portsRoot = REPO_ROOT.resolve("golemcore-bot-contracts/src/main/java/me/golemcore/bot/port");
+        Set<String> violations = new TreeSet<>();
+        try (Stream<Path> paths = Files.walk(portsRoot)) {
+            for (Path path : paths.filter(path -> path.toString().endsWith(".java")).toList()) {
+                String source = Files.readString(path);
+                if (source.contains("AgentContext") || source.contains("submitForContext")) {
+                    violations.add(portsRoot.relativize(path).toString());
+                }
+            }
+        }
+
+        assertTrue(violations.isEmpty(),
+                () -> "Contracts ports must expose immutable turn results, not mutable runtime AgentContext:\n"
+                        + String.join("\n", violations));
+    }
+
+    @Test
     void production_sources_should_use_explicit_injection_constructors() throws IOException {
         List<String> forbiddenPatterns = List.of("import lombok.RequiredArgsConstructor;",
                 "@RequiredArgsConstructor", "import org.springframework.beans.factory.annotation.Autowired;",

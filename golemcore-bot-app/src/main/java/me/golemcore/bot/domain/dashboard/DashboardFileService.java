@@ -1,6 +1,6 @@
 package me.golemcore.bot.domain.dashboard;
 
-import me.golemcore.bot.domain.service.WorkspacePathService;
+import me.golemcore.bot.domain.tools.workspace.WorkspacePathService;
 import me.golemcore.bot.domain.model.DashboardFileContent;
 import me.golemcore.bot.domain.model.DashboardFileNode;
 import me.golemcore.bot.domain.model.ToolArtifactDownload;

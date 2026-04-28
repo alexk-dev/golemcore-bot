@@ -18,7 +18,7 @@ package me.golemcore.bot.domain.session;
  * Contact: alex@kuleshov.tech
  */
 
-import me.golemcore.bot.domain.service.StringValueSupport;
+import me.golemcore.bot.domain.support.StringValueSupport;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;

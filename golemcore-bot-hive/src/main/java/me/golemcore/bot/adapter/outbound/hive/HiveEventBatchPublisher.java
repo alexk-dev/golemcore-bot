@@ -53,10 +53,10 @@ import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchStatus;
 import me.golemcore.bot.domain.model.hive.HiveEvidenceRef;
 import me.golemcore.bot.domain.model.hive.HiveLifecycleSignalRequest;
 import me.golemcore.bot.domain.model.hive.HiveRuntimeContracts;
-import me.golemcore.bot.domain.service.HiveMetadataSupport;
+import me.golemcore.bot.domain.hive.HiveMetadataSupport;
 import me.golemcore.bot.port.outbound.HiveEventPublishPort;
 import me.golemcore.bot.port.outbound.SelfEvolvingProjectionPublishPort;
-import me.golemcore.bot.domain.service.HiveSessionStateStore;
+import me.golemcore.bot.domain.hive.HiveSessionStateStore;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -983,6 +983,7 @@ public class HiveEventBatchPublisher implements HiveEventPublishPort, SelfEvolvi
                     code != null ? "Run failed: " + code : null,
                     "Run failed");
         }
+        case SESSION_PERSISTENCE_FAILED -> "Session persistence failed";
         case LLM_STARTED -> "LLM request started";
         case LLM_FINISHED -> "LLM request finished";
         case TOOL_STARTED -> "Tool started: " + firstNonBlank(readMetadataString(payload, "tool"), "tool");

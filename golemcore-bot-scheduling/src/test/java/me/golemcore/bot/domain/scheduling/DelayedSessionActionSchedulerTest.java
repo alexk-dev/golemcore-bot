@@ -1,6 +1,6 @@
 package me.golemcore.bot.domain.scheduling;
 
-import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.runtimeconfig.RuntimeConfigService;
 import me.golemcore.bot.domain.model.DelayedActionDeliveryMode;
 import me.golemcore.bot.domain.model.DelayedActionKind;
 import me.golemcore.bot.domain.model.DelayedSessionAction;

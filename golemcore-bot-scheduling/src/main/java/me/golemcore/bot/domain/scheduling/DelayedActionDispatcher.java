@@ -18,15 +18,16 @@ package me.golemcore.bot.domain.scheduling;
  * Contact: alex@kuleshov.tech
  */
 
-import me.golemcore.bot.domain.service.StringValueSupport;
-import me.golemcore.bot.domain.service.TraceNamingSupport;
-import me.golemcore.bot.domain.service.TraceContextSupport;
-import me.golemcore.bot.domain.model.AgentContext;
+import me.golemcore.bot.domain.support.StringValueSupport;
+import me.golemcore.bot.domain.tracing.TraceNamingSupport;
+import me.golemcore.bot.domain.tracing.TraceContextSupport;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.DelayedActionKind;
 import me.golemcore.bot.domain.model.DelayedSessionAction;
+import me.golemcore.bot.domain.model.FailureSummary;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.ToolArtifactDownload;
+import me.golemcore.bot.domain.model.TurnRunResult;
 import me.golemcore.bot.domain.model.trace.TraceSpanKind;
 import me.golemcore.bot.port.outbound.ChannelDeliveryPort;
 import me.golemcore.bot.port.outbound.ChannelRuntimePort;
@@ -137,12 +138,12 @@ public class DelayedActionDispatcher {
     }
 
     private CompletableFuture<DispatchResult> dispatchRetryLlmTurn(Message synthetic) {
-        return sessionRunDispatchPort.submitForContext(synthetic).handle((context, failure) -> {
+        return sessionRunDispatchPort.submitForResult(synthetic).handle((result, failure) -> {
             if (failure != null) {
                 return DispatchResult.retryable("Internal turn failed: " + failure.getMessage());
             }
-            if (isTerminalL5Failure(context)) {
-                return DispatchResult.terminal(resolveTerminalL5Reason(context));
+            if (isTerminalL5Failure(result)) {
+                return DispatchResult.terminal(resolveTerminalL5Reason(result));
             }
             return DispatchResult.completed();
         });
@@ -222,17 +223,20 @@ public class DelayedActionDispatcher {
         return builder.toString();
     }
 
-    private boolean isTerminalL5Failure(AgentContext context) {
-        return context != null
-                && Boolean.TRUE.equals(context.getAttribute(ContextAttributes.RESILIENCE_L5_TERMINAL_FAILURE));
+    private boolean isTerminalL5Failure(TurnRunResult result) {
+        if (result == null || result.failures() == null) {
+            return false;
+        }
+        return result.failures().stream().anyMatch(failure -> "resilience.l5.terminal".equals(failure.errorCode()));
     }
 
-    private String resolveTerminalL5Reason(AgentContext context) {
-        if (context == null) {
+    private String resolveTerminalL5Reason(TurnRunResult result) {
+        if (result == null || result.failures() == null) {
             return "L5 cold retry failed";
         }
-        String reason = context.getAttribute(ContextAttributes.RESILIENCE_L5_TERMINAL_REASON);
-        return !StringValueSupport.isBlank(reason) ? reason : "L5 cold retry failed";
+        return result.failures().stream().filter(failure -> "resilience.l5.terminal".equals(failure.errorCode()))
+                .map(FailureSummary::message).filter(reason -> !StringValueSupport.isBlank(reason)).findFirst()
+                .orElse("L5 cold retry failed");
     }
 
     private String payloadString(DelayedSessionAction action, String key) {

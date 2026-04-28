@@ -26,7 +26,7 @@ import me.golemcore.bot.domain.model.selfevolving.artifact.ArtifactTransitionDif
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
-import me.golemcore.bot.domain.service.StringValueSupport;
+import me.golemcore.bot.domain.support.StringValueSupport;
 import org.springframework.stereotype.Service;
 
 /**

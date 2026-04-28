@@ -18,8 +18,8 @@ package me.golemcore.bot.domain.session;
  * Contact: alex@kuleshov.tech
  */
 
-import me.golemcore.bot.domain.service.StringValueSupport;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.support.StringValueSupport;
+import me.golemcore.bot.domain.runtimeconfig.AutoModeConfigView;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
@@ -58,12 +58,12 @@ public class SessionScopedGoalService {
     private static final String AUTO_CONTEXT_TRUNCATED_SUFFIX = " ... [truncated]";
 
     private final SessionGoalStorageService sessionGoalStorageService;
-    private final RuntimeConfigService runtimeConfigService;
+    private final AutoModeConfigView runtimeConfigService;
     private final SessionDiaryService sessionDiaryService;
 
     public SessionScopedGoalService(
             SessionGoalStorageService sessionGoalStorageService,
-            RuntimeConfigService runtimeConfigService,
+            AutoModeConfigView runtimeConfigService,
             SessionDiaryService sessionDiaryService) {
         this.sessionGoalStorageService = sessionGoalStorageService;
         this.runtimeConfigService = runtimeConfigService;

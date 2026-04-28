@@ -20,7 +20,7 @@ import me.golemcore.bot.domain.model.DiaryEntry;
 import me.golemcore.bot.domain.model.Goal;
 import me.golemcore.bot.domain.model.ScheduleEntry;
 import me.golemcore.bot.domain.model.UserPreferences;
-import me.golemcore.bot.domain.service.UserPreferencesService;
+import me.golemcore.bot.domain.runtimeconfig.UserPreferencesService;
 import me.golemcore.bot.port.inbound.CommandPort;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;

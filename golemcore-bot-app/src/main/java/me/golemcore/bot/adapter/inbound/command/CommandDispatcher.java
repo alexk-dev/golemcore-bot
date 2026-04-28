@@ -6,7 +6,7 @@ import java.util.List;
 import java.util.Map;
 import me.golemcore.bot.domain.command.CommandInvocation;
 import me.golemcore.bot.domain.command.CommandOutcome;
-import me.golemcore.bot.domain.service.UserPreferencesService;
+import me.golemcore.bot.domain.runtimeconfig.UserPreferencesService;
 import me.golemcore.bot.port.inbound.CommandPort;
 
 /**

@@ -10,7 +10,7 @@ import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.model.ToolNames;
 import me.golemcore.bot.domain.model.ToolResult;
 import me.golemcore.bot.domain.planning.PlanService;
-import me.golemcore.bot.domain.service.SessionIdentitySupport;
+import me.golemcore.bot.domain.identity.SessionIdentitySupport;
 import org.springframework.stereotype.Component;
 
 /**

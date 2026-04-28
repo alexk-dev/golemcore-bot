@@ -241,6 +241,9 @@ public final class ContextAttributes {
      */
     public static final String RUNTIME_EVENTS = "runtime.events";
 
+    /** PersistenceOutcome - structured result of final turn persistence. */
+    public static final String TURN_PERSISTENCE_OUTCOME = "turn.persistence.outcome";
+
     /**
      * Boolean - stop tool execution between tool calls for current turn.
      */

@@ -29,7 +29,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
-import me.golemcore.bot.domain.service.StringValueSupport;
+import me.golemcore.bot.domain.support.StringValueSupport;
 
 /**
  * Materializes tactic records from evolution candidates that carry usable

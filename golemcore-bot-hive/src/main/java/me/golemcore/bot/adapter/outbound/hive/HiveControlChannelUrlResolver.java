@@ -4,7 +4,7 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
-import me.golemcore.bot.domain.service.HiveJoinCodeParser;
+import me.golemcore.bot.domain.hive.HiveJoinCodeParser;
 
 public final class HiveControlChannelUrlResolver {
 

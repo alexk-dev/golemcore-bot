@@ -36,7 +36,7 @@ import me.golemcore.bot.domain.model.ModelTierCatalog;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.UserPreferences;
 import me.golemcore.bot.domain.model.ModelSelectionService;
-import me.golemcore.bot.domain.service.UserPreferencesService;
+import me.golemcore.bot.domain.runtimeconfig.UserPreferencesService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;

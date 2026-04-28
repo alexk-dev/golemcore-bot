@@ -6,8 +6,8 @@ package me.golemcore.bot.domain.resilience;
  * Contact: alex@kuleshov.tech
  */
 
-import me.golemcore.bot.domain.service.TraceService;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.tracing.TraceService;
+import me.golemcore.bot.domain.runtimeconfig.RuntimeConfigService;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.ContextAttributes;

@@ -27,7 +27,7 @@ import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.SessionIdentity;
 import me.golemcore.bot.domain.auto.AutoModeService;
-import me.golemcore.bot.domain.service.SessionIdentitySupport;
+import me.golemcore.bot.domain.identity.SessionIdentitySupport;
 
 /**
  * Injects autonomous execution context (goals, tasks, diary) when the current

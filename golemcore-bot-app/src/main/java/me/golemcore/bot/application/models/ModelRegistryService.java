@@ -9,7 +9,7 @@ import java.util.List;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.catalog.ModelCatalogEntry;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.runtimeconfig.RuntimeConfigService;
 import me.golemcore.bot.port.outbound.ModelRegistryCachePort;
 import me.golemcore.bot.port.outbound.ModelRegistryDocumentPort;
 import me.golemcore.bot.port.outbound.ModelRegistryRemotePort;

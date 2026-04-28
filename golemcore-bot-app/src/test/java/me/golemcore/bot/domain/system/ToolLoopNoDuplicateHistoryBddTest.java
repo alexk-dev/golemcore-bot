@@ -1,6 +1,6 @@
 package me.golemcore.bot.domain.system;
 
-import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.runtimeconfig.RuntimeConfigService;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.ContextAttributes;
@@ -9,7 +9,7 @@ import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.ToolResult;
 import me.golemcore.bot.domain.context.compaction.ContextCompactionPolicy;
-import me.golemcore.bot.domain.service.UserPreferencesService;
+import me.golemcore.bot.domain.runtimeconfig.UserPreferencesService;
 import me.golemcore.bot.domain.voice.VoiceResponseHandler;
 import me.golemcore.bot.domain.model.ModelSelectionService;
 import me.golemcore.bot.domain.system.toolloop.DefaultHistoryWriter;

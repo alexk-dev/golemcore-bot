@@ -3,8 +3,8 @@ package me.golemcore.bot.plugin.runtime.api;
 import me.golemcore.bot.domain.planning.PlanService;
 import me.golemcore.bot.domain.model.ModelSelectionService;
 import me.golemcore.bot.domain.auto.AutoModeService;
-import me.golemcore.bot.domain.service.UserPreferencesService;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.runtimeconfig.UserPreferencesService;
+import me.golemcore.bot.domain.runtimeconfig.RuntimeConfigService;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.Secret;
 import org.junit.jupiter.api.Test;
@@ -243,8 +243,8 @@ class PluginRuntimeApiConfigurationTest {
         PluginRuntimeApiConfiguration configuration = new PluginRuntimeApiConfiguration();
         PluginRuntimeApiMapper mapper = new PluginRuntimeApiMapper();
 
-        me.golemcore.bot.domain.service.ActiveSessionPointerService activePointerDelegate = mock(
-                me.golemcore.bot.domain.service.ActiveSessionPointerService.class);
+        me.golemcore.bot.domain.sessions.ActiveSessionPointerService activePointerDelegate = mock(
+                me.golemcore.bot.domain.sessions.ActiveSessionPointerService.class);
         when(activePointerDelegate.buildTelegramPointerKey("42")).thenReturn("telegram:42");
         when(activePointerDelegate.getActiveConversationKey("telegram:42")).thenReturn(Optional.of("conv-1"));
 
@@ -317,8 +317,8 @@ class PluginRuntimeApiConfigurationTest {
                 () -> planExecutionService.executePlan("plan-1").join());
         assertTrue(executionException.getCause() instanceof UnsupportedOperationException);
 
-        me.golemcore.bot.domain.service.PluginConfigurationService pluginConfigDelegate = mock(
-                me.golemcore.bot.domain.service.PluginConfigurationService.class);
+        me.golemcore.bot.domain.extensions.PluginConfigurationService pluginConfigDelegate = mock(
+                me.golemcore.bot.domain.extensions.PluginConfigurationService.class);
         when(pluginConfigDelegate.hasPluginConfig("plugin-1")).thenReturn(true);
         when(pluginConfigDelegate.getPluginConfig("plugin-1")).thenReturn(Map.of("enabled", true));
 

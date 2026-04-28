@@ -9,7 +9,7 @@ import me.golemcore.bot.domain.model.ScheduleEntry;
 import me.golemcore.bot.domain.auto.AutoModeService;
 import me.golemcore.bot.domain.scheduling.DelayedActionPolicyService;
 import me.golemcore.bot.domain.scheduling.DelayedSessionActionService;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.runtimeconfig.RuntimeConfigService;
 import me.golemcore.bot.domain.scheduling.ScheduleService;
 
 public class AutomationCommandService {

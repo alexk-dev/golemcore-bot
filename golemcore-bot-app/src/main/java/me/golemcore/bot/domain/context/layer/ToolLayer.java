@@ -31,7 +31,7 @@ import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.model.ToolNames;
 import me.golemcore.bot.domain.scheduling.DelayedActionPolicyService;
 import me.golemcore.bot.domain.tools.PlanModeToolRestrictionService;
-import me.golemcore.bot.domain.service.ToolRegistryService;
+import me.golemcore.bot.domain.tools.registry.ToolRegistryService;
 import me.golemcore.bot.port.outbound.McpPort;
 
 import java.util.ArrayList;

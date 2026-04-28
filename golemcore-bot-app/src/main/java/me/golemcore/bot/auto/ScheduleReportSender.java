@@ -23,7 +23,7 @@ import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.ChannelTypes;
 import me.golemcore.bot.domain.model.ScheduleEntry;
 import me.golemcore.bot.domain.model.ScheduleReportConfig;
-import me.golemcore.bot.domain.service.StringValueSupport;
+import me.golemcore.bot.domain.support.StringValueSupport;
 import me.golemcore.bot.plugin.runtime.ChannelRegistry;
 import me.golemcore.bot.port.channel.ChannelPort;
 import okhttp3.MediaType;

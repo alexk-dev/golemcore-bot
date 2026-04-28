@@ -21,7 +21,7 @@ package me.golemcore.bot.domain.auto;
 import me.golemcore.bot.domain.session.SessionScopedGoalService;
 import me.golemcore.bot.domain.session.SessionDiaryService;
 import me.golemcore.bot.domain.scheduling.PersistentScheduledTaskService;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.runtimeconfig.RuntimeConfigService;
 import java.io.IOException;
 import java.util.List;
 import java.util.Map;

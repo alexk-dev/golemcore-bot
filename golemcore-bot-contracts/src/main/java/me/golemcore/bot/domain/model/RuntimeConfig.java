@@ -57,7 +57,8 @@ public class RuntimeConfig {
      * <p>
      * <b>Warning:</b> do not use this directly for snapshot capture decisions —
      * self-evolving overrides (forcePayloadCapture) are not applied here. Use
-     * {@code TraceRuntimeConfigSupport.resolve(runtimeConfigService)} instead.
+     * {@code TraceRuntimeConfigSupport.resolve(tracingConfigView, forcePayloadCapture)}
+     * instead.
      * </p>
      */
     @Builder.Default

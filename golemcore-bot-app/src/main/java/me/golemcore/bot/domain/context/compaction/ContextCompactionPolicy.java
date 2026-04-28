@@ -2,7 +2,7 @@ package me.golemcore.bot.domain.context.compaction;
 
 import me.golemcore.bot.domain.model.ModelSelectionService;
 import me.golemcore.bot.domain.context.SystemPromptBudgetPolicy;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.runtimeconfig.RuntimeConfigService;
 import me.golemcore.bot.domain.model.AgentContext;
 import lombok.extern.slf4j.Slf4j;
 

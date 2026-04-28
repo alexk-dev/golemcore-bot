@@ -20,7 +20,7 @@ import me.golemcore.bot.auto.ScheduledRunOutcome;
 import me.golemcore.bot.domain.model.ScheduleEntry;
 import me.golemcore.bot.domain.model.ScheduledTask;
 import me.golemcore.bot.domain.auto.AutoModeService;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.runtimeconfig.RuntimeConfigService;
 import me.golemcore.bot.domain.scheduling.ScheduleService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;

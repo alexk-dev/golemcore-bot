@@ -1,7 +1,7 @@
 package me.golemcore.bot.adapter.inbound.command;
 
 import java.util.List;
-import me.golemcore.bot.domain.service.UserPreferencesService;
+import me.golemcore.bot.domain.runtimeconfig.UserPreferencesService;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 

@@ -9,7 +9,7 @@ import static org.mockito.Mockito.when;
 
 import me.golemcore.bot.client.dto.HiveSsoExchangeRequest;
 import me.golemcore.bot.domain.model.hive.HiveSsoTokenResponse;
-import me.golemcore.bot.domain.service.HiveSsoService;
+import me.golemcore.bot.domain.hive.HiveSsoService;
 import me.golemcore.bot.port.outbound.DashboardFederatedAuthPort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;

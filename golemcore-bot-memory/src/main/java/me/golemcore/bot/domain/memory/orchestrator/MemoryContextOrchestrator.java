@@ -26,9 +26,9 @@ import me.golemcore.bot.domain.model.MemoryItem;
 import me.golemcore.bot.domain.model.MemoryPack;
 import me.golemcore.bot.domain.model.MemoryQuery;
 import me.golemcore.bot.domain.model.MemoryScoredItem;
-import me.golemcore.bot.domain.service.MemoryPromptPackService;
-import me.golemcore.bot.domain.service.MemoryRetrievalService;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.memory.MemoryPromptPackService;
+import me.golemcore.bot.domain.memory.MemoryRetrievalService;
+import me.golemcore.bot.domain.runtimeconfig.MemoryRuntimeConfigView;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -44,15 +44,15 @@ import java.util.Map;
 @Service
 public class MemoryContextOrchestrator {
 
-    private final RuntimeConfigService runtimeConfigService;
+    private final MemoryRuntimeConfigView runtimeConfigService;
     private final MemoryQueryFactory memoryQueryFactory;
     private final MemoryRetrievalService memoryRetrievalService;
     private final MemoryPromptPackService memoryPromptPackService;
     private final MemoryDiagnosticsAssembler memoryDiagnosticsAssembler;
 
-    public MemoryContextOrchestrator(RuntimeConfigService runtimeConfigService, MemoryQueryFactory memoryQueryFactory,
-            MemoryRetrievalService memoryRetrievalService, MemoryPromptPackService memoryPromptPackService,
-            MemoryDiagnosticsAssembler memoryDiagnosticsAssembler) {
+    public MemoryContextOrchestrator(MemoryRuntimeConfigView runtimeConfigService,
+            MemoryQueryFactory memoryQueryFactory, MemoryRetrievalService memoryRetrievalService,
+            MemoryPromptPackService memoryPromptPackService, MemoryDiagnosticsAssembler memoryDiagnosticsAssembler) {
         this.runtimeConfigService = runtimeConfigService;
         this.memoryQueryFactory = memoryQueryFactory;
         this.memoryRetrievalService = memoryRetrievalService;

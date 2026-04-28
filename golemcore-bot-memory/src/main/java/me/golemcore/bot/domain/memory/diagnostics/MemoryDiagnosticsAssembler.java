@@ -22,7 +22,7 @@ import me.golemcore.bot.domain.memory.model.MemoryPackSection;
 import me.golemcore.bot.domain.model.MemoryPack;
 import me.golemcore.bot.domain.model.MemoryQuery;
 import me.golemcore.bot.domain.model.MemoryScoredItem;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.runtimeconfig.MemoryRuntimeConfigView;
 import org.springframework.stereotype.Service;
 
 import java.util.LinkedHashMap;
@@ -39,9 +39,9 @@ import java.util.Map;
 @Service
 public class MemoryDiagnosticsAssembler {
 
-    private final RuntimeConfigService runtimeConfigService;
+    private final MemoryRuntimeConfigView runtimeConfigService;
 
-    public MemoryDiagnosticsAssembler(RuntimeConfigService runtimeConfigService) {
+    public MemoryDiagnosticsAssembler(MemoryRuntimeConfigView runtimeConfigService) {
         this.runtimeConfigService = runtimeConfigService;
     }
 

@@ -1,10 +1,7 @@
 package me.golemcore.bot.domain.loop;
 
 import java.time.Clock;
-import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
@@ -22,12 +19,13 @@ import me.golemcore.bot.domain.model.SkillTransitionRequest;
 import me.golemcore.bot.domain.model.trace.TraceContext;
 import me.golemcore.bot.domain.model.trace.TraceSpanKind;
 import me.golemcore.bot.domain.model.trace.TraceStatusCode;
-import me.golemcore.bot.domain.service.ContextHygieneService;
-import me.golemcore.bot.domain.service.MdcSupport;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
-import me.golemcore.bot.domain.service.TraceMdcSupport;
-import me.golemcore.bot.domain.service.TraceService;
-import me.golemcore.bot.domain.service.UserPreferencesService;
+import me.golemcore.bot.domain.context.hygiene.ContextHygieneService;
+import me.golemcore.bot.domain.tracing.MdcSupport;
+import me.golemcore.bot.domain.runtimeconfig.ModelRoutingConfigView;
+import me.golemcore.bot.domain.runtimeconfig.TracingConfigView;
+import me.golemcore.bot.domain.tracing.TraceMdcSupport;
+import me.golemcore.bot.domain.tracing.TraceService;
+import me.golemcore.bot.domain.runtimeconfig.UserPreferencesService;
 import me.golemcore.bot.domain.system.AgentSystem;
 import me.golemcore.bot.domain.system.ResponseRoutingAgentSystem;
 
@@ -37,21 +35,20 @@ import me.golemcore.bot.domain.system.ResponseRoutingAgentSystem;
 @Slf4j
 final class AgentPipelineRunner {
 
-    private final List<AgentSystem> systems;
-    private final RuntimeConfigService runtimeConfigService;
+    private final AgentPipelinePlan plan;
+    private final ModelRoutingConfigView modelRoutingConfigView;
+    private final TracingConfigView tracingConfigView;
     private final UserPreferencesService preferencesService;
     private final Clock clock;
     private final TraceService traceService;
     private final ContextHygieneService contextHygieneService;
 
-    private List<AgentSystem> sortedSystems;
-    private AgentSystem routingSystem;
-
-    AgentPipelineRunner(List<AgentSystem> systems, RuntimeConfigService runtimeConfigService,
-            UserPreferencesService preferencesService, Clock clock, TraceService traceService,
-            ContextHygieneService contextHygieneService) {
-        this.systems = systems;
-        this.runtimeConfigService = runtimeConfigService;
+    AgentPipelineRunner(AgentPipelinePlan plan, ModelRoutingConfigView modelRoutingConfigView,
+            TracingConfigView tracingConfigView, UserPreferencesService preferencesService, Clock clock,
+            TraceService traceService, ContextHygieneService contextHygieneService) {
+        this.plan = Objects.requireNonNull(plan, "plan must not be null");
+        this.modelRoutingConfigView = modelRoutingConfigView;
+        this.tracingConfigView = tracingConfigView;
         this.preferencesService = preferencesService;
         this.clock = clock;
         this.traceService = traceService;
@@ -59,9 +56,8 @@ final class AgentPipelineRunner {
     }
 
     void initializeRoutingSystem() {
-        getSortedSystems();
-        log.info("[AgentLoop] routingSystem resolved: {}",
-                routingSystem != null ? routingSystem.getClass().getName() : "<null>");
+        log.info("[AgentPipelineRunner] routingSystem resolved: {}",
+                plan.routingSystem().map(system -> system.getClass().getName()).orElse("<null>"));
     }
 
     AgentContext run(AgentContext context) {
@@ -72,7 +68,7 @@ final class AgentPipelineRunner {
             context.setCurrentIteration(iteration);
             log.info("--- Iteration {}/{} ---", iteration + 1, maxIterations);
 
-            for (AgentSystem system : getSortedSystems()) {
+            for (AgentSystem system : plan.orderedSystems()) {
                 context = processSystem(context, iteration, system);
             }
 
@@ -104,15 +100,16 @@ final class AgentPipelineRunner {
     }
 
     AgentContext routeResponse(AgentContext context) {
+        ResponseRoutingAgentSystem routingSystem = plan.routingSystem().orElse(null);
         if (routingSystem == null) {
-            log.warn("[AgentLoop] routingSystem is null; cannot route response");
+            log.warn("[AgentPipelineRunner] routingSystem is null; cannot route response");
             return context;
         }
 
         boolean should = routingSystem.shouldProcess(context);
-        log.info("[AgentLoop] routingSystem.shouldProcess={}", should);
+        log.info("[AgentPipelineRunner] routingSystem.shouldProcess={}", should);
         if (should) {
-            log.info("[AgentLoop] invoking routingSystem.process (OutgoingResponse present: {})",
+            log.info("[AgentPipelineRunner] invoking routingSystem.process (OutgoingResponse present: {})",
                     context.getAttribute(ContextAttributes.OUTGOING_RESPONSE) != null);
             return routingSystem.process(context);
         }
@@ -166,7 +163,7 @@ final class AgentPipelineRunner {
     private TraceContext startChildSpan(AgentContext context, String spanName, TraceSpanKind spanKind,
             Map<String, Object> attributes) {
         if (context == null || context.getSession() == null || context.getTraceContext() == null
-                || !runtimeConfigService.isTracingEnabled()) {
+                || tracingConfigView == null || !tracingConfigView.isTracingEnabled()) {
             return null;
         }
         return traceService.startSpan(context.getSession(), context.getTraceContext(), spanName, spanKind,
@@ -303,7 +300,7 @@ final class AgentPipelineRunner {
         if (message == null || message.getMetadata() == null || key == null || key.isBlank()) {
             return null;
         }
-        return me.golemcore.bot.domain.service.AutoRunContextSupport.readMetadataString(message.getMetadata(), key);
+        return me.golemcore.bot.domain.autorun.AutoRunContextSupport.readMetadataString(message.getMetadata(), key);
     }
 
     private String normalizeTierForTrace(String tier) {
@@ -341,34 +338,34 @@ final class AgentPipelineRunner {
     }
 
     private String resolveRouterModelId(String tier) {
-        if (runtimeConfigService == null) {
+        if (modelRoutingConfigView == null) {
             return null;
         }
         return switch (tier) {
-            case "smart" -> runtimeConfigService.getSmartModel();
-            case "deep" -> runtimeConfigService.getDeepModel();
-            case "coding" -> runtimeConfigService.getCodingModel();
-            case "routing" -> runtimeConfigService.getRoutingModel();
-            case "balanced" -> runtimeConfigService.getBalancedModel();
+            case "smart" -> modelRoutingConfigView.getSmartModel();
+            case "deep" -> modelRoutingConfigView.getDeepModel();
+            case "coding" -> modelRoutingConfigView.getCodingModel();
+            case "routing" -> modelRoutingConfigView.getRoutingModel();
+            case "balanced" -> modelRoutingConfigView.getBalancedModel();
             default -> {
-                RuntimeConfig.TierBinding binding = runtimeConfigService.getModelTierBinding(tier);
+                RuntimeConfig.TierBinding binding = modelRoutingConfigView.getModelTierBinding(tier);
                 yield binding != null ? binding.getModel() : null;
             }
         };
     }
 
     private String resolveRouterReasoning(String tier) {
-        if (runtimeConfigService == null) {
+        if (modelRoutingConfigView == null) {
             return null;
         }
         return switch (tier) {
-            case "smart" -> runtimeConfigService.getSmartModelReasoning();
-            case "deep" -> runtimeConfigService.getDeepModelReasoning();
-            case "coding" -> runtimeConfigService.getCodingModelReasoning();
-            case "routing" -> runtimeConfigService.getRoutingModelReasoning();
-            case "balanced" -> runtimeConfigService.getBalancedModelReasoning();
+            case "smart" -> modelRoutingConfigView.getSmartModelReasoning();
+            case "deep" -> modelRoutingConfigView.getDeepModelReasoning();
+            case "coding" -> modelRoutingConfigView.getCodingModelReasoning();
+            case "routing" -> modelRoutingConfigView.getRoutingModelReasoning();
+            case "balanced" -> modelRoutingConfigView.getBalancedModelReasoning();
             default -> {
-                RuntimeConfig.TierBinding binding = runtimeConfigService.getModelTierBinding(tier);
+                RuntimeConfig.TierBinding binding = modelRoutingConfigView.getModelTierBinding(tier);
                 yield binding != null ? binding.getReasoning() : null;
             }
         };
@@ -380,21 +377,6 @@ final class AgentPipelineRunner {
         }
         Map<String, Object> source = context != null ? context.getAttributes() : Map.of();
         return TraceMdcSupport.buildMdcContext(spanContext, source);
-    }
-
-    private List<AgentSystem> getSortedSystems() {
-        if (sortedSystems == null) {
-            sortedSystems = new ArrayList<>(systems);
-            sortedSystems.sort(Comparator.comparingInt(AgentSystem::getOrder));
-
-            log.info("[AgentLoop] systems in pipeline: {}", sortedSystems.stream().map(AgentSystem::getName).toList());
-
-            routingSystem = sortedSystems.stream().filter(ResponseRoutingAgentSystem.class::isInstance).findFirst()
-                    .orElse(null);
-        }
-        log.debug("[AgentLoop] routingSystem resolved: {}",
-                routingSystem != null ? routingSystem.getClass().getName() : "<null>");
-        return sortedSystems;
     }
 
     private record TraceStateSnapshot(String skillName, String tier, String modelId, String reasoning, String source,

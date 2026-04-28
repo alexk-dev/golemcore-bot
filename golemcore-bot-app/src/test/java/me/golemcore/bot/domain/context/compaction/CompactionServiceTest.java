@@ -1,6 +1,6 @@
 package me.golemcore.bot.domain.context.compaction;
 
-import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.runtimeconfig.RuntimeConfigService;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.port.outbound.LlmPort;

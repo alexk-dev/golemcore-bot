@@ -32,7 +32,7 @@ import me.golemcore.bot.domain.model.trace.TraceContext;
 import me.golemcore.bot.domain.model.trace.TraceRecord;
 import me.golemcore.bot.domain.model.trace.TraceSpanKind;
 import me.golemcore.bot.domain.model.trace.TraceStatusCode;
-import me.golemcore.bot.domain.service.StringValueSupport;
+import me.golemcore.bot.domain.support.StringValueSupport;
 import me.golemcore.bot.port.outbound.ModelSelectionQueryPort;
 import me.golemcore.bot.port.outbound.SelfEvolvingRuntimeConfigPort;
 import me.golemcore.bot.port.outbound.TraceOperationsPort;

@@ -1,6 +1,6 @@
 package me.golemcore.bot.domain.selfevolving.candidate;
 
-import me.golemcore.bot.domain.service.StringValueSupport;
+import me.golemcore.bot.domain.support.StringValueSupport;
 /*
  * Copyright 2026 Aleksei Kuleshov
  *

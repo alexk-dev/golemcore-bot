@@ -4,7 +4,7 @@ import me.golemcore.bot.domain.memory.model.MemoryRetrievalPlan;
 import me.golemcore.bot.domain.model.MemoryItem;
 import me.golemcore.bot.domain.model.MemoryQuery;
 import me.golemcore.bot.domain.model.MemoryScoredItem;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.runtimeconfig.RuntimeConfigService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 

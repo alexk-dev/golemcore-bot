@@ -10,7 +10,7 @@ import me.golemcore.bot.domain.model.FinishReason;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.OutgoingResponse;
 import me.golemcore.bot.domain.model.TurnOutcome;
-import me.golemcore.bot.domain.service.AutoRunContextSupport;
+import me.golemcore.bot.domain.autorun.AutoRunContextSupport;
 
 /**
  * Copies observable turn outcome metadata back to auto-run inbound messages.
@@ -18,7 +18,7 @@ import me.golemcore.bot.domain.service.AutoRunContextSupport;
 final class AutoRunOutcomeRecorder {
 
     void record(Message inbound, AgentContext context) {
-        if (!AutoRunContextSupport.isAutoMessage(inbound) || inbound == null || context == null) {
+        if (inbound == null || context == null || !AutoRunContextSupport.isAutoMessage(inbound)) {
             return;
         }
 

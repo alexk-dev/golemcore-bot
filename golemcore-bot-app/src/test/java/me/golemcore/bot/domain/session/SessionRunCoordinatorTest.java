@@ -1,6 +1,6 @@
 package me.golemcore.bot.domain.session;
 
-import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.runtimeconfig.RuntimeConfigService;
 import me.golemcore.bot.domain.events.RuntimeEventService;
 import me.golemcore.bot.port.outbound.RuntimeEventPublishPort;
 import me.golemcore.bot.port.outbound.HiveEventPublishPort;
@@ -9,8 +9,10 @@ import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.Message;
+import me.golemcore.bot.domain.model.RunStatus;
 import me.golemcore.bot.domain.model.RuntimeEvent;
 import me.golemcore.bot.domain.model.RuntimeEventType;
+import me.golemcore.bot.domain.model.TurnRunResult;
 import me.golemcore.bot.domain.model.hive.HiveRuntimeContracts;
 import me.golemcore.bot.port.outbound.SessionPort;
 import org.junit.jupiter.api.Test;
@@ -22,12 +24,18 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.AbstractExecutorService;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.FutureTask;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -308,6 +316,60 @@ class SessionRunCoordinatorTest {
     }
 
     @Test
+    void shouldIgnoreTargetedHiveStopWhenCommandIdDoesNotMatchRunningCommand() throws Exception {
+        SessionPort sessionPort = mock(SessionPort.class);
+        AgentLoop agentLoop = mock(AgentLoop.class);
+        RuntimeEventService runtimeEventService = mock(RuntimeEventService.class);
+        RuntimeConfigService runtimeConfigService = runtimeConfigService(true, "one-at-a-time", "one-at-a-time");
+        RuntimeEventPublishPort runtimeEventPublishPort = mock(RuntimeEventPublishPort.class);
+
+        RuntimeEvent cancelledEvent = RuntimeEvent.builder()
+                .type(RuntimeEventType.TURN_FINISHED)
+                .timestamp(Instant.parse("2026-03-18T00:00:00Z"))
+                .sessionId("hive:thread-1")
+                .channelType("hive")
+                .chatId("thread-1")
+                .payload(Map.of("reason", HiveRuntimeContracts.USER_INTERRUPT_REASON))
+                .build();
+
+        try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
+            SessionRunCoordinator coordinator = new SessionRunCoordinator(sessionPort, agentLoop, executor,
+                    runtimeEventService, runtimeConfigService, null, runtimeEventPublishPort);
+            AgentSession session = AgentSession.builder()
+                    .id("hive:thread-1")
+                    .channelType("hive")
+                    .chatId("thread-1")
+                    .messages(new ArrayList<>())
+                    .metadata(new LinkedHashMap<>())
+                    .build();
+            when(sessionPort.getOrCreate("hive", "thread-1")).thenReturn(session);
+            when(runtimeEventService.emitForSession(any(AgentSession.class), any(RuntimeEventType.class),
+                    any(Map.class)))
+                    .thenReturn(cancelledEvent);
+
+            Gate gate = new Gate();
+            CountDownLatch completed = new CountDownLatch(1);
+            Message inbound = hiveMessage("Inspect run-1", "cmd-1", "run-1");
+            org.mockito.Mockito.doAnswer(invocation -> {
+                try {
+                    gate.await();
+                } finally {
+                    completed.countDown();
+                }
+                return null;
+            }).when(agentLoop).processMessage(inbound);
+
+            coordinator.enqueue(inbound);
+            gate.awaitStarted();
+            coordinator.requestStop("hive", "thread-1", "run-1", "cmd-2");
+            gate.release();
+
+            assertTrue(completed.await(2, TimeUnit.SECONDS), "Non-matching targeted stop must not cancel active run");
+            verify(runtimeEventPublishPort, never()).publishRuntimeEvents(any(List.class), any(Map.class));
+        }
+    }
+
+    @Test
     void shouldContinueWithQueuedHiveCommandAfterCancellingActiveRun() throws Exception {
         SessionPort sessionPort = mock(SessionPort.class);
         AgentLoop agentLoop = mock(AgentLoop.class);
@@ -495,7 +557,7 @@ class SessionRunCoordinatorTest {
     }
 
     @Test
-    void shouldCompleteSubmitForContextWithProcessedAgentContext() throws Exception {
+    void shouldCompleteSubmitForResultWithImmutableTurnResult() throws Exception {
         SessionPort sessionPort = mock(SessionPort.class);
         AgentLoop agentLoop = mock(AgentLoop.class);
         RuntimeEventService runtimeEventService = mock(RuntimeEventService.class);
@@ -509,9 +571,12 @@ class SessionRunCoordinatorTest {
             processed.setAttribute(ContextAttributes.RESILIENCE_L5_TERMINAL_FAILURE, true);
             when(agentLoop.processMessage(inbound)).thenReturn(processed);
 
-            CompletableFuture<AgentContext> completion = coordinator.submitForContext(inbound);
+            CompletableFuture<TurnRunResult> completion = coordinator.submitForResult(inbound);
 
-            assertEquals(processed, completion.get(2, TimeUnit.SECONDS));
+            TurnRunResult result = completion.get(2, TimeUnit.SECONDS);
+            assertEquals(RunStatus.FAILED, result.status());
+            assertTrue(result.failures().stream()
+                    .anyMatch(failure -> "resilience.l5.terminal".equals(failure.errorCode())));
             verify(agentLoop).processMessage(inbound);
         }
     }
@@ -612,6 +677,88 @@ class SessionRunCoordinatorTest {
             assertEquals("B\n\nC", merged.getContent());
             assertEquals(ContextAttributes.TURN_QUEUE_KIND_FOLLOW_UP,
                     merged.getMetadata().get(ContextAttributes.TURN_QUEUE_KIND));
+        }
+    }
+
+    @Test
+    void shouldRunStartCallbacksForMergedQueuedFollowUpsWhenModeAll() throws Exception {
+        SessionPort sessionPort = mock(SessionPort.class);
+        AgentLoop agentLoop = mock(AgentLoop.class);
+        RuntimeEventService runtimeEventService = mock(RuntimeEventService.class);
+        RuntimeConfigService runtimeConfigService = runtimeConfigService(true, "one-at-a-time", "all");
+
+        try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
+            SessionRunCoordinator coordinator = newCoordinator(sessionPort, agentLoop, executor,
+                    runtimeEventService, runtimeConfigService);
+
+            Message a = user("A");
+            Message b = user("B");
+            Message c = user("C");
+
+            Gate gateA = new Gate();
+            CountDownLatch mergedProcessed = new CountDownLatch(1);
+            AtomicInteger startedQueuedCommands = new AtomicInteger();
+
+            org.mockito.Mockito.doAnswer(invocation -> {
+                Message inbound = invocation.getArgument(0);
+                if ("A".equals(inbound.getContent())) {
+                    gateA.await();
+                } else {
+                    mergedProcessed.countDown();
+                }
+                return null;
+            }).when(agentLoop).processMessage(any(Message.class));
+
+            coordinator.submit(a);
+            gateA.awaitStarted();
+            CompletableFuture<Void> bCompletion = coordinator.submit(b, startedQueuedCommands::incrementAndGet);
+            CompletableFuture<Void> cCompletion = coordinator.submit(c, startedQueuedCommands::incrementAndGet);
+            gateA.release();
+
+            assertTrue(mergedProcessed.await(2, TimeUnit.SECONDS), "Merged queued turn should run");
+            assertEquals(2, startedQueuedCommands.get(), "Every source command merged into the turn must start");
+            bCompletion.join();
+            cCompletion.join();
+        }
+    }
+
+    @Test
+    void shouldMarkRunnerActiveBeforeExecutorAcceptsTask() {
+        SessionPort sessionPort = mock(SessionPort.class);
+        AgentLoop agentLoop = mock(AgentLoop.class);
+        RuntimeEventService runtimeEventService = mock(RuntimeEventService.class);
+        RuntimeConfigService runtimeConfigService = runtimeConfigService(true, "one-at-a-time", "one-at-a-time");
+        try (InterleavingExecutorService executor = new InterleavingExecutorService()) {
+            SessionRunCoordinator coordinator = newCoordinator(sessionPort, agentLoop, executor,
+                    runtimeEventService, runtimeConfigService);
+            AtomicReference<SessionRunCoordinator> coordinatorRef = new AtomicReference<>(coordinator);
+
+            executor.beforeAcceptOnce(() -> coordinatorRef.get().enqueue(user("B")));
+
+            coordinator.enqueue(user("A"));
+
+            assertEquals(1, executor.acceptedTaskCount(),
+                    "A concurrent enqueue during executor acceptance should queue behind the active runner");
+        }
+    }
+
+    @Test
+    void shouldFailAwaitableSubmitWhenExecutorRejectsRun() {
+        SessionPort sessionPort = mock(SessionPort.class);
+        AgentLoop agentLoop = mock(AgentLoop.class);
+        RuntimeEventService runtimeEventService = mock(RuntimeEventService.class);
+        RuntimeConfigService runtimeConfigService = runtimeConfigService(true, "one-at-a-time", "one-at-a-time");
+        try (RejectingExecutorService executor = new RejectingExecutorService()) {
+            SessionRunCoordinator coordinator = newCoordinator(sessionPort, agentLoop, executor,
+                    runtimeEventService, runtimeConfigService);
+
+            CompletableFuture<TurnRunResult> completion = coordinator.submitForResult(user("A"));
+
+            ExecutionException failure = assertThrows(ExecutionException.class,
+                    () -> completion.get(1, TimeUnit.SECONDS));
+            assertTrue(failure.getCause() instanceof RejectedExecutionException);
+            assertEquals(0, coordinator.runnerCount());
+            verify(agentLoop, never()).processMessage(any(Message.class));
         }
     }
 
@@ -1586,6 +1733,91 @@ class SessionRunCoordinatorTest {
                 released = true;
                 lock.notifyAll();
             }
+        }
+    }
+
+    private static final class InterleavingExecutorService extends AbstractExecutorService {
+
+        private final List<Runnable> acceptedTasks = new ArrayList<>();
+        private Optional<Runnable> beforeAccept = Optional.empty();
+        private boolean shutdownRequested;
+
+        void beforeAcceptOnce(Runnable hook) {
+            this.beforeAccept = Optional.of(hook);
+        }
+
+        int acceptedTaskCount() {
+            return acceptedTasks.size();
+        }
+
+        @Override
+        public void execute(Runnable command) {
+            Optional<Runnable> hook = beforeAccept;
+            beforeAccept = Optional.empty();
+            hook.ifPresent(Runnable::run);
+            acceptedTasks.add(command instanceof FutureTask<?> ? command : new FutureTask<>(command, null));
+        }
+
+        @Override
+        public void shutdown() {
+            shutdownRequested = true;
+        }
+
+        @Override
+        public List<Runnable> shutdownNow() {
+            shutdownRequested = true;
+            return new ArrayList<>(acceptedTasks);
+        }
+
+        @Override
+        public boolean isShutdown() {
+            return shutdownRequested;
+        }
+
+        @Override
+        public boolean isTerminated() {
+            return shutdownRequested;
+        }
+
+        @Override
+        public boolean awaitTermination(long timeout, TimeUnit unit) {
+            return true;
+        }
+    }
+
+    private static final class RejectingExecutorService extends AbstractExecutorService {
+
+        private boolean shutdownRequested;
+
+        @Override
+        public void execute(Runnable command) {
+            throw new RejectedExecutionException("executor rejected");
+        }
+
+        @Override
+        public void shutdown() {
+            shutdownRequested = true;
+        }
+
+        @Override
+        public List<Runnable> shutdownNow() {
+            shutdownRequested = true;
+            return List.of();
+        }
+
+        @Override
+        public boolean isShutdown() {
+            return shutdownRequested;
+        }
+
+        @Override
+        public boolean isTerminated() {
+            return shutdownRequested;
+        }
+
+        @Override
+        public boolean awaitTermination(long timeout, TimeUnit unit) {
+            return true;
         }
     }
 }

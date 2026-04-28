@@ -30,9 +30,9 @@ import me.golemcore.bot.domain.model.MemoryPresetIds;
 import me.golemcore.bot.domain.model.MemoryQuery;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.RuntimeConfig;
-import me.golemcore.bot.domain.service.MemoryPresetService;
-import me.golemcore.bot.domain.service.MemoryScopeSupport;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.memory.MemoryPresetService;
+import me.golemcore.bot.domain.memory.MemoryScopeSupport;
+import me.golemcore.bot.domain.runtimeconfig.RuntimeConfigService;
 
 import java.util.List;
 

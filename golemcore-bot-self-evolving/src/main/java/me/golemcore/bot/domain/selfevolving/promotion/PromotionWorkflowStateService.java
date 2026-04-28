@@ -26,7 +26,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import me.golemcore.bot.domain.selfevolving.candidate.EvolutionCandidateService;
-import me.golemcore.bot.domain.service.StringValueSupport;
+import me.golemcore.bot.domain.support.StringValueSupport;
 
 /**
  * Candidate and decision state operations for the promotion workflow.

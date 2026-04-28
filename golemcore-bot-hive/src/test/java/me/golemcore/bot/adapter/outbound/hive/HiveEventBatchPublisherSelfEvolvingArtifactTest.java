@@ -7,7 +7,7 @@ import me.golemcore.bot.domain.model.selfevolving.artifact.ArtifactCatalogEntry;
 import me.golemcore.bot.domain.model.selfevolving.artifact.ArtifactCompareEvidenceProjection;
 import me.golemcore.bot.domain.model.selfevolving.artifact.ArtifactLineageProjection;
 import me.golemcore.bot.domain.model.selfevolving.artifact.ArtifactNormalizedRevisionProjection;
-import me.golemcore.bot.domain.service.HiveSessionStateStore;
+import me.golemcore.bot.domain.hive.HiveSessionStateStore;
 import me.golemcore.bot.port.outbound.StoragePort;
 import org.junit.jupiter.api.BeforeEach;
 import me.golemcore.bot.domain.model.hive.HiveRuntimeContracts;

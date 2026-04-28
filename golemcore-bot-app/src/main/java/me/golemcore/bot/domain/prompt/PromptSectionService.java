@@ -19,7 +19,7 @@ package me.golemcore.bot.domain.prompt;
  */
 
 import me.golemcore.bot.domain.skills.SkillTemplateEngine;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.runtimeconfig.RuntimeConfigService;
 import me.golemcore.bot.port.outbound.StoragePort;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;

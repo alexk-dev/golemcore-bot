@@ -18,9 +18,9 @@ package me.golemcore.bot.domain.tools;
  * Contact: alex@kuleshov.tech
  */
 
-import me.golemcore.bot.domain.service.StringValueSupport;
+import me.golemcore.bot.domain.support.StringValueSupport;
 import me.golemcore.bot.domain.planning.PlanService;
-import me.golemcore.bot.domain.service.SessionIdentitySupport;
+import me.golemcore.bot.domain.identity.SessionIdentitySupport;
 import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.util.Locale;

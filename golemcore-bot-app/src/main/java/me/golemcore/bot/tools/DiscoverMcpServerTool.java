@@ -29,7 +29,7 @@ import me.golemcore.bot.domain.model.SkillTransitionRequest;
 import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.model.ToolResult;
 import me.golemcore.bot.domain.skills.DynamicSkillFactory;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.runtimeconfig.RuntimeConfigService;
 import org.springframework.stereotype.Component;
 
 import java.util.List;

@@ -21,7 +21,7 @@ package me.golemcore.bot.auto;
 import me.golemcore.bot.domain.model.AutoModeChannelRegisteredEvent;
 import me.golemcore.bot.domain.model.ScheduleEntry;
 import me.golemcore.bot.domain.auto.AutoModeService;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.runtimeconfig.RuntimeConfigService;
 import me.golemcore.bot.domain.scheduling.ScheduleService;
 import me.golemcore.bot.plugin.runtime.ChannelRegistry;
 import me.golemcore.bot.port.channel.ChannelPort;

@@ -10,7 +10,7 @@ import static org.mockito.Mockito.mock;
 import java.util.List;
 import me.golemcore.bot.domain.command.CommandInvocation;
 import me.golemcore.bot.domain.command.CommandOutcome;
-import me.golemcore.bot.domain.service.UserPreferencesService;
+import me.golemcore.bot.domain.runtimeconfig.UserPreferencesService;
 import me.golemcore.bot.port.inbound.CommandPort;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.junit.jupiter.api.Test;

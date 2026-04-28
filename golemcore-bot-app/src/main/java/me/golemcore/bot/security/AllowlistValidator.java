@@ -18,7 +18,7 @@ package me.golemcore.bot.security;
  * Contact: alex@kuleshov.tech
  */
 
-import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.runtimeconfig.RuntimeConfigService;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;

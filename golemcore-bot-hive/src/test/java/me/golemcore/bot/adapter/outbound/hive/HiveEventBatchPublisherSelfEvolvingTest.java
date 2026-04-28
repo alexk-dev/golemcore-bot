@@ -16,7 +16,7 @@ import me.golemcore.bot.domain.model.HiveSessionState;
 import me.golemcore.bot.domain.model.selfevolving.EvolutionCandidate;
 import me.golemcore.bot.domain.model.selfevolving.RunRecord;
 import me.golemcore.bot.domain.model.selfevolving.RunVerdict;
-import me.golemcore.bot.domain.service.HiveSessionStateStore;
+import me.golemcore.bot.domain.hive.HiveSessionStateStore;
 import me.golemcore.bot.port.outbound.StoragePort;
 import org.junit.jupiter.api.BeforeEach;
 import me.golemcore.bot.domain.model.hive.HiveRuntimeContracts;
