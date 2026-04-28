@@ -3,6 +3,7 @@ package me.golemcore.bot.domain.system.toolloop.repeat;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import org.junit.jupiter.api.Test;
 
+import java.time.Duration;
 import java.util.Map;
 import java.util.Optional;
 
@@ -26,6 +27,8 @@ class AutonomyWorkKeyTest {
         assertEquals("goal-1", key.goalId());
         assertEquals("task-1", key.taskId());
         assertEquals("auto/tool-ledgers/web_chat-1/tasks/task-1.json", key.storagePath());
+        assertEquals("auto", key.storageDirectory());
+        assertEquals("tool-ledgers/web_chat-1/tasks/task-1.json", key.storageFile());
     }
 
     @Test
@@ -47,6 +50,36 @@ class AutonomyWorkKeyTest {
                 ContextAttributes.AUTO_GOAL_ID, "goal-1"));
 
         assertTrue(key.isEmpty());
+    }
+
+    @Test
+    void returnsEmptyWhenAutoMetadataIsIncomplete() {
+        assertTrue(AutonomyWorkKey.fromMetadata(null).isEmpty());
+        assertTrue(AutonomyWorkKey.fromMetadata(Map.of(ContextAttributes.AUTO_MODE, true)).isEmpty());
+        assertTrue(AutonomyWorkKey.fromMetadata(Map.of(
+                ContextAttributes.AUTO_MODE, true,
+                ContextAttributes.CONVERSATION_KEY, "  ")).isEmpty());
+    }
+
+    @Test
+    void sanitizesUnsafeStorageSegments() {
+        Map<String, Object> metadata = Map.of(
+                ContextAttributes.AUTO_MODE, true,
+                ContextAttributes.CONVERSATION_KEY, "web/chat 1",
+                ContextAttributes.AUTO_GOAL_ID, "goal:1");
+
+        AutonomyWorkKey key = AutonomyWorkKey.fromMetadata(metadata).orElseThrow();
+
+        assertEquals("auto/tool-ledgers/web_chat_1/goals/goal_1.json", key.storagePath());
+    }
+
+    @Test
+    void noopLedgerStoreDoesNothing() {
+        ToolUseLedgerStore store = ToolUseLedgerStore.noop();
+
+        store.save(new AutonomyWorkKey("session", "goal", null, null), new ToolUseLedger());
+
+        assertTrue(store.load(new AutonomyWorkKey("session", "goal", null, null), Duration.ofMinutes(1)).isEmpty());
     }
 
     @Test

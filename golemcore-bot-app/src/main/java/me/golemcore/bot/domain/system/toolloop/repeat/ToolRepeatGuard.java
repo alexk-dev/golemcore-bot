@@ -76,7 +76,7 @@ public class ToolRepeatGuard {
                 && toolResult.getFailureKind() != null
                 && "REPEATED_TOOL_USE_BLOCKED".equals(toolResult.getFailureKind().name());
         Instant now = clock.instant();
-        turnState.getToolUseLedger().record(new ToolUseRecord(
+        turnState.getToolUseLedger().recordUse(new ToolUseRecord(
                 fingerprint,
                 now,
                 now,

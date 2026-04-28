@@ -1,6 +1,7 @@
 package me.golemcore.bot.domain.system.toolloop.repeat;
 
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.time.Clock;
 import java.time.Duration;
@@ -137,6 +138,88 @@ class ToolRepeatGuardTest {
         ToolRepeatDecision decision = guard.beforeExecute(turnState, readCall("README.md"));
 
         assertInstanceOf(ToolRepeatDecision.StopTurn.class, decision);
+    }
+
+    @Test
+    void disabledGuardAlwaysAllowsEvenRepeatedObservation() {
+        TurnState turnState = turnState();
+        Message.ToolCall call = readCall("README.md");
+        ToolRepeatGuard disabledGuard = ToolRepeatGuard.noop();
+        guard.afterOutcome(turnState, call, success(call, "first"));
+        guard.afterOutcome(turnState, call, success(call, "second"));
+
+        ToolRepeatDecision decision = disabledGuard.beforeExecute(turnState, call);
+
+        assertInstanceOf(ToolRepeatDecision.Allow.class, decision);
+    }
+
+    @Test
+    void shadowModeWarnsInsteadOfBlockingAndCountsWarning() {
+        TurnState turnState = turnState();
+        Message.ToolCall call = readCall("README.md");
+        ToolRepeatGuard shadowGuard = new ToolRepeatGuard(
+                new ToolUseFingerprintService(),
+                new ToolRepeatGuardSettings(true, true, 1, 1, 4, Duration.ofSeconds(60), Duration.ofMinutes(120)),
+                clock);
+        guard.afterOutcome(turnState, call, success(call, "first"));
+
+        ToolRepeatDecision decision = shadowGuard.beforeExecute(turnState, call);
+
+        assertInstanceOf(ToolRepeatDecision.WarnAndAllow.class, decision);
+        assertEquals(1, turnState.getToolUseLedger().getBlockedRepeatCount());
+        assertEquals(1, turnState.getToolUseLedger().getWarnedRepeatCount());
+    }
+
+    @Test
+    void recordsGuardBlockedFailureKindForBlockedMutation() {
+        TurnState turnState = turnState();
+        Message.ToolCall write = writeCall("README.md");
+        ToolUseFingerprint fingerprint = new ToolUseFingerprintService().fingerprint(write);
+        turnState.getToolUseLedger().restore(new ToolUseRecord(
+                fingerprint,
+                NOW,
+                NOW,
+                true,
+                null,
+                "sha256:previous",
+                turnState.getToolUseLedger().getEnvironmentVersion(),
+                false,
+                "updated"));
+
+        ToolRepeatDecision decision = guard.beforeExecute(turnState, write);
+        guard.afterOutcome(turnState, write, new ToolExecutionOutcome(
+                write.getId(),
+                write.getName(),
+                ToolResult.failure(me.golemcore.bot.domain.model.ToolFailureKind.REPEATED_TOOL_USE_BLOCKED, "blocked"),
+                "blocked",
+                false,
+                null));
+
+        assertInstanceOf(ToolRepeatDecision.BlockAndHint.class, decision);
+        assertEquals(2, turnState.getToolUseLedger().recordsFor(fingerprint).size());
+    }
+
+    @Test
+    void ignoresNullOutcomeInputsAndUsesDefaultSettingsWhenSupplierReturnsNull() {
+        TurnState turnState = turnState();
+        ToolRepeatGuard nullableSettingsGuard = new ToolRepeatGuard(new ToolUseFingerprintService(), () -> null, clock);
+
+        nullableSettingsGuard.afterOutcome(null, null, null);
+        ToolRepeatDecision decision = nullableSettingsGuard.beforeExecute(turnState, readCall("README.md"));
+
+        assertInstanceOf(ToolRepeatDecision.Allow.class, decision);
+    }
+
+    @Test
+    void settingsClampInvalidDurationsAndThresholds() {
+        ToolRepeatGuardSettings settings = new ToolRepeatGuardSettings(
+                true, false, 0, -1, 0, Duration.ofSeconds(-1), Duration.ofMinutes(-1));
+
+        assertEquals(1, settings.maxSameObservePerTurn());
+        assertEquals(1, settings.maxSameUnknownPerTurn());
+        assertEquals(1, settings.maxBlockedRepeatsPerTurn());
+        assertEquals(Duration.ofSeconds(60), settings.minPollInterval());
+        assertEquals(Duration.ofMinutes(120), settings.autoLedgerTtl());
     }
 
     private TurnState turnState() {

@@ -40,7 +40,9 @@ public class JsonToolUseLedgerStore implements ToolUseLedgerStore {
             return Optional.empty();
         }
         try {
-            if (!storagePort.exists(key.storageDirectory(), key.storageFile()).join()) {
+            boolean ledgerExists = Boolean.TRUE
+                    .equals(storagePort.exists(key.storageDirectory(), key.storageFile()).join());
+            if (!ledgerExists) {
                 return Optional.empty();
             }
             String json = storagePort.getText(key.storageDirectory(), key.storageFile()).join();
@@ -77,18 +79,18 @@ public class JsonToolUseLedgerStore implements ToolUseLedgerStore {
         ledger.setWarnedRepeatCount(stored.warnedRepeatCount());
         Instant cutoff = clock.instant().minus(ttl != null ? ttl : Duration.ZERO);
         for (StoredRecord storedRecord : stored.records()) {
-            ToolUseRecord record = storedRecord.toRecord();
-            if (!isExpired(record, cutoff)) {
-                ledger.restore(record);
+            ToolUseRecord entry = storedRecord.toRecord();
+            if (!isExpired(entry, cutoff)) {
+                ledger.restore(entry);
             }
         }
         return ledger;
     }
 
     private StoredLedger toStored(AutonomyWorkKey key, ToolUseLedger ledger) {
-        List<StoredRecord> records = new ArrayList<>();
+        List<StoredRecord> storedRecords = new ArrayList<>();
         ledger.snapshotRecords().values()
-                .forEach(entries -> entries.forEach(record -> records.add(StoredRecord.from(record))));
+                .forEach(entries -> entries.forEach(entry -> storedRecords.add(StoredRecord.from(entry))));
         return new StoredLedger(
                 SCHEMA_VERSION,
                 StoredWorkKey.from(key),
@@ -96,16 +98,16 @@ public class JsonToolUseLedgerStore implements ToolUseLedgerStore {
                 ledger.getEnvironmentVersion(),
                 ledger.getBlockedRepeatCount(),
                 ledger.getWarnedRepeatCount(),
-                records);
+                storedRecords);
     }
 
-    private boolean isExpired(ToolUseRecord record, Instant cutoff) {
-        if (record == null || record.fingerprint() == null || record.finishedAt() == null) {
+    private boolean isExpired(ToolUseRecord entry, Instant cutoff) {
+        if (entry == null || entry.fingerprint() == null || entry.finishedAt() == null) {
             return false;
         }
-        ToolUseCategory category = record.fingerprint().category();
+        ToolUseCategory category = entry.fingerprint().category();
         return (category == ToolUseCategory.OBSERVE || category == ToolUseCategory.POLL)
-                && record.finishedAt().isBefore(cutoff);
+                && entry.finishedAt().isBefore(cutoff);
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
@@ -163,17 +165,17 @@ public class JsonToolUseLedgerStore implements ToolUseLedgerStore {
             boolean guardBlocked,
             String decisionReason) {
 
-        static StoredRecord from(ToolUseRecord record) {
+        static StoredRecord from(ToolUseRecord entry) {
             return new StoredRecord(
-                    StoredFingerprint.from(record.fingerprint()),
-                    record.startedAt(),
-                    record.finishedAt(),
-                    record.success(),
-                    record.failureKind(),
-                    record.outputDigest(),
-                    record.environmentVersion(),
-                    record.guardBlocked(),
-                    record.decisionReason());
+                    StoredFingerprint.from(entry.fingerprint()),
+                    entry.startedAt(),
+                    entry.finishedAt(),
+                    entry.success(),
+                    entry.failureKind(),
+                    entry.outputDigest(),
+                    entry.environmentVersion(),
+                    entry.guardBlocked(),
+                    entry.decisionReason());
         }
 
         ToolUseRecord toRecord() {

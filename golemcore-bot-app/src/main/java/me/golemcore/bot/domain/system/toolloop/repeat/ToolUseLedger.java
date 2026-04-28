@@ -31,31 +31,31 @@ public class ToolUseLedger {
         this.maxRecordsPerFingerprint = Math.max(1, maxRecordsPerFingerprint);
     }
 
-    public void record(ToolUseRecord record) {
-        if (record == null || record.fingerprint() == null || record.fingerprint().stableKey() == null) {
+    public void recordUse(ToolUseRecord entry) {
+        if (entry == null || entry.fingerprint() == null || entry.fingerprint().stableKey() == null) {
             return;
         }
-        ToolUseRecord stored = record.withEnvironmentVersion(environmentVersion);
-        List<ToolUseRecord> records = recordsByFingerprint.computeIfAbsent(record.fingerprint().stableKey(),
+        ToolUseRecord stored = entry.withEnvironmentVersion(environmentVersion);
+        List<ToolUseRecord> entries = recordsByFingerprint.computeIfAbsent(entry.fingerprint().stableKey(),
                 ignored -> new ArrayList<>());
-        records.add(stored);
-        while (records.size() > maxRecordsPerFingerprint) {
-            records.remove(0);
+        entries.add(stored);
+        while (entries.size() > maxRecordsPerFingerprint) {
+            entries.remove(0);
         }
-        if (isStateChangingSuccess(record)) {
+        if (isStateChangingSuccess(entry)) {
             environmentVersion++;
         }
     }
 
-    public void restore(ToolUseRecord record) {
-        if (record == null || record.fingerprint() == null || record.fingerprint().stableKey() == null) {
+    public void restore(ToolUseRecord entry) {
+        if (entry == null || entry.fingerprint() == null || entry.fingerprint().stableKey() == null) {
             return;
         }
-        List<ToolUseRecord> records = recordsByFingerprint.computeIfAbsent(record.fingerprint().stableKey(),
+        List<ToolUseRecord> entries = recordsByFingerprint.computeIfAbsent(entry.fingerprint().stableKey(),
                 ignored -> new ArrayList<>());
-        records.add(record);
-        while (records.size() > maxRecordsPerFingerprint) {
-            records.remove(0);
+        entries.add(entry);
+        while (entries.size() > maxRecordsPerFingerprint) {
+            entries.remove(0);
         }
     }
 
@@ -68,7 +68,7 @@ public class ToolUseLedger {
 
     public List<ToolUseRecord> recordsForCurrentEnvironment(ToolUseFingerprint fingerprint) {
         return recordsFor(fingerprint).stream()
-                .filter(record -> record.environmentVersion() == environmentVersion)
+                .filter(entry -> entry.environmentVersion() == environmentVersion)
                 .toList();
     }
 
@@ -116,11 +116,11 @@ public class ToolUseLedger {
         this.warnedRepeatCount = Math.max(0, warnedRepeatCount);
     }
 
-    private boolean isStateChangingSuccess(ToolUseRecord record) {
-        if (!record.success() || record.guardBlocked() || record.fingerprint() == null) {
+    private boolean isStateChangingSuccess(ToolUseRecord entry) {
+        if (!entry.success() || entry.guardBlocked() || entry.fingerprint() == null) {
             return false;
         }
-        return switch (record.fingerprint().category()) {
+        return switch (entry.fingerprint().category()) {
         case MUTATE_IDEMPOTENT, MUTATE_NON_IDEMPOTENT -> true;
         case OBSERVE, POLL, EXECUTE_UNKNOWN, CONTROL -> false;
         };

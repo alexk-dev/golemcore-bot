@@ -1,6 +1,7 @@
 package me.golemcore.bot.domain.system.toolloop.repeat;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.time.Instant;
 import org.junit.jupiter.api.Test;
@@ -14,7 +15,7 @@ class ToolUseLedgerTest {
         ToolUseLedger ledger = new ToolUseLedger();
         ToolUseFingerprint fingerprint = fingerprint(ToolUseCategory.OBSERVE);
 
-        ledger.record(record(fingerprint, true, false));
+        ledger.recordUse(toolUseRecord(fingerprint, true, false));
 
         assertEquals(1, ledger.recordsFor(fingerprint).size());
         assertEquals(1, ledger.repeatCountInCurrentEnvironment(fingerprint));
@@ -24,7 +25,7 @@ class ToolUseLedgerTest {
     void incrementsEnvironmentVersionAfterMutation() {
         ToolUseLedger ledger = new ToolUseLedger();
 
-        ledger.record(record(fingerprint(ToolUseCategory.MUTATE_IDEMPOTENT), true, false));
+        ledger.recordUse(toolUseRecord(fingerprint(ToolUseCategory.MUTATE_IDEMPOTENT), true, false));
 
         assertEquals(1, ledger.getEnvironmentVersion());
     }
@@ -33,7 +34,7 @@ class ToolUseLedgerTest {
     void doesNotIncrementEnvironmentVersionAfterObservation() {
         ToolUseLedger ledger = new ToolUseLedger();
 
-        ledger.record(record(fingerprint(ToolUseCategory.OBSERVE), true, false));
+        ledger.recordUse(toolUseRecord(fingerprint(ToolUseCategory.OBSERVE), true, false));
 
         assertEquals(0, ledger.getEnvironmentVersion());
     }
@@ -42,9 +43,9 @@ class ToolUseLedgerTest {
     void returnsOnlyRecordsForSameEnvironmentVersionWhenAskedForUnchangedRepeats() {
         ToolUseLedger ledger = new ToolUseLedger();
         ToolUseFingerprint observation = fingerprint(ToolUseCategory.OBSERVE);
-        ledger.record(record(observation, true, false));
-        ledger.record(record(fingerprint(ToolUseCategory.MUTATE_IDEMPOTENT), true, false));
-        ledger.record(record(observation, true, false));
+        ledger.recordUse(toolUseRecord(observation, true, false));
+        ledger.recordUse(toolUseRecord(fingerprint(ToolUseCategory.MUTATE_IDEMPOTENT), true, false));
+        ledger.recordUse(toolUseRecord(observation, true, false));
 
         assertEquals(1, ledger.recordsForCurrentEnvironment(observation).size());
         assertEquals(1, ledger.repeatCountInCurrentEnvironment(observation));
@@ -55,15 +56,67 @@ class ToolUseLedgerTest {
         ToolUseLedger ledger = new ToolUseLedger();
         ToolUseFingerprint fingerprint = fingerprint(ToolUseCategory.OBSERVE);
 
-        ledger.record(record(fingerprint, true, false));
-        ledger.record(record(fingerprint, false, true));
+        ledger.recordUse(toolUseRecord(fingerprint, true, false));
+        ledger.recordUse(toolUseRecord(fingerprint, false, true));
         ledger.incrementBlockedRepeatCount();
 
         assertEquals(1, ledger.getBlockedRepeatCount());
         assertEquals(2, ledger.recordsFor(fingerprint).size());
     }
 
-    private ToolUseRecord record(ToolUseFingerprint fingerprint, boolean success, boolean guardBlocked) {
+    @Test
+    void ignoresInvalidEntriesAndReturnsEmptyRecordsForMissingFingerprint() {
+        ToolUseLedger ledger = new ToolUseLedger();
+
+        ledger.recordUse(null);
+        ledger.recordUse(new ToolUseRecord(null, NOW, NOW, true, null, null, 0, false, null));
+
+        assertEquals(0, ledger.snapshotRecords().size());
+        assertEquals(0, ledger.recordsFor(null).size());
+        assertEquals(0, ledger.recordsFor(new ToolUseFingerprint("tool", ToolUseCategory.OBSERVE, "hash", null, "{}"))
+                .size());
+    }
+
+    @Test
+    void capsEntriesPerFingerprintAndDefensivelyExposesSnapshot() {
+        ToolUseLedger ledger = new ToolUseLedger(1);
+        ToolUseFingerprint fingerprint = fingerprint(ToolUseCategory.OBSERVE);
+
+        ledger.recordUse(toolUseRecord(fingerprint, true, false));
+        ledger.recordUse(new ToolUseRecord(
+                fingerprint, NOW.plusSeconds(1), NOW.plusSeconds(1), true, null, "sha256:new", 0, false, "allowed"));
+
+        assertEquals(1, ledger.recordsFor(fingerprint).size());
+        assertEquals("sha256:new", ledger.recordsFor(fingerprint).getFirst().outputDigest());
+        assertThrows(UnsupportedOperationException.class,
+                () -> ledger.snapshotRecords().put("other", java.util.List.of()));
+    }
+
+    @Test
+    void failedOrGuardBlockedMutationsDoNotAdvanceEnvironmentVersion() {
+        ToolUseLedger ledger = new ToolUseLedger();
+        ToolUseFingerprint mutation = fingerprint(ToolUseCategory.MUTATE_NON_IDEMPOTENT);
+
+        ledger.recordUse(toolUseRecord(mutation, false, false));
+        ledger.recordUse(toolUseRecord(mutation, true, true));
+
+        assertEquals(0, ledger.getEnvironmentVersion());
+    }
+
+    @Test
+    void settersClampNegativeCountersAndEnvironmentVersion() {
+        ToolUseLedger ledger = new ToolUseLedger();
+
+        ledger.setEnvironmentVersion(-1);
+        ledger.setBlockedRepeatCount(-1);
+        ledger.setWarnedRepeatCount(-1);
+
+        assertEquals(0, ledger.getEnvironmentVersion());
+        assertEquals(0, ledger.getBlockedRepeatCount());
+        assertEquals(0, ledger.getWarnedRepeatCount());
+    }
+
+    private ToolUseRecord toolUseRecord(ToolUseFingerprint fingerprint, boolean success, boolean guardBlocked) {
         return new ToolUseRecord(
                 fingerprint,
                 NOW,

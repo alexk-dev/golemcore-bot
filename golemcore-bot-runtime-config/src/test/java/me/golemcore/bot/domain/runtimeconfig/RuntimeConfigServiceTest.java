@@ -815,7 +815,7 @@ class RuntimeConfigServiceTest {
     }
 
     @Test
-    void shouldReturnConfiguredToolLoopBudgetSeparatelyFromTurnBudget() throws Exception {
+    void shouldReturnConfiguredToolLoopBudgetSeparatelyFromTurnBudget() {
         RuntimeConfig config = RuntimeConfig.builder()
                 .turn(RuntimeConfig.TurnConfig.builder().maxSkillTransitions(4).maxLlmCalls(200).maxToolExecutions(500)
                         .build())

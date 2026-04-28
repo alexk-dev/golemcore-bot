@@ -13,12 +13,10 @@ public interface ToolUseLedgerStore {
     void save(AutonomyWorkKey key, ToolUseLedger ledger);
 
     static ToolUseLedgerStore noop() {
-        return NoopToolUseLedgerStore.INSTANCE;
+        return new NoopToolUseLedgerStore();
     }
 
     final class NoopToolUseLedgerStore implements ToolUseLedgerStore {
-
-        private static final NoopToolUseLedgerStore INSTANCE = new NoopToolUseLedgerStore();
 
         private NoopToolUseLedgerStore() {
         }

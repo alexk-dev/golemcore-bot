@@ -75,11 +75,78 @@ class ToolUseFingerprintServiceTest {
                 service.fingerprint(toolCall("external.sidecar", Map.of("input", "value"))).category());
     }
 
+    @Test
+    void classifiesControlShellMutatingFilesystemAndGoalLikeTools() {
+        assertEquals(ToolUseCategory.CONTROL, service.fingerprint(toolCall(ToolNames.PLAN_EXIT, Map.of())).category());
+        assertEquals(ToolUseCategory.EXECUTE_UNKNOWN,
+                service.fingerprint(toolCall(ToolNames.SHELL, Map.of("command", "ls"))).category());
+        assertEquals(ToolUseCategory.MUTATE_IDEMPOTENT,
+                service.fingerprint(toolCall("filesystem",
+                        Map.of("operation", "write_file", "path", "README.md", "content", "updated"))).category());
+        assertEquals(ToolUseCategory.MUTATE_IDEMPOTENT,
+                service.fingerprint(toolCall("goal.diary", Map.of("text", "checkpoint"))).category());
+    }
+
+    @Test
+    void canonicalizesNestedCollectionsArraysPrimitivesAndUnknownObjects() {
+        Message.ToolCall first = toolCall("filesystem",
+                Map.of(
+                        "operation", "read_file",
+                        "path", "README.md",
+                        "tags", java.util.List.of("a", "b"),
+                        "ids", new String[] { "1", "2" },
+                        "enabled", true,
+                        "count", 2,
+                        "marker", new Marker("x")));
+        Message.ToolCall second = toolCall("filesystem",
+                Map.of(
+                        "marker", new Marker("x"),
+                        "count", 2,
+                        "enabled", true,
+                        "ids", new String[] { "1", "2" },
+                        "tags", java.util.List.of("a", "b"),
+                        "path", "./README.md",
+                        "operation", "read_file"));
+
+        ToolUseFingerprint fingerprint = service.fingerprint(first);
+
+        assertEquals(fingerprint.stableKey(), service.fingerprint(second).stableKey());
+        assertTrue(fingerprint.debugArguments().contains("\"ids\":[\"1\",\"2\"]"));
+        assertTrue(fingerprint.debugArguments().contains("\"marker\":\"marker:x\""));
+    }
+
+    @Test
+    void escapesJsonSpecialCharactersInDebugArguments() {
+        ToolUseFingerprint fingerprint = service.fingerprint(toolCall("note.read",
+                Map.of("text", "\"quoted\"\\path\nnext\tcolumn", "operation", "read")));
+
+        assertTrue(fingerprint.debugArguments().contains("\\\"quoted\\\""));
+        assertTrue(fingerprint.debugArguments().contains("\\\\path"));
+        assertTrue(fingerprint.debugArguments().contains("\\nnext\\tcolumn"));
+    }
+
+    @Test
+    void handlesNullToolCallAndNullArguments() {
+        ToolUseFingerprint nullCallFingerprint = service.fingerprint(null);
+        ToolUseFingerprint nullArgumentsFingerprint = service.fingerprint(toolCall("external.sidecar", null));
+
+        assertEquals(ToolUseCategory.EXECUTE_UNKNOWN, nullCallFingerprint.category());
+        assertEquals("{}", nullArgumentsFingerprint.debugArguments());
+    }
+
     private Message.ToolCall toolCall(String name, Map<String, Object> arguments) {
         return Message.ToolCall.builder()
                 .id("call-" + name)
                 .name(name)
                 .arguments(arguments)
                 .build();
+    }
+
+    private record Marker(String value) {
+
+        @Override
+        public String toString() {
+            return "marker:" + value;
+        }
     }
 }

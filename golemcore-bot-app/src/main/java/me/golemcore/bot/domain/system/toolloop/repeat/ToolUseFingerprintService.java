@@ -76,45 +76,59 @@ public class ToolUseFingerprintService {
             return null;
         }
         if (value instanceof Map<?, ?> map) {
-            Map<String, Object> result = new LinkedHashMap<>();
-            Map<String, Object> sorted = new TreeMap<>();
-            for (Map.Entry<?, ?> entry : map.entrySet()) {
-                String fieldName = String.valueOf(entry.getKey());
-                String normalizedField = normalizeValue(fieldName);
-                if (VOLATILE_FIELDS.contains(normalizedField)) {
-                    continue;
-                }
-                Object entryValue = entry.getValue();
-                if (isSecretField(normalizedField)) {
-                    sorted.put(fieldName, "<redacted>");
-                } else if (ToolNames.FILESYSTEM.equals(toolName) && "path".equals(normalizedField)
-                        && entryValue instanceof String stringValue) {
-                    sorted.put(fieldName, normalizePath(stringValue));
-                } else {
-                    sorted.put(fieldName, canonicalize(toolName, entryValue));
-                }
-            }
-            result.putAll(sorted);
-            return result;
+            return canonicalizeMap(toolName, map);
         }
         if (value instanceof Collection<?> collection) {
-            List<Object> result = new ArrayList<>(collection.size());
-            collection.forEach(item -> result.add(canonicalize(toolName, item)));
-            return result;
+            return canonicalizeCollection(toolName, collection);
         }
         if (value.getClass().isArray()) {
-            int length = Array.getLength(value);
-            List<Object> result = new ArrayList<>(length);
-            for (int index = 0; index < length; index++) {
-                result.add(canonicalize(toolName, Array.get(value, index)));
-            }
-            return result;
+            return canonicalizeArray(toolName, value);
         }
         if (value instanceof Number || value instanceof Boolean || value instanceof Character
                 || value instanceof String) {
             return value;
         }
         return String.valueOf(value);
+    }
+
+    private Map<String, Object> canonicalizeMap(String toolName, Map<?, ?> map) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        Map<String, Object> sorted = new TreeMap<>();
+        for (Map.Entry<?, ?> entry : map.entrySet()) {
+            String fieldName = String.valueOf(entry.getKey());
+            String normalizedField = normalizeValue(fieldName);
+            if (!VOLATILE_FIELDS.contains(normalizedField)) {
+                sorted.put(fieldName, canonicalizeMapValue(toolName, normalizedField, entry.getValue()));
+            }
+        }
+        result.putAll(sorted);
+        return result;
+    }
+
+    private Object canonicalizeMapValue(String toolName, String normalizedField, Object entryValue) {
+        if (isSecretField(normalizedField)) {
+            return "<redacted>";
+        }
+        if (ToolNames.FILESYSTEM.equals(toolName) && "path".equals(normalizedField)
+                && entryValue instanceof String stringValue) {
+            return normalizePath(stringValue);
+        }
+        return canonicalize(toolName, entryValue);
+    }
+
+    private List<Object> canonicalizeCollection(String toolName, Collection<?> collection) {
+        List<Object> result = new ArrayList<>(collection.size());
+        collection.forEach(item -> result.add(canonicalize(toolName, item)));
+        return result;
+    }
+
+    private List<Object> canonicalizeArray(String toolName, Object value) {
+        int length = Array.getLength(value);
+        List<Object> result = new ArrayList<>(length);
+        for (int index = 0; index < length; index++) {
+            result.add(canonicalize(toolName, Array.get(value, index)));
+        }
+        return result;
     }
 
     private String canonicalJson(Object value) {

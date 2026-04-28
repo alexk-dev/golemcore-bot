@@ -107,8 +107,8 @@ class DefaultToolLoopSystemToolExecutionTest extends DefaultToolLoopSystemFixtur
                 storagePort(), new ObjectMapper().findAndRegisterModules(), clock);
         ToolUseLedger priorLedger = new ToolUseLedger();
         ToolUseFingerprint fingerprint = fingerprintService.fingerprint(readCall);
-        priorLedger.record(priorObservation(fingerprint, "sha256:first"));
-        priorLedger.record(priorObservation(fingerprint, "sha256:second"));
+        priorLedger.recordUse(priorObservation(fingerprint, "sha256:first"));
+        priorLedger.recordUse(priorObservation(fingerprint, "sha256:second"));
         ledgerStore.save(new me.golemcore.bot.domain.system.toolloop.repeat.AutonomyWorkKey(
                 "web:chat-1", "goal-1", "task-1", null), priorLedger);
 

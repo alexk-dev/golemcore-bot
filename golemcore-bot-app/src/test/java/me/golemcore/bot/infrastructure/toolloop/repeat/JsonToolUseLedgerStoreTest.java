@@ -42,7 +42,7 @@ class JsonToolUseLedgerStoreTest {
     @Test
     void savesAndLoadsLedgerByAutonomyWorkKey() {
         ToolUseLedger ledger = new ToolUseLedger();
-        ledger.record(successfulRead(NOW.minusSeconds(10), "sha256:output"));
+        ledger.recordUse(successfulRead(NOW.minusSeconds(10), "sha256:output"));
 
         store.save(WORK_KEY, ledger);
         Optional<ToolUseLedger> loaded = store.load(WORK_KEY, Duration.ofMinutes(120));
@@ -64,8 +64,8 @@ class JsonToolUseLedgerStoreTest {
     @Test
     void prunesExpiredObservationRecordsOnLoad() {
         ToolUseLedger ledger = new ToolUseLedger();
-        ledger.record(successfulRead(NOW.minus(Duration.ofMinutes(121)), "sha256:old"));
-        ledger.record(successfulRead(NOW.minus(Duration.ofMinutes(5)), "sha256:new"));
+        ledger.recordUse(successfulRead(NOW.minus(Duration.ofMinutes(121)), "sha256:old"));
+        ledger.recordUse(successfulRead(NOW.minus(Duration.ofMinutes(5)), "sha256:new"));
         store.save(WORK_KEY, ledger);
 
         ToolUseLedger loaded = store.load(WORK_KEY, Duration.ofMinutes(120)).orElseThrow();
@@ -77,7 +77,7 @@ class JsonToolUseLedgerStoreTest {
     @Test
     void doesNotPersistRawSecretsOrLargeOutputs() {
         ToolUseLedger ledger = new ToolUseLedger();
-        ledger.record(successfulRead(NOW, "sha256:digest-only"));
+        ledger.recordUse(successfulRead(NOW, "sha256:digest-only"));
 
         store.save(WORK_KEY, ledger);
         String json = storagePort.get("auto", "tool-ledgers/web_chat-1/tasks/task-1.json");
@@ -86,6 +86,54 @@ class JsonToolUseLedgerStoreTest {
         assertFalse(json.contains("raw-secret-token"));
         assertFalse(json.contains("very large raw output"));
         assertFalse(json.contains("secret.txt"));
+    }
+
+    @Test
+    void returnsEmptyForNullMissingBlankOrMalformedLedger() {
+        assertTrue(store.load(null, Duration.ofMinutes(120)).isEmpty());
+        assertTrue(store.load(WORK_KEY, Duration.ofMinutes(120)).isEmpty());
+
+        storagePort.putText("auto", "tool-ledgers/web_chat-1/tasks/task-1.json", "   ").join();
+        assertTrue(store.load(WORK_KEY, Duration.ofMinutes(120)).isEmpty());
+
+        storagePort.putText("auto", "tool-ledgers/web_chat-1/tasks/task-1.json", "{not-json").join();
+        assertTrue(store.load(WORK_KEY, Duration.ofMinutes(120)).isEmpty());
+    }
+
+    @Test
+    void saveIgnoresNullInputs() {
+        store.save(null, new ToolUseLedger());
+        store.save(WORK_KEY, null);
+
+        assertTrue(storagePort.atomicWrites().isEmpty());
+    }
+
+    @Test
+    void nullTtlKeepsFreshRecordsAndPrunesOnlyOlderObservationsAtCurrentInstant() {
+        ToolUseLedger ledger = new ToolUseLedger();
+        ToolUseFingerprint mutationFingerprint = new ToolUseFingerprint(
+                "filesystem",
+                ToolUseCategory.MUTATE_IDEMPOTENT,
+                "sha256:write",
+                "filesystem:MUTATE_IDEMPOTENT:sha256:write",
+                null);
+        ledger.recordUse(successfulRead(NOW.minusSeconds(1), "sha256:old-observation"));
+        ledger.recordUse(new ToolUseRecord(
+                mutationFingerprint,
+                NOW.minusSeconds(10),
+                NOW.minusSeconds(10),
+                true,
+                null,
+                "sha256:mutation",
+                0,
+                false,
+                null));
+        store.save(WORK_KEY, ledger);
+
+        ToolUseLedger loaded = store.load(WORK_KEY, null).orElseThrow();
+
+        assertEquals(0, loaded.recordsFor(READ_FINGERPRINT).size());
+        assertEquals(1, loaded.recordsFor(mutationFingerprint).size());
     }
 
     private ToolUseRecord successfulRead(Instant finishedAt, String outputDigest) {
