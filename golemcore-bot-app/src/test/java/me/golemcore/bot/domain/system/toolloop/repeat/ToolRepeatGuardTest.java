@@ -1,6 +1,5 @@
 package me.golemcore.bot.domain.system.toolloop.repeat;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 
 import java.time.Clock;

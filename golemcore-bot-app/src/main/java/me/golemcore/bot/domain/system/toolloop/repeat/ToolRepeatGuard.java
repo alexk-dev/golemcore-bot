@@ -17,9 +17,6 @@ import me.golemcore.bot.domain.system.toolloop.TurnState;
  */
 public class ToolRepeatGuard {
 
-    private static final ToolRepeatGuard NOOP = new ToolRepeatGuard(
-            new ToolUseFingerprintService(), ToolRepeatGuardSettings.disabled(), Clock.systemUTC());
-
     private final ToolUseFingerprintService fingerprintService;
     private final Supplier<ToolRepeatGuardSettings> settingsSupplier;
     private final Clock clock;
@@ -41,7 +38,8 @@ public class ToolRepeatGuard {
     }
 
     public static ToolRepeatGuard noop() {
-        return NOOP;
+        return new ToolRepeatGuard(
+                new ToolUseFingerprintService(), ToolRepeatGuardSettings.disabled(), Clock.systemUTC());
     }
 
     public ToolRepeatDecision beforeExecute(TurnState turnState, Message.ToolCall toolCall) {

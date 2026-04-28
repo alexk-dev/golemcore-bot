@@ -5,6 +5,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -103,7 +104,7 @@ class JsonToolUseLedgerStoreTest {
     private static final class InMemoryStoragePort implements StoragePort {
 
         private final Map<String, String> files = new ConcurrentHashMap<>();
-        private final java.util.ArrayList<String> atomicWrites = new java.util.ArrayList<>();
+        private final List<String> atomicWritePaths = new ArrayList<>();
 
         boolean contains(String directory, String path) {
             return files.containsKey(key(directory, path));
@@ -114,7 +115,7 @@ class JsonToolUseLedgerStoreTest {
         }
 
         List<String> atomicWrites() {
-            return List.copyOf(atomicWrites);
+            return List.copyOf(atomicWritePaths);
         }
 
         @Override
@@ -167,7 +168,7 @@ class JsonToolUseLedgerStoreTest {
 
         @Override
         public CompletableFuture<Void> putTextAtomic(String directory, String path, String content, boolean backup) {
-            atomicWrites.add(directory + "/" + path);
+            atomicWritePaths.add(directory + "/" + path);
             files.put(key(directory, path), content);
             return CompletableFuture.completedFuture(null);
         }

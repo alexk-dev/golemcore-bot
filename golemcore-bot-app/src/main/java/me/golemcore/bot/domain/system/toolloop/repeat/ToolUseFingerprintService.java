@@ -77,7 +77,7 @@ public class ToolUseFingerprintService {
         }
         if (value instanceof Map<?, ?> map) {
             Map<String, Object> result = new LinkedHashMap<>();
-            TreeMap<String, Object> sorted = new TreeMap<>();
+            Map<String, Object> sorted = new TreeMap<>();
             for (Map.Entry<?, ?> entry : map.entrySet()) {
                 String fieldName = String.valueOf(entry.getKey());
                 String normalizedField = normalizeValue(fieldName);
