@@ -42,12 +42,7 @@ class RuntimeConfigSectionServicesTest {
         cfg.setHive(null);
         cfg.setSelfEvolving(null);
 
-        List.of(new TelegramConfigService(), new LlmConfigService(), new ToolConfigService(), new VoiceConfigService(),
-                new RateLimitConfigService(), new SecurityConfigService(), new AutoModeConfigService(),
-                new PlanConfigService(), new SkillConfigService(), new UpdateConfigService(),
-                new ObservabilityConfigService(), new SessionRuntimeConfigService(), new DelayedActionsConfigService(),
-                new MemoryConfigService(), new ResilienceConfigService(), new HiveConfigService(),
-                new SelfEvolvingConfigService()).forEach(service -> service.normalize(cfg));
+        allSectionServices().forEach(service -> service.normalize(cfg));
 
         assertEquals("invite_only", cfg.getTelegram().getAuthMode());
         assertNotNull(cfg.getModelRouter().getRouting());
@@ -74,6 +69,25 @@ class RuntimeConfigSectionServicesTest {
         assertNotNull(cfg.getResilience().getFollowThrough());
         assertEquals(RuntimeConfigDefaults.DEFAULT_HIVE_ENABLED, cfg.getHive().getEnabled());
         assertNotNull(cfg.getSelfEvolving().getTactics().getSearch().getEmbeddings().getLocal());
+    }
+
+    @Test
+    void shouldNormalizeAlreadyInitializedSectionsWithoutReplacingThem() {
+        RuntimeConfig cfg = RuntimeConfig.builder().build();
+
+        allSectionServices().forEach(service -> service.normalize(cfg));
+
+        assertNotNull(cfg.getTelegram());
+        assertNotNull(cfg.getModelRouter().getRouting());
+        assertNotNull(cfg.getLlm().getProviders());
+        assertEquals(RuntimeConfigDefaults.DEFAULT_MODEL_REGISTRY_BRANCH, cfg.getModelRegistry().getBranch());
+        assertTrue(cfg.getModelRouter().getDynamicTierEnabled());
+        assertEquals(RuntimeConfigDefaults.DEFAULT_TRACING_MAX_TRACES_PER_SESSION,
+                cfg.getTracing().getMaxTracesPerSession());
+        assertEquals(RuntimeConfigDefaults.DEFAULT_MEMORY_VERSION, cfg.getMemory().getVersion());
+        assertEquals(RuntimeConfigDefaults.DEFAULT_HIVE_AUTO_CONNECT, cfg.getHive().getAutoConnect());
+        assertEquals(RuntimeConfigDefaults.DEFAULT_SELF_EVOLVING_TRACE_PAYLOAD_OVERRIDE,
+                cfg.getSelfEvolving().getTracePayloadOverride());
     }
 
     @Test
@@ -185,5 +199,14 @@ class RuntimeConfigSectionServicesTest {
                 .hive(RuntimeConfig.SelfEvolvingHiveConfig.builder().publishInspectionProjection(null)
                         .readonlyInspection(null).build())
                 .build();
+    }
+
+    private static List<RuntimeConfigSectionService> allSectionServices() {
+        return List.of(new TelegramConfigService(), new LlmConfigService(), new ToolConfigService(),
+                new VoiceConfigService(), new RateLimitConfigService(), new SecurityConfigService(),
+                new AutoModeConfigService(), new PlanConfigService(), new SkillConfigService(),
+                new UpdateConfigService(), new ObservabilityConfigService(), new SessionRuntimeConfigService(),
+                new DelayedActionsConfigService(), new MemoryConfigService(), new ResilienceConfigService(),
+                new HiveConfigService(), new SelfEvolvingConfigService());
     }
 }
