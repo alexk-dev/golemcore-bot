@@ -8,8 +8,8 @@ import me.golemcore.bot.domain.system.ResponseRoutingAgentSystem;
 
 record AgentPipelinePlan(List<AgentSystem> orderedSystems, Optional<ResponseRoutingAgentSystem> routingSystem) {
 
-    AgentPipelinePlan {
-        orderedSystems = orderedSystems != null ? List.copyOf(orderedSystems) : List.of();
-        routingSystem = Objects.requireNonNull(routingSystem, "routingSystem must not be null");
+    AgentPipelinePlan(List<AgentSystem> orderedSystems, Optional<ResponseRoutingAgentSystem> routingSystem) {
+        this.orderedSystems = orderedSystems != null ? List.copyOf(orderedSystems) : List.of();
+        this.routingSystem = Objects.requireNonNull(routingSystem, "routingSystem must not be null");
     }
 }

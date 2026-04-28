@@ -74,6 +74,7 @@ import java.util.concurrent.Future;
 public class SessionRunCoordinator implements SessionRunDispatchPort {
 
     private static final int MAX_QUEUED_MESSAGES_PER_SESSION = 100;
+    private static final String SKIPPED_AFTER_STOP_REQUEST = "Skipped after stop request";
 
     private final AgentLoop agentLoop;
     private final ExecutorService sessionRunExecutor;
@@ -376,7 +377,7 @@ public class SessionRunCoordinator implements SessionRunDispatchPort {
             List<Message> queued = new ArrayList<>();
             while (!queuedFollowUpMessages.isEmpty()) {
                 Message followUp = queuedFollowUpMessages.removeFirst();
-                pendingCompletions.reject(followUp, "Skipped after stop request");
+                pendingCompletions.reject(followUp, SKIPPED_AFTER_STOP_REQUEST);
                 if (followUp.isInternalMessage()) {
                     continue;
                 }
@@ -385,13 +386,13 @@ public class SessionRunCoordinator implements SessionRunDispatchPort {
             }
             while (!queuedSteeringMessages.isEmpty()) {
                 Message steering = queuedSteeringMessages.removeFirst();
-                pendingCompletions.reject(steering, "Skipped after stop request");
+                pendingCompletions.reject(steering, SKIPPED_AFTER_STOP_REQUEST);
                 markQueueKind(steering, ContextAttributes.TURN_QUEUE_KIND_STEERING);
                 queued.add(steering);
             }
             while (!queuedInternalContinuationMessages.isEmpty()) {
                 Message internalContinuation = queuedInternalContinuationMessages.removeFirst();
-                pendingCompletions.reject(internalContinuation, "Skipped after stop request");
+                pendingCompletions.reject(internalContinuation, SKIPPED_AFTER_STOP_REQUEST);
             }
 
             queued.sort(Comparator.comparing(this::resolveTimestamp));

@@ -13,6 +13,9 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.ContextAttributes;
@@ -87,11 +90,66 @@ class OptionalLlmErrorExplanationProviderTest {
         verify(llmPort, never()).chat(any());
     }
 
+    @Test
+    void shouldSkipWhenLlmIsUnavailable() {
+        System.setProperty(ENABLED_PROPERTY, "true");
+        LlmPort llmPort = mock(LlmPort.class);
+        when(llmPort.isAvailable()).thenReturn(false);
+        OptionalLlmErrorExplanationProvider provider = new OptionalLlmErrorExplanationProvider(
+                mock(ModelRoutingConfigView.class), llmPort, CLOCK);
+
+        Optional<String> explanation = provider.explain(contextWithFailure("bearer abc.def"));
+
+        assertTrue(explanation.isEmpty());
+        verify(llmPort, never()).chat(any());
+    }
+
+    @Test
+    void shouldReturnEmptyWhenLlmResponseIsBlank() {
+        System.setProperty(ENABLED_PROPERTY, "true");
+        ModelRoutingConfigView configView = mock(ModelRoutingConfigView.class);
+        LlmPort llmPort = mock(LlmPort.class);
+        when(llmPort.isAvailable()).thenReturn(true);
+        when(llmPort.chat(any()))
+                .thenReturn(CompletableFuture.completedFuture(LlmResponse.builder().content(" ").build()));
+        OptionalLlmErrorExplanationProvider provider = new OptionalLlmErrorExplanationProvider(configView, llmPort,
+                CLOCK);
+
+        Optional<String> explanation = provider.explain(contextWithFailure("password=sensitive"));
+
+        assertTrue(explanation.isEmpty());
+    }
+
+    @Test
+    void shouldReturnEmptyWhenLlmExplanationTimesOut() {
+        System.setProperty(ENABLED_PROPERTY, "true");
+        ModelRoutingConfigView configView = mock(ModelRoutingConfigView.class);
+        LlmPort llmPort = mock(LlmPort.class);
+        when(llmPort.isAvailable()).thenReturn(true);
+        when(llmPort.chat(any())).thenReturn(timeoutFuture());
+        OptionalLlmErrorExplanationProvider provider = new OptionalLlmErrorExplanationProvider(configView, llmPort,
+                CLOCK);
+
+        Optional<String> explanation = provider.explain(contextWithFailure("secret=value"));
+
+        assertTrue(explanation.isEmpty());
+    }
+
     private static AgentContext contextWithFailure(String message) {
         AgentContext context = AgentContext.builder().session(AgentSession.builder().id("session-1").build()).build();
         context.setAttribute(ContextAttributes.LLM_ERROR, message);
         context.addFailure(
                 new FailureEvent(FailureSource.SYSTEM, "test", FailureKind.EXCEPTION, message, CLOCK.instant()));
         return context;
+    }
+
+    private static CompletableFuture<LlmResponse> timeoutFuture() {
+        return new CompletableFuture<>() {
+            @Override
+            public LlmResponse get(long timeout, TimeUnit unit)
+                    throws InterruptedException, ExecutionException, TimeoutException {
+                throw new TimeoutException("slow");
+            }
+        };
     }
 }

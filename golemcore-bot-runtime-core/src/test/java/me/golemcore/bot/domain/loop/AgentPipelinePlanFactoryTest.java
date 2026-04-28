@@ -22,7 +22,8 @@ class AgentPipelinePlanFactoryTest {
 
         assertEquals(List.of(routing, late), plan.orderedSystems());
         assertEquals(Optional.of(routing), plan.routingSystem());
-        assertThrows(UnsupportedOperationException.class, () -> plan.orderedSystems().add(late));
+        List<AgentSystem> orderedSystems = plan.orderedSystems();
+        assertThrows(UnsupportedOperationException.class, () -> orderedSystems.add(late));
     }
 
     @Test
@@ -35,7 +36,8 @@ class AgentPipelinePlanFactoryTest {
 
     @Test
     void shouldRejectNullRoutingOptional() {
-        assertThrows(NullPointerException.class, () -> new AgentPipelinePlan(List.of(), null));
+        List<AgentSystem> orderedSystems = List.of();
+        assertThrows(NullPointerException.class, () -> new AgentPipelinePlan(orderedSystems, null));
     }
 
     private static AgentSystem system(String name, int order) {
