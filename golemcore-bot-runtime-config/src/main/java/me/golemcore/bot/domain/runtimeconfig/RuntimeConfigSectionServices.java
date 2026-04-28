@@ -551,17 +551,17 @@ final class SessionRuntimeConfigService implements RuntimeConfigSectionService {
         if (toolLoop.getRepeatGuardShadowMode() == null) {
             toolLoop.setRepeatGuardShadowMode(DEFAULT_TOOL_REPEAT_GUARD_SHADOW_MODE);
         }
-        toolLoop.setRepeatGuardMaxSameObservePerTurn(positiveOrDefault(
-                toolLoop.getRepeatGuardMaxSameObservePerTurn(), DEFAULT_TOOL_REPEAT_GUARD_MAX_SAME_OBSERVE_PER_TURN));
-        toolLoop.setRepeatGuardMaxSameUnknownPerTurn(positiveOrDefault(
-                toolLoop.getRepeatGuardMaxSameUnknownPerTurn(), DEFAULT_TOOL_REPEAT_GUARD_MAX_SAME_UNKNOWN_PER_TURN));
-        toolLoop.setRepeatGuardMaxBlockedRepeatsPerTurn(positiveOrDefault(
-                toolLoop.getRepeatGuardMaxBlockedRepeatsPerTurn(),
-                DEFAULT_TOOL_REPEAT_GUARD_MAX_BLOCKED_REPEATS_PER_TURN));
-        toolLoop.setRepeatGuardMinPollIntervalSeconds(positiveOrDefault(
-                toolLoop.getRepeatGuardMinPollIntervalSeconds(), DEFAULT_TOOL_REPEAT_GUARD_MIN_POLL_INTERVAL_SECONDS));
-        toolLoop.setRepeatGuardAutoLedgerTtlMinutes(positiveOrDefault(
-                toolLoop.getRepeatGuardAutoLedgerTtlMinutes(), DEFAULT_TOOL_REPEAT_GUARD_AUTO_LEDGER_TTL_MINUTES));
+        toolLoop.setRepeatGuardMaxSameObservePerTurn(positiveOrDefault(toolLoop.getRepeatGuardMaxSameObservePerTurn(),
+                DEFAULT_TOOL_REPEAT_GUARD_MAX_SAME_OBSERVE_PER_TURN));
+        toolLoop.setRepeatGuardMaxSameUnknownPerTurn(positiveOrDefault(toolLoop.getRepeatGuardMaxSameUnknownPerTurn(),
+                DEFAULT_TOOL_REPEAT_GUARD_MAX_SAME_UNKNOWN_PER_TURN));
+        toolLoop.setRepeatGuardMaxBlockedRepeatsPerTurn(
+                positiveOrDefault(toolLoop.getRepeatGuardMaxBlockedRepeatsPerTurn(),
+                        DEFAULT_TOOL_REPEAT_GUARD_MAX_BLOCKED_REPEATS_PER_TURN));
+        toolLoop.setRepeatGuardMinPollIntervalSeconds(positiveOrDefault(toolLoop.getRepeatGuardMinPollIntervalSeconds(),
+                DEFAULT_TOOL_REPEAT_GUARD_MIN_POLL_INTERVAL_SECONDS));
+        toolLoop.setRepeatGuardAutoLedgerTtlMinutes(positiveOrDefault(toolLoop.getRepeatGuardAutoLedgerTtlMinutes(),
+                DEFAULT_TOOL_REPEAT_GUARD_AUTO_LEDGER_TTL_MINUTES));
     }
 
     private int positiveOrDefault(Integer value, int defaultValue) {

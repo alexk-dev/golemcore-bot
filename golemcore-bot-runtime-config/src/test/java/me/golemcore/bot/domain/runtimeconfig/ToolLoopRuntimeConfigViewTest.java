@@ -12,8 +12,7 @@ class ToolLoopRuntimeConfigViewTest {
     @Test
     void fallsBackToTurnBudgetsWhenToolLoopSectionIsAbsent() {
         RuntimeConfig runtimeConfig = RuntimeConfig.builder()
-                .turn(RuntimeConfig.TurnConfig.builder().maxLlmCalls(11).maxToolExecutions(22).build())
-                .build();
+                .turn(RuntimeConfig.TurnConfig.builder().maxLlmCalls(11).maxToolExecutions(22).build()).build();
         runtimeConfig.setToolLoop(null);
         ToolLoopRuntimeConfigView view = view(runtimeConfig);
 
@@ -23,9 +22,8 @@ class ToolLoopRuntimeConfigViewTest {
 
     @Test
     void usesToolLoopDefaultsWhenSectionExistsButValuesAreMissing() {
-        ToolLoopRuntimeConfigView view = view(RuntimeConfig.builder()
-                .toolLoop(RuntimeConfig.ToolLoopConfig.builder().build())
-                .build());
+        ToolLoopRuntimeConfigView view = view(
+                RuntimeConfig.builder().toolLoop(RuntimeConfig.ToolLoopConfig.builder().build()).build());
 
         assertEquals(20, view.getToolLoopMaxLlmCalls());
         assertEquals(80, view.getToolLoopMaxToolExecutions());
@@ -41,17 +39,10 @@ class ToolLoopRuntimeConfigViewTest {
     @Test
     void returnsConfiguredToolLoopRepeatGuardValues() {
         ToolLoopRuntimeConfigView view = view(RuntimeConfig.builder()
-                .toolLoop(RuntimeConfig.ToolLoopConfig.builder()
-                        .maxLlmCalls(7)
-                        .maxToolExecutions(9)
-                        .repeatGuardEnabled(false)
-                        .repeatGuardShadowMode(true)
-                        .repeatGuardMaxSameObservePerTurn(3)
-                        .repeatGuardMaxSameUnknownPerTurn(4)
-                        .repeatGuardMaxBlockedRepeatsPerTurn(5)
-                        .repeatGuardMinPollIntervalSeconds(30L)
-                        .repeatGuardAutoLedgerTtlMinutes(45L)
-                        .build())
+                .toolLoop(RuntimeConfig.ToolLoopConfig.builder().maxLlmCalls(7).maxToolExecutions(9)
+                        .repeatGuardEnabled(false).repeatGuardShadowMode(true).repeatGuardMaxSameObservePerTurn(3)
+                        .repeatGuardMaxSameUnknownPerTurn(4).repeatGuardMaxBlockedRepeatsPerTurn(5)
+                        .repeatGuardMinPollIntervalSeconds(30L).repeatGuardAutoLedgerTtlMinutes(45L).build())
                 .build());
 
         assertEquals(7, view.getToolLoopMaxLlmCalls());
