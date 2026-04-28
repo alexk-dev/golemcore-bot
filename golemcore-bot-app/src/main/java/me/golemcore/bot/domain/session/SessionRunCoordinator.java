@@ -75,7 +75,6 @@ public class SessionRunCoordinator implements SessionRunDispatchPort {
 
     private static final int MAX_QUEUED_MESSAGES_PER_SESSION = 100;
 
-    private final SessionPort sessionPort;
     private final AgentLoop agentLoop;
     private final ExecutorService sessionRunExecutor;
     private final RuntimeConfigService runtimeConfigService;
@@ -92,7 +91,6 @@ public class SessionRunCoordinator implements SessionRunDispatchPort {
             RuntimeEventService runtimeEventService, RuntimeConfigService runtimeConfigService,
             DelayedSessionActionService delayedSessionActionService,
             RuntimeEventPublishPort runtimeEventPublishPort) {
-        this.sessionPort = sessionPort;
         this.agentLoop = agentLoop;
         this.sessionRunExecutor = sessionRunExecutor;
         this.runtimeConfigService = runtimeConfigService;
@@ -141,8 +139,8 @@ public class SessionRunCoordinator implements SessionRunDispatchPort {
         Objects.requireNonNull(inbound, "inbound");
 
         CompletableFuture<Void> completion = new CompletableFuture<>();
-        registerPendingCompletion(inbound, completion);
-        registerPendingStartCallback(inbound, onStart);
+        pendingCompletions.registerCompletion(inbound, completion);
+        pendingCompletions.registerStartCallback(inbound, onStart);
         enqueue(inbound);
         return completion;
     }
@@ -151,7 +149,7 @@ public class SessionRunCoordinator implements SessionRunDispatchPort {
         Objects.requireNonNull(inbound, "inbound");
 
         CompletableFuture<TurnRunResult> completion = new CompletableFuture<>();
-        registerPendingResultCompletion(inbound, completion);
+        pendingCompletions.registerResultCompletion(inbound, completion);
         enqueue(inbound);
         return completion;
     }
@@ -240,7 +238,7 @@ public class SessionRunCoordinator implements SessionRunDispatchPort {
                         // Internal traffic (resilience retries, follow-through nudges, delayed
                         // wake-ups) must not override a user-issued /stop. Drop silently and
                         // keep the pause intact.
-                        rejectPendingCompletion(inbound, "Dropped internal inbound after stop");
+                        pendingCompletions.reject(inbound, "Dropped internal inbound after stop");
                         log.debug(
                                 "[SessionRunCoordinator] dropped internal inbound during paused-after-stop: channel={}, chatId={}",
                                 key.channelType(), key.chatId());
@@ -286,7 +284,7 @@ public class SessionRunCoordinator implements SessionRunDispatchPort {
                 attachRealUserActivitySequence(inbound,
                         normalizedBaseline > 0L ? normalizedBaseline : latestRealUserActivitySequence);
                 if (pausedAfterStop) {
-                    rejectPendingCompletion(inbound, "Dropped internal inbound after stop");
+                    pendingCompletions.reject(inbound, "Dropped internal inbound after stop");
                     log.debug(
                             "[SessionRunCoordinator] dropped internal continuation during paused-after-stop: channel={}, chatId={}",
                             key.channelType(), key.chatId());
@@ -338,7 +336,7 @@ public class SessionRunCoordinator implements SessionRunDispatchPort {
             }
 
             if (cancelledQueuedMessage != null) {
-                rejectPendingCompletion(cancelledQueuedMessage,
+                pendingCompletions.reject(cancelledQueuedMessage,
                         HiveRuntimeContracts.CANCELLED_BY_CONTROL_COMMAND_MESSAGE);
                 stopRequestController.publishHiveInterruptedFallback(cancelledQueuedMessage);
                 log.info("[Stop] removed queued hive command: channel={}, chatId={}, runId={}, commandId={}",
@@ -378,7 +376,7 @@ public class SessionRunCoordinator implements SessionRunDispatchPort {
             List<Message> queued = new ArrayList<>();
             while (!queuedFollowUpMessages.isEmpty()) {
                 Message followUp = queuedFollowUpMessages.removeFirst();
-                rejectPendingCompletion(followUp, "Skipped after stop request");
+                pendingCompletions.reject(followUp, "Skipped after stop request");
                 if (followUp.isInternalMessage()) {
                     continue;
                 }
@@ -387,13 +385,13 @@ public class SessionRunCoordinator implements SessionRunDispatchPort {
             }
             while (!queuedSteeringMessages.isEmpty()) {
                 Message steering = queuedSteeringMessages.removeFirst();
-                rejectPendingCompletion(steering, "Skipped after stop request");
+                pendingCompletions.reject(steering, "Skipped after stop request");
                 markQueueKind(steering, ContextAttributes.TURN_QUEUE_KIND_STEERING);
                 queued.add(steering);
             }
             while (!queuedInternalContinuationMessages.isEmpty()) {
                 Message internalContinuation = queuedInternalContinuationMessages.removeFirst();
-                rejectPendingCompletion(internalContinuation, "Skipped after stop request");
+                pendingCompletions.reject(internalContinuation, "Skipped after stop request");
             }
 
             queued.sort(Comparator.comparing(this::resolveTimestamp));
@@ -429,14 +427,13 @@ public class SessionRunCoordinator implements SessionRunDispatchPort {
                     if (!prefix.isEmpty()) {
                         queuedMessageFlushService.flush(runKey.channelType(), runKey.chatId(), prefix);
                     }
-                    runPendingStartCallbacks(inbound);
+                    pendingCompletions.runStartCallbacks(inbound);
                     AgentContext context = agentLoop.processMessage(inbound);
-                    completePendingCompletion(inbound);
-                    completePendingResultCompletion(inbound, turnRunResultMapper.map(inbound, context));
+                    pendingCompletions.complete(inbound);
+                    pendingCompletions.completeResult(inbound, turnRunResultMapper.map(inbound, context));
                 } catch (Exception e) { // NOSONAR - must not kill executor thread
                     handleRunFailure(inbound, e);
-                    failPendingCompletion(inbound, e);
-                    failPendingResultCompletion(inbound, e);
+                    pendingCompletions.fail(inbound, e);
                 } finally {
                     onRunComplete();
                 }
@@ -532,7 +529,7 @@ public class SessionRunCoordinator implements SessionRunDispatchPort {
             }
             long baselineRealUserActivitySequence = resolveRealUserActivitySequence(inbound);
             if (latestRealUserActivitySequence > baselineRealUserActivitySequence) {
-                rejectPendingCompletion(inbound,
+                pendingCompletions.reject(inbound,
                         "Dropped stale internal continuation after newer real user activity");
                 log.debug(
                         "[SessionRunCoordinator] dropped stale internal continuation: channel={}, chatId={}",
@@ -570,7 +567,7 @@ public class SessionRunCoordinator implements SessionRunDispatchPort {
 
             while (!queuedSteeringMessages.isEmpty()) {
                 Message replaced = queuedSteeringMessages.removeFirst();
-                rejectPendingCompletion(replaced, "Replaced by a newer steering message");
+                pendingCompletions.reject(replaced, "Replaced by a newer steering message");
             }
             queuedSteeringMessages.addLast(inbound);
             log.debug("[SessionRunCoordinator] steering queue mode one-at-a-time: replaced pending steering messages");
@@ -586,7 +583,7 @@ public class SessionRunCoordinator implements SessionRunDispatchPort {
                         continue;
                     }
                     iterator.remove();
-                    rejectPendingCompletion(queued, "Replaced by a newer internal retry message");
+                    pendingCompletions.reject(queued, "Replaced by a newer internal retry message");
                 }
                 enqueueWithBound(queuedFollowUpMessages, inbound, "internal-retry");
                 return;
@@ -607,7 +604,7 @@ public class SessionRunCoordinator implements SessionRunDispatchPort {
 
             Message replaced = removeOldestRegularFollowUpLocked();
             if (replaced != null) {
-                rejectPendingCompletion(replaced, "Replaced by a newer follow-up message");
+                pendingCompletions.reject(replaced, "Replaced by a newer follow-up message");
                 log.debug(
                         "[SessionRunCoordinator] follow-up queue mode one-at-a-time: replaced pending follow-up message");
             }
@@ -617,7 +614,7 @@ public class SessionRunCoordinator implements SessionRunDispatchPort {
         private void enqueueInternalContinuation(Message inbound) {
             while (!queuedInternalContinuationMessages.isEmpty()) {
                 Message replaced = queuedInternalContinuationMessages.removeFirst();
-                rejectPendingCompletion(replaced, "Replaced by a newer internal continuation message");
+                pendingCompletions.reject(replaced, "Replaced by a newer internal continuation message");
             }
             queuedInternalContinuationMessages.addLast(inbound);
         }
@@ -631,7 +628,7 @@ public class SessionRunCoordinator implements SessionRunDispatchPort {
         private void dropQueuedInternalContinuationsLocked(String reason) {
             while (!queuedInternalContinuationMessages.isEmpty()) {
                 Message queued = queuedInternalContinuationMessages.removeFirst();
-                rejectPendingCompletion(queued, reason);
+                pendingCompletions.reject(queued, reason);
                 emitInternalContinuationMetric(queued,
                         "follow_through.nudge.canceled_user_activity",
                         Map.of(
@@ -673,7 +670,7 @@ public class SessionRunCoordinator implements SessionRunDispatchPort {
                 if (dropped == null) {
                     dropped = queuedFollowUpMessages.removeFirst();
                 }
-                rejectPendingCompletion(dropped,
+                pendingCompletions.reject(dropped,
                         "Dropped oldest pending " + queueLabel + " message due to queue limit");
                 log.warn(
                         "[SessionRunCoordinator] {} queue limit reached ({}), dropped oldest message: channel={}, chatId={}",
@@ -706,7 +703,7 @@ public class SessionRunCoordinator implements SessionRunDispatchPort {
         private void enqueueWithBound(Deque<Message> queue, Message inbound, String queueLabel) {
             if (queue.size() >= MAX_QUEUED_MESSAGES_PER_SESSION) {
                 Message dropped = queue.removeFirst();
-                rejectPendingCompletion(dropped,
+                pendingCompletions.reject(dropped,
                         "Dropped oldest pending " + queueLabel + " message due to queue limit");
                 log.warn(
                         "[SessionRunCoordinator] {} queue limit reached ({}), dropped oldest message: channel={}, chatId={}",
@@ -751,7 +748,7 @@ public class SessionRunCoordinator implements SessionRunDispatchPort {
                     .timestamp(first.getTimestamp())
                     .metadata(first.getMetadata() != null ? new LinkedHashMap<>(first.getMetadata()) : null)
                     .build();
-            transferPendingCompletions(first, merged);
+            pendingCompletions.transfer(first, merged);
             while (!queuedFollowUpMessages.isEmpty()) {
                 Message next = queuedFollowUpMessages.peekFirst();
                 if (next == null) {
@@ -763,7 +760,7 @@ public class SessionRunCoordinator implements SessionRunDispatchPort {
                 }
                 next = queuedFollowUpMessages.removeFirst();
                 appendMergedChunk(builder, next.getContent());
-                transferPendingCompletions(next, merged);
+                pendingCompletions.transfer(next, merged);
             }
             merged.setContent(builder.toString());
             markQueueKind(merged, ContextAttributes.TURN_QUEUE_KIND_FOLLOW_UP);
@@ -784,11 +781,11 @@ public class SessionRunCoordinator implements SessionRunDispatchPort {
                     .timestamp(first.getTimestamp())
                     .metadata(first.getMetadata() != null ? new LinkedHashMap<>(first.getMetadata()) : null)
                     .build();
-            transferPendingCompletions(first, merged);
+            pendingCompletions.transfer(first, merged);
             while (!queue.isEmpty()) {
                 Message next = queue.removeFirst();
                 appendMergedChunk(builder, next.getContent());
-                transferPendingCompletions(next, merged);
+                pendingCompletions.transfer(next, merged);
             }
             merged.setContent(builder.toString());
             markQueueKind(merged, queueKind);
@@ -864,46 +861,6 @@ public class SessionRunCoordinator implements SessionRunDispatchPort {
             return null;
         }
 
-    }
-
-    private void registerPendingCompletion(Message message, CompletableFuture<Void> completion) {
-        pendingCompletions.registerCompletion(message, completion);
-    }
-
-    private void registerPendingResultCompletion(Message message, CompletableFuture<TurnRunResult> completion) {
-        pendingCompletions.registerResultCompletion(message, completion);
-    }
-
-    private void registerPendingStartCallback(Message message, Runnable onStart) {
-        pendingCompletions.registerStartCallback(message, onStart);
-    }
-
-    private void runPendingStartCallbacks(Message message) {
-        pendingCompletions.runStartCallbacks(message);
-    }
-
-    private void transferPendingCompletions(Message source, Message target) {
-        pendingCompletions.transfer(source, target);
-    }
-
-    private void completePendingCompletion(Message message) {
-        pendingCompletions.complete(message);
-    }
-
-    private void completePendingResultCompletion(Message message, TurnRunResult result) {
-        pendingCompletions.completeResult(message, result);
-    }
-
-    private void failPendingCompletion(Message message, Throwable failure) {
-        pendingCompletions.fail(message, failure);
-    }
-
-    private void failPendingResultCompletion(Message message, Throwable failure) {
-        pendingCompletions.fail(message, failure);
-    }
-
-    private void rejectPendingCompletion(Message message, String reason) {
-        pendingCompletions.reject(message, reason);
     }
 
     private String resolveQueueKind(Message inbound) {

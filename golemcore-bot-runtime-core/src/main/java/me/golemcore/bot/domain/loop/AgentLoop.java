@@ -42,36 +42,23 @@ public class AgentLoop {
 
     private final SessionPort sessionService;
     private final RateLimitPort rateLimiter;
-    private final TurnFeedbackCoordinator feedbackCoordinator;
-    private final TurnPersistenceGuard persistenceGuard;
-    private final TurnContextFactory contextFactory;
-    private final AgentPipelineRunner pipelineRunner;
-    private final TurnFeedbackGuarantee feedbackGuarantee;
-    private final AutoRunOutcomeRecorder outcomeRecorder;
+    private final AgentLoopCollaborators collaborators;
 
-    AgentLoop(SessionPort sessionService, RateLimitPort rateLimiter, TurnFeedbackCoordinator feedbackCoordinator,
-            TurnPersistenceGuard persistenceGuard, TurnContextFactory contextFactory,
-            AgentPipelineRunner pipelineRunner, TurnFeedbackGuarantee feedbackGuarantee,
-            AutoRunOutcomeRecorder outcomeRecorder) {
+    AgentLoop(SessionPort sessionService, RateLimitPort rateLimiter, AgentLoopCollaborators collaborators) {
         this.sessionService = Objects.requireNonNull(sessionService, "sessionService must not be null");
         this.rateLimiter = Objects.requireNonNull(rateLimiter, "rateLimiter must not be null");
-        this.feedbackCoordinator = Objects.requireNonNull(feedbackCoordinator, "feedbackCoordinator must not be null");
-        this.persistenceGuard = Objects.requireNonNull(persistenceGuard, "persistenceGuard must not be null");
-        this.contextFactory = Objects.requireNonNull(contextFactory, "contextFactory must not be null");
-        this.pipelineRunner = Objects.requireNonNull(pipelineRunner, "pipelineRunner must not be null");
-        this.feedbackGuarantee = Objects.requireNonNull(feedbackGuarantee, "feedbackGuarantee must not be null");
-        this.outcomeRecorder = Objects.requireNonNull(outcomeRecorder, "outcomeRecorder must not be null");
+        this.collaborators = Objects.requireNonNull(collaborators, "collaborators must not be null");
     }
 
     @PreDestroy
     public void shutdown() {
-        feedbackCoordinator.shutdown();
+        collaborators.feedbackCoordinator().shutdown();
     }
 
     public AgentContext processMessage(Message message) {
         Objects.requireNonNull(message, "message must not be null");
-        Message preparedMessage = contextFactory.prepareMessage(message);
-        Map<String, String> mdcContext = contextFactory.buildMdcContext(preparedMessage);
+        Message preparedMessage = collaborators.contextFactory().prepareMessage(message);
+        Map<String, String> mdcContext = collaborators.contextFactory().buildMdcContext(preparedMessage);
         try (MdcSupport.Scope ignored = MdcSupport.withContext(mdcContext)) {
             logInbound(preparedMessage);
             if (!admit(preparedMessage)) {
@@ -82,21 +69,22 @@ public class AgentLoop {
                     preparedMessage.getChatId());
             log.debug("Session: {}, messages in history: {}", session.getId(), session.getMessages().size());
 
-            TurnContextFactory.PreparedTurn turn = contextFactory.create(session, preparedMessage);
+            TurnContextFactory.PreparedTurn turn = collaborators.contextFactory().create(session, preparedMessage);
             AgentContext context = turn.context();
-            pipelineRunner.initializeRoutingSystem();
+            collaborators.pipelineRunner().initializeRoutingSystem();
             log.debug("Starting agent loop (max iterations: {})", context.getMaxIterations());
 
             try {
-                TurnFeedbackCoordinator.TypingHandle typingHandle = feedbackCoordinator.startTyping(preparedMessage);
+                TurnFeedbackCoordinator.TypingHandle typingHandle = collaborators.feedbackCoordinator()
+                        .startTyping(preparedMessage);
                 try (typingHandle) {
-                    context = pipelineRunner.run(context);
-                    context = feedbackGuarantee.ensure(context);
-                    outcomeRecorder.record(preparedMessage, context);
+                    context = collaborators.pipelineRunner().run(context);
+                    context = collaborators.feedbackGuarantee().ensure(context);
+                    collaborators.outcomeRecorder().record(preparedMessage, context);
                 }
             } finally {
                 AgentContextHolder.clear();
-                PersistenceOutcome persistenceOutcome = persistenceGuard.persist(context, session,
+                PersistenceOutcome persistenceOutcome = collaborators.persistenceGuard().persist(context, session,
                         context.getTraceContext() != null ? context.getTraceContext() : turn.rootTraceContext());
                 log.debug("Turn persistence outcome: saved={}, sessionId={}, errorCode={}", persistenceOutcome.saved(),
                         persistenceOutcome.sessionId(), persistenceOutcome.errorCode());
@@ -118,7 +106,7 @@ public class AgentLoop {
             return true;
         }
         log.warn("Rate limit exceeded");
-        feedbackCoordinator.notifyRateLimited(message);
+        collaborators.feedbackCoordinator().notifyRateLimited(message);
         return false;
     }
 
@@ -137,6 +125,24 @@ public class AgentLoop {
             return text;
         }
         return text.substring(0, maxLen) + "...";
+    }
+
+    record AgentLoopCollaborators(
+            TurnFeedbackCoordinator feedbackCoordinator,
+            TurnPersistenceGuard persistenceGuard,
+            TurnContextFactory contextFactory,
+            AgentPipelineRunner pipelineRunner,
+            TurnFeedbackGuarantee feedbackGuarantee,
+            AutoRunOutcomeRecorder outcomeRecorder) {
+
+        AgentLoopCollaborators {
+            Objects.requireNonNull(feedbackCoordinator, "feedbackCoordinator must not be null");
+            Objects.requireNonNull(persistenceGuard, "persistenceGuard must not be null");
+            Objects.requireNonNull(contextFactory, "contextFactory must not be null");
+            Objects.requireNonNull(pipelineRunner, "pipelineRunner must not be null");
+            Objects.requireNonNull(feedbackGuarantee, "feedbackGuarantee must not be null");
+            Objects.requireNonNull(outcomeRecorder, "outcomeRecorder must not be null");
+        }
     }
 
     public record InboundMessageEvent(Message message, Instant timestamp) {

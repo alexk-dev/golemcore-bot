@@ -150,10 +150,12 @@ class AgentLoopRoutingBddTest {
     private static AgentLoop createLoop(SessionPort sessionPort, RateLimitPort rateLimitPort, List<AgentSystem> systems,
             List<ChannelPort> channels, RuntimeConfigService runtimeConfigService,
             UserPreferencesService preferencesService, LlmPort llmPort, Clock clock) {
-        return new AgentLoopFactory().create(sessionPort, rateLimitPort, systems, runtime(channels),
-                runtimeConfigService, preferencesService, llmPort, clock,
-                new TraceService(new TraceSnapshotCompressionService(), new TraceBudgetService()), traceSnapshotCodec(),
-                new DefaultContextHygieneService(), new RuntimeEventService(clock));
+        return new AgentLoopFactory().create(
+                new AgentLoopFactory.AgentLoopPorts(sessionPort, rateLimitPort, runtime(channels), llmPort),
+                new AgentLoopFactory.AgentLoopRuntimeServices(runtimeConfigService, preferencesService, clock,
+                        new TraceService(new TraceSnapshotCompressionService(), new TraceBudgetService()),
+                        traceSnapshotCodec(), new DefaultContextHygieneService(), new RuntimeEventService(clock)),
+                systems);
     }
 
     private static TraceSnapshotCodecPort traceSnapshotCodec() {

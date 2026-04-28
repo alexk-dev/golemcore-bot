@@ -20,26 +20,62 @@ import me.golemcore.bot.port.outbound.TraceSnapshotCodecPort;
  */
 public final class AgentLoopFactory {
 
-    public AgentLoop create(SessionPort sessionService, RateLimitPort rateLimiter, List<AgentSystem> systems,
-            ChannelRuntimePort channelRuntimePort, RuntimeConfigService runtimeConfigService,
-            UserPreferencesService preferencesService, LlmPort llmPort, Clock clock, TraceService traceService,
-            TraceSnapshotCodecPort traceSnapshotCodecPort, ContextHygieneService contextHygieneService,
-            RuntimeEventService runtimeEventService) {
-        ContextHygieneService safeContextHygieneService = Objects.requireNonNull(contextHygieneService,
-                "contextHygieneService must not be null");
+    public AgentLoop create(AgentLoopPorts ports, AgentLoopRuntimeServices services, List<AgentSystem> systems) {
+        AgentLoopPorts safePorts = Objects.requireNonNull(ports, "ports must not be null");
+        AgentLoopRuntimeServices safeServices = Objects.requireNonNull(services, "services must not be null");
         AgentPipelinePlan plan = new AgentPipelinePlanFactory().create(systems);
-        AgentPipelineRunner pipelineRunner = new AgentPipelineRunner(plan, runtimeConfigService, runtimeConfigService,
-                preferencesService, clock, traceService, safeContextHygieneService);
-        return new AgentLoop(sessionService, rateLimiter,
-                new TurnFeedbackCoordinator(channelRuntimePort, preferencesService),
-                new TurnPersistenceGuard(sessionService, runtimeConfigService, traceService, safeContextHygieneService,
-                        clock, runtimeEventService),
-                new TurnContextFactory(
-                        runtimeConfigService, runtimeConfigService, traceService, clock, traceSnapshotCodecPort),
-                pipelineRunner,
-                new TurnFeedbackGuarantee(new UnsentResponseDetector(),
-                        new SafeErrorFeedbackRenderer(preferencesService), new GenericFallbackRouter(pipelineRunner),
-                        new OptionalLlmErrorExplanationProvider(runtimeConfigService, llmPort, clock)),
-                new AutoRunOutcomeRecorder());
+        AgentPipelineRunner pipelineRunner = new AgentPipelineRunner(plan, safeServices.runtimeConfigService(),
+                safeServices.runtimeConfigService(), safeServices.preferencesService(), safeServices.clock(),
+                safeServices.traceService(), safeServices.contextHygieneService());
+        return new AgentLoop(safePorts.sessionService(), safePorts.rateLimiter(),
+                new AgentLoop.AgentLoopCollaborators(
+                        new TurnFeedbackCoordinator(safePorts.channelRuntimePort(), safeServices.preferencesService()),
+                        new TurnPersistenceGuard(safePorts.sessionService(), safeServices.runtimeConfigService(),
+                                safeServices.traceService(), safeServices.contextHygieneService(),
+                                safeServices.clock(), safeServices.runtimeEventService()),
+                        new TurnContextFactory(
+                                safeServices.runtimeConfigService(), safeServices.runtimeConfigService(),
+                                safeServices.traceService(), safeServices.clock(),
+                                safeServices.traceSnapshotCodecPort()),
+                        pipelineRunner,
+                        new TurnFeedbackGuarantee(new UnsentResponseDetector(),
+                                new SafeErrorFeedbackRenderer(safeServices.preferencesService()),
+                                new GenericFallbackRouter(pipelineRunner),
+                                new OptionalLlmErrorExplanationProvider(safeServices.runtimeConfigService(),
+                                        safePorts.llmPort(), safeServices.clock())),
+                        new AutoRunOutcomeRecorder()));
+    }
+
+    public record AgentLoopPorts(
+            SessionPort sessionService,
+            RateLimitPort rateLimiter,
+            ChannelRuntimePort channelRuntimePort,
+            LlmPort llmPort) {
+
+        public AgentLoopPorts {
+            Objects.requireNonNull(sessionService, "sessionService must not be null");
+            Objects.requireNonNull(rateLimiter, "rateLimiter must not be null");
+            Objects.requireNonNull(channelRuntimePort, "channelRuntimePort must not be null");
+        }
+    }
+
+    public record AgentLoopRuntimeServices(
+            RuntimeConfigService runtimeConfigService,
+            UserPreferencesService preferencesService,
+            Clock clock,
+            TraceService traceService,
+            TraceSnapshotCodecPort traceSnapshotCodecPort,
+            ContextHygieneService contextHygieneService,
+            RuntimeEventService runtimeEventService) {
+
+        public AgentLoopRuntimeServices {
+            Objects.requireNonNull(runtimeConfigService, "runtimeConfigService must not be null");
+            Objects.requireNonNull(preferencesService, "preferencesService must not be null");
+            Objects.requireNonNull(clock, "clock must not be null");
+            Objects.requireNonNull(traceService, "traceService must not be null");
+            Objects.requireNonNull(traceSnapshotCodecPort, "traceSnapshotCodecPort must not be null");
+            Objects.requireNonNull(contextHygieneService, "contextHygieneService must not be null");
+            Objects.requireNonNull(runtimeEventService, "runtimeEventService must not be null");
+        }
     }
 }

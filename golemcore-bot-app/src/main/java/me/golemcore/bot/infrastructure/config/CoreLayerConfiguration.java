@@ -6,6 +6,8 @@ import me.golemcore.bot.application.update.UpdateService;
 import me.golemcore.bot.domain.auto.AutoModeMigrationService;
 import me.golemcore.bot.domain.loop.AgentLoop;
 import me.golemcore.bot.domain.loop.AgentLoopFactory;
+import me.golemcore.bot.domain.loop.AgentLoopFactory.AgentLoopPorts;
+import me.golemcore.bot.domain.loop.AgentLoopFactory.AgentLoopRuntimeServices;
 import me.golemcore.bot.domain.context.compaction.ContextCompactionPolicy;
 import me.golemcore.bot.domain.events.RuntimeEventService;
 import me.golemcore.bot.domain.context.hygiene.ContextHygieneService;
@@ -107,18 +109,10 @@ public class CoreLayerConfiguration {
             ContextHygieneService contextHygieneService,
             RuntimeEventService runtimeEventService) {
         return new AgentLoopFactory().create(
-                sessionService,
-                rateLimiter,
-                systems,
-                channelRuntimePort,
-                runtimeConfigService,
-                preferencesService,
-                llmPort,
-                clock,
-                traceService,
-                traceSnapshotCodecPort,
-                contextHygieneService,
-                runtimeEventService);
+                new AgentLoopPorts(sessionService, rateLimiter, channelRuntimePort, llmPort),
+                new AgentLoopRuntimeServices(runtimeConfigService, preferencesService, clock, traceService,
+                        traceSnapshotCodecPort, contextHygieneService, runtimeEventService),
+                systems);
     }
 
     @Bean
