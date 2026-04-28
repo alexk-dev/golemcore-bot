@@ -78,6 +78,16 @@ class JsonToolUseLedgerStoreTest {
     void doesNotPersistRawSecretsOrLargeOutputs() {
         ToolUseLedger ledger = new ToolUseLedger();
         ledger.recordUse(successfulRead(NOW, "sha256:digest-only"));
+        ledger.recordUse(new ToolUseRecord(
+                READ_FINGERPRINT,
+                NOW,
+                NOW,
+                true,
+                null,
+                "sha256:output-only",
+                0,
+                false,
+                "raw-secret-token inside very large raw output"));
 
         store.save(WORK_KEY, ledger);
         String json = storagePort.get("auto", "tool-ledgers/web_chat-1/tasks/task-1.json");

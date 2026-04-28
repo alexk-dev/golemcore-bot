@@ -171,6 +171,24 @@ class ToolRepeatGuardTest {
     }
 
     @Test
+    void shadowModeDoesNotStopAfterBlockedThreshold() {
+        TurnState turnState = turnState();
+        for (int index = 0; index < ToolRepeatGuardSettings.defaults().maxBlockedRepeatsPerTurn(); index++) {
+            turnState.getToolUseLedger().incrementBlockedRepeatCount();
+        }
+        Message.ToolCall call = readCall("README.md");
+        ToolRepeatGuard shadowGuard = new ToolRepeatGuard(
+                new ToolUseFingerprintService(),
+                new ToolRepeatGuardSettings(true, true, 1, 1, 4, Duration.ofSeconds(60), Duration.ofMinutes(120)),
+                clock);
+        guard.afterOutcome(turnState, call, success(call, "first"));
+
+        ToolRepeatDecision decision = shadowGuard.beforeExecute(turnState, call);
+
+        assertInstanceOf(ToolRepeatDecision.WarnAndAllow.class, decision);
+    }
+
+    @Test
     void recordsGuardBlockedFailureKindForBlockedMutation() {
         TurnState turnState = turnState();
         Message.ToolCall write = writeCall("README.md");

@@ -17,6 +17,8 @@ import me.golemcore.bot.domain.system.toolloop.TurnState;
  */
 public class ToolRepeatGuard {
 
+    public static final String STOP_TURN_REASON = "stopped after repeated blocked tool calls; no progress detected";
+
     private final ToolUseFingerprintService fingerprintService;
     private final Supplier<ToolRepeatGuardSettings> settingsSupplier;
     private final Clock clock;
@@ -49,9 +51,8 @@ public class ToolRepeatGuard {
             return new ToolRepeatDecision.Allow(fingerprint);
         }
         ToolUseLedger ledger = turnState.getToolUseLedger();
-        if (ledger.getBlockedRepeatCount() >= settings.maxBlockedRepeatsPerTurn()) {
-            return new ToolRepeatDecision.StopTurn(
-                    "stopped after repeated blocked tool calls; no progress detected");
+        if (!settings.shadowMode() && ledger.getBlockedRepeatCount() >= settings.maxBlockedRepeatsPerTurn()) {
+            return new ToolRepeatDecision.StopTurn(STOP_TURN_REASON);
         }
         if (fingerprint.category() == ToolUseCategory.CONTROL) {
             return new ToolRepeatDecision.Allow(fingerprint);
@@ -85,7 +86,7 @@ public class ToolRepeatGuard {
                 outputDigest(outcome),
                 turnState.getToolUseLedger().getEnvironmentVersion(),
                 guardBlocked,
-                outcome.messageContent()));
+                guardBlocked ? outcome.messageContent() : null));
     }
 
     public String repeatHint(ToolUseFingerprint fingerprint, int count) {

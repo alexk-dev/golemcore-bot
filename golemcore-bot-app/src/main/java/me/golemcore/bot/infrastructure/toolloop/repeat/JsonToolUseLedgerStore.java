@@ -175,7 +175,7 @@ public class JsonToolUseLedgerStore implements ToolUseLedgerStore {
                     entry.outputDigest(),
                     entry.environmentVersion(),
                     entry.guardBlocked(),
-                    entry.decisionReason());
+                    entry.guardBlocked() ? entry.decisionReason() : null);
         }
 
         ToolUseRecord toRecord() {

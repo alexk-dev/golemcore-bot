@@ -31,6 +31,17 @@ class ToolUseLedgerTest {
     }
 
     @Test
+    void recordsSuccessfulMutationInAdvancedEnvironmentSoDuplicatesAreVisible() {
+        ToolUseLedger ledger = new ToolUseLedger();
+        ToolUseFingerprint mutation = fingerprint(ToolUseCategory.MUTATE_IDEMPOTENT);
+
+        ledger.recordUse(toolUseRecord(mutation, true, false));
+
+        assertEquals(1, ledger.getEnvironmentVersion());
+        assertEquals(1, ledger.repeatCountInCurrentEnvironment(mutation));
+    }
+
+    @Test
     void doesNotIncrementEnvironmentVersionAfterObservation() {
         ToolUseLedger ledger = new ToolUseLedger();
 

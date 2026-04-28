@@ -255,6 +255,25 @@ class ToolFailurePolicyTest {
     }
 
     @Test
+    void repeatGuardStopReasonStopsTurnInsteadOfInjectingRecoveryHint() {
+        TurnState turnState = buildTurnState(true, false, false);
+        Message.ToolCall toolCall = filesystemReadToolCall("README.md");
+        ToolExecutionOutcome outcome = new ToolExecutionOutcome(
+                "tc-1", "filesystem",
+                ToolResult.failure(ToolFailureKind.REPEATED_TOOL_USE_BLOCKED,
+                        me.golemcore.bot.domain.system.toolloop.repeat.ToolRepeatGuard.STOP_TURN_REASON),
+                me.golemcore.bot.domain.system.toolloop.repeat.ToolRepeatGuard.STOP_TURN_REASON,
+                true,
+                null);
+
+        ToolFailurePolicy.Verdict verdict = policy.evaluate(turnState, toolCall, outcome);
+
+        assertInstanceOf(ToolFailurePolicy.Verdict.StopTurn.class, verdict);
+        assertEquals(me.golemcore.bot.domain.system.toolloop.repeat.ToolRepeatGuard.STOP_TURN_REASON,
+                ((ToolFailurePolicy.Verdict.StopTurn) verdict).reason());
+    }
+
+    @Test
     void repeatGuardFailureKindDoesNotUseShellFailureRecoveryCounters() {
         TurnState turnState = buildTurnState(false, false, false);
         Message.ToolCall toolCall = shellToolCall("ls -la");

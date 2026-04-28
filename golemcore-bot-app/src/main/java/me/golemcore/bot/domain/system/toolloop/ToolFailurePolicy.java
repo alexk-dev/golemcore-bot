@@ -23,6 +23,7 @@ import me.golemcore.bot.domain.model.FailureKind;
 import me.golemcore.bot.domain.model.FailureSource;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.ToolFailureKind;
+import me.golemcore.bot.domain.system.toolloop.repeat.ToolRepeatGuard;
 
 import java.time.Clock;
 
@@ -115,6 +116,9 @@ public class ToolFailurePolicy {
         ToolFailureKind kind = outcome.toolResult().getFailureKind();
 
         if (kind == ToolFailureKind.REPEATED_TOOL_USE_BLOCKED) {
+            if (ToolRepeatGuard.STOP_TURN_REASON.equals(outcome.toolResult().getError())) {
+                return new Verdict.StopTurn(ToolRepeatGuard.STOP_TURN_REASON);
+            }
             return new Verdict.RecoveryHint(repeatGuardHint(outcome), repeatGuardFingerprint(toolCall),
                     "REPEAT_GUARD");
         }

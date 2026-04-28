@@ -35,15 +35,16 @@ public class ToolUseLedger {
         if (entry == null || entry.fingerprint() == null || entry.fingerprint().stableKey() == null) {
             return;
         }
+        boolean stateChangingSuccess = isStateChangingSuccess(entry);
+        if (stateChangingSuccess) {
+            environmentVersion++;
+        }
         ToolUseRecord stored = entry.withEnvironmentVersion(environmentVersion);
         List<ToolUseRecord> entries = recordsByFingerprint.computeIfAbsent(entry.fingerprint().stableKey(),
                 ignored -> new ArrayList<>());
         entries.add(stored);
         while (entries.size() > maxRecordsPerFingerprint) {
             entries.remove(0);
-        }
-        if (isStateChangingSuccess(entry)) {
-            environmentVersion++;
         }
     }
 
