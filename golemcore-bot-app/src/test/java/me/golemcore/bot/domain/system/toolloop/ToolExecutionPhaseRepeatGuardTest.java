@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -139,6 +140,19 @@ class ToolExecutionPhaseRepeatGuardTest {
         assertInstanceOf(ToolExecutionPhase.ToolBatchOutcome.Continue.class, outcome);
         verify(toolExecutor).execute(turnState.getContext(), toolCall);
         assertTrue(turnState.getContext().getToolResults().get("tc-repeat").isSuccess());
+    }
+
+    @Test
+    void warnAndAllowAppendsInternalToolLoopHintAfterExecution() {
+        ToolExecutionPhase phase = phase();
+        TurnState turnState = buildTurnState();
+        Message.ToolCall toolCall = readCall("tc-repeat");
+        repeatGuard.afterOutcome(turnState, toolCall, success(toolCall, "first"));
+        when(toolExecutor.execute(turnState.getContext(), toolCall)).thenReturn(success(toolCall, "second"));
+
+        phase.execute(turnState, response(toolCall), historyWriter, llmCallPhase);
+
+        verify(historyWriter).appendInternalRecoveryHint(eq(turnState.getContext()), contains("Repeated tool call"));
     }
 
     @Test

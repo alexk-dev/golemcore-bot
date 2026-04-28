@@ -75,6 +75,34 @@ class JsonToolUseLedgerStoreTest {
     }
 
     @Test
+    void loadDoesNotRestorePerTurnCounters() {
+        ToolUseLedger ledger = new ToolUseLedger();
+        ledger.incrementBlockedRepeatCount();
+        ledger.incrementWarnedRepeatCount();
+
+        store.save(WORK_KEY, ledger);
+        ToolUseLedger loaded = store.load(WORK_KEY, Duration.ofMinutes(120)).orElseThrow();
+
+        assertEquals(0, loaded.getBlockedRepeatCount());
+        assertEquals(0, loaded.getWarnedRepeatCount());
+    }
+
+    @Test
+    void pruningExpiredRecordsAlsoDropsPerTurnCounters() {
+        ToolUseLedger ledger = new ToolUseLedger();
+        ledger.recordUse(successfulRead(NOW.minus(Duration.ofMinutes(121)), "sha256:old"));
+        ledger.incrementBlockedRepeatCount();
+        ledger.incrementWarnedRepeatCount();
+
+        store.save(WORK_KEY, ledger);
+        ToolUseLedger loaded = store.load(WORK_KEY, Duration.ofMinutes(120)).orElseThrow();
+
+        assertEquals(0, loaded.recordsFor(READ_FINGERPRINT).size());
+        assertEquals(0, loaded.getBlockedRepeatCount());
+        assertEquals(0, loaded.getWarnedRepeatCount());
+    }
+
+    @Test
     void doesNotPersistRawSecretsOrLargeOutputs() {
         ToolUseLedger ledger = new ToolUseLedger();
         ledger.recordUse(successfulRead(NOW, "sha256:digest-only"));
@@ -107,6 +135,28 @@ class JsonToolUseLedgerStoreTest {
         assertTrue(store.load(WORK_KEY, Duration.ofMinutes(120)).isEmpty());
 
         storagePort.putText("auto", "tool-ledgers/web_chat-1/tasks/task-1.json", "{not-json").join();
+        assertTrue(store.load(WORK_KEY, Duration.ofMinutes(120)).isEmpty());
+    }
+
+    @Test
+    void loadRejectsLedgerWithMismatchedWorkKey() {
+        ToolUseLedger ledger = new ToolUseLedger();
+        ledger.recordUse(successfulRead(NOW, "sha256:output"));
+        store.save(new AutonomyWorkKey("web:other", "goal-1", "task-1", null), ledger);
+        storagePort.putText("auto", "tool-ledgers/web_chat-1/tasks/task-1.json",
+                storagePort.get("auto", "tool-ledgers/web_other/tasks/task-1.json")).join();
+
+        assertTrue(store.load(WORK_KEY, Duration.ofMinutes(120)).isEmpty());
+    }
+
+    @Test
+    void loadRejectsUnsupportedSchemaVersion() {
+        ToolUseLedger ledger = new ToolUseLedger();
+        store.save(WORK_KEY, ledger);
+        String json = storagePort.get("auto", "tool-ledgers/web_chat-1/tasks/task-1.json")
+                .replace("\"schemaVersion\" : 1", "\"schemaVersion\" : 999");
+        storagePort.putText("auto", "tool-ledgers/web_chat-1/tasks/task-1.json", json).join();
+
         assertTrue(store.load(WORK_KEY, Duration.ofMinutes(120)).isEmpty());
     }
 

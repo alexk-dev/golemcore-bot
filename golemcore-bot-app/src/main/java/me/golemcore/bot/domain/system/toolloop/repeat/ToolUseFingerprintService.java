@@ -28,8 +28,9 @@ public class ToolUseFingerprintService {
             "token", "password", "secret", "apikey", "api_key", "authorization");
     private static final Set<String> READ_OPERATIONS = Set.of(
             "read_file", "read", "list", "list_files", "search", "status", "stat");
-    private static final Set<String> MUTATING_FILESYSTEM_OPERATIONS = Set.of(
-            "write_file", "append", "delete", "create_directory", "mkdir");
+    private static final Set<String> IDEMPOTENT_FILESYSTEM_MUTATIONS = Set.of(
+            "write_file", "delete", "create_directory", "mkdir");
+    private static final Set<String> NON_IDEMPOTENT_FILESYSTEM_MUTATIONS = Set.of("append");
 
     public ToolUseFingerprint fingerprint(Message.ToolCall toolCall) {
         String toolName = normalizeToolName(toolCall != null ? toolCall.getName() : null);
@@ -52,10 +53,17 @@ public class ToolUseFingerprintService {
         }
         String operation = stringValue(arguments, "operation");
         if (ToolNames.FILESYSTEM.equals(toolName)) {
-            if (MUTATING_FILESYSTEM_OPERATIONS.contains(normalizeValue(operation))) {
+            String normalizedOperation = normalizeValue(operation);
+            if (READ_OPERATIONS.contains(normalizedOperation)) {
+                return ToolUseCategory.OBSERVE;
+            }
+            if (IDEMPOTENT_FILESYSTEM_MUTATIONS.contains(normalizedOperation)) {
                 return ToolUseCategory.MUTATE_IDEMPOTENT;
             }
-            return ToolUseCategory.OBSERVE;
+            if (NON_IDEMPOTENT_FILESYSTEM_MUTATIONS.contains(normalizedOperation)) {
+                return ToolUseCategory.MUTATE_NON_IDEMPOTENT;
+            }
+            return ToolUseCategory.EXECUTE_UNKNOWN;
         }
         String combined = toolName + "." + normalizeValue(operation);
         if (combined.contains("status") || combined.contains("poll")) {

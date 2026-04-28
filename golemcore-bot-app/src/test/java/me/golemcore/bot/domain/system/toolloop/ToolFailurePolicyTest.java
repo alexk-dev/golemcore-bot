@@ -255,7 +255,7 @@ class ToolFailurePolicyTest {
     }
 
     @Test
-    void repeatGuardStopReasonStopsTurnInsteadOfInjectingRecoveryHint() {
+    void repeatGuardStopTurnDoesNotDependOnRepeatedBlockErrorText() {
         TurnState turnState = buildTurnState(true, false, false);
         Message.ToolCall toolCall = filesystemReadToolCall("README.md");
         ToolExecutionOutcome outcome = new ToolExecutionOutcome(
@@ -268,9 +268,23 @@ class ToolFailurePolicyTest {
 
         ToolFailurePolicy.Verdict verdict = policy.evaluate(turnState, toolCall, outcome);
 
+        assertInstanceOf(ToolFailurePolicy.Verdict.RecoveryHint.class, verdict);
+    }
+
+    @Test
+    void repeatGuardStopTurnIsTypedInsteadOfDependingOnExactErrorText() {
+        TurnState turnState = buildTurnState(true, false, false);
+        Message.ToolCall toolCall = filesystemReadToolCall("README.md");
+        ToolExecutionOutcome outcome = new ToolExecutionOutcome(
+                "tc-1", "filesystem",
+                ToolResult.failure(ToolFailureKind.REPEAT_GUARD_STOP_TURN, "localized human-readable text"),
+                "localized human-readable text",
+                true,
+                null);
+
+        ToolFailurePolicy.Verdict verdict = policy.evaluate(turnState, toolCall, outcome);
+
         assertInstanceOf(ToolFailurePolicy.Verdict.StopTurn.class, verdict);
-        assertEquals(me.golemcore.bot.domain.system.toolloop.repeat.ToolRepeatGuard.STOP_TURN_REASON,
-                ((ToolFailurePolicy.Verdict.StopTurn) verdict).reason());
     }
 
     @Test

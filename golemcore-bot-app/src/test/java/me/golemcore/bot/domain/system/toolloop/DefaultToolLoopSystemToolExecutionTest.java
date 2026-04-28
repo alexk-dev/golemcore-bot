@@ -14,6 +14,7 @@ import me.golemcore.bot.domain.model.ToolResult;
 import me.golemcore.bot.domain.context.compaction.ContextCompactionPolicy;
 import me.golemcore.bot.domain.system.toolloop.repeat.ToolRepeatGuard;
 import me.golemcore.bot.domain.system.toolloop.repeat.ToolRepeatGuardSettings;
+import me.golemcore.bot.domain.system.toolloop.repeat.AutonomyWorkKey;
 import me.golemcore.bot.domain.system.toolloop.repeat.ToolUseFingerprint;
 import me.golemcore.bot.domain.system.toolloop.repeat.ToolUseFingerprintService;
 import me.golemcore.bot.domain.system.toolloop.repeat.ToolUseLedger;
@@ -25,6 +26,7 @@ import me.golemcore.bot.port.outbound.StoragePort;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -109,8 +111,7 @@ class DefaultToolLoopSystemToolExecutionTest extends DefaultToolLoopSystemFixtur
         ToolUseFingerprint fingerprint = fingerprintService.fingerprint(readCall);
         priorLedger.recordUse(priorObservation(fingerprint, "sha256:first"));
         priorLedger.recordUse(priorObservation(fingerprint, "sha256:second"));
-        ledgerStore.save(new me.golemcore.bot.domain.system.toolloop.repeat.AutonomyWorkKey(
-                "web:chat-1", "goal-1", "task-1", null), priorLedger);
+        ledgerStore.save(new AutonomyWorkKey("web:chat-1", "goal-1", "task-1", null), priorLedger);
 
         DefaultToolLoopSystem guardedSystem = DefaultToolLoopSystem.builder()
                 .llmPort(llmPort)
@@ -135,10 +136,63 @@ class DefaultToolLoopSystemToolExecutionTest extends DefaultToolLoopSystemFixtur
         assertTrue(result.finalAnswerReady());
         assertEquals(1, result.toolExecutions());
         verify(toolExecutor, never()).execute(any(), any());
-        assertEquals(3, ledgerStore.load(
-                new me.golemcore.bot.domain.system.toolloop.repeat.AutonomyWorkKey(
-                        "web:chat-1", "goal-1", "task-1", null),
-                java.time.Duration.ofMinutes(120)).orElseThrow().recordsFor(fingerprint).size());
+        assertEquals(3, ledgerStore.load(new AutonomyWorkKey("web:chat-1", "goal-1", "task-1", null),
+                Duration.ofMinutes(120)).orElseThrow().recordsFor(fingerprint).size());
+    }
+
+    @Test
+    void autoRunDoesNotStopImmediatelyBecausePreviousRunAccumulatedBlockedRepeats() {
+        AgentContext context = buildContext();
+        context.setAttribute(ContextAttributes.AUTO_MODE, true);
+        context.setAttribute(ContextAttributes.CONVERSATION_KEY, "web:chat-1");
+        context.setAttribute(ContextAttributes.AUTO_GOAL_ID, "goal-1");
+        context.setAttribute(ContextAttributes.AUTO_TASK_ID, "task-1");
+        Message.ToolCall readCall = Message.ToolCall.builder()
+                .id(TOOL_CALL_ID)
+                .name("filesystem")
+                .arguments(Map.of("operation", "read_file", "path", "README.md"))
+                .build();
+        ToolUseFingerprintService fingerprintService = new ToolUseFingerprintService();
+        ToolRepeatGuard repeatGuard = new ToolRepeatGuard(fingerprintService, ToolRepeatGuardSettings.defaults(),
+                clock);
+        ToolUseLedgerStore ledgerStore = new JsonToolUseLedgerStore(
+                storagePort(), new ObjectMapper().findAndRegisterModules(), clock);
+        ToolUseLedger priorLedger = new ToolUseLedger();
+        ToolUseFingerprint fingerprint = fingerprintService.fingerprint(readCall);
+        priorLedger.recordUse(priorObservation(fingerprint, "sha256:first"));
+        priorLedger.recordUse(priorObservation(fingerprint, "sha256:second"));
+        for (int index = 0; index < ToolRepeatGuardSettings.defaults().maxBlockedRepeatsPerTurn(); index++) {
+            priorLedger.incrementBlockedRepeatCount();
+        }
+        ledgerStore.save(new AutonomyWorkKey("web:chat-1", "goal-1", "task-1", null), priorLedger);
+
+        DefaultToolLoopSystem guardedSystem = DefaultToolLoopSystem.builder()
+                .llmPort(llmPort)
+                .toolExecutor(toolExecutor)
+                .historyWriter(historyWriter)
+                .viewBuilder(viewBuilder)
+                .turnSettings(me.golemcore.bot.support.TestPorts.turn(turnSettings))
+                .settings(me.golemcore.bot.support.TestPorts.toolLoop(settings))
+                .modelSelectionService(modelSelectionService)
+                .contextCompactionPolicy(new ContextCompactionPolicy(runtimeConfigService, modelSelectionService))
+                .repeatGuard(repeatGuard)
+                .toolUseLedgerStore(ledgerStore)
+                .clock(clock)
+                .build();
+
+        when(llmPort.chat(any()))
+                .thenReturn(CompletableFuture.completedFuture(toolCallResponse(List.of(readCall))))
+                .thenReturn(CompletableFuture.completedFuture(finalResponse(CONTENT_DONE)));
+
+        ToolLoopTurnResult result = guardedSystem.processTurn(context);
+
+        assertTrue(result.finalAnswerReady());
+        assertEquals(1, result.toolExecutions());
+        verify(toolExecutor, never()).execute(any(), any());
+        ToolUseLedger loaded = ledgerStore.load(
+                new AutonomyWorkKey("web:chat-1", "goal-1", "task-1", null),
+                Duration.ofMinutes(120)).orElseThrow();
+        assertEquals(0, loaded.getBlockedRepeatCount());
     }
 
     @Test

@@ -77,6 +77,10 @@ public class ToolUseLedger {
         return recordsForCurrentEnvironment(fingerprint).size();
     }
 
+    public int repeatCount(ToolUseFingerprint fingerprint) {
+        return recordsFor(fingerprint).size();
+    }
+
     public Map<String, List<ToolUseRecord>> snapshotRecords() {
         Map<String, List<ToolUseRecord>> snapshot = new LinkedHashMap<>();
         recordsByFingerprint.forEach((key, value) -> snapshot.put(key, List.copyOf(value)));
@@ -122,8 +126,8 @@ public class ToolUseLedger {
             return false;
         }
         return switch (entry.fingerprint().category()) {
-        case MUTATE_IDEMPOTENT, MUTATE_NON_IDEMPOTENT -> true;
-        case OBSERVE, POLL, EXECUTE_UNKNOWN, CONTROL -> false;
+        case MUTATE_IDEMPOTENT, MUTATE_NON_IDEMPOTENT, EXECUTE_UNKNOWN -> true;
+        case OBSERVE, POLL, CONTROL -> false;
         };
     }
 }

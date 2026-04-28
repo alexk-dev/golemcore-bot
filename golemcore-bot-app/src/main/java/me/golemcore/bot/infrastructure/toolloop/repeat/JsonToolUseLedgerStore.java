@@ -50,6 +50,9 @@ public class JsonToolUseLedgerStore implements ToolUseLedgerStore {
                 return Optional.empty();
             }
             StoredLedger stored = objectMapper.readValue(json, StoredLedger.class);
+            if (!isLoadable(stored, key)) {
+                return Optional.empty();
+            }
             return Optional.of(toLedger(stored, ttl));
         } catch (RuntimeException | java.io.IOException e) {
             return Optional.empty();
@@ -75,8 +78,6 @@ public class JsonToolUseLedgerStore implements ToolUseLedgerStore {
             return ledger;
         }
         ledger.setEnvironmentVersion(stored.environmentVersion());
-        ledger.setBlockedRepeatCount(stored.blockedRepeatCount());
-        ledger.setWarnedRepeatCount(stored.warnedRepeatCount());
         Instant cutoff = clock.instant().minus(ttl != null ? ttl : Duration.ZERO);
         for (StoredRecord storedRecord : stored.records()) {
             ToolUseRecord entry = storedRecord.toRecord();
@@ -96,9 +97,16 @@ public class JsonToolUseLedgerStore implements ToolUseLedgerStore {
                 StoredWorkKey.from(key),
                 clock.instant(),
                 ledger.getEnvironmentVersion(),
-                ledger.getBlockedRepeatCount(),
-                ledger.getWarnedRepeatCount(),
+                0,
+                0,
                 storedRecords);
+    }
+
+    private boolean isLoadable(StoredLedger stored, AutonomyWorkKey requestedKey) {
+        return stored != null
+                && stored.schemaVersion() == SCHEMA_VERSION
+                && stored.workKey() != null
+                && stored.workKey().matches(requestedKey);
     }
 
     private boolean isExpired(ToolUseRecord entry, Instant cutoff) {
@@ -130,6 +138,15 @@ public class JsonToolUseLedgerStore implements ToolUseLedgerStore {
 
         static StoredWorkKey from(AutonomyWorkKey key) {
             return new StoredWorkKey(key.sessionKey(), key.goalId(), key.taskId(), key.scheduleId());
+        }
+
+        boolean matches(AutonomyWorkKey key) {
+            if (key == null) {
+                return false;
+            }
+            return Objects.equals(sessionKey, key.sessionKey())
+                    && Objects.equals(goalId, key.goalId())
+                    && Objects.equals(taskId, key.taskId());
         }
     }
 

@@ -60,7 +60,8 @@ public class ToolRepeatGuard {
 
         return switch (fingerprint.category()) {
         case OBSERVE -> decideCountedRepeat(ledger, fingerprint, settings.maxSameObservePerTurn(), settings);
-        case EXECUTE_UNKNOWN -> decideCountedRepeat(ledger, fingerprint, settings.maxSameUnknownPerTurn(), settings);
+        case EXECUTE_UNKNOWN -> decideAnyEnvironmentRepeat(
+                ledger, fingerprint, settings.maxSameUnknownPerTurn(), settings);
         case POLL -> decidePolling(ledger, fingerprint, settings);
         case MUTATE_IDEMPOTENT, MUTATE_NON_IDEMPOTENT -> decideMutation(ledger, fingerprint, settings);
         case CONTROL -> new ToolRepeatDecision.Allow(fingerprint);
@@ -115,6 +116,22 @@ public class ToolRepeatGuard {
         return blockOrShadow(ledger, fingerprint, repeatHint(fingerprint, count), settings);
     }
 
+    private ToolRepeatDecision decideAnyEnvironmentRepeat(
+            ToolUseLedger ledger,
+            ToolUseFingerprint fingerprint,
+            int maxAllowed,
+            ToolRepeatGuardSettings settings) {
+        int count = ledger.repeatCount(fingerprint);
+        if (count <= 0) {
+            return new ToolRepeatDecision.Allow(fingerprint);
+        }
+        if (count < maxAllowed) {
+            ledger.incrementWarnedRepeatCount();
+            return new ToolRepeatDecision.WarnAndAllow(fingerprint, repeatHint(fingerprint, count));
+        }
+        return blockOrShadow(ledger, fingerprint, repeatHint(fingerprint, count), settings);
+    }
+
     private ToolRepeatDecision decidePolling(
             ToolUseLedger ledger,
             ToolUseFingerprint fingerprint,
@@ -151,11 +168,11 @@ public class ToolRepeatGuard {
             ToolUseFingerprint fingerprint,
             String hint,
             ToolRepeatGuardSettings settings) {
-        ledger.incrementBlockedRepeatCount();
         if (settings.shadowMode()) {
             ledger.incrementWarnedRepeatCount();
             return new ToolRepeatDecision.WarnAndAllow(fingerprint, hint, true);
         }
+        ledger.incrementBlockedRepeatCount();
         return new ToolRepeatDecision.BlockAndHint(fingerprint, hint);
     }
 

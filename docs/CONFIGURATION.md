@@ -91,15 +91,15 @@ Default runtime shape:
 Field notes:
 
 - `repeatGuardEnabled`: enables pre-execution repeat protection.
-- `repeatGuardShadowMode`: logs/warns would-block decisions while still allowing execution.
+- `repeatGuardShadowMode`: records warning telemetry and model-visible hints for would-block decisions while still allowing execution.
 - `repeatGuardMaxSameObservePerTurn`: identical observe calls allowed before blocking.
 - `repeatGuardMaxSameUnknownPerTurn`: identical unknown execution calls, including shell, allowed before blocking.
 - `repeatGuardMaxBlockedRepeatsPerTurn`: stops a turn after repeated ignored guard hints.
 - `repeatGuardMinPollIntervalSeconds`: minimum backoff before repeating the same polling call.
 - `repeatGuardAutoLedgerTtlMinutes`: TTL for autonomous task/goal repeat ledgers under `auto/tool-ledgers/`.
 
-The persisted auto ledger stores fingerprints and output digests only. It does not persist full tool outputs or raw
-secret-like arguments.
+The persisted auto ledger stores fingerprints, output digests and environment version only. It does not persist
+per-turn warning/block counters, full tool outputs or raw secret-like arguments.
 
 ### SelfEvolving
 

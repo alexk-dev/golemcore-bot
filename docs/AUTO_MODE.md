@@ -266,8 +266,9 @@ One JSON object per line, split by UTC date.
 ### `tool-ledgers/*`
 
 Repeat-guard continuity for autonomous work. Ledger files store bounded tool-use fingerprints, output digests,
-environment version and repeat counters. They intentionally do not store full tool outputs, raw arguments containing
-secrets or large payloads.
+and environment version. Per-turn warning and blocked-repeat counters are intentionally not restored from durable
+storage, so a later scheduled run can still receive a fresh recovery hint instead of being stopped by stale counters.
+Ledgers intentionally do not store full tool outputs, raw arguments containing secrets or large payloads.
 
 ## Configuration
 

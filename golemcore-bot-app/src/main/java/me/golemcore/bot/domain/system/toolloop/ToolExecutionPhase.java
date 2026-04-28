@@ -265,12 +265,13 @@ class ToolExecutionPhase {
                     eventPayload("toolCallId", toolCall.getId(), "tool", toolCall.getName()));
 
             Instant toolStarted = clock.instant();
-            ToolExecutionOutcome outcome = planModeToolRestrictionService != null
+            RepeatGuardExecution execution = planModeToolRestrictionService != null
                     ? planModeToolRestrictionService.denialReason(context, toolCall)
-                            .map(reason -> ToolExecutionOutcome.synthetic(toolCall, ToolFailureKind.POLICY_DENIED,
-                                    reason))
+                            .map(reason -> new RepeatGuardExecution(ToolExecutionOutcome.synthetic(toolCall,
+                                    ToolFailureKind.POLICY_DENIED, reason), null))
                             .orElseGet(() -> executeAfterRepeatGuard(context, toolCall, turnState))
                     : executeAfterRepeatGuard(context, toolCall, turnState);
+            ToolExecutionOutcome outcome = execution.outcome();
             turnState.incrementToolExecutions();
             long toolDuration = Duration.between(toolStarted, clock.instant()).toMillis();
 
@@ -297,24 +298,32 @@ class ToolExecutionPhase {
             if (outcome != null) {
                 recordToolProgress(context, toolCall, outcome, toolDuration);
                 historyWriter.appendToolResult(context, outcome);
+                if (execution.warningHint() != null) {
+                    historyWriter.appendInternalRecoveryHint(context, execution.warningHint());
+                }
                 repeatGuard.afterOutcome(turnState, toolCall, outcome);
             }
 
             return outcome;
         }
 
-        private ToolExecutionOutcome executeAfterRepeatGuard(AgentContext context, Message.ToolCall toolCall,
+        private RepeatGuardExecution executeAfterRepeatGuard(AgentContext context, Message.ToolCall toolCall,
                 TurnState turnState) {
             ToolRepeatDecision decision = repeatGuard.beforeExecute(turnState, toolCall);
             if (decision instanceof ToolRepeatDecision.BlockAndHint block) {
-                return ToolExecutionOutcome.synthetic(toolCall, ToolFailureKind.REPEATED_TOOL_USE_BLOCKED,
-                        block.hint());
+                return new RepeatGuardExecution(ToolExecutionOutcome.synthetic(toolCall,
+                        ToolFailureKind.REPEATED_TOOL_USE_BLOCKED, block.hint()), null);
             }
             if (decision instanceof ToolRepeatDecision.StopTurn stop) {
-                return ToolExecutionOutcome.synthetic(toolCall, ToolFailureKind.REPEATED_TOOL_USE_BLOCKED,
-                        stop.reason());
+                return new RepeatGuardExecution(ToolExecutionOutcome.synthetic(toolCall,
+                        ToolFailureKind.REPEAT_GUARD_STOP_TURN, stop.reason()), null);
             }
-            return executeWithTracing(context, toolCall, turnState.getTracingConfig());
+            String warningHint = decision instanceof ToolRepeatDecision.WarnAndAllow warn ? warn.hint() : null;
+            return new RepeatGuardExecution(executeWithTracing(context, toolCall, turnState.getTracingConfig()),
+                    warningHint);
+        }
+
+        private record RepeatGuardExecution(ToolExecutionOutcome outcome, String warningHint) {
         }
 
         private ToolExecutionOutcome executeWithTracing(AgentContext context, Message.ToolCall toolCall,

@@ -42,6 +42,15 @@ class ToolUseLedgerTest {
     }
 
     @Test
+    void successfulUnknownExecutionAdvancesEnvironmentVersionConservatively() {
+        ToolUseLedger ledger = new ToolUseLedger();
+
+        ledger.recordUse(toolUseRecord(fingerprint(ToolUseCategory.EXECUTE_UNKNOWN), true, false));
+
+        assertEquals(1, ledger.getEnvironmentVersion());
+    }
+
+    @Test
     void doesNotIncrementEnvironmentVersionAfterObservation() {
         ToolUseLedger ledger = new ToolUseLedger();
 

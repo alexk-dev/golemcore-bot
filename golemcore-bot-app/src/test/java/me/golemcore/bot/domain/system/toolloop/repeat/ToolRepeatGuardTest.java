@@ -68,6 +68,20 @@ class ToolRepeatGuardTest {
     }
 
     @Test
+    void allowsObservationAfterSuccessfulUnknownExecutionChangesEnvironmentConservatively() {
+        TurnState turnState = turnState();
+        Message.ToolCall read = readCall("README.md");
+        Message.ToolCall shell = toolCall("shell", Map.of("command", "printf updated > README.md"));
+        guard.afterOutcome(turnState, read, success(read, "before-1"));
+        guard.afterOutcome(turnState, read, success(read, "before-2"));
+        guard.afterOutcome(turnState, shell, success(shell, "ok"));
+
+        ToolRepeatDecision decision = guard.beforeExecute(turnState, read);
+
+        assertInstanceOf(ToolRepeatDecision.Allow.class, decision);
+    }
+
+    @Test
     void allowsDifferentArguments() {
         TurnState turnState = turnState();
         Message.ToolCall first = readCall("README.md");
@@ -166,7 +180,7 @@ class ToolRepeatGuardTest {
         ToolRepeatDecision decision = shadowGuard.beforeExecute(turnState, call);
 
         assertInstanceOf(ToolRepeatDecision.WarnAndAllow.class, decision);
-        assertEquals(1, turnState.getToolUseLedger().getBlockedRepeatCount());
+        assertEquals(0, turnState.getToolUseLedger().getBlockedRepeatCount());
         assertEquals(1, turnState.getToolUseLedger().getWarnedRepeatCount());
     }
 

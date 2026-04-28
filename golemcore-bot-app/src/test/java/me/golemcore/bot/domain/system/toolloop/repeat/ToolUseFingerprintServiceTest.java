@@ -88,6 +88,20 @@ class ToolUseFingerprintServiceTest {
     }
 
     @Test
+    void classifiesAppendAsNonIdempotentMutation() {
+        assertEquals(ToolUseCategory.MUTATE_NON_IDEMPOTENT,
+                service.fingerprint(toolCall("filesystem",
+                        Map.of("operation", "append", "path", "README.md", "content", "x"))).category());
+    }
+
+    @Test
+    void classifiesUnknownFilesystemOperationAsExecuteUnknown() {
+        assertEquals(ToolUseCategory.EXECUTE_UNKNOWN,
+                service.fingerprint(toolCall("filesystem",
+                        Map.of("operation", "rename", "from", "a", "to", "b"))).category());
+    }
+
+    @Test
     void canonicalizesNestedCollectionsArraysPrimitivesAndUnknownObjects() {
         Message.ToolCall first = toolCall("filesystem",
                 Map.of(

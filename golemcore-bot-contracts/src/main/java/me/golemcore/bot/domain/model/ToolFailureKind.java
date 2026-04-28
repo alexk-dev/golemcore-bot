@@ -29,5 +29,10 @@ public enum ToolFailureKind {
      * Tool execution was skipped by the loop because the same call repeated without
      * progress.
      */
-    REPEATED_TOOL_USE_BLOCKED
+    REPEATED_TOOL_USE_BLOCKED,
+
+    /**
+     * The repeat guard stopped the turn after too many blocked repeats.
+     */
+    REPEAT_GUARD_STOP_TURN
 }
