@@ -13,25 +13,26 @@ import me.golemcore.bot.domain.context.ContextLayer;
 import me.golemcore.bot.domain.context.PromptComposer;
 import me.golemcore.bot.domain.context.resolution.SkillResolver;
 import me.golemcore.bot.domain.context.resolution.TierResolver;
+import me.golemcore.bot.domain.events.RuntimeEventService;
 import me.golemcore.bot.domain.loop.AgentLoop;
 import me.golemcore.bot.domain.auto.AutoModeService;
 import me.golemcore.bot.domain.context.compaction.ContextCompactionPolicy;
-import me.golemcore.bot.domain.service.ContextHygieneService;
+import me.golemcore.bot.domain.context.hygiene.ContextHygieneService;
 import me.golemcore.bot.domain.context.compaction.ContextTokenEstimator;
 import me.golemcore.bot.domain.scheduling.DelayedActionPolicyService;
-import me.golemcore.bot.domain.service.MemoryPresetService;
+import me.golemcore.bot.domain.memory.MemoryPresetService;
 import me.golemcore.bot.domain.model.ModelSelectionService;
 import me.golemcore.bot.domain.tools.PlanModeToolRestrictionService;
 import me.golemcore.bot.domain.planning.PlanService;
 import me.golemcore.bot.domain.prompt.PromptSectionService;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.runtimeconfig.RuntimeConfigService;
 import me.golemcore.bot.domain.scheduling.ScheduleService;
 import me.golemcore.bot.domain.skills.SkillTemplateEngine;
-import me.golemcore.bot.domain.service.ToolRegistryService;
-import me.golemcore.bot.domain.service.TraceService;
+import me.golemcore.bot.domain.tools.registry.ToolRegistryService;
+import me.golemcore.bot.domain.tracing.TraceService;
 import me.golemcore.bot.domain.update.UpdateActivityGate;
 import me.golemcore.bot.domain.update.UpdateMaintenanceWindow;
-import me.golemcore.bot.domain.service.UserPreferencesService;
+import me.golemcore.bot.domain.runtimeconfig.UserPreferencesService;
 import me.golemcore.bot.domain.workspace.WorkspaceInstructionService;
 import me.golemcore.bot.domain.system.AgentSystem;
 import me.golemcore.bot.port.outbound.ChannelRuntimePort;
@@ -89,7 +90,8 @@ class CoreLayerConfigurationTest {
                 Clock.systemUTC(),
                 mock(TraceService.class),
                 mock(TraceSnapshotCodecPort.class),
-                mock(ContextHygieneService.class));
+                mock(ContextHygieneService.class),
+                mock(RuntimeEventService.class));
 
         assertNotNull(agentLoop);
     }

@@ -1,7 +1,7 @@
 package me.golemcore.bot.adapter.inbound.telegram;
 
 import me.golemcore.bot.domain.model.RuntimeConfig;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.runtimeconfig.RuntimeConfigService;
 import me.golemcore.bot.plugin.runtime.TelegramWebhookUpdateBridge;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;

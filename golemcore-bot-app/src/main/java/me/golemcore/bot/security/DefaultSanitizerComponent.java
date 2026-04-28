@@ -19,7 +19,7 @@ package me.golemcore.bot.security;
  */
 
 import me.golemcore.bot.domain.component.SanitizerComponent;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.runtimeconfig.RuntimeConfigService;
 import org.springframework.stereotype.Component;
 
 import java.util.List;

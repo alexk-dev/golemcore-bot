@@ -10,7 +10,7 @@ import me.golemcore.bot.domain.model.UpdateBlockedReason;
 import me.golemcore.bot.domain.model.UpdateState;
 import me.golemcore.bot.domain.model.UpdateStatus;
 import me.golemcore.bot.domain.runtime.JvmExitService;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.runtimeconfig.RuntimeConfigService;
 import me.golemcore.bot.domain.update.UpdateActivityGate;
 import me.golemcore.bot.domain.update.UpdateMaintenanceWindow;
 import me.golemcore.bot.infrastructure.config.BotProperties;

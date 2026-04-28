@@ -18,9 +18,9 @@ package me.golemcore.bot.domain.planning;
  * Contact: alex@kuleshov.tech
  */
 
-import me.golemcore.bot.domain.service.StringValueSupport;
-import me.golemcore.bot.domain.service.SessionIdentitySupport;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.support.StringValueSupport;
+import me.golemcore.bot.domain.identity.SessionIdentitySupport;
+import me.golemcore.bot.domain.runtimeconfig.RuntimeConfigService;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.ModelTierCatalog;
 import me.golemcore.bot.domain.model.Plan;

@@ -23,7 +23,7 @@ import me.golemcore.bot.domain.model.ToolResult;
 import me.golemcore.bot.domain.model.hive.HiveCardDetail;
 import me.golemcore.bot.domain.model.hive.HiveCardSummary;
 import me.golemcore.bot.domain.model.hive.HiveThreadMessage;
-import me.golemcore.bot.domain.service.HiveSdlcService;
+import me.golemcore.bot.domain.hive.HiveSdlcService;
 import me.golemcore.bot.port.outbound.RuntimeConfigQueryPort;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;

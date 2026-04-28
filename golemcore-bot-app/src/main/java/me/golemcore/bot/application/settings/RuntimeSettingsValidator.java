@@ -5,7 +5,7 @@ import me.golemcore.bot.domain.model.MemoryPresetIds;
 import me.golemcore.bot.domain.model.ModelTierCatalog;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.UserPreferences;
-import me.golemcore.bot.domain.service.MemoryPresetService;
+import me.golemcore.bot.domain.memory.MemoryPresetService;
 import me.golemcore.bot.domain.model.ModelSelectionService;
 import me.golemcore.bot.port.outbound.ResponseJsonSchemaValidatorPort;
 import me.golemcore.bot.port.outbound.VoiceProviderCatalogPort;

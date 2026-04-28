@@ -9,7 +9,7 @@ import static org.mockito.Mockito.when;
 import java.nio.file.Path;
 import java.util.Map;
 import me.golemcore.bot.domain.model.ScheduledTask;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.runtimeconfig.RuntimeConfigService;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.security.InjectionGuard;
 import me.golemcore.bot.tools.ShellTool;

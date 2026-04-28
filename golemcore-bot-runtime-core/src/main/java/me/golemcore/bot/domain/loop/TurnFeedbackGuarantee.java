@@ -1,24 +1,13 @@
 package me.golemcore.bot.domain.loop;
 
 import java.time.Clock;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.ContextAttributes;
-import me.golemcore.bot.domain.model.FailureEvent;
-import me.golemcore.bot.domain.model.LlmRequest;
-import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.OutgoingResponse;
 import me.golemcore.bot.domain.model.RoutingOutcome;
 import me.golemcore.bot.domain.model.TurnOutcome;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
-import me.golemcore.bot.domain.service.UserPreferencesService;
-import me.golemcore.bot.port.outbound.LlmPort;
 
 /**
  * Ensures a user-visible response is routed when the normal pipeline did not deliver one.
@@ -26,148 +15,54 @@ import me.golemcore.bot.port.outbound.LlmPort;
 @Slf4j
 final class TurnFeedbackGuarantee {
 
-    private final UserPreferencesService preferencesService;
-    private final RuntimeConfigService runtimeConfigService;
-    private final LlmPort llmPort;
-    private final Clock clock;
-    private final AgentPipelineRunner pipelineRunner;
+    private final UnsentResponseDetector unsentResponseDetector;
+    private final SafeErrorFeedbackRenderer safeErrorFeedbackRenderer;
+    private final GenericFallbackRouter genericFallbackRouter;
+    private final OptionalLlmErrorExplanationProvider optionalExplanationProvider;
 
-    TurnFeedbackGuarantee(UserPreferencesService preferencesService, RuntimeConfigService runtimeConfigService,
-            LlmPort llmPort, Clock clock, AgentPipelineRunner pipelineRunner) {
-        this.preferencesService = preferencesService;
-        this.runtimeConfigService = runtimeConfigService;
-        this.llmPort = llmPort;
-        this.clock = clock;
-        this.pipelineRunner = pipelineRunner;
+    TurnFeedbackGuarantee(UnsentResponseDetector unsentResponseDetector,
+            SafeErrorFeedbackRenderer safeErrorFeedbackRenderer, GenericFallbackRouter genericFallbackRouter,
+            OptionalLlmErrorExplanationProvider optionalExplanationProvider) {
+        this.unsentResponseDetector = unsentResponseDetector;
+        this.safeErrorFeedbackRenderer = safeErrorFeedbackRenderer;
+        this.genericFallbackRouter = genericFallbackRouter;
+        this.optionalExplanationProvider = optionalExplanationProvider;
     }
 
     AgentContext ensure(AgentContext context) {
         TurnOutcome outcome = context.getTurnOutcome();
         RoutingOutcome routingOutcome = outcome != null ? outcome.getRoutingOutcome() : null;
-        if (isDeliverySuccessful(routingOutcome)) {
-            return context;
-        }
-
         RoutingOutcome routingAttr = context.getAttribute(ContextAttributes.ROUTING_OUTCOME);
-        if (isDeliverySuccessful(routingAttr)) {
+        if (unsentResponseDetector.delivered(context)) {
             return context;
         }
 
         if (isAutoModeContext(context)) {
-            log.debug("[AgentLoop] Feedback guarantee skipped: auto mode context");
+            log.debug("[TurnFeedbackGuarantee] skipped: auto mode context");
             return context;
         }
 
         if (Boolean.TRUE.equals(context.getAttribute(ContextAttributes.TURN_INTERNAL_RETRY_SCHEDULED))) {
-            log.debug("[AgentLoop] Feedback guarantee skipped: internal retry already scheduled");
+            log.debug("[TurnFeedbackGuarantee] skipped: internal retry already scheduled");
             return context;
         }
 
-        AgentContext routed = tryUnsentLlmResponse(context);
-        if (routed != null) {
-            return routed;
+        if (unsentResponseDetector.hasUnsentText(context)) {
+            log.info("[TurnFeedbackGuarantee] routing unsent OutgoingResponse");
+            return genericFallbackRouter.routeExisting(context);
         }
 
-        routed = tryErrorFeedback(context);
-        if (routed != null) {
-            return routed;
-        }
-
-        String generic = preferencesService.getMessage("system.error.generic.feedback");
+        String fallback = optionalExplanationProvider.explain(context)
+                .map(safeErrorFeedbackRenderer::renderExplainedFallback)
+                .orElseGet(safeErrorFeedbackRenderer::renderGenericFallback);
         OutgoingResponse outgoing = context.getAttribute(ContextAttributes.OUTGOING_RESPONSE);
         String llmError = context.getAttribute(ContextAttributes.LLM_ERROR);
-        log.warn("[AgentLoop] Feedback guarantee fallback triggered: routing generic feedback "
+        log.warn("[TurnFeedbackGuarantee] fallback triggered: routing safe feedback "
                 + "(turnRoutingOutcome={}, attributeRoutingOutcome={}, outgoingResponse={}, llmErrorPresent={}, failures={})",
                 describeRoutingOutcome(routingOutcome), describeRoutingOutcome(routingAttr),
                 describeOutgoingResponse(outgoing), llmError != null && !llmError.isBlank(),
                 context.getFailures().size());
-        return pipelineRunner.routeSyntheticAssistantResponse(context, generic);
-    }
-
-    private boolean isDeliverySuccessful(RoutingOutcome routingOutcome) {
-        if (routingOutcome == null) {
-            return false;
-        }
-        if (routingOutcome.isSentText()) {
-            return true;
-        }
-        if (routingOutcome.isSentVoice()) {
-            return true;
-        }
-        return routingOutcome.getSentAttachments() > 0;
-    }
-
-    private AgentContext tryUnsentLlmResponse(AgentContext context) {
-        OutgoingResponse outgoing = context.getAttribute(ContextAttributes.OUTGOING_RESPONSE);
-        if (outgoing != null && outgoing.getText() != null && !outgoing.getText().isBlank()) {
-            log.info("[AgentLoop] Feedback guarantee: routing unsent OutgoingResponse");
-            return pipelineRunner.routeResponse(context);
-        }
-        return null;
-    }
-
-    private AgentContext tryErrorFeedback(AgentContext context) {
-        List<String> errors = collectErrors(context);
-        if (errors.isEmpty() || !llmPort.isAvailable()) {
-            return null;
-        }
-
-        String interpretation = tryInterpretErrors(context, errors);
-        if (interpretation != null) {
-            String message = preferencesService.getMessage("system.error.feedback", interpretation);
-            log.info("[AgentLoop] Feedback guarantee: routing interpreted error");
-            return pipelineRunner.routeSyntheticAssistantResponse(context, message);
-        }
-
-        return null;
-    }
-
-    private List<String> collectErrors(AgentContext context) {
-        List<String> errors = new ArrayList<>();
-        String llmError = context.getAttribute(ContextAttributes.LLM_ERROR);
-        if (llmError != null) {
-            errors.add(llmError);
-        }
-        for (FailureEvent failure : context.getFailures()) {
-            if (failure.message() != null) {
-                errors.add(failure.message());
-            }
-        }
-        TurnOutcome outcome = context.getTurnOutcome();
-        if (outcome != null && outcome.getRoutingOutcome() != null
-                && outcome.getRoutingOutcome().getErrorMessage() != null) {
-            errors.add(outcome.getRoutingOutcome().getErrorMessage());
-        }
-        return errors;
-    }
-
-    private String tryInterpretErrors(AgentContext context, List<String> errors) {
-        try {
-            String errorSummary = String.join("\n", errors);
-            LlmRequest request = LlmRequest.builder().model(runtimeConfigService.getRoutingModel())
-                    .reasoningEffort(runtimeConfigService.getRoutingModelReasoning())
-                    .systemPrompt(
-                            "You are a helpful assistant. Explain the following error in 1-2 sentences for the user.")
-                    .messages(List.of(
-                            Message.builder().role("user").content(errorSummary).timestamp(clock.instant()).build()))
-                    .sessionId(context.getSession() != null ? context.getSession().getId() : null)
-                    .traceId(context.getTraceContext() != null ? context.getTraceContext().getTraceId() : null)
-                    .traceSpanId(context.getTraceContext() != null ? context.getTraceContext().getSpanId() : null)
-                    .traceParentSpanId(
-                            context.getTraceContext() != null ? context.getTraceContext().getParentSpanId() : null)
-                    .traceRootKind(context.getTraceContext() != null ? context.getTraceContext().getRootKind() : null)
-                    .build();
-            LlmResponse response = llmPort.chat(request).get(10, TimeUnit.SECONDS);
-            if (response != null && response.getContent() != null && !response.getContent().isBlank()) {
-                return response.getContent();
-            }
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            log.debug("[AgentLoop] LLM error interpretation interrupted: {}", e.getMessage());
-        } catch (ExecutionException | TimeoutException e) {
-            log.debug("[AgentLoop] LLM error interpretation failed: {}", e.getMessage());
-        }
-        return null;
+        return genericFallbackRouter.route(context, fallback);
     }
 
     private boolean isAutoModeContext(AgentContext context) {

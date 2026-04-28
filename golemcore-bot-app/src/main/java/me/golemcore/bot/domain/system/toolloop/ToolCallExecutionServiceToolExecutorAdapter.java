@@ -3,9 +3,9 @@ package me.golemcore.bot.domain.system.toolloop;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.ToolResult;
-import me.golemcore.bot.domain.service.ToolCallExecutionResult;
-import me.golemcore.bot.domain.service.ToolCallExecutionService;
-import me.golemcore.bot.domain.service.ToolExecutionContext;
+import me.golemcore.bot.domain.tools.execution.ToolCallExecutionResult;
+import me.golemcore.bot.domain.tools.execution.ToolCallExecutionService;
+import me.golemcore.bot.domain.tools.execution.ToolExecutionContext;
 
 /**
  * Adapter that executes tool calls via {@link ToolCallExecutionService}.

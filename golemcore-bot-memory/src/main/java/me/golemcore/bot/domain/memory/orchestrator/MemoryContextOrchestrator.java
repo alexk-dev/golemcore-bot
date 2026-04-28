@@ -26,9 +26,9 @@ import me.golemcore.bot.domain.model.MemoryItem;
 import me.golemcore.bot.domain.model.MemoryPack;
 import me.golemcore.bot.domain.model.MemoryQuery;
 import me.golemcore.bot.domain.model.MemoryScoredItem;
-import me.golemcore.bot.domain.service.MemoryPromptPackService;
-import me.golemcore.bot.domain.service.MemoryRetrievalService;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.memory.MemoryPromptPackService;
+import me.golemcore.bot.domain.memory.MemoryRetrievalService;
+import me.golemcore.bot.domain.runtimeconfig.RuntimeConfigService;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;

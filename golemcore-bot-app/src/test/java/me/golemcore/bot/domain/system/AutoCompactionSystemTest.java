@@ -11,7 +11,7 @@ import me.golemcore.bot.domain.context.compaction.CompactionOrchestrationService
 import me.golemcore.bot.domain.context.compaction.ContextCompactionPolicy;
 import me.golemcore.bot.domain.context.compaction.ContextTokenEstimator;
 import me.golemcore.bot.domain.model.ModelSelectionService;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.runtimeconfig.RuntimeConfigService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 

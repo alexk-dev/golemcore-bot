@@ -1,6 +1,6 @@
 package me.golemcore.bot.domain.session;
 
-import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.runtimeconfig.RuntimeConfigService;
 import me.golemcore.bot.domain.events.RuntimeEventService;
 import me.golemcore.bot.port.outbound.RuntimeEventPublishPort;
 import me.golemcore.bot.port.outbound.HiveEventPublishPort;
@@ -9,8 +9,10 @@ import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.Message;
+import me.golemcore.bot.domain.model.RunStatus;
 import me.golemcore.bot.domain.model.RuntimeEvent;
 import me.golemcore.bot.domain.model.RuntimeEventType;
+import me.golemcore.bot.domain.model.TurnRunResult;
 import me.golemcore.bot.domain.model.hive.HiveRuntimeContracts;
 import me.golemcore.bot.port.outbound.SessionPort;
 import org.junit.jupiter.api.Test;
@@ -495,7 +497,7 @@ class SessionRunCoordinatorTest {
     }
 
     @Test
-    void shouldCompleteSubmitForContextWithProcessedAgentContext() throws Exception {
+    void shouldCompleteSubmitForResultWithImmutableTurnResult() throws Exception {
         SessionPort sessionPort = mock(SessionPort.class);
         AgentLoop agentLoop = mock(AgentLoop.class);
         RuntimeEventService runtimeEventService = mock(RuntimeEventService.class);
@@ -509,9 +511,12 @@ class SessionRunCoordinatorTest {
             processed.setAttribute(ContextAttributes.RESILIENCE_L5_TERMINAL_FAILURE, true);
             when(agentLoop.processMessage(inbound)).thenReturn(processed);
 
-            CompletableFuture<AgentContext> completion = coordinator.submitForContext(inbound);
+            CompletableFuture<TurnRunResult> completion = coordinator.submitForResult(inbound);
 
-            assertEquals(processed, completion.get(2, TimeUnit.SECONDS));
+            TurnRunResult result = completion.get(2, TimeUnit.SECONDS);
+            assertEquals(RunStatus.FAILED, result.status());
+            assertTrue(result.failures().stream()
+                    .anyMatch(failure -> "resilience.l5.terminal".equals(failure.errorCode())));
             verify(agentLoop).processMessage(inbound);
         }
     }

@@ -38,7 +38,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 import me.golemcore.bot.domain.selfevolving.candidate.CandidateLifecycleResolver;
-import me.golemcore.bot.domain.service.StringValueSupport;
+import me.golemcore.bot.domain.support.StringValueSupport;
 
 /**
  * Resolves canonical artifact identity for evolution candidates and persists

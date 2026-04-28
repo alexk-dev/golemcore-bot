@@ -1,7 +1,7 @@
 package me.golemcore.bot.domain.dashboard;
 
 import me.golemcore.bot.support.LocalTestWorkspaceFilePort;
-import me.golemcore.bot.domain.service.WorkspacePathService;
+import me.golemcore.bot.domain.tools.workspace.WorkspacePathService;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;

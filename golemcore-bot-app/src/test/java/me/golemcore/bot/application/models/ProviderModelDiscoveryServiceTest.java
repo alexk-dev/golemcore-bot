@@ -14,7 +14,7 @@ import java.lang.invoke.MethodType;
 import java.util.List;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.Secret;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.runtimeconfig.RuntimeConfigService;
 import me.golemcore.bot.port.outbound.ProviderModelDiscoveryPort;
 import org.junit.jupiter.api.Test;
 

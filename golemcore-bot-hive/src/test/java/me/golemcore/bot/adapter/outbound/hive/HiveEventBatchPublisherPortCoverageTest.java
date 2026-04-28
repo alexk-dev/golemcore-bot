@@ -30,7 +30,7 @@ import me.golemcore.bot.domain.model.selfevolving.artifact.ArtifactTransitionEvi
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchExplanation;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchResult;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchStatus;
-import me.golemcore.bot.domain.service.HiveSessionStateStore;
+import me.golemcore.bot.domain.hive.HiveSessionStateStore;
 import me.golemcore.bot.port.outbound.SelfEvolvingProjectionPublishPort;
 import me.golemcore.bot.port.outbound.StoragePort;
 import org.junit.jupiter.api.BeforeEach;

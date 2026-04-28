@@ -3,7 +3,7 @@ package me.golemcore.bot.infrastructure.telemetry;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.runtimeconfig.RuntimeConfigService;
 import me.golemcore.bot.port.outbound.TelemetryRollupPort;
 import org.springframework.stereotype.Component;
 

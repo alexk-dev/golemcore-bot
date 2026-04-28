@@ -22,7 +22,7 @@ import me.golemcore.bot.domain.memory.model.MemoryPackSection;
 import me.golemcore.bot.domain.model.MemoryPack;
 import me.golemcore.bot.domain.model.MemoryQuery;
 import me.golemcore.bot.domain.model.MemoryScoredItem;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.runtimeconfig.RuntimeConfigService;
 import org.springframework.stereotype.Service;
 
 import java.util.LinkedHashMap;

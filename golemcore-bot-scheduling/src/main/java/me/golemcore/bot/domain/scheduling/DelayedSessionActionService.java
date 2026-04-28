@@ -18,10 +18,10 @@ package me.golemcore.bot.domain.scheduling;
  * Contact: alex@kuleshov.tech
  */
 
-import me.golemcore.bot.domain.service.ConversationKeyValidator;
-import me.golemcore.bot.domain.service.AutoRunContextSupport;
-import me.golemcore.bot.domain.service.StringValueSupport;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.validation.ConversationKeyValidator;
+import me.golemcore.bot.domain.autorun.AutoRunContextSupport;
+import me.golemcore.bot.domain.support.StringValueSupport;
+import me.golemcore.bot.domain.runtimeconfig.RuntimeConfigService;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.DelayedActionDeliveryMode;
 import me.golemcore.bot.domain.model.DelayedActionKind;

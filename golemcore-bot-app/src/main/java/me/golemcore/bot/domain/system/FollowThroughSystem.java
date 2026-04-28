@@ -15,8 +15,8 @@ import me.golemcore.bot.domain.resilience.followthrough.ClassifierVerdict;
 import me.golemcore.bot.domain.resilience.followthrough.FollowThroughClassifier;
 import me.golemcore.bot.domain.scheduling.InternalTurnService;
 import me.golemcore.bot.domain.resilience.ResilienceObservabilitySupport;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
-import me.golemcore.bot.domain.service.TraceService;
+import me.golemcore.bot.domain.runtimeconfig.RuntimeConfigService;
+import me.golemcore.bot.domain.tracing.TraceService;
 import me.golemcore.bot.port.outbound.TraceSnapshotCodecPort;
 import org.springframework.stereotype.Component;
 

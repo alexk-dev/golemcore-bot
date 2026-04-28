@@ -19,28 +19,19 @@ package me.golemcore.bot.domain.loop;
  */
 
 import jakarta.annotation.PreDestroy;
-import java.time.Clock;
 import java.time.Instant;
-import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.Message;
+import me.golemcore.bot.domain.model.PersistenceOutcome;
 import me.golemcore.bot.domain.model.RateLimitResult;
-import me.golemcore.bot.domain.service.AutoRunContextSupport;
-import me.golemcore.bot.domain.service.ContextHygieneService;
-import me.golemcore.bot.domain.service.MdcSupport;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
-import me.golemcore.bot.domain.service.TraceService;
-import me.golemcore.bot.domain.service.UserPreferencesService;
-import me.golemcore.bot.domain.system.AgentSystem;
-import me.golemcore.bot.port.outbound.ChannelRuntimePort;
-import me.golemcore.bot.port.outbound.LlmPort;
+import me.golemcore.bot.domain.autorun.AutoRunContextSupport;
+import me.golemcore.bot.domain.tracing.MdcSupport;
 import me.golemcore.bot.port.outbound.RateLimitPort;
 import me.golemcore.bot.port.outbound.SessionPort;
-import me.golemcore.bot.port.outbound.TraceSnapshotCodecPort;
 
 /**
  * Top-level turn lifecycle facade. Detailed admission, context construction, pipeline execution, feedback guarantee,
@@ -58,23 +49,18 @@ public class AgentLoop {
     private final TurnFeedbackGuarantee feedbackGuarantee;
     private final AutoRunOutcomeRecorder outcomeRecorder;
 
-    public AgentLoop(SessionPort sessionService, RateLimitPort rateLimiter, List<AgentSystem> systems,
-            ChannelRuntimePort channelRuntimePort, RuntimeConfigService runtimeConfigService,
-            UserPreferencesService preferencesService, LlmPort llmPort, Clock clock, TraceService traceService,
-            TraceSnapshotCodecPort traceSnapshotCodecPort, ContextHygieneService contextHygieneService) {
-        this.sessionService = sessionService;
-        this.rateLimiter = rateLimiter;
-        ContextHygieneService safeContextHygieneService = Objects.requireNonNull(contextHygieneService,
-                "contextHygieneService must not be null");
-        this.feedbackCoordinator = new TurnFeedbackCoordinator(channelRuntimePort, preferencesService);
-        this.persistenceGuard = new TurnPersistenceGuard(sessionService, runtimeConfigService, traceService,
-                safeContextHygieneService, clock);
-        this.contextFactory = new TurnContextFactory(runtimeConfigService, traceService, clock, traceSnapshotCodecPort);
-        this.pipelineRunner = new AgentPipelineRunner(systems, runtimeConfigService, preferencesService, clock,
-                traceService, safeContextHygieneService);
-        this.feedbackGuarantee = new TurnFeedbackGuarantee(preferencesService, runtimeConfigService, llmPort, clock,
-                pipelineRunner);
-        this.outcomeRecorder = new AutoRunOutcomeRecorder();
+    AgentLoop(SessionPort sessionService, RateLimitPort rateLimiter, TurnFeedbackCoordinator feedbackCoordinator,
+            TurnPersistenceGuard persistenceGuard, TurnContextFactory contextFactory,
+            AgentPipelineRunner pipelineRunner, TurnFeedbackGuarantee feedbackGuarantee,
+            AutoRunOutcomeRecorder outcomeRecorder) {
+        this.sessionService = Objects.requireNonNull(sessionService, "sessionService must not be null");
+        this.rateLimiter = Objects.requireNonNull(rateLimiter, "rateLimiter must not be null");
+        this.feedbackCoordinator = Objects.requireNonNull(feedbackCoordinator, "feedbackCoordinator must not be null");
+        this.persistenceGuard = Objects.requireNonNull(persistenceGuard, "persistenceGuard must not be null");
+        this.contextFactory = Objects.requireNonNull(contextFactory, "contextFactory must not be null");
+        this.pipelineRunner = Objects.requireNonNull(pipelineRunner, "pipelineRunner must not be null");
+        this.feedbackGuarantee = Objects.requireNonNull(feedbackGuarantee, "feedbackGuarantee must not be null");
+        this.outcomeRecorder = Objects.requireNonNull(outcomeRecorder, "outcomeRecorder must not be null");
     }
 
     @PreDestroy
@@ -110,8 +96,10 @@ public class AgentLoop {
                 }
             } finally {
                 AgentContextHolder.clear();
-                persistenceGuard.persist(context, session,
+                PersistenceOutcome persistenceOutcome = persistenceGuard.persist(context, session,
                         context.getTraceContext() != null ? context.getTraceContext() : turn.rootTraceContext());
+                log.debug("Turn persistence outcome: saved={}, sessionId={}, errorCode={}", persistenceOutcome.saved(),
+                        persistenceOutcome.sessionId(), persistenceOutcome.errorCode());
             }
 
             log.info("=== MESSAGE PROCESSING COMPLETE ===");

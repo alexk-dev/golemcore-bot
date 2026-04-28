@@ -25,7 +25,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import me.golemcore.bot.domain.model.ScheduledTask;
 import me.golemcore.bot.domain.model.ToolResult;
-import me.golemcore.bot.domain.service.StringValueSupport;
+import me.golemcore.bot.domain.support.StringValueSupport;
 import me.golemcore.bot.tools.ShellTool;
 import org.springframework.stereotype.Component;
 

@@ -24,9 +24,9 @@ import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.ModelTierCatalog;
 import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.model.ToolResult;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
-import me.golemcore.bot.domain.service.SessionModelSettingsSupport;
-import me.golemcore.bot.domain.service.UserPreferencesService;
+import me.golemcore.bot.domain.runtimeconfig.RuntimeConfigService;
+import me.golemcore.bot.domain.sessions.SessionModelSettingsSupport;
+import me.golemcore.bot.domain.runtimeconfig.UserPreferencesService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 

@@ -2,7 +2,6 @@
 me/golemcore/bot/domain/auto/AutoModeService.java
 me/golemcore/bot/domain/auto/AutoRunHistoryService.java
 me/golemcore/bot/domain/dashboard/DashboardFileService.java
-me/golemcore/bot/domain/loop/AgentLoop.java
 me/golemcore/bot/domain/model/ContextAttributes.java
 me/golemcore/bot/domain/model/ModelSelectionService.java
 me/golemcore/bot/domain/model/RuntimeConfig.java
@@ -15,11 +14,6 @@ me/golemcore/bot/domain/selfevolving/benchmark/LlmJudgeService.java
 me/golemcore/bot/domain/selfevolving/tactic/LocalEmbeddingBootstrapService.java
 me/golemcore/bot/domain/selfevolving/tactic/ManagedLocalOllamaSupervisor.java
 me/golemcore/bot/domain/selfevolving/tactic/TacticEmbeddingIndexService.java
-me/golemcore/bot/domain/service/RuntimeConfigService.java
-me/golemcore/bot/domain/service/SessionInspectionService.java
-me/golemcore/bot/domain/service/SessionSelectionService.java
-me/golemcore/bot/domain/service/SessionService.java
-me/golemcore/bot/domain/service/ToolCallExecutionService.java
 me/golemcore/bot/domain/session/SessionRunCoordinator.java
 me/golemcore/bot/domain/session/SessionScopedGoalService.java
 me/golemcore/bot/domain/skills/SkillService.java

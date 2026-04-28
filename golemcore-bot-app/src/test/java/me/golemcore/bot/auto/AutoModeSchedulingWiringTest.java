@@ -3,7 +3,7 @@ package me.golemcore.bot.auto;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import me.golemcore.bot.domain.component.SkillComponent;
 import me.golemcore.bot.domain.auto.AutoModeService;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.runtimeconfig.RuntimeConfigService;
 import me.golemcore.bot.domain.scheduling.ScheduleService;
 import me.golemcore.bot.domain.session.SessionRunCoordinator;
 import me.golemcore.bot.domain.update.UpdateActivityGate;

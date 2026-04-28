@@ -23,12 +23,13 @@ import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.RateLimitResult;
 import me.golemcore.bot.domain.model.SkillTransitionRequest;
-import me.golemcore.bot.domain.service.DefaultContextHygieneService;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
-import me.golemcore.bot.domain.service.TraceBudgetService;
-import me.golemcore.bot.domain.service.TraceService;
-import me.golemcore.bot.domain.service.TraceSnapshotCompressionService;
-import me.golemcore.bot.domain.service.UserPreferencesService;
+import me.golemcore.bot.domain.context.hygiene.DefaultContextHygieneService;
+import me.golemcore.bot.domain.events.RuntimeEventService;
+import me.golemcore.bot.domain.runtimeconfig.RuntimeConfigService;
+import me.golemcore.bot.domain.tracing.TraceBudgetService;
+import me.golemcore.bot.domain.tracing.TraceService;
+import me.golemcore.bot.domain.tracing.TraceSnapshotCompressionService;
+import me.golemcore.bot.domain.runtimeconfig.UserPreferencesService;
 import me.golemcore.bot.domain.system.AgentSystem;
 import me.golemcore.bot.domain.system.ResponseRoutingAgentSystem;
 import me.golemcore.bot.port.channel.ChannelPort;
@@ -149,10 +150,10 @@ class AgentLoopRoutingBddTest {
     private static AgentLoop createLoop(SessionPort sessionPort, RateLimitPort rateLimitPort, List<AgentSystem> systems,
             List<ChannelPort> channels, RuntimeConfigService runtimeConfigService,
             UserPreferencesService preferencesService, LlmPort llmPort, Clock clock) {
-        return new AgentLoop(sessionPort, rateLimitPort, systems, runtime(channels), runtimeConfigService,
-                preferencesService, llmPort, clock,
+        return new AgentLoopFactory().create(sessionPort, rateLimitPort, systems, runtime(channels),
+                runtimeConfigService, preferencesService, llmPort, clock,
                 new TraceService(new TraceSnapshotCompressionService(), new TraceBudgetService()), traceSnapshotCodec(),
-                new DefaultContextHygieneService());
+                new DefaultContextHygieneService(), new RuntimeEventService(clock));
     }
 
     private static TraceSnapshotCodecPort traceSnapshotCodec() {

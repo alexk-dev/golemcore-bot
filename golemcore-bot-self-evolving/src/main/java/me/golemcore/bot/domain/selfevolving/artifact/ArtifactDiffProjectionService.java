@@ -29,7 +29,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.Set;
 import me.golemcore.bot.domain.selfevolving.benchmark.BenchmarkLabService;
-import me.golemcore.bot.domain.service.StringValueSupport;
+import me.golemcore.bot.domain.support.StringValueSupport;
 
 /**
  * Orchestrates revision and transition diff projections from artifact lookup

@@ -17,7 +17,7 @@ import me.golemcore.bot.domain.model.hive.HivePolicyApplyResult;
 import me.golemcore.bot.domain.model.hive.HivePolicyPackage;
 import me.golemcore.bot.domain.model.hive.HiveRequestReviewRequest;
 import me.golemcore.bot.domain.model.hive.HiveThreadMessage;
-import me.golemcore.bot.domain.service.HiveJoinCodeParser;
+import me.golemcore.bot.domain.hive.HiveJoinCodeParser;
 import okhttp3.MediaType;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;

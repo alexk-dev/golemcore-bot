@@ -24,8 +24,8 @@ import me.golemcore.bot.domain.memory.persistence.MemoryPromotionOrchestrator;
 import me.golemcore.bot.domain.memory.persistence.TurnMemoryExtractionOrchestrator;
 import me.golemcore.bot.domain.model.MemoryItem;
 import me.golemcore.bot.domain.model.TurnMemoryEvent;
-import me.golemcore.bot.domain.service.MemoryScopeSupport;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.memory.MemoryScopeSupport;
+import me.golemcore.bot.domain.runtimeconfig.RuntimeConfigService;
 import org.springframework.stereotype.Service;
 
 import java.util.List;

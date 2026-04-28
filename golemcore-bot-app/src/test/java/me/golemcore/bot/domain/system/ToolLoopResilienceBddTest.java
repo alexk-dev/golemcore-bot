@@ -15,7 +15,7 @@ import me.golemcore.bot.domain.model.hive.HiveRuntimeContracts;
 import me.golemcore.bot.domain.context.compaction.CompactionOrchestrationService;
 import me.golemcore.bot.domain.context.compaction.ContextCompactionPolicy;
 import me.golemcore.bot.domain.model.ModelSelectionService;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.runtimeconfig.RuntimeConfigService;
 import me.golemcore.bot.domain.events.RuntimeEventService;
 import me.golemcore.bot.domain.system.toolloop.DefaultHistoryWriter;
 import me.golemcore.bot.domain.system.toolloop.DefaultToolLoopSystem;

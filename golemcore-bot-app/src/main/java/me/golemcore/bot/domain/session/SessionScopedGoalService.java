@@ -18,8 +18,8 @@ package me.golemcore.bot.domain.session;
  * Contact: alex@kuleshov.tech
  */
 
-import me.golemcore.bot.domain.service.StringValueSupport;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.support.StringValueSupport;
+import me.golemcore.bot.domain.runtimeconfig.RuntimeConfigService;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;

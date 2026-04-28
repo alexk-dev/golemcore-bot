@@ -13,7 +13,7 @@ import me.golemcore.bot.domain.model.Secret;
 import me.golemcore.bot.domain.model.catalog.ModelCatalogEntry;
 import me.golemcore.bot.domain.model.catalog.ModelReasoningLevel;
 import me.golemcore.bot.domain.model.catalog.ModelReasoningProfile;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.runtimeconfig.RuntimeConfigService;
 import me.golemcore.bot.port.outbound.ProviderModelDiscoveryPort;
 
 @Slf4j

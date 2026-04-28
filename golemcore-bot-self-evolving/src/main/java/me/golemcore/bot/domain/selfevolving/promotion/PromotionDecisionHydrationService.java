@@ -22,7 +22,7 @@ import me.golemcore.bot.domain.model.selfevolving.EvolutionCandidate;
 import me.golemcore.bot.domain.model.selfevolving.PromotionDecision;
 import org.springframework.stereotype.Service;
 import me.golemcore.bot.domain.selfevolving.candidate.CandidateLifecycleResolver;
-import me.golemcore.bot.domain.service.StringValueSupport;
+import me.golemcore.bot.domain.support.StringValueSupport;
 
 /**
  * Hydrates legacy promotion decisions from candidate identity and rollout state

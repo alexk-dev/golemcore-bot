@@ -41,7 +41,7 @@ import me.golemcore.bot.domain.model.selfevolving.artifact.ArtifactRevisionProje
 import me.golemcore.bot.domain.model.selfevolving.artifact.ArtifactTransitionDiffProjection;
 import me.golemcore.bot.domain.model.selfevolving.artifact.ArtifactTransitionEvidenceProjection;
 import me.golemcore.bot.domain.selfevolving.artifact.ArtifactWorkspaceProjectionService;
-import me.golemcore.bot.domain.service.StringValueSupport;
+import me.golemcore.bot.domain.support.StringValueSupport;
 import org.springframework.stereotype.Service;
 
 /**

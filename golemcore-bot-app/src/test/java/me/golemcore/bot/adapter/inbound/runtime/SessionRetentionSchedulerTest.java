@@ -1,7 +1,7 @@
 package me.golemcore.bot.adapter.inbound.runtime;
 
-import me.golemcore.bot.domain.service.RuntimeConfigService;
-import me.golemcore.bot.domain.service.SessionRetentionCleanupService;
+import me.golemcore.bot.domain.runtimeconfig.RuntimeConfigService;
+import me.golemcore.bot.domain.sessions.SessionRetentionCleanupService;
 import org.junit.jupiter.api.Test;
 
 import java.time.Clock;

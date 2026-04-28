@@ -1,9 +1,9 @@
 package me.golemcore.bot.domain.auto;
 
-import me.golemcore.bot.domain.service.AutoRunContextSupport;
-import me.golemcore.bot.domain.service.StringValueSupport;
+import me.golemcore.bot.domain.autorun.AutoRunContextSupport;
+import me.golemcore.bot.domain.support.StringValueSupport;
 import me.golemcore.bot.domain.scheduling.ScheduleService;
-import me.golemcore.bot.domain.service.SessionIdentitySupport;
+import me.golemcore.bot.domain.identity.SessionIdentitySupport;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.AutoTask;
 import me.golemcore.bot.domain.model.ContextAttributes;

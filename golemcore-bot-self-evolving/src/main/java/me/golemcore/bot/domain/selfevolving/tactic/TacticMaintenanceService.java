@@ -20,7 +20,7 @@ package me.golemcore.bot.domain.selfevolving.tactic;
 
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticRecord;
-import me.golemcore.bot.domain.service.StringValueSupport;
+import me.golemcore.bot.domain.support.StringValueSupport;
 import org.springframework.stereotype.Service;
 
 import java.time.Clock;

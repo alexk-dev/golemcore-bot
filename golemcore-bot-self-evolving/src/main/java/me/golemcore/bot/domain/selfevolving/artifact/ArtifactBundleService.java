@@ -37,7 +37,7 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 import me.golemcore.bot.port.outbound.SelfEvolvingRuntimeConfigPort;
-import me.golemcore.bot.domain.service.StringValueSupport;
+import me.golemcore.bot.domain.support.StringValueSupport;
 
 /**
  * Captures the runtime artifact bundle used for a SelfEvolving run.
