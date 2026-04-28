@@ -32,7 +32,7 @@ polling and re-check behavior after state changes.
 - [x] Load and flush durable ledgers around the tool loop for autonomous goal/task work.
 - [x] Document repeat guard defaults, storage layout and troubleshooting.
 - [x] Run full local verification.
-- [ ] Push the branch and open a `feat:` PR.
+- [x] Push the branch and open a `feat:` PR.
 - [ ] Monitor GitHub checks and fix failures until green.
 
 ## Definition Of Done
