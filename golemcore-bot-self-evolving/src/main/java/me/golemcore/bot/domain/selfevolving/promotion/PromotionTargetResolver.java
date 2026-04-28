@@ -21,7 +21,7 @@ package me.golemcore.bot.domain.selfevolving.promotion;
 import me.golemcore.bot.domain.model.selfevolving.EvolutionCandidate;
 import org.springframework.stereotype.Service;
 import me.golemcore.bot.port.outbound.SelfEvolvingRuntimeConfigPort;
-import me.golemcore.bot.domain.service.StringValueSupport;
+import me.golemcore.bot.domain.support.StringValueSupport;
 
 /**
  * Resolves the next rollout target for an evolution candidate based on the

@@ -12,9 +12,9 @@ import me.golemcore.bot.domain.model.trace.TraceSpanKind;
 import me.golemcore.bot.domain.model.trace.TraceSpanRecord;
 import me.golemcore.bot.domain.context.compaction.ContextCompactionPolicy;
 import me.golemcore.bot.domain.model.ModelSelectionService;
-import me.golemcore.bot.domain.service.TraceBudgetService;
-import me.golemcore.bot.domain.service.TraceService;
-import me.golemcore.bot.domain.service.TraceSnapshotCompressionService;
+import me.golemcore.bot.domain.tracing.TraceBudgetService;
+import me.golemcore.bot.domain.tracing.TraceService;
+import me.golemcore.bot.domain.tracing.TraceSnapshotCompressionService;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;

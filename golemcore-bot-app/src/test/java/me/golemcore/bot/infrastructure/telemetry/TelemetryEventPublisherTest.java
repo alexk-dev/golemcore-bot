@@ -1,7 +1,7 @@
 package me.golemcore.bot.infrastructure.telemetry;
 
 import me.golemcore.bot.domain.model.RuntimeConfig;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.runtimeconfig.RuntimeConfigService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;

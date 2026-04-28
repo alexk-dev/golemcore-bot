@@ -18,9 +18,9 @@ package me.golemcore.bot.domain.scheduling;
  * Contact: alex@kuleshov.tech
  */
 
-import me.golemcore.bot.domain.service.StringValueSupport;
-import me.golemcore.bot.domain.service.UserPreferencesService;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.support.StringValueSupport;
+import me.golemcore.bot.domain.runtimeconfig.UserPreferencesService;
+import me.golemcore.bot.domain.runtimeconfig.DelayedActionsRuntimeConfigView;
 import me.golemcore.bot.port.outbound.ChannelDeliveryPort;
 import me.golemcore.bot.port.outbound.ChannelRuntimePort;
 import me.golemcore.bot.domain.model.ChannelTypes;
@@ -34,11 +34,11 @@ import java.util.Locale;
 @Service
 public class DelayedActionPolicyService {
 
-    private final RuntimeConfigService runtimeConfigService;
+    private final DelayedActionsRuntimeConfigView runtimeConfigService;
     private final UserPreferencesService userPreferencesService;
     private final ChannelRuntimePort channelRuntimePort;
 
-    public DelayedActionPolicyService(RuntimeConfigService runtimeConfigService,
+    public DelayedActionPolicyService(DelayedActionsRuntimeConfigView runtimeConfigService,
             UserPreferencesService userPreferencesService, ChannelRuntimePort channelRuntimePort) {
         this.runtimeConfigService = runtimeConfigService;
         this.userPreferencesService = userPreferencesService;

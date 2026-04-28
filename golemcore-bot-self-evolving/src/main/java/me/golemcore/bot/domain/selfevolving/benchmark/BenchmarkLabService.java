@@ -40,7 +40,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import me.golemcore.bot.domain.selfevolving.promotion.PromotionWorkflowService;
 import me.golemcore.bot.domain.selfevolving.run.SelfEvolvingRunService;
 import me.golemcore.bot.domain.selfevolving.tactic.TacticQualityMetricsService;
-import me.golemcore.bot.domain.service.StringValueSupport;
+import me.golemcore.bot.domain.support.StringValueSupport;
 
 /**
  * Harvests production runs into benchmark artifacts.

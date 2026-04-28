@@ -1,9 +1,9 @@
 package me.golemcore.bot.domain.progress;
 
-import me.golemcore.bot.domain.service.HiveMetadataSupport;
+import me.golemcore.bot.domain.hive.HiveMetadataSupport;
 import me.golemcore.bot.domain.tracing.ToolExecutionTraceExtractor;
-import me.golemcore.bot.domain.service.SessionIdentitySupport;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.identity.SessionIdentitySupport;
+import me.golemcore.bot.domain.runtimeconfig.RuntimeConfigService;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.LlmResponse;

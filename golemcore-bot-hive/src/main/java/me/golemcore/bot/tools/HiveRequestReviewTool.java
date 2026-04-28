@@ -28,8 +28,8 @@ import me.golemcore.bot.domain.model.ToolNames;
 import me.golemcore.bot.domain.model.ToolResult;
 import me.golemcore.bot.domain.model.hive.HiveCardDetail;
 import me.golemcore.bot.domain.model.hive.HiveRequestReviewRequest;
-import me.golemcore.bot.domain.service.HiveRuntimeConfigSupport;
-import me.golemcore.bot.domain.service.HiveSdlcService;
+import me.golemcore.bot.domain.hive.HiveRuntimeConfigSupport;
+import me.golemcore.bot.domain.hive.HiveSdlcService;
 import me.golemcore.bot.port.outbound.RuntimeConfigQueryPort;
 import org.springframework.stereotype.Component;
 

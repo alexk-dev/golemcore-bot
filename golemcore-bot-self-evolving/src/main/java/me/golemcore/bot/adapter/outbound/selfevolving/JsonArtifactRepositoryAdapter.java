@@ -27,7 +27,7 @@ import java.util.List;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.selfevolving.ArtifactBundleRecord;
 import me.golemcore.bot.domain.model.selfevolving.artifact.ArtifactRevisionRecord;
-import me.golemcore.bot.domain.service.StringValueSupport;
+import me.golemcore.bot.domain.support.StringValueSupport;
 import me.golemcore.bot.port.outbound.StoragePort;
 import me.golemcore.bot.port.outbound.selfevolving.ArtifactRepositoryPort;
 import org.springframework.stereotype.Component;

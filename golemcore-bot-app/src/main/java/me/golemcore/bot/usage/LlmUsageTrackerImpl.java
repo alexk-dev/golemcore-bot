@@ -21,7 +21,7 @@ package me.golemcore.bot.usage;
 import me.golemcore.bot.domain.model.LlmUsage;
 import me.golemcore.bot.domain.model.UsageMetric;
 import me.golemcore.bot.domain.model.UsageStats;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.runtimeconfig.RuntimeConfigService;
 import me.golemcore.bot.port.outbound.StoragePort;
 import me.golemcore.bot.port.outbound.UsageTrackingPort;
 import com.fasterxml.jackson.core.type.TypeReference;

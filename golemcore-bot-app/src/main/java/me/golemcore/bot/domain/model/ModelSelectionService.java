@@ -18,8 +18,8 @@ package me.golemcore.bot.domain.model;
  * Contact: alex@kuleshov.tech
  */
 
-import me.golemcore.bot.domain.service.UserPreferencesService;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.runtimeconfig.UserPreferencesService;
+import me.golemcore.bot.domain.runtimeconfig.RuntimeConfigService;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.catalog.ModelCatalogEntry;
 import me.golemcore.bot.port.outbound.ModelConfigPort;

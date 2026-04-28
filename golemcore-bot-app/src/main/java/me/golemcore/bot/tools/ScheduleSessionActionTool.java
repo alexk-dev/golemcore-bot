@@ -30,9 +30,9 @@ import me.golemcore.bot.domain.model.ToolNames;
 import me.golemcore.bot.domain.model.ToolResult;
 import me.golemcore.bot.domain.scheduling.DelayedActionPolicyService;
 import me.golemcore.bot.domain.scheduling.DelayedSessionActionService;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
-import me.golemcore.bot.domain.service.SessionIdentitySupport;
-import me.golemcore.bot.domain.service.StringValueSupport;
+import me.golemcore.bot.domain.runtimeconfig.RuntimeConfigService;
+import me.golemcore.bot.domain.identity.SessionIdentitySupport;
+import me.golemcore.bot.domain.support.StringValueSupport;
 import org.springframework.stereotype.Component;
 
 import java.time.Clock;

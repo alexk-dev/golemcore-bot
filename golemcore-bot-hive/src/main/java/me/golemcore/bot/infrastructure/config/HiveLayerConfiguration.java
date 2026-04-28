@@ -2,8 +2,8 @@ package me.golemcore.bot.infrastructure.config;
 
 import java.util.List;
 import me.golemcore.bot.domain.context.layer.HiveLayer;
-import me.golemcore.bot.domain.service.HiveSessionStateStore;
-import me.golemcore.bot.domain.service.HiveSsoService;
+import me.golemcore.bot.domain.hive.HiveSessionStateStore;
+import me.golemcore.bot.domain.hive.HiveSsoService;
 import me.golemcore.bot.port.outbound.DashboardPublicPathPort;
 import me.golemcore.bot.port.outbound.HiveGatewayPort;
 import me.golemcore.bot.port.outbound.RuntimeConfigQueryPort;

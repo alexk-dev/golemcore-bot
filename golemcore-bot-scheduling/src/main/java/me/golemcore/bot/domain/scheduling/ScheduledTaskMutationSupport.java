@@ -18,7 +18,7 @@ package me.golemcore.bot.domain.scheduling;
  * Contact: alex@kuleshov.tech
  */
 
-import me.golemcore.bot.domain.service.StringValueSupport;
+import me.golemcore.bot.domain.support.StringValueSupport;
 import java.time.Instant;
 import java.util.UUID;
 import me.golemcore.bot.domain.model.AutoTask;

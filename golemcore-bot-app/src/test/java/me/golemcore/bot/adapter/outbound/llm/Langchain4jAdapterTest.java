@@ -8,7 +8,7 @@ import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.Secret;
 import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.model.catalog.ModelCatalogEntry;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.runtimeconfig.RuntimeConfigService;
 import me.golemcore.bot.domain.model.ToolArtifactDownload;
 import me.golemcore.bot.port.outbound.ModelConfigPort;
 import me.golemcore.bot.port.outbound.ToolArtifactReadPort;

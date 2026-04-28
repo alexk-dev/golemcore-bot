@@ -20,7 +20,7 @@ package me.golemcore.bot.ratelimit;
 
 import me.golemcore.bot.domain.model.BucketState;
 import me.golemcore.bot.domain.model.RateLimitResult;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.runtimeconfig.RuntimeConfigService;
 import me.golemcore.bot.port.outbound.RateLimitPort;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;

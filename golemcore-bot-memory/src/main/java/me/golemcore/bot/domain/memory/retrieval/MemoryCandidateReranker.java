@@ -22,7 +22,7 @@ import me.golemcore.bot.domain.memory.model.MemoryRetrievalPlan;
 import me.golemcore.bot.domain.model.MemoryItem;
 import me.golemcore.bot.domain.model.MemoryQuery;
 import me.golemcore.bot.domain.model.MemoryScoredItem;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.runtimeconfig.MemoryRuntimeConfigView;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
@@ -47,9 +47,9 @@ public class MemoryCandidateReranker {
     private static final RerankingProfile BALANCED_PROFILE = new RerankingProfile(0.18, 0.10, 0.08, 0.06);
     private static final RerankingProfile AGGRESSIVE_PROFILE = new RerankingProfile(0.26, 0.14, 0.10, 0.08);
 
-    private final RuntimeConfigService runtimeConfigService;
+    private final MemoryRuntimeConfigView runtimeConfigService;
 
-    public MemoryCandidateReranker(RuntimeConfigService runtimeConfigService) {
+    public MemoryCandidateReranker(MemoryRuntimeConfigView runtimeConfigService) {
         this.runtimeConfigService = runtimeConfigService;
     }
 

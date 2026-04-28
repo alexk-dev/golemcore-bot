@@ -25,7 +25,7 @@ import me.golemcore.bot.domain.component.ToolComponent;
 import me.golemcore.bot.domain.model.Skill;
 import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.model.ToolResult;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.runtimeconfig.RuntimeConfigService;
 import me.golemcore.bot.domain.skills.SkillDocumentService;
 import me.golemcore.bot.port.outbound.StoragePort;
 import org.springframework.stereotype.Component;

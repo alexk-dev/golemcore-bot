@@ -28,7 +28,7 @@ import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.ToolResult;
 import me.golemcore.bot.domain.model.TurnMemoryEvent;
 import me.golemcore.bot.domain.model.TurnOutcome;
-import me.golemcore.bot.domain.service.MemoryScopeSupport;
+import me.golemcore.bot.domain.memory.MemoryScopeSupport;
 import org.springframework.stereotype.Component;
 
 import java.time.Instant;

@@ -35,7 +35,7 @@ import me.golemcore.bot.domain.model.selfevolving.ArtifactBundleRecord;
 import me.golemcore.bot.domain.model.selfevolving.RunRecord;
 import me.golemcore.bot.domain.model.selfevolving.RunVerdict;
 import me.golemcore.bot.domain.selfevolving.artifact.ArtifactBundleService;
-import me.golemcore.bot.domain.service.StringValueSupport;
+import me.golemcore.bot.domain.support.StringValueSupport;
 import me.golemcore.bot.port.outbound.selfevolving.RunJournalPort;
 import org.springframework.stereotype.Service;
 

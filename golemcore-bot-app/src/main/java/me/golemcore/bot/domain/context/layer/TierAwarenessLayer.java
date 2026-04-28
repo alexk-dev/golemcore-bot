@@ -22,8 +22,8 @@ import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.context.ContextLayerLifecycle;
 import me.golemcore.bot.domain.context.ContextLayerResult;
 import me.golemcore.bot.domain.model.AgentContext;
-import me.golemcore.bot.domain.service.SessionModelSettingsSupport;
-import me.golemcore.bot.domain.service.UserPreferencesService;
+import me.golemcore.bot.domain.sessions.SessionModelSettingsSupport;
+import me.golemcore.bot.domain.runtimeconfig.UserPreferencesService;
 
 /**
  * Informs the LLM when a skill-recommended model tier is active.

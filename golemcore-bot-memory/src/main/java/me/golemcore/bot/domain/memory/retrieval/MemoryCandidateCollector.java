@@ -32,8 +32,8 @@ import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.memory.model.MemoryRetrievalPlan;
 import me.golemcore.bot.domain.model.MemoryItem;
-import me.golemcore.bot.domain.service.MemoryScopeSupport;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.memory.MemoryScopeSupport;
+import me.golemcore.bot.domain.runtimeconfig.MemoryRuntimeConfigView;
 import me.golemcore.bot.port.outbound.StoragePort;
 import me.golemcore.bot.port.outbound.MemorySettingsPort;
 import org.springframework.stereotype.Service;
@@ -51,11 +51,11 @@ public class MemoryCandidateCollector {
 
     private final StoragePort storagePort;
     private final MemorySettingsPort settingsPort;
-    private final RuntimeConfigService runtimeConfigService;
+    private final MemoryRuntimeConfigView runtimeConfigService;
     private final ObjectMapper objectMapper;
 
     public MemoryCandidateCollector(StoragePort storagePort, MemorySettingsPort settingsPort,
-            RuntimeConfigService runtimeConfigService, ObjectMapper objectMapper) {
+            MemoryRuntimeConfigView runtimeConfigService, ObjectMapper objectMapper) {
         this.storagePort = storagePort;
         this.settingsPort = settingsPort;
         this.runtimeConfigService = runtimeConfigService;

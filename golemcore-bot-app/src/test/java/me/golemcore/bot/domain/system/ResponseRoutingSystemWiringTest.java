@@ -1,11 +1,11 @@
 package me.golemcore.bot.domain.system;
 
 import me.golemcore.bot.adapter.outbound.channel.ChannelRegistryRuntimeAdapter;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
-import me.golemcore.bot.domain.service.TraceBudgetService;
-import me.golemcore.bot.domain.service.TraceService;
-import me.golemcore.bot.domain.service.TraceSnapshotCompressionService;
-import me.golemcore.bot.domain.service.UserPreferencesService;
+import me.golemcore.bot.domain.runtimeconfig.RuntimeConfigService;
+import me.golemcore.bot.domain.tracing.TraceBudgetService;
+import me.golemcore.bot.domain.tracing.TraceService;
+import me.golemcore.bot.domain.tracing.TraceSnapshotCompressionService;
+import me.golemcore.bot.domain.runtimeconfig.UserPreferencesService;
 import me.golemcore.bot.domain.voice.VoiceResponseHandler;
 import me.golemcore.bot.plugin.runtime.ChannelRegistry;
 import me.golemcore.bot.port.channel.ChannelPort;

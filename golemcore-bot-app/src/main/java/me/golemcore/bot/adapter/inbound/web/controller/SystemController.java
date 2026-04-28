@@ -5,7 +5,7 @@ import me.golemcore.bot.client.dto.SystemHealthResponse;
 import me.golemcore.bot.adapter.inbound.web.logstream.DashboardLogService;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchStatus;
 import me.golemcore.bot.port.outbound.SelfEvolvingTacticSearchStatusPort;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.runtimeconfig.RuntimeConfigService;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.plugin.runtime.ChannelRegistry;
 import me.golemcore.bot.port.channel.ChannelPort;

@@ -15,15 +15,15 @@ import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.SessionIdentity;
 import me.golemcore.bot.domain.model.trace.TraceContext;
 import me.golemcore.bot.domain.model.trace.TraceSpanKind;
-import me.golemcore.bot.domain.service.AutoRunContextSupport;
-import me.golemcore.bot.domain.service.HiveMetadataSupport;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
-import me.golemcore.bot.domain.service.SessionIdentitySupport;
-import me.golemcore.bot.domain.service.TraceContextSupport;
-import me.golemcore.bot.domain.service.TraceMdcSupport;
-import me.golemcore.bot.domain.service.TraceNamingSupport;
-import me.golemcore.bot.domain.service.TraceRuntimeConfigSupport;
-import me.golemcore.bot.domain.service.TraceService;
+import me.golemcore.bot.domain.autorun.AutoRunContextSupport;
+import me.golemcore.bot.domain.hive.HiveMetadataSupport;
+import me.golemcore.bot.domain.runtimeconfig.TracingConfigView;
+import me.golemcore.bot.domain.runtimeconfig.TurnRuntimeConfigView;
+import me.golemcore.bot.domain.identity.SessionIdentitySupport;
+import me.golemcore.bot.domain.tracing.TraceContextSupport;
+import me.golemcore.bot.domain.tracing.TraceMdcSupport;
+import me.golemcore.bot.domain.tracing.TraceNamingSupport;
+import me.golemcore.bot.domain.tracing.TraceService;
 import me.golemcore.bot.port.outbound.TraceSnapshotCodecPort;
 
 /**
@@ -31,14 +31,16 @@ import me.golemcore.bot.port.outbound.TraceSnapshotCodecPort;
  */
 final class TurnContextFactory {
 
-    private final RuntimeConfigService runtimeConfigService;
+    private final TurnRuntimeConfigView turnRuntimeConfigView;
+    private final TracingConfigView tracingConfigView;
     private final TraceService traceService;
     private final Clock clock;
     private final TraceSnapshotCodecPort traceSnapshotCodecPort;
 
-    TurnContextFactory(RuntimeConfigService runtimeConfigService, TraceService traceService, Clock clock,
-            TraceSnapshotCodecPort traceSnapshotCodecPort) {
-        this.runtimeConfigService = runtimeConfigService;
+    TurnContextFactory(TurnRuntimeConfigView turnRuntimeConfigView, TracingConfigView tracingConfigView,
+            TraceService traceService, Clock clock, TraceSnapshotCodecPort traceSnapshotCodecPort) {
+        this.turnRuntimeConfigView = turnRuntimeConfigView;
+        this.tracingConfigView = tracingConfigView;
         this.traceService = traceService;
         this.clock = clock;
         this.traceSnapshotCodecPort = Objects.requireNonNull(traceSnapshotCodecPort,
@@ -238,7 +240,7 @@ final class TurnContextFactory {
     }
 
     private TraceContext initializeRootTrace(AgentSession session, Message message) {
-        if (!runtimeConfigService.isTracingEnabled() || session == null || message == null) {
+        if (tracingConfigView == null || !tracingConfigView.isTracingEnabled() || session == null || message == null) {
             return TraceContextSupport.readTraceContext(message != null ? message.getMetadata() : null);
         }
         TraceContext seededContext = TraceContextSupport.readTraceContext(message.getMetadata());
@@ -262,11 +264,11 @@ final class TurnContextFactory {
         }
         return traceService.startRootTrace(session, seededContext, traceName, spanKind,
                 message.getTimestamp() != null ? message.getTimestamp() : clock.instant(), attributes,
-                runtimeConfigService.getTraceMaxTracesPerSession());
+                tracingConfigView.getTraceMaxTracesPerSession());
     }
 
     private void captureInboundSnapshot(AgentSession session, TraceContext rootTraceContext, Message message) {
-        RuntimeConfig.TracingConfig tracingConfig = TraceRuntimeConfigSupport.resolve(runtimeConfigService);
+        RuntimeConfig.TracingConfig tracingConfig = tracingConfigView.getTracingConfig();
         if (session == null || rootTraceContext == null || tracingConfig == null
                 || !Boolean.TRUE.equals(tracingConfig.getCaptureInboundPayloads())) {
             return;
@@ -283,11 +285,11 @@ final class TurnContextFactory {
     }
 
     private int resolveMaxSkillTransitions() {
-        int maxSkillTransitions = runtimeConfigService.getTurnMaxSkillTransitions();
+        int maxSkillTransitions = turnRuntimeConfigView.getTurnMaxSkillTransitions();
         if (maxSkillTransitions > 0) {
             return maxSkillTransitions;
         }
-        return runtimeConfigService.getTurnMaxLlmCalls();
+        return turnRuntimeConfigView.getTurnMaxLlmCalls();
     }
 
     record PreparedTurn(AgentContext context, TraceContext rootTraceContext) {

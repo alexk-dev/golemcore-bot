@@ -3,8 +3,6 @@ me/golemcore/bot/adapter/outbound/hive/HiveEventBatchPublisher.java
 me/golemcore/bot/adapter/outbound/llm/Langchain4jAdapter.java
 me/golemcore/bot/application/settings/RuntimeSettingsValidator.java
 me/golemcore/bot/domain/auto/AutoModeService.java
-me/golemcore/bot/domain/loop/AgentLoop.java
-me/golemcore/bot/domain/service/RuntimeConfigService.java
 me/golemcore/bot/domain/session/SessionRunCoordinator.java
 me/golemcore/bot/domain/system/toolloop/LlmCallPhase.java
 me/golemcore/bot/plugin/runtime/PluginMarketplaceService.java

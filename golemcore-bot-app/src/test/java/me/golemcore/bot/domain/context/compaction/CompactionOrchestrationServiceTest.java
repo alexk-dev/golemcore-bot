@@ -1,6 +1,6 @@
 package me.golemcore.bot.domain.context.compaction;
 
-import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.runtimeconfig.RuntimeConfigService;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.CompactionDetails;
 import me.golemcore.bot.domain.model.CompactionPreparation;

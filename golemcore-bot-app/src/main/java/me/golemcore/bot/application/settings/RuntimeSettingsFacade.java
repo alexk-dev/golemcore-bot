@@ -7,9 +7,9 @@ import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.UserPreferences;
 import me.golemcore.bot.domain.model.policy.ManagedPolicyBindingState;
 import me.golemcore.bot.port.outbound.ManagedPolicyQueryPort;
-import me.golemcore.bot.domain.service.MemoryPresetService;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
-import me.golemcore.bot.domain.service.UserPreferencesService;
+import me.golemcore.bot.domain.memory.MemoryPresetService;
+import me.golemcore.bot.domain.runtimeconfig.RuntimeConfigService;
+import me.golemcore.bot.domain.runtimeconfig.UserPreferencesService;
 
 import java.util.LinkedHashMap;
 import java.util.List;

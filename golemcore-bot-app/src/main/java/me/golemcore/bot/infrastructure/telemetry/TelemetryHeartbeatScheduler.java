@@ -3,7 +3,7 @@ package me.golemcore.bot.infrastructure.telemetry;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.runtimeconfig.RuntimeConfigService;
 import me.golemcore.bot.infrastructure.config.ModelConfigService;
 import me.golemcore.bot.plugin.runtime.PluginManager;
 import me.golemcore.bot.plugin.runtime.PluginRuntimeInfo;

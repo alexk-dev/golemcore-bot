@@ -1,7 +1,7 @@
 package me.golemcore.bot.application.models;
 
 import me.golemcore.bot.domain.model.RuntimeConfig;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.runtimeconfig.RuntimeConfigService;
 import me.golemcore.bot.port.outbound.ModelRegistryCachePort;
 import me.golemcore.bot.port.outbound.ModelRegistryDocumentPort;
 import me.golemcore.bot.port.outbound.ModelRegistryRemotePort;

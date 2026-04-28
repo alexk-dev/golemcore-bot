@@ -7,7 +7,7 @@ import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.ProgressUpdate;
 import me.golemcore.bot.domain.model.RuntimeEvent;
 import me.golemcore.bot.domain.model.hive.HiveRuntimeContracts;
-import me.golemcore.bot.domain.service.StringValueSupport;
+import me.golemcore.bot.domain.support.StringValueSupport;
 import me.golemcore.bot.port.channel.ChannelPort;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;

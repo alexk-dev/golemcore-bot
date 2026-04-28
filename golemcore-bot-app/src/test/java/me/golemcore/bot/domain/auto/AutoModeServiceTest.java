@@ -1,6 +1,6 @@
 package me.golemcore.bot.domain.auto;
 
-import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.runtimeconfig.RuntimeConfigService;
 import me.golemcore.bot.domain.session.SessionScopedGoalService;
 import me.golemcore.bot.domain.session.SessionDiaryService;
 import me.golemcore.bot.domain.scheduling.PersistentScheduledTaskService;

@@ -6,9 +6,9 @@ package me.golemcore.bot.domain.resilience;
  * Contact: alex@kuleshov.tech
  */
 
-import me.golemcore.bot.domain.service.TraceRuntimeConfigSupport;
-import me.golemcore.bot.domain.service.TraceService;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.tracing.TraceRuntimeConfigSupport;
+import me.golemcore.bot.domain.tracing.TraceService;
+import me.golemcore.bot.domain.runtimeconfig.RuntimeConfigService;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.RuntimeConfig;
@@ -110,7 +110,8 @@ public final class ResilienceObservabilitySupport {
         if (sampleRate <= 0.0d) {
             return;
         }
-        RuntimeConfig.TracingConfig tracingConfig = TraceRuntimeConfigSupport.resolve(runtimeConfigService);
+        RuntimeConfig.TracingConfig tracingConfig = TraceRuntimeConfigSupport.resolve(runtimeConfigService,
+                shouldForceTracingPayloadCapture(runtimeConfigService));
         if (tracingConfig == null || !Boolean.TRUE.equals(tracingConfig.getEnabled())) {
             return;
         }
@@ -155,6 +156,12 @@ public final class ResilienceObservabilitySupport {
                         metricName, exception.getMessage());
             }
         }
+    }
+
+    private static boolean shouldForceTracingPayloadCapture(RuntimeConfigService runtimeConfigService) {
+        return runtimeConfigService != null
+                && runtimeConfigService.isSelfEvolvingEnabled()
+                && runtimeConfigService.isSelfEvolvingTracePayloadOverrideEnabled();
     }
 
     private static boolean shouldSample(AgentContext context, String samplingKey, double sampleRate) {

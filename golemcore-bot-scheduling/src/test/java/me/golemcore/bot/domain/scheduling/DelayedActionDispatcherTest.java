@@ -1,12 +1,17 @@
 package me.golemcore.bot.domain.scheduling;
 
-import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.DelayedActionDeliveryMode;
 import me.golemcore.bot.domain.model.DelayedActionKind;
 import me.golemcore.bot.domain.model.DelayedSessionAction;
+import me.golemcore.bot.domain.model.FailureKind;
+import me.golemcore.bot.domain.model.FailureSource;
+import me.golemcore.bot.domain.model.FailureSummary;
 import me.golemcore.bot.domain.model.Message;
+import me.golemcore.bot.domain.model.PersistenceOutcome;
+import me.golemcore.bot.domain.model.RunStatus;
 import me.golemcore.bot.domain.model.ToolArtifactDownload;
+import me.golemcore.bot.domain.model.TurnRunResult;
 import me.golemcore.bot.port.outbound.SessionRunDispatchPort;
 import me.golemcore.bot.port.outbound.ToolArtifactReadPort;
 import me.golemcore.bot.port.channel.ChannelPort;
@@ -449,8 +454,8 @@ class DelayedActionDispatcherTest {
     void shouldSubmitRetryLlmTurnWithResumeMetadataAndPromptKeptOutOfContent() throws Exception {
         SessionRunDispatchPort sessionRunCoordinator = mock(SessionRunDispatchPort.class);
         DelayedActionPolicyService policyService = mock(DelayedActionPolicyService.class);
-        when(sessionRunCoordinator.submitForContext(any(Message.class)))
-                .thenReturn(CompletableFuture.completedFuture(AgentContext.builder().build()));
+        when(sessionRunCoordinator.submitForResult(any(Message.class)))
+                .thenReturn(CompletableFuture.completedFuture(completedTurnResult()));
         when(policyService.supportsDelayedExecution("telegram", "chat-1")).thenReturn(true);
 
         DelayedActionDispatcher dispatcher = new DelayedActionDispatcher(sessionRunCoordinator, runtime(List.of()),
@@ -468,7 +473,7 @@ class DelayedActionDispatcherTest {
 
         assertTrue(result.success());
         ArgumentCaptor<Message> captor = ArgumentCaptor.forClass(Message.class);
-        verify(sessionRunCoordinator).submitForContext(captor.capture());
+        verify(sessionRunCoordinator).submitForResult(captor.capture());
         Message message = captor.getValue();
         assertEquals(1, message.getMetadata().get(ContextAttributes.RESILIENCE_L5_RESUME_ATTEMPT));
         assertEquals("llm.provider.500", message.getMetadata().get(ContextAttributes.RESILIENCE_L5_ERROR_CODE));
@@ -484,12 +489,8 @@ class DelayedActionDispatcherTest {
     void shouldReturnTerminalResultWhenRetryLlmTurnExhaustsColdRetryBudget() throws Exception {
         SessionRunDispatchPort sessionRunCoordinator = mock(SessionRunDispatchPort.class);
         DelayedActionPolicyService policyService = mock(DelayedActionPolicyService.class);
-        AgentContext terminalContext = AgentContext.builder().build();
-        terminalContext.setAttribute(ContextAttributes.RESILIENCE_L5_TERMINAL_FAILURE, true);
-        terminalContext.setAttribute(ContextAttributes.RESILIENCE_L5_TERMINAL_REASON,
-                "Cold retry attempts exhausted after 4 attempt(s)");
-        when(sessionRunCoordinator.submitForContext(any(Message.class)))
-                .thenReturn(CompletableFuture.completedFuture(terminalContext));
+        when(sessionRunCoordinator.submitForResult(any(Message.class))).thenReturn(CompletableFuture
+                .completedFuture(terminalTurnResult("Cold retry attempts exhausted after 4 attempt(s)")));
         when(policyService.supportsDelayedExecution("telegram", "chat-1")).thenReturn(true);
 
         DelayedActionDispatcher dispatcher = new DelayedActionDispatcher(sessionRunCoordinator, runtime(List.of()),
@@ -553,5 +554,17 @@ class DelayedActionDispatcherTest {
         assertFalse(result.success());
         assertFalse(result.retryable());
         verify(sessionRunCoordinator, never()).submit(any(Message.class), any());
+    }
+
+    private static TurnRunResult completedTurnResult() {
+        return new TurnRunResult(null, null, null, RunStatus.COMPLETED, null, List.of(), false, false,
+                PersistenceOutcome.saved(null));
+    }
+
+    private static TurnRunResult terminalTurnResult(String reason) {
+        FailureSummary failure = new FailureSummary(FailureSource.SYSTEM, "L5Resilience", FailureKind.EXCEPTION,
+                "resilience.l5.terminal", reason, null);
+        return new TurnRunResult(null, null, null, RunStatus.FAILED, null, List.of(failure), false, false,
+                PersistenceOutcome.saved(null));
     }
 }

@@ -2,7 +2,7 @@ package me.golemcore.bot.adapter.outbound.mcp;
 
 import me.golemcore.bot.domain.model.McpConfig;
 import me.golemcore.bot.domain.model.Skill;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.runtimeconfig.RuntimeConfigService;
 import me.golemcore.bot.domain.skills.SkillDocumentService;
 import me.golemcore.bot.domain.skills.SkillService;
 import me.golemcore.bot.domain.skills.SkillVariableResolver;

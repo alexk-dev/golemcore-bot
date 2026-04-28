@@ -1,6 +1,6 @@
 package me.golemcore.bot.domain.prompt;
 
-import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.runtimeconfig.RuntimeConfigService;
 import me.golemcore.bot.domain.skills.SkillTemplateEngine;
 import me.golemcore.bot.domain.model.PromptSection;
 import me.golemcore.bot.domain.model.UserPreferences;

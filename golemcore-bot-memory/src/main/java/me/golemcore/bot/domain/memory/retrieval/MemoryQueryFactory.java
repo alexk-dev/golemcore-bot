@@ -20,8 +20,8 @@ package me.golemcore.bot.domain.memory.retrieval;
 
 import me.golemcore.bot.domain.memory.model.MemoryContextRequest;
 import me.golemcore.bot.domain.model.MemoryQuery;
-import me.golemcore.bot.domain.service.MemoryScopeSupport;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.memory.MemoryScopeSupport;
+import me.golemcore.bot.domain.runtimeconfig.MemoryRuntimeConfigView;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -38,9 +38,9 @@ import java.util.Set;
 @Service
 public class MemoryQueryFactory {
 
-    private final RuntimeConfigService runtimeConfigService;
+    private final MemoryRuntimeConfigView runtimeConfigService;
 
-    public MemoryQueryFactory(RuntimeConfigService runtimeConfigService) {
+    public MemoryQueryFactory(MemoryRuntimeConfigView runtimeConfigService) {
         this.runtimeConfigService = runtimeConfigService;
     }
 

@@ -21,7 +21,7 @@ package me.golemcore.bot.domain.system.toolloop.resilience;
 import me.golemcore.bot.domain.context.compaction.CompactionOrchestrationService;
 import me.golemcore.bot.domain.context.compaction.ContextCompactionPolicy;
 import me.golemcore.bot.domain.scheduling.DelayedSessionActionService;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.runtimeconfig.RuntimeConfigService;
 import me.golemcore.bot.domain.events.RuntimeEventService;
 import me.golemcore.bot.domain.progress.TurnProgressService;
 import me.golemcore.bot.domain.system.toolloop.ContextCompactionCoordinator;

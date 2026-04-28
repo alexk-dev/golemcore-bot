@@ -22,7 +22,7 @@ import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.memory.model.MemoryRetrievalPlan;
 import me.golemcore.bot.domain.model.MemoryItem;
 import me.golemcore.bot.domain.model.MemoryScoredItem;
-import me.golemcore.bot.domain.service.MemoryScopeSupport;
+import me.golemcore.bot.domain.memory.MemoryScopeSupport;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;

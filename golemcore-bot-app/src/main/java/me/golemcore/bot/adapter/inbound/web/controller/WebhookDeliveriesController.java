@@ -4,7 +4,7 @@ import me.golemcore.bot.adapter.inbound.webhook.WebhookDeliveryTracker;
 import me.golemcore.bot.adapter.inbound.webhook.WebhookDeliveryTracker.DeliveryDetail;
 import me.golemcore.bot.adapter.inbound.webhook.WebhookDeliveryTracker.DeliverySummary;
 import me.golemcore.bot.adapter.inbound.webhook.WebhookDeliveryTracker.TestCallbackCommand;
-import me.golemcore.bot.domain.service.StringValueSupport;
+import me.golemcore.bot.domain.support.StringValueSupport;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;

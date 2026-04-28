@@ -4,7 +4,7 @@ import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
-import me.golemcore.bot.domain.service.AutoRunContextSupport;
+import me.golemcore.bot.domain.autorun.AutoRunContextSupport;
 
 import java.time.Clock;
 import java.time.Instant;

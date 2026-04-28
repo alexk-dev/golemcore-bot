@@ -33,14 +33,14 @@ import me.golemcore.bot.domain.model.TurnOutcome;
 import me.golemcore.bot.domain.model.trace.TraceContext;
 import me.golemcore.bot.domain.model.trace.TraceSpanKind;
 import me.golemcore.bot.domain.model.trace.TraceStatusCode;
-import me.golemcore.bot.domain.service.HiveMetadataSupport;
-import me.golemcore.bot.domain.service.MdcSupport;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
-import me.golemcore.bot.domain.service.SessionIdentitySupport;
-import me.golemcore.bot.domain.service.TraceMdcSupport;
-import me.golemcore.bot.domain.service.TraceRuntimeConfigSupport;
-import me.golemcore.bot.domain.service.TraceService;
-import me.golemcore.bot.domain.service.UserPreferencesService;
+import me.golemcore.bot.domain.hive.HiveMetadataSupport;
+import me.golemcore.bot.domain.tracing.MdcSupport;
+import me.golemcore.bot.domain.runtimeconfig.RuntimeConfigService;
+import me.golemcore.bot.domain.identity.SessionIdentitySupport;
+import me.golemcore.bot.domain.tracing.TraceMdcSupport;
+import me.golemcore.bot.domain.tracing.TraceRuntimeConfigSupport;
+import me.golemcore.bot.domain.tracing.TraceService;
+import me.golemcore.bot.domain.runtimeconfig.UserPreferencesService;
 import me.golemcore.bot.domain.voice.VoiceResponseHandler;
 import me.golemcore.bot.domain.voice.VoiceResponseHandler.VoiceSendResult;
 import me.golemcore.bot.port.outbound.ChannelDeliveryPort;
@@ -131,7 +131,8 @@ public class ResponseRoutingSystem implements ResponseRoutingAgentSystem {
             return context;
         }
 
-        RuntimeConfig.TracingConfig tracingConfig = TraceRuntimeConfigSupport.resolve(runtimeConfigService);
+        RuntimeConfig.TracingConfig tracingConfig = TraceRuntimeConfigSupport.resolve(runtimeConfigService,
+                shouldForceTracingPayloadCapture());
         TraceContext routingSpan = startRoutingSpan(context);
         captureOutgoingSnapshot(context, routingSpan, tracingConfig, outgoing);
 
@@ -687,6 +688,12 @@ public class ResponseRoutingSystem implements ResponseRoutingAgentSystem {
     private boolean hasTextMetadata(Message message, String key) {
         Object value = message.getMetadata().get(key);
         return value instanceof String text && !text.isBlank();
+    }
+
+    private boolean shouldForceTracingPayloadCapture() {
+        return runtimeConfigService != null
+                && runtimeConfigService.isSelfEvolvingEnabled()
+                && runtimeConfigService.isSelfEvolvingTracePayloadOverrideEnabled();
     }
 
     private record WebhookDeliveryTarget(String channelType, String chatId) {

@@ -20,8 +20,8 @@ package me.golemcore.bot.domain.memory.retrieval;
 
 import me.golemcore.bot.domain.memory.model.MemoryRetrievalPlan;
 import me.golemcore.bot.domain.model.MemoryQuery;
-import me.golemcore.bot.domain.service.MemoryScopeSupport;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.memory.MemoryScopeSupport;
+import me.golemcore.bot.domain.runtimeconfig.MemoryRuntimeConfigView;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -37,9 +37,9 @@ public class MemoryRetrievalPlanner {
 
     private static final int MAX_EPISODIC_LOOKBACK_DAYS = 90;
 
-    private final RuntimeConfigService runtimeConfigService;
+    private final MemoryRuntimeConfigView runtimeConfigService;
 
-    public MemoryRetrievalPlanner(RuntimeConfigService runtimeConfigService) {
+    public MemoryRetrievalPlanner(MemoryRuntimeConfigView runtimeConfigService) {
         this.runtimeConfigService = runtimeConfigService;
     }
 

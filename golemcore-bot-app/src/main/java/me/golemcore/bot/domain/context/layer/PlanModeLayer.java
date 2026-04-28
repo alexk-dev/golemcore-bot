@@ -27,7 +27,7 @@ import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.Plan;
 import me.golemcore.bot.domain.model.SessionIdentity;
 import me.golemcore.bot.domain.planning.PlanService;
-import me.golemcore.bot.domain.service.SessionIdentitySupport;
+import me.golemcore.bot.domain.identity.SessionIdentitySupport;
 
 /**
  * Injects plan mode context when a planning session is active.

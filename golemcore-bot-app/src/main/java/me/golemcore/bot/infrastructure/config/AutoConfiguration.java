@@ -24,7 +24,7 @@ import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.runtimeconfig.RuntimeConfigService;
 import me.golemcore.bot.plugin.runtime.ChannelRegistry;
 import me.golemcore.bot.plugin.runtime.PluginManager;
 import me.golemcore.bot.port.channel.ChannelPort;
@@ -62,7 +62,7 @@ public class AutoConfiguration {
     private final BotProperties properties;
     private final ChannelRegistry channelRegistry;
     private final RuntimeConfigService runtimeConfigService;
-    private final me.golemcore.bot.domain.service.LegacyPluginConfigurationMigrationService legacyPluginConfigurationMigrationService;
+    private final me.golemcore.bot.domain.extensions.LegacyPluginConfigurationMigrationService legacyPluginConfigurationMigrationService;
     private final PluginManager pluginManager;
     private final ObjectProvider<BuildProperties> buildPropertiesProvider;
     private final ObjectProvider<GitProperties> gitPropertiesProvider;
@@ -71,7 +71,7 @@ public class AutoConfiguration {
             BotProperties properties,
             ChannelRegistry channelRegistry,
             RuntimeConfigService runtimeConfigService,
-            me.golemcore.bot.domain.service.LegacyPluginConfigurationMigrationService legacyPluginConfigurationMigrationService,
+            me.golemcore.bot.domain.extensions.LegacyPluginConfigurationMigrationService legacyPluginConfigurationMigrationService,
             PluginManager pluginManager,
             ObjectProvider<BuildProperties> buildPropertiesProvider,
             ObjectProvider<GitProperties> gitPropertiesProvider) {

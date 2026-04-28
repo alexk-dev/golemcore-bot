@@ -27,7 +27,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.UUID;
 import me.golemcore.bot.domain.selfevolving.artifact.ArtifactBundleService;
-import me.golemcore.bot.domain.service.StringValueSupport;
+import me.golemcore.bot.domain.support.StringValueSupport;
 
 /**
  * Applies a resolved promotion target to a candidate and builds the persisted

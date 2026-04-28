@@ -2,7 +2,7 @@ package me.golemcore.bot.infrastructure.telemetry;
 
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.catalog.ModelCatalogEntry;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.runtimeconfig.RuntimeConfigService;
 import me.golemcore.bot.infrastructure.config.ModelConfigService;
 import me.golemcore.bot.plugin.runtime.PluginManager;
 import me.golemcore.bot.plugin.runtime.PluginRuntimeInfo;

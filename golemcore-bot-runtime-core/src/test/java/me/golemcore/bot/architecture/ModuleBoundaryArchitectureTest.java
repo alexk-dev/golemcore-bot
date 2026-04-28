@@ -22,6 +22,8 @@ class ModuleBoundaryArchitectureTest {
     private static final List<String> FORBIDDEN_INJECTION_SHORTCUTS = List.of("import lombok.RequiredArgsConstructor;",
             "@RequiredArgsConstructor", "import org.springframework.beans.factory.annotation.Autowired;",
             "import jakarta.annotation.Resource;", "@Autowired", "@Resource");
+    private static final List<String> FORBIDDEN_BROAD_RUNTIME_CONFIG_REFERENCES = List
+            .of("me.golemcore.bot.domain.runtimeconfig.RuntimeConfigService");
 
     @Test
     void mainSourcesShouldStayOutsideAppAndAdapterBoundaries() throws IOException {
@@ -31,6 +33,12 @@ class ModuleBoundaryArchitectureTest {
     @Test
     void mainSourcesShouldUseExplicitInjectionConstructors() throws IOException {
         assertNoSourceText(FORBIDDEN_INJECTION_SHORTCUTS, "must use final fields and explicit constructors");
+    }
+
+    @Test
+    void mainSourcesShouldDependOnNarrowRuntimeConfigViews() throws IOException {
+        assertNoSourceText(FORBIDDEN_BROAD_RUNTIME_CONFIG_REFERENCES,
+                "must depend on bounded runtime config views instead of the full facade");
     }
 
     private void assertNoSourceText(List<String> forbiddenPatterns, String reason) throws IOException {
