@@ -58,8 +58,7 @@ class RuntimeConfigSectionServicesTest {
         assertNotNull(cfg.getVoice());
         assertNotNull(cfg.getRateLimit());
         assertNotNull(cfg.getSecurity());
-        assertEquals(RuntimeConfigDefaults.DEFAULT_AUTO_REFLECTION_ENABLED,
-                cfg.getAutoMode().getReflectionEnabled());
+        assertEquals(RuntimeConfigDefaults.DEFAULT_AUTO_REFLECTION_ENABLED, cfg.getAutoMode().getReflectionEnabled());
         assertNotNull(cfg.getSkills());
         assertEquals(RuntimeConfigDefaults.DEFAULT_UPDATE_CHECK_INTERVAL_MINUTES,
                 cfg.getUpdate().getCheckIntervalMinutes());
@@ -80,16 +79,16 @@ class RuntimeConfigSectionServicesTest {
     @Test
     void shouldNormalizeInvalidRuntimeBounds() {
         RuntimeConfig cfg = RuntimeConfig.builder().build();
-        cfg.setCompaction(RuntimeConfig.CompactionConfig.builder().modelThresholdRatio(2.0d)
-                .preserveTurnBoundaries(null).detailsEnabled(null).detailsMaxItemsPerCategory(null)
-                .summaryTimeoutMs(null).build());
+        cfg.setCompaction(
+                RuntimeConfig.CompactionConfig.builder().modelThresholdRatio(2.0d).preserveTurnBoundaries(null)
+                        .detailsEnabled(null).detailsMaxItemsPerCategory(null).summaryTimeoutMs(null).build());
         cfg.setTurn(RuntimeConfig.TurnConfig.builder().maxSkillTransitions(0).queueSteeringMode(" ")
                 .queueFollowUpMode("invalid").progressBatchSize(0).progressMaxSilenceSeconds(0)
                 .progressSummaryTimeoutMs(999).build());
         cfg.setToolLoop(RuntimeConfig.ToolLoopConfig.builder().maxLlmCalls(0).maxToolExecutions(0).build());
-        cfg.setSessionRetention(RuntimeConfig.SessionRetentionConfig.builder().maxAge("bad")
-                .cleanupInterval("also-bad").protectActiveSessions(null).protectSessionsWithPlans(null)
-                .protectSessionsWithDelayedActions(null).build());
+        cfg.setSessionRetention(RuntimeConfig.SessionRetentionConfig.builder().maxAge("bad").cleanupInterval("also-bad")
+                .protectActiveSessions(null).protectSessionsWithPlans(null).protectSessionsWithDelayedActions(null)
+                .build());
         cfg.setDelayedActions(RuntimeConfig.DelayedActionsConfig.builder().tickSeconds(0).maxPendingPerSession(999)
                 .maxDelay("bad").defaultMaxAttempts(0).leaseDuration("bad").retentionAfterCompletion("bad")
                 .allowRunLater(null).build());
@@ -117,8 +116,8 @@ class RuntimeConfigSectionServicesTest {
     @Test
     void shouldNormalizeModelFallbacksToolsMemoryAndSelfEvolvingEdges() {
         RuntimeConfig cfg = RuntimeConfig.builder().build();
-        RuntimeConfig.TierBinding routing = RuntimeConfig.TierBinding.builder().model("openai/gpt-test")
-                .reasoning(" ").temperature(3.0d).fallbacks(fallbacks()).build();
+        RuntimeConfig.TierBinding routing = RuntimeConfig.TierBinding.builder().model("openai/gpt-test").reasoning(" ")
+                .temperature(3.0d).fallbacks(fallbacks()).build();
         cfg.setModelRouter(RuntimeConfig.ModelRouterConfig.builder().routing(routing).dynamicTierEnabled(null).build());
         cfg.setModelRegistry(RuntimeConfig.ModelRegistryConfig.builder().branch(" feature ").build());
         List<RuntimeConfig.ShellEnvironmentVariable> variables = new ArrayList<>();
@@ -146,7 +145,8 @@ class RuntimeConfigSectionServicesTest {
         assertEquals("override", cfg.getTools().getShellEnvironmentVariables().getFirst().getValue());
         assertNotNull(cfg.getMcp());
         assertEquals(RuntimeConfigDefaults.DEFAULT_MEMORY_DISCLOSURE_MODE, cfg.getMemory().getDisclosure().getMode());
-        assertEquals(RuntimeConfigDefaults.DEFAULT_MEMORY_RERANKING_PROFILE, cfg.getMemory().getReranking().getProfile());
+        assertEquals(RuntimeConfigDefaults.DEFAULT_MEMORY_RERANKING_PROFILE,
+                cfg.getMemory().getReranking().getProfile());
         assertEquals(RuntimeConfigDefaults.DEFAULT_MEMORY_DIAGNOSTICS_VERBOSITY,
                 cfg.getMemory().getDiagnostics().getVerbosity());
         assertFalse(cfg.getSelfEvolving().getTactics().getSearch().getEmbeddings().getEnabled());
