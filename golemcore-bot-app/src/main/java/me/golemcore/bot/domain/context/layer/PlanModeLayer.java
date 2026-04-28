@@ -26,7 +26,7 @@ import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.Plan;
 import me.golemcore.bot.domain.model.SessionIdentity;
-import me.golemcore.bot.domain.service.PlanService;
+import me.golemcore.bot.domain.planning.PlanService;
 import me.golemcore.bot.domain.service.SessionIdentitySupport;
 
 /**

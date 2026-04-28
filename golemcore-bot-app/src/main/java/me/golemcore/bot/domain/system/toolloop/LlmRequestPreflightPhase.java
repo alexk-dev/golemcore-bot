@@ -23,8 +23,8 @@ import me.golemcore.bot.domain.model.CompactionReason;
 import me.golemcore.bot.domain.model.CompactionResult;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.LlmRequest;
-import me.golemcore.bot.domain.service.ContextCompactionPolicy;
-import me.golemcore.bot.domain.service.ContextTokenEstimator;
+import me.golemcore.bot.domain.context.compaction.ContextCompactionPolicy;
+import me.golemcore.bot.domain.context.compaction.ContextTokenEstimator;
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.LinkedHashMap;

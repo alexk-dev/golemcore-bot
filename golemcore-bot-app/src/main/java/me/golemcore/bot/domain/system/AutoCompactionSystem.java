@@ -22,10 +22,10 @@ import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.CompactionReason;
 import me.golemcore.bot.domain.model.CompactionResult;
 import me.golemcore.bot.domain.model.Message;
-import me.golemcore.bot.domain.service.CompactionOrchestrationService;
-import me.golemcore.bot.domain.service.CompactionPayloadMapper;
-import me.golemcore.bot.domain.service.ContextCompactionPolicy;
-import me.golemcore.bot.domain.service.ContextTokenEstimator;
+import me.golemcore.bot.domain.context.compaction.CompactionOrchestrationService;
+import me.golemcore.bot.domain.context.compaction.CompactionPayloadMapper;
+import me.golemcore.bot.domain.context.compaction.ContextCompactionPolicy;
+import me.golemcore.bot.domain.context.compaction.ContextTokenEstimator;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 

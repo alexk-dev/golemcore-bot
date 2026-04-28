@@ -22,7 +22,7 @@ import me.golemcore.bot.domain.resilience.followthrough.CommitmentCategory;
 import me.golemcore.bot.domain.resilience.followthrough.FollowThroughClassifier;
 import me.golemcore.bot.domain.resilience.followthrough.IntentType;
 import me.golemcore.bot.domain.resilience.RiskLevel;
-import me.golemcore.bot.domain.service.InternalTurnService;
+import me.golemcore.bot.domain.scheduling.InternalTurnService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.TraceBudgetService;
 import me.golemcore.bot.domain.service.TraceService;

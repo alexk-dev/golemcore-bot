@@ -8,7 +8,7 @@ import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.McpConfig;
 import me.golemcore.bot.domain.model.Skill;
 import me.golemcore.bot.domain.model.ToolResult;
-import me.golemcore.bot.domain.service.DynamicSkillFactory;
+import me.golemcore.bot.domain.skills.DynamicSkillFactory;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;

@@ -14,25 +14,25 @@ import me.golemcore.bot.domain.context.PromptComposer;
 import me.golemcore.bot.domain.context.resolution.SkillResolver;
 import me.golemcore.bot.domain.context.resolution.TierResolver;
 import me.golemcore.bot.domain.loop.AgentLoop;
-import me.golemcore.bot.domain.service.AutoModeService;
-import me.golemcore.bot.domain.service.ContextCompactionPolicy;
+import me.golemcore.bot.domain.auto.AutoModeService;
+import me.golemcore.bot.domain.context.compaction.ContextCompactionPolicy;
 import me.golemcore.bot.domain.service.ContextHygieneService;
-import me.golemcore.bot.domain.service.ContextTokenEstimator;
-import me.golemcore.bot.domain.service.DelayedActionPolicyService;
+import me.golemcore.bot.domain.context.compaction.ContextTokenEstimator;
+import me.golemcore.bot.domain.scheduling.DelayedActionPolicyService;
 import me.golemcore.bot.domain.service.MemoryPresetService;
-import me.golemcore.bot.domain.service.ModelSelectionService;
-import me.golemcore.bot.domain.service.PlanModeToolRestrictionService;
-import me.golemcore.bot.domain.service.PlanService;
-import me.golemcore.bot.domain.service.PromptSectionService;
+import me.golemcore.bot.domain.model.ModelSelectionService;
+import me.golemcore.bot.domain.tools.PlanModeToolRestrictionService;
+import me.golemcore.bot.domain.planning.PlanService;
+import me.golemcore.bot.domain.prompt.PromptSectionService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
-import me.golemcore.bot.domain.service.ScheduleService;
-import me.golemcore.bot.domain.service.SkillTemplateEngine;
-import me.golemcore.bot.domain.service.ToolCallExecutionService;
+import me.golemcore.bot.domain.scheduling.ScheduleService;
+import me.golemcore.bot.domain.skills.SkillTemplateEngine;
+import me.golemcore.bot.domain.service.ToolRegistryService;
 import me.golemcore.bot.domain.service.TraceService;
-import me.golemcore.bot.domain.service.UpdateActivityGate;
-import me.golemcore.bot.domain.service.UpdateMaintenanceWindow;
+import me.golemcore.bot.domain.update.UpdateActivityGate;
+import me.golemcore.bot.domain.update.UpdateMaintenanceWindow;
 import me.golemcore.bot.domain.service.UserPreferencesService;
-import me.golemcore.bot.domain.service.WorkspaceInstructionService;
+import me.golemcore.bot.domain.workspace.WorkspaceInstructionService;
 import me.golemcore.bot.domain.system.AgentSystem;
 import me.golemcore.bot.port.outbound.ChannelRuntimePort;
 import me.golemcore.bot.port.outbound.LlmPort;
@@ -43,6 +43,7 @@ import me.golemcore.bot.port.outbound.ReleaseSourcePort;
 import me.golemcore.bot.port.outbound.ScheduleCronPort;
 import me.golemcore.bot.port.outbound.SchedulePersistencePort;
 import me.golemcore.bot.port.outbound.SessionPort;
+import me.golemcore.bot.port.outbound.TraceSnapshotCodecPort;
 import me.golemcore.bot.port.outbound.UpdateArtifactStorePort;
 import me.golemcore.bot.port.outbound.UpdateRestartPort;
 import me.golemcore.bot.port.outbound.UpdateRuntimeConfigPort;
@@ -87,6 +88,7 @@ class CoreLayerConfigurationTest {
                 mock(LlmPort.class),
                 Clock.systemUTC(),
                 mock(TraceService.class),
+                mock(TraceSnapshotCodecPort.class),
                 mock(ContextHygieneService.class));
 
         assertNotNull(agentLoop);
@@ -133,7 +135,7 @@ class CoreLayerConfigurationTest {
                 mock(SkillComponent.class),
                 mock(SkillTemplateEngine.class)));
         assertNotNull(contextLayerConfiguration.toolLayer(
-                mock(ToolCallExecutionService.class),
+                mock(ToolRegistryService.class),
                 mock(McpPort.class),
                 mock(DelayedActionPolicyService.class),
                 mock(PlanModeToolRestrictionService.class)));

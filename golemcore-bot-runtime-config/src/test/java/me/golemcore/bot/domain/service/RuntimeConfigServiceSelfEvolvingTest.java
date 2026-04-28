@@ -45,8 +45,12 @@ class RuntimeConfigServiceSelfEvolvingTest {
             return CompletableFuture.completedFuture(persistedSections.get(fileName));
         });
 
-        service = new RuntimeConfigService(new StorageRuntimeConfigPersistenceAdapter(storagePort),
-                RuntimeConfigTestOverrides.noop());
+        StorageRuntimeConfigPersistenceAdapter persistenceAdapter = new StorageRuntimeConfigPersistenceAdapter(
+                storagePort);
+        RuntimeConfigSnapshotProvider snapshotProvider = new RuntimeConfigSnapshotProvider();
+        service = new RuntimeConfigService(persistenceAdapter, RuntimeConfigTestOverrides.noop(), snapshotProvider,
+                new RuntimeConfigMutationService(persistenceAdapter, snapshotProvider), new RuntimeConfigRedactor(),
+                new RuntimeConfigNormalizer());
         objectMapper = new ObjectMapper();
         objectMapper.registerModule(new JavaTimeModule());
     }

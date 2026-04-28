@@ -16,7 +16,7 @@ import me.golemcore.bot.port.outbound.ToolRegistryPort;
  * Runtime-owned catalog for tools contributed by built-in modules and plugins.
  */
 @Slf4j
-public final class ToolRegistryService implements ToolRegistryPort {
+public class ToolRegistryService implements ToolRegistryPort {
 
     private final ConcurrentMap<String, ToolComponent> tools = new ConcurrentHashMap<>();
 

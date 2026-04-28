@@ -20,7 +20,7 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import me.golemcore.bot.domain.model.PromptSection;
 import me.golemcore.bot.domain.model.UserPreferences;
-import me.golemcore.bot.domain.service.PromptSectionService;
+import me.golemcore.bot.domain.prompt.PromptSectionService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.port.outbound.StoragePort;
 import org.junit.jupiter.api.BeforeEach;

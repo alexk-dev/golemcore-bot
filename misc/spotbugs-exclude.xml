@@ -141,7 +141,7 @@
     -->
     <Match>
         <Bug pattern="DM_EXIT" />
-        <Class name="me.golemcore.bot.domain.service.JvmExitService" />
+        <Class name="me.golemcore.bot.domain.runtime.JvmExitService" />
     </Match>
     <!--
         DefaultToolLoopSystem.planService is reserved for future use by the

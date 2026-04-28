@@ -1,7 +1,11 @@
 package me.golemcore.bot.security;
 
 import me.golemcore.bot.adapter.outbound.config.StorageRuntimeConfigPersistenceAdapter;
+import me.golemcore.bot.domain.service.RuntimeConfigMutationService;
+import me.golemcore.bot.domain.service.RuntimeConfigNormalizer;
+import me.golemcore.bot.domain.service.RuntimeConfigRedactor;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.service.RuntimeConfigSnapshotProvider;
 import me.golemcore.bot.domain.selfevolving.SelfEvolvingBootstrapOverrideService;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.outbound.StoragePort;
@@ -196,9 +200,19 @@ class AllowlistValidatorTest {
         private List<String> telegramAllowedUsers;
 
         StubRuntimeConfigService() {
-            super(new StorageRuntimeConfigPersistenceAdapter(mock(StoragePort.class)),
+            this(new StorageRuntimeConfigPersistenceAdapter(mock(StoragePort.class)),
+                    new RuntimeConfigSnapshotProvider());
+        }
+
+        private StubRuntimeConfigService(StorageRuntimeConfigPersistenceAdapter persistenceAdapter,
+                RuntimeConfigSnapshotProvider snapshotProvider) {
+            super(persistenceAdapter,
                     new SelfEvolvingBootstrapOverrideService(
-                            me.golemcore.bot.support.TestPorts.settings(new BotProperties())));
+                            me.golemcore.bot.support.TestPorts.settings(new BotProperties())),
+                    snapshotProvider,
+                    new RuntimeConfigMutationService(persistenceAdapter, snapshotProvider),
+                    new RuntimeConfigRedactor(),
+                    new RuntimeConfigNormalizer());
         }
 
         @Override

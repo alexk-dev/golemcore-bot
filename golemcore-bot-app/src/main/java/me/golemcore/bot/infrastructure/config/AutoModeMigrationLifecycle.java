@@ -1,6 +1,6 @@
 package me.golemcore.bot.infrastructure.config;
 
-import me.golemcore.bot.domain.service.AutoModeMigrationService;
+import me.golemcore.bot.domain.auto.AutoModeMigrationService;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;

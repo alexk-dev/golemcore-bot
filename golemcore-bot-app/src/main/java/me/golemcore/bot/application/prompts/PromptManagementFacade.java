@@ -6,7 +6,7 @@ import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.regex.Pattern;
 import me.golemcore.bot.domain.model.PromptSection;
-import me.golemcore.bot.domain.service.PromptSectionService;
+import me.golemcore.bot.domain.prompt.PromptSectionService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 import me.golemcore.bot.port.outbound.StoragePort;
 

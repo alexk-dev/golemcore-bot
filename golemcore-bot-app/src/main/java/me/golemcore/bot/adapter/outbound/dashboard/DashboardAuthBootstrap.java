@@ -1,7 +1,7 @@
 package me.golemcore.bot.adapter.outbound.dashboard;
 
 import jakarta.annotation.PostConstruct;
-import me.golemcore.bot.domain.service.DashboardAuthService;
+import me.golemcore.bot.domain.dashboard.DashboardAuthService;
 import org.springframework.stereotype.Component;
 
 @Component

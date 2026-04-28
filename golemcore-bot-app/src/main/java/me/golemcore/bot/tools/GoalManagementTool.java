@@ -25,7 +25,7 @@ import me.golemcore.bot.domain.model.Goal;
 import me.golemcore.bot.domain.model.ModelTierCatalog;
 import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.model.ToolResult;
-import me.golemcore.bot.domain.service.AutoModeService;
+import me.golemcore.bot.domain.auto.AutoModeService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -66,7 +66,7 @@ import java.util.stream.Collectors;
  * <p>
  * Configuration: RuntimeConfig (tools.goalManagementEnabled)
  *
- * @see me.golemcore.bot.domain.service.AutoModeService
+ * @see AutoModeService
  * @see me.golemcore.bot.auto.AutoModeScheduler
  */
 @Component

@@ -12,7 +12,7 @@ import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.policy.ManagedPolicyBindingState;
 import me.golemcore.bot.port.outbound.ManagedPolicyQueryPort;
-import me.golemcore.bot.domain.service.ModelSelectionService;
+import me.golemcore.bot.domain.model.ModelSelectionService;
 import me.golemcore.bot.port.outbound.LlmPort;
 import me.golemcore.bot.port.outbound.ModelConfigAdminPort;
 

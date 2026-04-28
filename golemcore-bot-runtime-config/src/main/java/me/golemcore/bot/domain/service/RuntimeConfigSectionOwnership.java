@@ -37,17 +37,23 @@ public final class RuntimeConfigSectionOwnership {
 
     private static String ownerService(RuntimeConfig.ConfigSection section) {
         return switch (section) {
-            case MODEL_ROUTER, LLM, MODEL_REGISTRY, RESILIENCE -> "LlmConfigService";
-            case TOOLS, TOOL_LOOP, MCP -> "ToolConfigService";
+            case MODEL_ROUTER, LLM, MODEL_REGISTRY -> "LlmConfigService";
+            case RESILIENCE -> "ResilienceConfigService";
+            case TOOLS, MCP -> "ToolConfigService";
             case VOICE -> "VoiceConfigService";
             case RATE_LIMIT -> "RateLimitConfigService";
             case MEMORY -> "MemoryConfigService";
             case HIVE -> "HiveConfigService";
             case SELF_EVOLVING -> "SelfEvolvingConfigService";
             case TRACING, TELEMETRY, USAGE -> "ObservabilityConfigService";
-            case SESSION_RETENTION, COMPACTION, TURN -> "SessionRuntimeConfigService";
+            case SESSION_RETENTION, COMPACTION, TURN, TOOL_LOOP -> "SessionRuntimeConfigService";
             case SECURITY -> "SecurityConfigService";
-            case TELEGRAM, AUTO_MODE, UPDATE, SKILLS, PLAN, DELAYED_ACTIONS -> "RuntimeConfigService";
+            case TELEGRAM -> "TelegramConfigService";
+            case AUTO_MODE -> "AutoModeConfigService";
+            case UPDATE -> "UpdateConfigService";
+            case SKILLS -> "SkillConfigService";
+            case PLAN -> "PlanConfigService";
+            case DELAYED_ACTIONS -> "DelayedActionsConfigService";
         };
     }
 

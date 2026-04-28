@@ -24,7 +24,7 @@ import me.golemcore.bot.domain.context.ContextLayerResult;
 import me.golemcore.bot.domain.context.LayerCriticality;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.PromptSection;
-import me.golemcore.bot.domain.service.PromptSectionService;
+import me.golemcore.bot.domain.prompt.PromptSectionService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
 
 import java.util.Map;

@@ -6,9 +6,9 @@ import me.golemcore.bot.domain.model.CompactionReason;
 import me.golemcore.bot.domain.model.CompactionResult;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.Message;
-import me.golemcore.bot.domain.service.CompactionOrchestrationService;
-import me.golemcore.bot.domain.service.ContextCompactionPolicy;
-import me.golemcore.bot.domain.service.ContextTokenEstimator;
+import me.golemcore.bot.domain.context.compaction.CompactionOrchestrationService;
+import me.golemcore.bot.domain.context.compaction.ContextCompactionPolicy;
+import me.golemcore.bot.domain.context.compaction.ContextTokenEstimator;
 import me.golemcore.bot.domain.system.LlmErrorClassifier;
 import org.junit.jupiter.api.Test;
 

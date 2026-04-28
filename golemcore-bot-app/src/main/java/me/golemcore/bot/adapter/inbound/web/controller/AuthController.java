@@ -11,7 +11,7 @@ import me.golemcore.bot.client.dto.MfaEnableRequest;
 import me.golemcore.bot.client.dto.MfaSetupResponse;
 import me.golemcore.bot.client.dto.MfaStatusResponse;
 import me.golemcore.bot.domain.model.AdminCredentials;
-import me.golemcore.bot.domain.service.DashboardAuthService;
+import me.golemcore.bot.domain.dashboard.DashboardAuthService;
 import org.springframework.http.HttpCookie;
 import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;

@@ -6,12 +6,13 @@ GolemCore Bot uses a hexagonal architecture with Maven modules as bounded-contex
 
 ```text
 contracts        -> no dependency on app, adapters, infrastructure, Spring Web, Telegram, dashboard
-runtime-core     -> contracts + runtime-config + tracing, no inbound/outbound adapters
+runtime-core     -> contracts + runtime-config + tracing, turn lifecycle and context assembly, no inbound/outbound adapters
 runtime-config   -> contracts + config persistence ports
 sessions         -> contracts + session/storage ports + runtime-config where policy needs it
 memory           -> contracts + memory/storage ports + runtime-config
 tools            -> contracts + tool ports + runtime-config, no session persistence ownership
 tracing          -> contracts + trace persistence/snapshot ports
+scheduling       -> contracts + runtime-config + tracing, no app or adapter ownership
 client           -> contracts
 extensions       -> contracts + plugin API
 hive             -> contracts + client
@@ -31,6 +32,7 @@ golemcore-bot-parent
 ├── golemcore-bot-memory
 ├── golemcore-bot-tools
 ├── golemcore-bot-tracing
+├── golemcore-bot-scheduling
 ├── golemcore-bot-client
 ├── golemcore-bot-extensions
 ├── golemcore-bot-hive
@@ -47,3 +49,31 @@ golemcore-bot-parent
 - Runtime and feature modules must not depend on app adapters, web controllers, launchers, or security configuration.
 - Adapters implement ports; domain/runtime code depends on ports and contracts.
 - New module dependencies must follow the graph above and be covered by architecture tests.
+- `golemcore-bot-app` domain code is grouped by bounded-context package; new production classes must not be added to `me.golemcore.bot.domain.service`.
+- Reusable context assembly (`ContextAssembler`, `PromptComposer`, and the `ContextBuildingSystem` pipeline step) lives in `golemcore-bot-runtime-core`; app owns only concrete context layers and resolver wiring that still depend on app services.
+
+## App Domain Contexts
+
+The app module keeps only adapter-facing or composition-root domain services that are not ready for a dedicated Maven module. These services are grouped by ownership:
+
+```text
+domain.auto
+domain.context.compaction
+domain.context.layer
+domain.context.resolution
+domain.dashboard
+domain.model
+domain.planning
+domain.progress
+domain.prompt
+domain.resilience
+domain.runtime
+domain.session
+domain.skills
+domain.system
+domain.tools
+domain.tracing
+domain.update
+domain.voice
+domain.workspace
+```

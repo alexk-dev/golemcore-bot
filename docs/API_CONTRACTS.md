@@ -36,10 +36,22 @@ Trace exports use a versioned schema: `docs/contracts/dashboard-api/trace-snapsh
 The schema fixes the externally visible shape for traces, spans, events, snapshots, status codes, timing fields, and
 redaction metadata. Secrets and PII must be redacted before they cross the trace/dashboard boundary.
 
+## Runtime Config Sections
+
+Runtime config sections have explicit ownership and schema metadata:
+
+- Java ownership registry: `RuntimeConfigSectionOwnership`
+- Java schema/version registry: `RuntimeConfigSectionSchemaRegistry`
+- current section schema IDs use `runtime-config.<section-file-id>.v1`
+
+Section migrations must be owned by the section owner. Future payload versions must add an explicit migration step before
+the current version is raised; newer-than-current payloads are rejected.
+
 ## Dashboard Drift Detection
 
-Dashboard API drift is guarded by shared JSON schemas under `docs/contracts/dashboard-api/` and the generated TypeScript
-index at `dashboard/src/api/generated/dashboardApiContracts.ts`.
+Dashboard API drift is guarded by generated JSON-schema TypeScript contracts. Shared schemas live under
+`docs/contracts/dashboard-api/` and the generated index lives at
+`dashboard/src/api/generated/dashboardApiContracts.ts`.
 
 Run `npm run contracts:check` from `dashboard/` to validate the schemas and verify the generated index is current. Run
 `npm run contracts:generate` after changing any schema.

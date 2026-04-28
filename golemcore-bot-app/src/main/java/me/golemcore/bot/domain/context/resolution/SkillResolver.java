@@ -20,6 +20,7 @@ package me.golemcore.bot.domain.context.resolution;
 
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.component.SkillComponent;
+import me.golemcore.bot.domain.context.ContextResolver;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.Skill;
@@ -49,7 +50,7 @@ import java.util.Optional;
  * resolved skill is not found or unavailable, the persisted state is cleared.
  */
 @Slf4j
-public class SkillResolver {
+public class SkillResolver implements ContextResolver {
 
     private final SkillComponent skillComponent;
 

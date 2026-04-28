@@ -2,7 +2,7 @@ package me.golemcore.bot.adapter.inbound.web.controller;
 
 import me.golemcore.bot.domain.model.SessionIdentity;
 import me.golemcore.bot.domain.service.ConversationKeyValidator;
-import me.golemcore.bot.domain.service.PlanService;
+import me.golemcore.bot.domain.planning.PlanService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;

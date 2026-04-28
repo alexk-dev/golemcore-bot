@@ -2,7 +2,7 @@ package me.golemcore.bot.adapter.inbound.web.controller;
 
 import me.golemcore.bot.domain.model.AutoTask;
 import me.golemcore.bot.domain.model.Goal;
-import me.golemcore.bot.domain.service.AutoModeService;
+import me.golemcore.bot.domain.auto.AutoModeService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;

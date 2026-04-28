@@ -41,7 +41,7 @@ public class PluginRuntimeApiConfiguration {
     }
 
     @Bean
-    public AutoModeService pluginAutoModeService(me.golemcore.bot.domain.service.AutoModeService delegate) {
+    public AutoModeService pluginAutoModeService(me.golemcore.bot.domain.auto.AutoModeService delegate) {
         return new AutoModeService() {
             @Override
             public boolean isFeatureEnabled() {
@@ -67,9 +67,9 @@ public class PluginRuntimeApiConfiguration {
 
     @Bean
     public ModelSelectionService pluginModelSelectionService(
-            me.golemcore.bot.domain.service.ModelSelectionService delegate) {
+            me.golemcore.bot.domain.model.ModelSelectionService delegate) {
         return tier -> {
-            me.golemcore.bot.domain.service.ModelSelectionService.ModelSelection selection = delegate.resolveForTier(
+            me.golemcore.bot.domain.model.ModelSelectionService.ModelSelection selection = delegate.resolveForTier(
                     tier);
             return new ModelSelectionService.ModelSelection(selection.model(), selection.reasoning());
         };
@@ -77,7 +77,7 @@ public class PluginRuntimeApiConfiguration {
 
     @Bean
     public PlanService pluginPlanService(
-            me.golemcore.bot.domain.service.PlanService delegate,
+            me.golemcore.bot.domain.planning.PlanService delegate,
             PluginRuntimeApiMapper mapper) {
         return new PlanService() {
             @Override

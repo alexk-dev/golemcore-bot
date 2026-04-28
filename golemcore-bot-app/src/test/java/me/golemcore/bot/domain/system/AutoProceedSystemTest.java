@@ -20,7 +20,7 @@ import me.golemcore.bot.domain.resilience.ClassifierRequest;
 import me.golemcore.bot.domain.resilience.autoproceed.ClassifierVerdict;
 import me.golemcore.bot.domain.resilience.RiskLevel;
 import me.golemcore.bot.domain.resilience.autoproceed.IntentType;
-import me.golemcore.bot.domain.service.InternalTurnService;
+import me.golemcore.bot.domain.scheduling.InternalTurnService;
 import me.golemcore.bot.domain.service.RuntimeConfigService;
 import me.golemcore.bot.domain.service.TraceBudgetService;
 import me.golemcore.bot.domain.service.TraceService;

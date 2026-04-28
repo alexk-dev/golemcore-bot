@@ -54,9 +54,11 @@ import me.golemcore.bot.port.outbound.ChannelRuntimePort;
 import me.golemcore.bot.port.outbound.LlmPort;
 import me.golemcore.bot.port.outbound.RateLimitPort;
 import me.golemcore.bot.port.outbound.SessionPort;
+import me.golemcore.bot.port.outbound.TraceSnapshotCodecPort;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
@@ -151,6 +153,69 @@ class AgentLoopTest {
         loop.processMessage(inbound);
 
         verify(sessionPort, times(1)).save(session);
+    }
+
+    @Test
+    void shouldReturnContextProducedBySystemPipeline() {
+        SessionPort sessionPort = mock(SessionPort.class);
+        RateLimitPort rateLimitPort = mock(RateLimitPort.class);
+
+        UserPreferencesService preferencesService = mock(UserPreferencesService.class);
+        when(preferencesService.getMessage(any(), any())).thenReturn("x");
+        when(preferencesService.getMessage(any())).thenReturn(MSG_GENERIC);
+
+        LlmPort llmPort = mock(LlmPort.class);
+        when(llmPort.isAvailable()).thenReturn(false);
+
+        Clock clock = Clock.fixed(Instant.parse(FIXED_INSTANT), ZoneOffset.UTC);
+
+        AgentSession session = AgentSession.builder().id("s1").channelType(CHANNEL_TYPE).chatId("1")
+                .messages(new ArrayList<>()).build();
+
+        when(sessionPort.getOrCreate(CHANNEL_TYPE, "1")).thenReturn(session);
+        when(rateLimitPort.tryConsume()).thenReturn(RateLimitResult.allowed(0));
+
+        ChannelPort channel = mock(ChannelPort.class);
+        when(channel.getChannelType()).thenReturn(CHANNEL_TYPE);
+        when(channel.sendMessage(any(), any())).thenReturn(CompletableFuture.completedFuture(null));
+        when(channel.sendMessage(any(), any(), any())).thenReturn(CompletableFuture.completedFuture(null));
+
+        AgentSystem replacingSystem = new AgentSystem() {
+            @Override
+            public String getName() {
+                return "replacing";
+            }
+
+            @Override
+            public int getOrder() {
+                return 1;
+            }
+
+            @Override
+            public boolean shouldProcess(AgentContext context) {
+                return true;
+            }
+
+            @Override
+            public AgentContext process(AgentContext context) {
+                AgentContext replacement = AgentContext.builder().session(context.getSession())
+                        .messages(new ArrayList<>(context.getMessages())).maxIterations(context.getMaxIterations())
+                        .currentIteration(context.getCurrentIteration()).build();
+                replacement.setTraceContext(context.getTraceContext());
+                replacement.setAttribute("pipeline.replaced", true);
+                return replacement;
+            }
+        };
+
+        AgentLoop loop = createLoop(sessionPort, rateLimitPort, List.of(replacingSystem), List.of(channel),
+                mockRuntimeConfigService(1), preferencesService, llmPort, clock);
+
+        Message inbound = Message.builder().role(ROLE_USER).content("hi").channelType(CHANNEL_TYPE).chatId("1")
+                .senderId("u1").timestamp(clock.instant()).build();
+
+        AgentContext result = loop.processMessage(inbound);
+
+        assertEquals(true, result.getAttribute("pipeline.replaced"));
     }
 
     @Test
@@ -607,7 +672,7 @@ class AgentLoopTest {
         AgentLoop loop = new AgentLoop(sessionPort, rateLimitPort,
                 List.of(transitionSystem, responseRoutingSystem(List.of(channel), preferencesService)),
                 runtime(List.of(channel)), mockRuntimeConfigService(1), preferencesService, llmPort, clock,
-                new TraceService(new TraceSnapshotCompressionService(), new TraceBudgetService()),
+                new TraceService(new TraceSnapshotCompressionService(), new TraceBudgetService()), traceSnapshotCodec(),
                 new DefaultContextHygieneService());
 
         Message inbound = Message.builder().role(ROLE_USER).content("pipeline").channelType(CHANNEL_TYPE).chatId("1")
@@ -1158,7 +1223,7 @@ class AgentLoopTest {
 
         AgentLoop loop = new AgentLoop(sessionPort, rateLimitPort, List.of(turnOutcomeSystem, routingSystem),
                 runtime(List.of(channel)), mockRuntimeConfigService(1), preferencesService, llmPort, clock,
-                new TraceService(new TraceSnapshotCompressionService(), new TraceBudgetService()),
+                new TraceService(new TraceSnapshotCompressionService(), new TraceBudgetService()), traceSnapshotCodec(),
                 new DefaultContextHygieneService());
 
         Message inbound = Message.builder().role(ROLE_USER).content("hi").channelType(CHANNEL_TYPE).chatId("1")
@@ -1227,7 +1292,7 @@ class AgentLoopTest {
         AgentLoop loop = new AgentLoop(sessionPort, rateLimitPort,
                 List.of(routingOutcomeAttributeSystem, routingSystem), runtime(List.of(channel)),
                 mockRuntimeConfigService(1), preferencesService, llmPort, clock,
-                new TraceService(new TraceSnapshotCompressionService(), new TraceBudgetService()),
+                new TraceService(new TraceSnapshotCompressionService(), new TraceBudgetService()), traceSnapshotCodec(),
                 new DefaultContextHygieneService());
 
         Message inbound = Message.builder().role(ROLE_USER).content("hi").channelType(CHANNEL_TYPE).chatId("1")
@@ -1683,7 +1748,7 @@ class AgentLoopTest {
 
         AgentLoop loop = new AgentLoop(sessionPort, rateLimitPort, List.of(attachmentsOnlySystem),
                 runtime(List.of(channel)), mockRuntimeConfigService(1), preferencesService, llmPort, clock,
-                new TraceService(new TraceSnapshotCompressionService(), new TraceBudgetService()),
+                new TraceService(new TraceSnapshotCompressionService(), new TraceBudgetService()), traceSnapshotCodec(),
                 new DefaultContextHygieneService());
 
         Message inbound = Message.builder().role(ROLE_USER).content("send image").channelType(CHANNEL_TYPE).chatId("1")
@@ -2078,14 +2143,13 @@ class AgentLoopTest {
     @Test
     void shouldCaptureBalancedTraceDefaultsWhenContextIsNull() {
         UserPreferencesService preferencesService = mock(UserPreferencesService.class);
-        LlmPort llmPort = mock(LlmPort.class);
-        when(llmPort.isAvailable()).thenReturn(false);
+        Clock clock = Clock.fixed(Instant.parse(FIXED_INSTANT), ZoneOffset.UTC);
+        AgentPipelineRunner pipelineRunner = new AgentPipelineRunner(List.of(), mockRuntimeConfigService(1),
+                preferencesService, clock,
+                new TraceService(new TraceSnapshotCompressionService(), new TraceBudgetService()),
+                new DefaultContextHygieneService());
 
-        AgentLoop loop = createLoop(mock(SessionPort.class), mock(RateLimitPort.class), List.of(), List.of(),
-                mockRuntimeConfigService(1), preferencesService, llmPort,
-                Clock.fixed(Instant.parse(FIXED_INSTANT), ZoneOffset.UTC));
-
-        Object snapshot = ReflectionTestUtils.invokeMethod(loop, "captureTraceState", (AgentContext) null);
+        Object snapshot = ReflectionTestUtils.invokeMethod(pipelineRunner, "captureTraceState", (AgentContext) null);
 
         assertEquals("balanced", ReflectionTestUtils.invokeMethod(snapshot, "tier"));
         assertNull(ReflectionTestUtils.invokeMethod(snapshot, "skillSource"));
@@ -2096,8 +2160,22 @@ class AgentLoopTest {
             UserPreferencesService preferencesService, LlmPort llmPort, Clock clock) {
         return new AgentLoop(sessionPort, rateLimitPort, systems, runtime(channels), runtimeConfigService,
                 preferencesService, llmPort, clock,
-                new TraceService(new TraceSnapshotCompressionService(), new TraceBudgetService()),
+                new TraceService(new TraceSnapshotCompressionService(), new TraceBudgetService()), traceSnapshotCodec(),
                 new DefaultContextHygieneService());
+    }
+
+    private static TraceSnapshotCodecPort traceSnapshotCodec() {
+        return new TraceSnapshotCodecPort() {
+            @Override
+            public byte[] encodeJson(Object payload) {
+                return payload != null ? String.valueOf(payload).getBytes(StandardCharsets.UTF_8) : new byte[0];
+            }
+
+            @Override
+            public <T> T decodeJson(String payload, Class<T> targetType) {
+                throw new UnsupportedOperationException("decodeJson is not needed by these tests");
+            }
+        };
     }
 
     private static ResponseRoutingAgentSystem createRoutingSystem(ChannelPort channel,

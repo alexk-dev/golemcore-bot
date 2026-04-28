@@ -6,7 +6,7 @@ import me.golemcore.bot.domain.service.TraceBudgetService;
 import me.golemcore.bot.domain.service.TraceService;
 import me.golemcore.bot.domain.service.TraceSnapshotCompressionService;
 import me.golemcore.bot.domain.service.UserPreferencesService;
-import me.golemcore.bot.domain.service.VoiceResponseHandler;
+import me.golemcore.bot.domain.voice.VoiceResponseHandler;
 import me.golemcore.bot.plugin.runtime.ChannelRegistry;
 import me.golemcore.bot.port.channel.ChannelPort;
 import org.junit.jupiter.api.Test;

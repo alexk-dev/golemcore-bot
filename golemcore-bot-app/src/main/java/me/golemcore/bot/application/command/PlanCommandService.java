@@ -1,7 +1,7 @@
 package me.golemcore.bot.application.command;
 
 import me.golemcore.bot.domain.model.SessionIdentity;
-import me.golemcore.bot.domain.service.PlanService;
+import me.golemcore.bot.domain.planning.PlanService;
 
 public class PlanCommandService {
 

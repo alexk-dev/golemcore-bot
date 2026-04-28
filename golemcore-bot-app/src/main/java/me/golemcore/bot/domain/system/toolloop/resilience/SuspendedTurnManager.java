@@ -25,7 +25,7 @@ import me.golemcore.bot.domain.model.DelayedActionKind;
 import me.golemcore.bot.domain.model.DelayedSessionAction;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.RuntimeConfig;
-import me.golemcore.bot.domain.service.DelayedSessionActionService;
+import me.golemcore.bot.domain.scheduling.DelayedSessionActionService;
 import me.golemcore.bot.domain.service.SessionIdentitySupport;
 import me.golemcore.bot.domain.service.StringValueSupport;
 import org.slf4j.Logger;

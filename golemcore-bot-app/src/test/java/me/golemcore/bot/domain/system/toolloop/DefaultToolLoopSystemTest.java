@@ -4,7 +4,7 @@ import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.ToolResult;
-import me.golemcore.bot.domain.service.ContextCompactionPolicy;
+import me.golemcore.bot.domain.context.compaction.ContextCompactionPolicy;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
