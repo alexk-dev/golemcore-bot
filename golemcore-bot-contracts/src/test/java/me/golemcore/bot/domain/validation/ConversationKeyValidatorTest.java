@@ -30,6 +30,18 @@ class ConversationKeyValidatorTest {
 
         assertThrows(IllegalArgumentException.class,
                 () -> ConversationKeyValidator.normalizeForActivationOrThrow("abc", key -> false));
+        assertThrows(IllegalArgumentException.class,
+                () -> ConversationKeyValidator.normalizeForActivationOrThrow("abc", null));
+    }
+
+    @Test
+    void shouldRejectBlankAndInvalidLegacyKeys() {
+        assertFalse(ConversationKeyValidator.isLegacyCompatibleConversationKey(null));
+        assertFalse(ConversationKeyValidator.isLegacyCompatibleConversationKey(" "));
+        assertFalse(ConversationKeyValidator.isLegacyCompatibleConversationKey("invalid.key"));
+        assertEquals("legacy_1", ConversationKeyValidator.normalizeLegacyCompatibleOrThrow(" legacy_1 "));
+        assertThrows(IllegalArgumentException.class,
+                () -> ConversationKeyValidator.normalizeLegacyCompatibleOrThrow("invalid.key"));
     }
 
     @Test

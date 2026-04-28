@@ -43,4 +43,36 @@ class RuntimeConfigRedactorTest {
         assertTrue(cfg.getTelegram().getToken().getPresent());
         assertTrue(embeddings.getApiKey().getPresent());
     }
+
+    @Test
+    void shouldIgnoreMissingConfig() {
+        redactor.redactSecrets(null);
+    }
+
+    @Test
+    void shouldIgnoreMissingNestedOptionalSections() {
+        RuntimeConfig cfg = RuntimeConfig.builder().build();
+        cfg.setLlm(null);
+        cfg.setSelfEvolving(null);
+
+        redactor.redactSecrets(cfg);
+
+        assertNull(cfg.getTelegram().getToken());
+    }
+
+    @Test
+    void shouldIgnoreMissingProviderAndEmbeddingBranches() {
+        RuntimeConfig cfg = RuntimeConfig.builder().build();
+        cfg.getLlm().setProviders(new LinkedHashMap<>());
+        cfg.getLlm().getProviders().put("missing", null);
+        cfg.setSelfEvolving(
+                RuntimeConfig.SelfEvolvingConfig.builder()
+                        .tactics(RuntimeConfig.SelfEvolvingTacticsConfig.builder()
+                                .search(RuntimeConfig.SelfEvolvingTacticSearchConfig.builder().build()).build())
+                        .build());
+
+        redactor.redactSecrets(cfg);
+
+        assertNull(cfg.getLlm().getProviders().get("missing"));
+    }
 }
