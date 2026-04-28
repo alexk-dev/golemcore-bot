@@ -31,6 +31,8 @@ public class ToolUseFingerprintService {
     private static final Set<String> IDEMPOTENT_FILESYSTEM_MUTATIONS = Set.of(
             "write_file", "delete", "create_directory", "mkdir");
     private static final Set<String> NON_IDEMPOTENT_FILESYSTEM_MUTATIONS = Set.of("append");
+    private static final Set<String> SHELL_WORKING_DIRECTORY_FIELDS = Set.of(
+            "cwd", "workdir", "workingdirectory", "working_directory");
 
     public ToolUseFingerprint fingerprint(Message.ToolCall toolCall) {
         String toolName = normalizeToolName(toolCall != null ? toolCall.getName() : null);
@@ -106,11 +108,19 @@ public class ToolUseFingerprintService {
             String fieldName = String.valueOf(entry.getKey());
             String normalizedField = normalizeValue(fieldName);
             if (!VOLATILE_FIELDS.contains(normalizedField)) {
-                sorted.put(fieldName, canonicalizeMapValue(toolName, normalizedField, entry.getValue()));
+                sorted.put(canonicalFieldName(toolName, fieldName, normalizedField),
+                        canonicalizeMapValue(toolName, normalizedField, entry.getValue()));
             }
         }
         result.putAll(sorted);
         return result;
+    }
+
+    private String canonicalFieldName(String toolName, String fieldName, String normalizedField) {
+        if (ToolNames.SHELL.equals(toolName) && SHELL_WORKING_DIRECTORY_FIELDS.contains(normalizedField)) {
+            return "cwd";
+        }
+        return fieldName;
     }
 
     private Object canonicalizeMapValue(String toolName, String normalizedField, Object entryValue) {
@@ -118,6 +128,10 @@ public class ToolUseFingerprintService {
             return "<redacted>";
         }
         if (ToolNames.FILESYSTEM.equals(toolName) && "path".equals(normalizedField)
+                && entryValue instanceof String stringValue) {
+            return normalizePath(stringValue);
+        }
+        if (ToolNames.SHELL.equals(toolName) && SHELL_WORKING_DIRECTORY_FIELDS.contains(normalizedField)
                 && entryValue instanceof String stringValue) {
             return normalizePath(stringValue);
         }

@@ -90,10 +90,11 @@ Default runtime shape:
 
 Field notes:
 
-- `repeatGuardEnabled`: enables pre-execution repeat protection.
+- `repeatGuardEnabled`: enables pre-execution repeat protection. When disabled, the guard is a hard kill switch and
+  does not accumulate future-blocking ledger state.
 - `repeatGuardShadowMode`: records warning telemetry and model-visible hints for would-block decisions while still allowing execution.
 - `repeatGuardMaxSameObservePerTurn`: successful identical observe calls allowed in the current verified state before blocking.
-- `repeatGuardMaxSameUnknownPerTurn`: successful identical unknown execution calls, including shell, allowed before blocking. Unknown executions do not by themselves prove that workspace or remote state changed.
+- `repeatGuardMaxSameUnknownPerTurn`: successful identical unknown execution calls, including shell, allowed before blocking in the current verified state. Unknown executions do not by themselves prove that workspace or remote state changed, but verified filesystem mutations reset the repeat window for local shell-style commands such as repeated test runs.
 - `repeatGuardMaxBlockedRepeatsPerTurn`: stops a turn after repeated ignored guard hints.
 - `repeatGuardMinPollIntervalSeconds`: minimum backoff before repeating the same polling call, independent of unrelated local environment changes.
 - `repeatGuardAutoLedgerTtlMinutes`: TTL for autonomous task/goal repeat ledgers under `auto/tool-ledgers/`; applies to observations, polling, unknown executions and guard-blocked synthetic records.
@@ -102,6 +103,11 @@ The persisted auto ledger stores fingerprints, output digests and environment ve
 bounded records per work item, and it does not persist per-turn warning/block counters, full tool outputs or raw
 secret-like arguments. Policy denials, confirmation denials and guard synthetic records may be retained for diagnostics,
 but they are not counted as successful prior executions for repeat-block decisions.
+
+Repeat warning hints are appended only after all tool results for the current assistant tool-call batch have been
+written. This keeps strict provider tool-call adjacency intact while still giving the model guidance before the next
+LLM call. Shell fingerprints include normalized `cwd`, `workdir` and `workingDirectory` values, so equivalent relative
+working directories do not bypass the repeat guard.
 
 ### SelfEvolving
 

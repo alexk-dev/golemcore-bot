@@ -24,10 +24,13 @@ import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.ModelSelectionService;
+import me.golemcore.bot.domain.model.RuntimeEvent;
+import me.golemcore.bot.domain.model.RuntimeEventType;
 import me.golemcore.bot.domain.model.SessionIdentity;
 import me.golemcore.bot.domain.model.ToolFailureKind;
 import me.golemcore.bot.domain.model.ToolNames;
 import me.golemcore.bot.domain.model.ToolResult;
+import me.golemcore.bot.domain.events.RuntimeEventService;
 import me.golemcore.bot.domain.planning.PlanService;
 import me.golemcore.bot.domain.system.toolloop.repeat.ToolRepeatGuard;
 import me.golemcore.bot.domain.system.toolloop.repeat.ToolRepeatGuardSettings;
@@ -156,6 +159,44 @@ class ToolExecutionPhaseRepeatGuardTest {
     }
 
     @Test
+    void warnHintIsAppendedOnlyAfterAllToolResultsInBatch() {
+        ToolExecutionPhase phase = phase();
+        TurnState turnState = buildTurnState();
+        HistoryWriter realHistoryWriter = new DefaultHistoryWriter(clock);
+        Message.ToolCall repeated = readCall("tc-repeat");
+        Message.ToolCall second = readCall("tc-second", "pom.xml");
+        repeatGuard.afterOutcome(turnState, repeated, success(repeated, "first"));
+        when(toolExecutor.execute(turnState.getContext(), repeated)).thenReturn(success(repeated, "second"));
+        when(toolExecutor.execute(turnState.getContext(), second)).thenReturn(success(second, "pom"));
+
+        phase.execute(turnState, LlmResponse.builder().toolCalls(List.of(repeated, second)).build(),
+                realHistoryWriter, llmCallPhase);
+
+        assertMessageOrder(turnState.getContext().getMessages(),
+                "assistant", "tool:tc-repeat", "tool:tc-second", "user:tool_recovery");
+    }
+
+    @Test
+    void warnHintIsNotInterleavedWhenWarnedExecutionFailsAndRecoveryHintIsInjected() {
+        ToolExecutionPhase phase = phase();
+        TurnState turnState = buildTurnState();
+        HistoryWriter realHistoryWriter = new DefaultHistoryWriter(clock);
+        Message.ToolCall repeated = readCall("tc-repeat");
+        Message.ToolCall second = readCall("tc-second", "pom.xml");
+        repeatGuard.afterOutcome(turnState, repeated, success(repeated, "first"));
+        when(toolExecutor.execute(turnState.getContext(), repeated)).thenReturn(failure(repeated, "boom"));
+        when(failurePolicy.evaluate(any(), any(), any()))
+                .thenReturn(new ToolFailurePolicy.Verdict.RecoveryHint("recover safely", "fp", "REPEAT_GUARD"));
+
+        phase.execute(turnState, LlmResponse.builder().toolCalls(List.of(repeated, second)).build(),
+                realHistoryWriter, llmCallPhase);
+
+        assertMessageOrder(turnState.getContext().getMessages(),
+                "assistant", "tool:tc-repeat", "tool:tc-second", "user:tool_recovery");
+        assertEquals("recover safely", turnState.getContext().getMessages().get(3).getContent());
+    }
+
+    @Test
     void guardDoesNotBypassPlanModePolicyDenial() {
         planService.activatePlanMode(new SessionIdentity("web", "chat-1"), "chat-1", null);
         ToolExecutionPhase phase = phaseWithPlanMode();
@@ -200,6 +241,51 @@ class ToolExecutionPhaseRepeatGuardTest {
         assertTrue(turnState.getContext().getToolResults().get("tc-shell").isSuccess());
     }
 
+    @Test
+    void repeatGuardStopEmitsRepeatGuardStopReason() {
+        RuntimeEventService runtimeEventService = new RuntimeEventService(clock);
+        ToolExecutionPhase phase = new ToolExecutionPhase(toolExecutor, failurePolicy, runtimeEventService, null,
+                null, null, clock, null, repeatGuard);
+        TurnState turnState = buildTurnState();
+        for (int index = 0; index < ToolRepeatGuardSettings.defaults().maxBlockedRepeatsPerTurn(); index++) {
+            turnState.getToolUseLedger().incrementBlockedRepeatCount();
+        }
+        Message.ToolCall toolCall = readCall("tc-repeat");
+        when(failurePolicy.evaluate(any(), any(), any()))
+                .thenReturn(new ToolFailurePolicy.Verdict.StopTurn(ToolRepeatGuard.STOP_TURN_REASON));
+        LlmCallPhase eventLlmCallPhase = buildLlmCallPhaseWithEvents(runtimeEventService);
+
+        ToolExecutionPhase.ToolBatchOutcome outcome = phase.execute(turnState, response(toolCall), historyWriter,
+                eventLlmCallPhase);
+
+        assertInstanceOf(ToolExecutionPhase.ToolBatchOutcome.StopTurn.class, outcome);
+        @SuppressWarnings("unchecked")
+        List<RuntimeEvent> events = (List<RuntimeEvent>) turnState.getContext()
+                .getAttribute(ContextAttributes.RUNTIME_EVENTS);
+        RuntimeEvent turnFinished = events.stream()
+                .filter(event -> event.type() == RuntimeEventType.TURN_FINISHED)
+                .findFirst()
+                .orElseThrow();
+        assertEquals("repeat_guard_stop", turnFinished.payload().get("reason"));
+    }
+
+    private LlmCallPhase buildLlmCallPhaseWithEvents(RuntimeEventService runtimeEventService) {
+        ModelSelectionService modelSelectionService = mock(ModelSelectionService.class);
+        when(modelSelectionService.resolveMaxInputTokensForContext(any())).thenReturn(2_000_000_000);
+        return new LlmCallPhase(
+                mock(LlmPort.class),
+                mock(ConversationViewBuilder.class),
+                modelSelectionService,
+                null,
+                mock(LlmRequestPreflightPhase.class),
+                mock(ContextCompactionCoordinator.class),
+                runtimeEventService,
+                null,
+                null,
+                null,
+                clock);
+    }
+
     private ToolExecutionPhase phase() {
         return new ToolExecutionPhase(toolExecutor, failurePolicy, null, null, null, null, clock, null, repeatGuard);
     }
@@ -232,16 +318,40 @@ class ToolExecutionPhaseRepeatGuardTest {
     }
 
     private Message.ToolCall readCall(String id) {
+        return readCall(id, "README.md");
+    }
+
+    private Message.ToolCall readCall(String id, String path) {
         return Message.ToolCall.builder()
                 .id(id)
                 .name("filesystem")
-                .arguments(Map.of("operation", "read_file", "path", "README.md"))
+                .arguments(Map.of("operation", "read_file", "path", path))
                 .build();
     }
 
     private ToolExecutionOutcome success(Message.ToolCall toolCall, String content) {
         return new ToolExecutionOutcome(toolCall.getId(), toolCall.getName(), ToolResult.success(content), content,
                 false, null);
+    }
+
+    private ToolExecutionOutcome failure(Message.ToolCall toolCall, String error) {
+        return new ToolExecutionOutcome(toolCall.getId(), toolCall.getName(),
+                ToolResult.failure(ToolFailureKind.EXECUTION_FAILED, error), error, false, null);
+    }
+
+    private void assertMessageOrder(List<Message> messages, String... expected) {
+        assertEquals(expected.length, messages.size());
+        for (int index = 0; index < expected.length; index++) {
+            Message message = messages.get(index);
+            String actual = message.getRole();
+            if ("tool".equals(message.getRole())) {
+                actual += ":" + message.getToolCallId();
+            }
+            if ("user".equals(message.getRole())) {
+                actual += ":" + message.getMetadata().get(ContextAttributes.MESSAGE_INTERNAL_KIND);
+            }
+            assertEquals(expected[index], actual);
+        }
     }
 
     private void recordTwoSuccessfulRepeats(TurnState turnState, Message.ToolCall toolCall) {

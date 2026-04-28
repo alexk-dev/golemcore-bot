@@ -180,6 +180,7 @@ class ToolExecutionPhase {
 
         maybePublishIntent(context, response);
         historyWriter.appendAssistantToolCalls(context, response, toolCalls);
+        List<String> pendingWarningHints = new ArrayList<>();
 
         for (int index = 0; index < toolCalls.size(); index++) {
             Message.ToolCall toolCall = toolCalls.get(index);
@@ -199,7 +200,8 @@ class ToolExecutionPhase {
             }
 
             // --- Execute tool call ---
-            ToolExecutionOutcome outcome = executeToolCall(context, toolCall, turnState, historyWriter);
+            ToolExecutionOutcome outcome = executeToolCall(context, toolCall, turnState, historyWriter,
+                    pendingWarningHints);
 
             if (shouldStopAfterPlanExit(planModeActiveAtBatchStart, toolCall, outcome)) {
                 llmCallPhase.applyAttachments(context, turnState.getAccumulatedAttachments());
@@ -239,6 +241,7 @@ class ToolExecutionPhase {
             }
         }
 
+        appendPendingWarningHints(context, historyWriter, pendingWarningHints);
         return new ToolBatchOutcome.Continue();
     }
 
@@ -259,7 +262,8 @@ class ToolExecutionPhase {
 
         private ToolExecutionOutcome executeToolCall(AgentContext context, Message.ToolCall toolCall,
                 TurnState turnState,
-                HistoryWriter historyWriter) {
+                HistoryWriter historyWriter,
+                List<String> pendingWarningHints) {
             emitRuntimeEvent(context, RuntimeEventType.TOOL_STARTED,
                     eventPayload("toolCallId", toolCall.getId(), "tool", toolCall.getName()));
 
@@ -298,12 +302,28 @@ class ToolExecutionPhase {
                 recordToolProgress(context, toolCall, outcome, toolDuration);
                 historyWriter.appendToolResult(context, outcome);
                 if (execution.warningHint() != null) {
-                    historyWriter.appendInternalRecoveryHint(context, execution.warningHint());
+                    pendingWarningHints.add(execution.warningHint());
                 }
                 repeatGuard.afterOutcome(turnState, toolCall, outcome);
             }
 
             return outcome;
+        }
+
+        private void appendPendingWarningHints(AgentContext context, HistoryWriter historyWriter,
+                List<String> pendingWarningHints) {
+            if (pendingWarningHints == null || pendingWarningHints.isEmpty()) {
+                return;
+            }
+            List<String> uniqueHints = new ArrayList<>();
+            for (String hint : pendingWarningHints) {
+                if (hint != null && !hint.isBlank() && !uniqueHints.contains(hint)) {
+                    uniqueHints.add(hint);
+                }
+            }
+            if (!uniqueHints.isEmpty()) {
+                historyWriter.appendInternalRecoveryHint(context, String.join("\n\n", uniqueHints));
+            }
         }
 
         private RepeatGuardExecution executeAfterRepeatGuard(AgentContext context, Message.ToolCall toolCall,
@@ -471,6 +491,12 @@ class ToolExecutionPhase {
         // ==================== Utility ====================
 
         private String stopReasonKey(String reason) {
+            if (reason == null) {
+                return "tool_stop";
+            }
+            if (reason.contains("repeat guard") || reason.contains("repeated blocked tool calls")) {
+                return "repeat_guard_stop";
+            }
             if (reason.contains("confirmation denied")) {
                 return "confirmation_denied";
             }

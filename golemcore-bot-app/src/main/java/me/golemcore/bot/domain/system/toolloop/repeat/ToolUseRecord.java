@@ -5,6 +5,29 @@ import java.time.Instant;
 /**
  * Bounded ledger entry for a tool call result or synthetic guard outcome.
  */
-public record ToolUseRecord(ToolUseFingerprint fingerprint,Instant startedAt,Instant finishedAt,boolean success,String failureKind,String outputDigest,int environmentVersion,boolean guardBlocked,String decisionReason){
+// @formatter:off
+public record ToolUseRecord(
+        ToolUseFingerprint fingerprint,
+        Instant startedAt,
+        Instant finishedAt,
+        boolean success,
+        String failureKind,
+        String outputDigest,
+        int environmentVersion,
+        boolean guardBlocked,
+        String decisionReason) {
 
-public ToolUseRecord withEnvironmentVersion(int version){return new ToolUseRecord(fingerprint,startedAt,finishedAt,success,failureKind,outputDigest,version,guardBlocked,decisionReason);}}
+    public ToolUseRecord withEnvironmentVersion(int version) {
+        return new ToolUseRecord(
+                fingerprint,
+                startedAt,
+                finishedAt,
+                success,
+                failureKind,
+                outputDigest,
+                version,
+                guardBlocked,
+                decisionReason);
+    }
+}
+// @formatter:on

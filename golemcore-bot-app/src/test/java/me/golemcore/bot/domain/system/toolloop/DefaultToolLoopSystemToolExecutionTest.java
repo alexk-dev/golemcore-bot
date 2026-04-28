@@ -40,6 +40,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
@@ -243,6 +244,66 @@ class DefaultToolLoopSystemToolExecutionTest extends DefaultToolLoopSystemFixtur
 
         assertTrue(result.finalAnswerReady());
         verify(toolExecutor).execute(context, shellCall);
+    }
+
+    @Test
+    void autonomousCodingLoopMayRepeatSameShellCommandAfterFileEdit() {
+        AgentContext context = buildContext();
+        Message.ToolCall firstWrite = Message.ToolCall.builder()
+                .id("tc-write-1")
+                .name("filesystem")
+                .arguments(Map.of("operation", "write_file", "path", "src/main/java/App.java",
+                        "content", "class App {}"))
+                .build();
+        Message.ToolCall firstShell = Message.ToolCall.builder()
+                .id("tc-shell-1")
+                .name("shell")
+                .arguments(Map.of("command", "mvn test", "cwd", "."))
+                .build();
+        Message.ToolCall secondWrite = Message.ToolCall.builder()
+                .id("tc-write-2")
+                .name("filesystem")
+                .arguments(Map.of("operation", "write_file", "path", "src/main/java/App.java",
+                        "content", "class App { String value; }"))
+                .build();
+        Message.ToolCall secondShell = Message.ToolCall.builder()
+                .id("tc-shell-2")
+                .name("shell")
+                .arguments(Map.of("command", "mvn test", "cwd", "."))
+                .build();
+        DefaultToolLoopSystem guardedSystem = DefaultToolLoopSystem.builder()
+                .llmPort(llmPort)
+                .toolExecutor(toolExecutor)
+                .historyWriter(historyWriter)
+                .viewBuilder(viewBuilder)
+                .turnSettings(me.golemcore.bot.support.TestPorts.turn(turnSettings))
+                .settings(me.golemcore.bot.support.TestPorts.toolLoop(settings))
+                .modelSelectionService(modelSelectionService)
+                .contextCompactionPolicy(new ContextCompactionPolicy(runtimeConfigService, modelSelectionService))
+                .repeatGuard(new ToolRepeatGuard(new ToolUseFingerprintService(), ToolRepeatGuardSettings.defaults(),
+                        clock))
+                .clock(clock)
+                .build();
+
+        when(llmPort.chat(any()))
+                .thenReturn(CompletableFuture.completedFuture(toolCallResponse(List.of(firstWrite))))
+                .thenReturn(CompletableFuture.completedFuture(toolCallResponse(List.of(firstShell))))
+                .thenReturn(CompletableFuture.completedFuture(toolCallResponse(List.of(secondWrite))))
+                .thenReturn(CompletableFuture.completedFuture(toolCallResponse(List.of(secondShell))))
+                .thenReturn(CompletableFuture.completedFuture(finalResponse(CONTENT_DONE)));
+        when(toolExecutor.execute(eq(context), any())).thenAnswer(invocation -> {
+            Message.ToolCall call = invocation.getArgument(1, Message.ToolCall.class);
+            return new ToolExecutionOutcome(
+                    call.getId(), call.getName(), ToolResult.success("ok"), "ok", false, null);
+        });
+
+        ToolLoopTurnResult result = guardedSystem.processTurn(context);
+
+        assertTrue(result.finalAnswerReady());
+        verify(toolExecutor, times(2)).execute(eq(context),
+                argThat(call -> call != null && "shell".equals(call.getName())));
+        assertTrue(context.getToolResults().get("tc-shell-1").isSuccess());
+        assertTrue(context.getToolResults().get("tc-shell-2").isSuccess());
     }
 
     @Test

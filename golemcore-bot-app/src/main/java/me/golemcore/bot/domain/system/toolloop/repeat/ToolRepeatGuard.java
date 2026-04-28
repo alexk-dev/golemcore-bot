@@ -63,7 +63,7 @@ public class ToolRepeatGuard {
         return switch (fingerprint.category()) {
         case OBSERVE -> decideCountedRepeat(ledger, fingerprint, settings.maxSameObservePerTurn(), settings,
                 durableLedgerActive);
-        case EXECUTE_UNKNOWN -> decideAnyEnvironmentRepeat(
+        case EXECUTE_UNKNOWN -> decideCountedRepeat(
                 ledger, fingerprint, settings.maxSameUnknownPerTurn(), settings, durableLedgerActive);
         case POLL -> decidePolling(ledger, fingerprint, settings);
         case MUTATE_IDEMPOTENT, MUTATE_NON_IDEMPOTENT -> decideMutation(ledger, fingerprint, settings,
@@ -73,6 +73,9 @@ public class ToolRepeatGuard {
     }
 
     public void afterOutcome(TurnState turnState, Message.ToolCall toolCall, ToolExecutionOutcome outcome) {
+        if (!settings().enabled()) {
+            return;
+        }
         if (turnState == null || toolCall == null || outcome == null || outcome.toolResult() == null) {
             return;
         }
@@ -119,24 +122,6 @@ public class ToolRepeatGuard {
             ToolRepeatGuardSettings settings,
             boolean durableLedgerActive) {
         int count = ledger.successfulRepeatCountInCurrentEnvironment(fingerprint);
-        if (count <= 0) {
-            return new ToolRepeatDecision.Allow(fingerprint);
-        }
-        if (count < maxAllowed) {
-            ledger.incrementWarnedRepeatCount();
-            return new ToolRepeatDecision.WarnAndAllow(fingerprint, repeatHint(fingerprint, count,
-                    durableLedgerActive));
-        }
-        return blockOrShadow(ledger, fingerprint, repeatHint(fingerprint, count, durableLedgerActive), settings);
-    }
-
-    private ToolRepeatDecision decideAnyEnvironmentRepeat(
-            ToolUseLedger ledger,
-            ToolUseFingerprint fingerprint,
-            int maxAllowed,
-            ToolRepeatGuardSettings settings,
-            boolean durableLedgerActive) {
-        int count = ledger.successfulRepeatCount(fingerprint);
         if (count <= 0) {
             return new ToolRepeatDecision.Allow(fingerprint);
         }

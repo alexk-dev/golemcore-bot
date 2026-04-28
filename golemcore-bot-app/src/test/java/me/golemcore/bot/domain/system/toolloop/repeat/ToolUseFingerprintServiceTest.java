@@ -40,6 +40,27 @@ class ToolUseFingerprintServiceTest {
     }
 
     @Test
+    void normalizesShellWorkingDirectoryForEquivalentPaths() {
+        Message.ToolCall first = toolCall(ToolNames.SHELL, Map.of("command", "ls -la", "cwd", "."));
+        Message.ToolCall second = toolCall(ToolNames.SHELL, Map.of("command", "ls -la", "cwd", "./"));
+        Message.ToolCall third = toolCall(ToolNames.SHELL, Map.of("command", "ls -la", "cwd", "docs/.."));
+
+        assertEquals(service.fingerprint(first).stableKey(), service.fingerprint(second).stableKey());
+        assertEquals(service.fingerprint(first).stableKey(), service.fingerprint(third).stableKey());
+    }
+
+    @Test
+    void normalizesShellWorkdirAliasesForEquivalentPaths() {
+        Message.ToolCall first = toolCall(ToolNames.SHELL, Map.of("command", "pwd", "workdir", "src/../src"));
+        Message.ToolCall second = toolCall(ToolNames.SHELL, Map.of("command", "pwd", "workdir", "src"));
+        Message.ToolCall third = toolCall(ToolNames.SHELL,
+                Map.of("command", "pwd", "workingDirectory", "src/."));
+
+        assertEquals(service.fingerprint(first).stableKey(), service.fingerprint(second).stableKey());
+        assertEquals(service.fingerprint(first).stableKey(), service.fingerprint(third).stableKey());
+    }
+
+    @Test
     void redactsSecretLikeArgumentsBeforeHashingAndDebugSnapshot() {
         Message.ToolCall first = toolCall("http.get",
                 Map.of("url", "https://example.test", "apiKey", "secret-one", "password", "secret-two"));

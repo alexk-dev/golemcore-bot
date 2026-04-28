@@ -8,6 +8,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.Message;
@@ -193,6 +194,20 @@ class ToolRepeatGuardTest {
     }
 
     @Test
+    void allowsExactUnknownExecutionAfterVerifiedFilesystemMutationChangedEnvironment() {
+        TurnState turnState = turnState();
+        Message.ToolCall shell = toolCall("shell", Map.of("command", "mvn test", "cwd", "."));
+        Message.ToolCall write = writeCall("src/main/java/App.java");
+        guard.afterOutcome(turnState, shell, success(shell, "first test run"));
+        guard.afterOutcome(turnState, shell, success(shell, "second test run"));
+        guard.afterOutcome(turnState, write, success(write, "updated source"));
+
+        ToolRepeatDecision decision = guard.beforeExecute(turnState, shell);
+
+        assertInstanceOf(ToolRepeatDecision.Allow.class, decision);
+    }
+
+    @Test
     void doesNotBlockControlToolPlanExit() {
         TurnState turnState = turnState();
         Message.ToolCall planExit = toolCall("plan_exit", Map.of());
@@ -227,6 +242,23 @@ class ToolRepeatGuardTest {
         ToolRepeatDecision decision = disabledGuard.beforeExecute(turnState, call);
 
         assertInstanceOf(ToolRepeatDecision.Allow.class, decision);
+    }
+
+    @Test
+    void disabledGuardDoesNotAccumulateFutureBlockingLedgerState() {
+        TurnState turnState = turnState();
+        Message.ToolCall call = readCall("README.md");
+        AtomicReference<ToolRepeatGuardSettings> settings = new AtomicReference<>(ToolRepeatGuardSettings.disabled());
+        ToolRepeatGuard switchableGuard = new ToolRepeatGuard(new ToolUseFingerprintService(), settings::get, clock);
+        switchableGuard.afterOutcome(turnState, call, success(call, "first"));
+        switchableGuard.afterOutcome(turnState, call, success(call, "second"));
+
+        settings.set(ToolRepeatGuardSettings.defaults());
+        ToolRepeatDecision decision = switchableGuard.beforeExecute(turnState, call);
+
+        assertInstanceOf(ToolRepeatDecision.Allow.class, decision);
+        assertEquals(0, turnState.getToolUseLedger().successfulRepeatCountInCurrentEnvironment(
+                new ToolUseFingerprintService().fingerprint(call)));
     }
 
     @Test

@@ -34,6 +34,11 @@ polling and re-check behavior after state changes.
 - [x] Make `EXECUTE_UNKNOWN` TTL-bound and prevent unverified unknown execution from resetting observation or poll windows.
 - [x] Count only successful actual executions for repeat blockers while keeping synthetic failures available as diagnostics.
 - [x] Cap durable ledger records per autonomous work item.
+- [x] Keep repeat warning hints batch-safe so user/internal hints are never interleaved between tool results.
+- [x] Allow exact shell repeats after verified local filesystem mutations.
+- [x] Normalize shell `cwd`/`workdir`/`workingDirectory` values in fingerprints.
+- [x] Treat disabled repeat guard as a hard kill switch with no ledger learning.
+- [x] Emit a dedicated `repeat_guard_stop` runtime reason for repeat-guard stop turns.
 - [x] Document repeat guard defaults, storage layout and troubleshooting.
 - [x] Run full local verification.
 - [x] Push the branch and open a `feat:` PR.
