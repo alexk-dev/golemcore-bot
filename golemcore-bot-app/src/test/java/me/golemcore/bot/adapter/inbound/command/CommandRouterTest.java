@@ -180,19 +180,22 @@ class CommandRouterTest {
 
         buildPropertiesProvider = mock(ObjectProvider.class);
 
-        router = new CommandRouter(
-                skillComponent,
-                List.of(tool1, tool2, tool3),
-                sessionService,
-                usageTracker,
-                preferencesService,
-                compactionService,
+        router = new CommandRouter(new CommandDispatcher(List.of(
+                new SystemCommandHandler(
+                        skillComponent,
+                        List.of(tool1, tool2, tool3),
+                        sessionService,
+                        usageTracker,
+                        preferencesService,
+                        compactionService,
+                        automationCommandHandler,
+                        planCommandService,
+                        delayedActionPolicyService,
+                        runCoordinator,
+                        buildPropertiesProvider),
                 automationCommandHandler,
                 modelSelectionCommandHandler,
-                planCommandHandler,
-                delayedActionPolicyService,
-                runCoordinator,
-                buildPropertiesProvider);
+                planCommandHandler), preferencesService));
     }
 
     private ToolComponent mockTool(String name, String description, boolean enabled) {
@@ -847,17 +850,17 @@ class CommandRouterTest {
 
     @Test
     void formatTokensMillions() {
-        assertEquals("1.5M", CommandRouter.formatTokens(1_500_000));
+        assertEquals("1.5M", SystemCommandHandler.formatTokens(1_500_000));
     }
 
     @Test
     void formatTokensThousands() {
-        assertEquals("12.3K", CommandRouter.formatTokens(12_300));
+        assertEquals("12.3K", SystemCommandHandler.formatTokens(12_300));
     }
 
     @Test
     void formatTokensSmall() {
-        assertEquals("999", CommandRouter.formatTokens(999));
+        assertEquals("999", SystemCommandHandler.formatTokens(999));
     }
 
     // ===== Schedule commands =====

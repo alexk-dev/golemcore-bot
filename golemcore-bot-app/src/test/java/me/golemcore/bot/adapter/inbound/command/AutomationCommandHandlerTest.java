@@ -23,8 +23,8 @@ import me.golemcore.bot.domain.model.DiaryEntry;
 import me.golemcore.bot.domain.model.Goal;
 import me.golemcore.bot.domain.model.ScheduleEntry;
 import me.golemcore.bot.domain.model.UserPreferences;
+import me.golemcore.bot.domain.command.CommandOutcome;
 import me.golemcore.bot.domain.runtimeconfig.UserPreferencesService;
-import me.golemcore.bot.port.inbound.CommandPort;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.context.ApplicationEventPublisher;
@@ -71,10 +71,10 @@ class AutomationCommandHandlerTest {
     void shouldEnableAutoModeAndPublishRegistrationEvent() {
         when(automationCommandService.isAutoFeatureEnabled()).thenReturn(true);
 
-        CommandPort.CommandResult result = handler.handleAuto(List.of("on"), "telegram", "12345", "transport-12345");
+        CommandOutcome result = handler.handleAuto(List.of("on"), "telegram", "12345", "transport-12345");
 
         assertTrue(result.success());
-        assertEquals("command.auto.enabled", result.output());
+        assertEquals("command.auto.enabled", result.fallbackText());
         verify(automationCommandService).enableAutoMode();
         verify(eventPublisher).publishEvent(any(AutoModeChannelRegisteredEvent.class));
     }
@@ -84,11 +84,11 @@ class AutomationCommandHandlerTest {
         when(automationCommandService.isAutoFeatureEnabled()).thenReturn(true);
         when(automationCommandService.getAutoStatus()).thenReturn(new AutomationCommandService.AutoStatus(true));
 
-        CommandPort.CommandResult status = handler.handleAuto(List.of(), "telegram", "12345", "12345");
-        CommandPort.CommandResult usage = handler.handleAuto(List.of("weird"), "telegram", "12345", "12345");
+        CommandOutcome status = handler.handleAuto(List.of(), "telegram", "12345", "12345");
+        CommandOutcome usage = handler.handleAuto(List.of("weird"), "telegram", "12345", "12345");
 
-        assertEquals("command.auto.status ON", status.output());
-        assertEquals("command.auto.usage", usage.output());
+        assertEquals("command.auto.status ON", status.fallbackText());
+        assertEquals("command.auto.usage", usage.fallbackText());
     }
 
     @Test
@@ -113,15 +113,15 @@ class AutomationCommandHandlerTest {
         when(automationCommandService.getDiary(50))
                 .thenReturn(new AutomationCommandService.DiaryOverview(List.of(entry)));
 
-        CommandPort.CommandResult goals = handler.handleGoals();
-        CommandPort.CommandResult tasks = handler.handleTasks();
-        CommandPort.CommandResult diary = handler.handleDiary(List.of("999"));
+        CommandOutcome goals = handler.handleGoals();
+        CommandOutcome tasks = handler.handleTasks();
+        CommandOutcome diary = handler.handleDiary(List.of("999"));
 
-        assertTrue(goals.output().contains("Ship PR"));
-        assertTrue(goals.output().contains("Finalize hex cleanup"));
-        assertTrue(tasks.output().contains("task-1"));
-        assertTrue(tasks.output().contains("task-2"));
-        assertTrue(diary.output().contains("Tests passed"));
+        assertTrue(goals.fallbackText().contains("Ship PR"));
+        assertTrue(goals.fallbackText().contains("Finalize hex cleanup"));
+        assertTrue(tasks.fallbackText().contains("task-1"));
+        assertTrue(tasks.fallbackText().contains("task-2"));
+        assertTrue(diary.fallbackText().contains("Tests passed"));
         verify(automationCommandService).getDiary(50);
     }
 
@@ -154,18 +154,18 @@ class AutomationCommandHandlerTest {
         when(automationCommandService.createGoal("session-1", "New goal"))
                 .thenReturn(new AutomationCommandService.GoalCreated(Goal.builder().title("New goal").build()));
 
-        CommandPort.CommandResult goals = handler.handleGoals("session-1");
-        CommandPort.CommandResult tasks = handler.handleTasks("session-1");
-        CommandPort.CommandResult diary = handler.handleDiary(List.of("bad-count"), "session-1");
-        CommandPort.CommandResult created = handler.handleGoal(List.of("New", "goal"), "session-1");
+        CommandOutcome goals = handler.handleGoals("session-1");
+        CommandOutcome tasks = handler.handleTasks("session-1");
+        CommandOutcome diary = handler.handleDiary(List.of("bad-count"), "session-1");
+        CommandOutcome created = handler.handleGoal(List.of("New", "goal"), "session-1");
 
-        assertTrue(goals.output().contains("Session PR"));
-        assertTrue(goals.output().contains("PAUSED"));
-        assertTrue(tasks.output().contains("[ ] Plan"));
-        assertTrue(tasks.output().contains("[!] Fix"));
-        assertTrue(tasks.output().contains("[-] Skip"));
-        assertTrue(diary.output().contains("Session note"));
-        assertEquals("command.goal.created New goal", created.output());
+        assertTrue(goals.fallbackText().contains("Session PR"));
+        assertTrue(goals.fallbackText().contains("PAUSED"));
+        assertTrue(tasks.fallbackText().contains("[ ] Plan"));
+        assertTrue(tasks.fallbackText().contains("[!] Fix"));
+        assertTrue(tasks.fallbackText().contains("[-] Skip"));
+        assertTrue(diary.fallbackText().contains("Session note"));
+        assertEquals("command.goal.created New goal", created.fallbackText());
     }
 
     @Test
@@ -186,13 +186,13 @@ class AutomationCommandHandlerTest {
         when(automationCommandService.deleteSchedule("sched-1"))
                 .thenReturn(new AutomationCommandService.ScheduleDeleted("sched-1"));
 
-        CommandPort.CommandResult listResult = handler.handleSchedule(List.of());
-        CommandPort.CommandResult deleteResult = handler.handleSchedule(List.of("delete", "sched-1"));
+        CommandOutcome listResult = handler.handleSchedule(List.of());
+        CommandOutcome deleteResult = handler.handleSchedule(List.of("delete", "sched-1"));
 
-        assertTrue(listResult.output().contains("sched-1"));
-        assertTrue(listResult.output().contains("0 * * * *"));
+        assertTrue(listResult.fallbackText().contains("sched-1"));
+        assertTrue(listResult.fallbackText().contains("0 * * * *"));
         assertTrue(deleteResult.success());
-        assertEquals("command.schedule.deleted sched-1", deleteResult.output());
+        assertEquals("command.schedule.deleted sched-1", deleteResult.fallbackText());
     }
 
     @Test
@@ -214,15 +214,15 @@ class AutomationCommandHandlerTest {
                 .timezone("Europe/Moscow")
                 .build());
 
-        CommandPort.CommandResult listResult = handler.handleLater(List.of("list"), "telegram", "chat-1");
-        CommandPort.CommandResult cancelResult = handler.handleLater(List.of("cancel", "missing"), "telegram",
+        CommandOutcome listResult = handler.handleLater(List.of("list"), "telegram", "chat-1");
+        CommandOutcome cancelResult = handler.handleLater(List.of("cancel", "missing"), "telegram",
                 "chat-1");
 
-        assertTrue(listResult.output().contains("later-1"));
-        assertTrue(listResult.output().contains("Ping me"));
-        assertTrue(listResult.output().contains("2026-04-10 21:00"));
+        assertTrue(listResult.fallbackText().contains("later-1"));
+        assertTrue(listResult.fallbackText().contains("Ping me"));
+        assertTrue(listResult.fallbackText().contains("2026-04-10 21:00"));
         assertFalse(cancelResult.success());
-        assertEquals("command.later.not-found missing", cancelResult.output());
+        assertEquals("command.later.not-found missing", cancelResult.fallbackText());
     }
 
     @Test

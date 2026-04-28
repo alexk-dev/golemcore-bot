@@ -3,12 +3,16 @@ package me.golemcore.bot.adapter.inbound.command;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.application.command.AutomationCommandService;
+import me.golemcore.bot.domain.command.CommandExecutionContext;
+import me.golemcore.bot.domain.command.CommandInvocation;
+import me.golemcore.bot.domain.command.CommandOutcome;
 import me.golemcore.bot.domain.model.AutoModeChannelRegisteredEvent;
 import me.golemcore.bot.domain.model.AutoTask;
 import me.golemcore.bot.domain.model.DelayedSessionAction;
@@ -23,14 +27,23 @@ import org.springframework.stereotype.Component;
 
 @Component
 @Slf4j
-class AutomationCommandHandler {
+class AutomationCommandHandler implements CommandHandler {
 
     private static final String MSG_AUTO_NOT_AVAILABLE = "command.auto.not-available";
     private static final String DOUBLE_NEWLINE = "\n\n";
     private static final String SUBCMD_LIST = "list";
     private static final String CMD_GOAL = "goal";
     private static final String CMD_HELP = "help";
+    private static final String CMD_LATER = "later";
     private static final DateTimeFormatter LATER_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm z");
+    private static final List<String> COMMAND_NAMES = List.of(
+            "auto",
+            "goals",
+            CMD_GOAL,
+            "diary",
+            "tasks",
+            "schedule",
+            CMD_LATER);
 
     private final AutomationCommandService automationCommandService;
     private final UserPreferencesService preferencesService;
@@ -43,6 +56,56 @@ class AutomationCommandHandler {
         this.automationCommandService = automationCommandService;
         this.preferencesService = preferencesService;
         this.eventPublisher = eventPublisher;
+    }
+
+    @Override
+    public int order() {
+        return 30;
+    }
+
+    @Override
+    public List<String> commandNames() {
+        return COMMAND_NAMES;
+    }
+
+    @Override
+    public List<CommandPort.CommandDefinition> listCommands() {
+        List<CommandPort.CommandDefinition> commands = new ArrayList<>();
+        if (isLaterFeatureEnabled()) {
+            commands.add(new CommandPort.CommandDefinition(CMD_LATER, "Reminders and follow-ups",
+                    "/later [list|cancel|now|help]"));
+        }
+        if (isAutoFeatureEnabled()) {
+            commands.add(new CommandPort.CommandDefinition("auto", "Toggle auto mode", "/auto [on|off]"));
+            commands.add(new CommandPort.CommandDefinition("goals", "List goals", "/goals"));
+            commands.add(new CommandPort.CommandDefinition(CMD_GOAL, "Create a goal", "/goal <description>"));
+            commands.add(new CommandPort.CommandDefinition("tasks", "List tasks", "/tasks"));
+            commands.add(new CommandPort.CommandDefinition("diary", "Show diary entries", "/diary [count]"));
+            commands.add(new CommandPort.CommandDefinition("schedule", "Manage schedules", "/schedule [help]"));
+        }
+        return List.copyOf(commands);
+    }
+
+    @Override
+    public CommandOutcome handle(CommandInvocation invocation) {
+        CommandExecutionContext context = invocation.context();
+        String autoSessionChatId = context.hasExplicitSessionRouting()
+                ? context.effectiveSessionChatId()
+                : context.effectiveTransportChatId();
+        return switch (invocation.command()) {
+        case "auto" -> handleAuto(
+                invocation.args(),
+                context.channelType(),
+                autoSessionChatId,
+                context.effectiveTransportChatId());
+        case "goals" -> handleGoals(context.sessionId());
+        case CMD_GOAL -> handleGoal(invocation.args(), context.sessionId());
+        case "diary" -> handleDiary(invocation.args(), context.sessionId());
+        case "tasks" -> handleTasks(context.sessionId());
+        case "schedule" -> handleSchedule(invocation.args());
+        case CMD_LATER -> handleLater(invocation.args(), context.channelType(), context.effectiveConversationKey());
+        default -> CommandOutcome.failure(msg("command.unknown", invocation.command()));
+        };
     }
 
     boolean isAutoFeatureEnabled() {
@@ -73,19 +136,19 @@ class AutomationCommandHandler {
         return automationCommandService.isLaterFeatureEnabled();
     }
 
-    CommandPort.CommandResult handleAuto(
+    CommandOutcome handleAuto(
             List<String> args,
             String channelType,
             String sessionChatId,
             String transportChatId) {
         if (!automationCommandService.isAutoFeatureEnabled()) {
-            return CommandPort.CommandResult.success(msg(MSG_AUTO_NOT_AVAILABLE));
+            return CommandOutcome.success(msg(MSG_AUTO_NOT_AVAILABLE));
         }
 
         if (args.isEmpty()) {
             AutomationCommandService.AutoOutcome outcome = automationCommandService.getAutoStatus();
             AutomationCommandService.AutoStatus status = (AutomationCommandService.AutoStatus) outcome;
-            return CommandPort.CommandResult.success(msg("command.auto.status", status.enabled() ? "ON" : "OFF"));
+            return CommandOutcome.success(msg("command.auto.status", status.enabled() ? "ON" : "OFF"));
         }
 
         String subcommand = args.get(0).toLowerCase(Locale.ROOT);
@@ -98,23 +161,23 @@ class AutomationCommandHandler {
                         sessionChatId,
                         transportChatId != null ? transportChatId : sessionChatId));
             }
-            yield CommandPort.CommandResult.success(msg("command.auto.enabled"));
+            yield CommandOutcome.success(msg("command.auto.enabled"));
         }
         case "off" -> {
             automationCommandService.disableAutoMode();
-            yield CommandPort.CommandResult.success(msg("command.auto.disabled"));
+            yield CommandOutcome.success(msg("command.auto.disabled"));
         }
-        default -> CommandPort.CommandResult.success(msg("command.auto.usage"));
+        default -> CommandOutcome.success(msg("command.auto.usage"));
         };
     }
 
-    CommandPort.CommandResult handleGoals(String sessionId) {
+    CommandOutcome handleGoals(String sessionId) {
         AutomationCommandService.GoalsOutcome outcome = automationCommandService.getGoals(sessionId);
         if (outcome instanceof AutomationCommandService.AutoFeatureUnavailable) {
-            return CommandPort.CommandResult.success(msg(MSG_AUTO_NOT_AVAILABLE));
+            return CommandOutcome.success(msg(MSG_AUTO_NOT_AVAILABLE));
         }
         if (outcome instanceof AutomationCommandService.EmptyGoals) {
-            return CommandPort.CommandResult.success(msg("command.goals.empty"));
+            return CommandOutcome.success(msg("command.goals.empty"));
         }
         List<Goal> goals = ((AutomationCommandService.GoalsOverview) outcome).goals();
 
@@ -137,43 +200,43 @@ class AutomationCommandHandler {
             }
         }
 
-        return CommandPort.CommandResult.success(builder.toString());
+        return CommandOutcome.success(builder.toString());
     }
 
-    CommandPort.CommandResult handleGoals() {
+    CommandOutcome handleGoals() {
         AutomationCommandService.GoalsOutcome outcome = automationCommandService.getGoals();
         if (outcome instanceof AutomationCommandService.AutoFeatureUnavailable) {
-            return CommandPort.CommandResult.success(msg(MSG_AUTO_NOT_AVAILABLE));
+            return CommandOutcome.success(msg(MSG_AUTO_NOT_AVAILABLE));
         }
         if (outcome instanceof AutomationCommandService.EmptyGoals) {
-            return CommandPort.CommandResult.success(msg("command.goals.empty"));
+            return CommandOutcome.success(msg("command.goals.empty"));
         }
         return renderGoals(((AutomationCommandService.GoalsOverview) outcome).goals());
     }
 
-    CommandPort.CommandResult handleGoal(List<String> args, String sessionId) {
+    CommandOutcome handleGoal(List<String> args, String sessionId) {
         if (args.isEmpty()) {
-            return CommandPort.CommandResult.success(msg("command.goals.empty"));
+            return CommandOutcome.success(msg("command.goals.empty"));
         }
 
         AutomationCommandService.GoalCreationOutcome outcome = automationCommandService
                 .createGoal(sessionId, String.join(" ", args));
         if (outcome instanceof AutomationCommandService.AutoFeatureUnavailable) {
-            return CommandPort.CommandResult.success(msg(MSG_AUTO_NOT_AVAILABLE));
+            return CommandOutcome.success(msg(MSG_AUTO_NOT_AVAILABLE));
         }
         if (outcome instanceof AutomationCommandService.GoalCreated created) {
-            return CommandPort.CommandResult.success(msg("command.goal.created", created.goal().getTitle()));
+            return CommandOutcome.success(msg("command.goal.created", created.goal().getTitle()));
         }
-        return CommandPort.CommandResult.success(msg("command.goals.empty"));
+        return CommandOutcome.success(msg("command.goals.empty"));
     }
 
-    CommandPort.CommandResult handleTasks(String sessionId) {
+    CommandOutcome handleTasks(String sessionId) {
         AutomationCommandService.TasksOutcome outcome = automationCommandService.getTasks(sessionId);
         if (outcome instanceof AutomationCommandService.AutoFeatureUnavailable) {
-            return CommandPort.CommandResult.success(msg(MSG_AUTO_NOT_AVAILABLE));
+            return CommandOutcome.success(msg(MSG_AUTO_NOT_AVAILABLE));
         }
         if (outcome instanceof AutomationCommandService.EmptyTasks) {
-            return CommandPort.CommandResult.success(msg("command.tasks.empty"));
+            return CommandOutcome.success(msg("command.tasks.empty"));
         }
         List<Goal> goals = ((AutomationCommandService.TasksOverview) outcome).goals();
 
@@ -206,21 +269,21 @@ class AutomationCommandHandler {
             builder.append("\n");
         }
 
-        return CommandPort.CommandResult.success(builder.toString().trim());
+        return CommandOutcome.success(builder.toString().trim());
     }
 
-    CommandPort.CommandResult handleTasks() {
+    CommandOutcome handleTasks() {
         AutomationCommandService.TasksOutcome outcome = automationCommandService.getTasks();
         if (outcome instanceof AutomationCommandService.AutoFeatureUnavailable) {
-            return CommandPort.CommandResult.success(msg(MSG_AUTO_NOT_AVAILABLE));
+            return CommandOutcome.success(msg(MSG_AUTO_NOT_AVAILABLE));
         }
         if (outcome instanceof AutomationCommandService.EmptyTasks) {
-            return CommandPort.CommandResult.success(msg("command.tasks.empty"));
+            return CommandOutcome.success(msg("command.tasks.empty"));
         }
         return renderTasks(((AutomationCommandService.TasksOverview) outcome).goals());
     }
 
-    CommandPort.CommandResult handleDiary(List<String> args, String sessionId) {
+    CommandOutcome handleDiary(List<String> args, String sessionId) {
         int count = 10;
         if (!args.isEmpty()) {
             try {
@@ -232,10 +295,10 @@ class AutomationCommandHandler {
 
         AutomationCommandService.DiaryOutcome outcome = automationCommandService.getDiary(sessionId, count);
         if (outcome instanceof AutomationCommandService.AutoFeatureUnavailable) {
-            return CommandPort.CommandResult.success(msg(MSG_AUTO_NOT_AVAILABLE));
+            return CommandOutcome.success(msg(MSG_AUTO_NOT_AVAILABLE));
         }
         if (outcome instanceof AutomationCommandService.EmptyDiary) {
-            return CommandPort.CommandResult.success(msg("command.diary.empty"));
+            return CommandOutcome.success(msg("command.diary.empty"));
         }
         List<DiaryEntry> entries = ((AutomationCommandService.DiaryOverview) outcome).entries();
 
@@ -249,23 +312,23 @@ class AutomationCommandHandler {
             builder.append(entry.getContent()).append("\n");
         }
 
-        return CommandPort.CommandResult.success(builder.toString());
+        return CommandOutcome.success(builder.toString());
     }
 
-    CommandPort.CommandResult handleDiary(List<String> args) {
+    CommandOutcome handleDiary(List<String> args) {
         int count = parseDiaryCount(args);
 
         AutomationCommandService.DiaryOutcome outcome = automationCommandService.getDiary(count);
         if (outcome instanceof AutomationCommandService.AutoFeatureUnavailable) {
-            return CommandPort.CommandResult.success(msg(MSG_AUTO_NOT_AVAILABLE));
+            return CommandOutcome.success(msg(MSG_AUTO_NOT_AVAILABLE));
         }
         if (outcome instanceof AutomationCommandService.EmptyDiary) {
-            return CommandPort.CommandResult.success(msg("command.diary.empty"));
+            return CommandOutcome.success(msg("command.diary.empty"));
         }
         return renderDiary(((AutomationCommandService.DiaryOverview) outcome).entries());
     }
 
-    private CommandPort.CommandResult renderGoals(List<Goal> goals) {
+    private CommandOutcome renderGoals(List<Goal> goals) {
         StringBuilder builder = new StringBuilder();
         builder.append(msg("command.goals.title", goals.size())).append(DOUBLE_NEWLINE);
 
@@ -285,10 +348,10 @@ class AutomationCommandHandler {
             }
         }
 
-        return CommandPort.CommandResult.success(builder.toString());
+        return CommandOutcome.success(builder.toString());
     }
 
-    private CommandPort.CommandResult renderTasks(List<Goal> goals) {
+    private CommandOutcome renderTasks(List<Goal> goals) {
         StringBuilder builder = new StringBuilder();
         builder.append(msg("command.tasks.title")).append(DOUBLE_NEWLINE);
 
@@ -318,10 +381,10 @@ class AutomationCommandHandler {
             builder.append("\n");
         }
 
-        return CommandPort.CommandResult.success(builder.toString().trim());
+        return CommandOutcome.success(builder.toString().trim());
     }
 
-    private CommandPort.CommandResult renderDiary(List<DiaryEntry> entries) {
+    private CommandOutcome renderDiary(List<DiaryEntry> entries) {
         StringBuilder builder = new StringBuilder();
         builder.append(msg("command.diary.title", entries.size())).append(DOUBLE_NEWLINE);
 
@@ -332,7 +395,7 @@ class AutomationCommandHandler {
             builder.append(entry.getContent()).append("\n");
         }
 
-        return CommandPort.CommandResult.success(builder.toString());
+        return CommandOutcome.success(builder.toString());
     }
 
     private int parseDiaryCount(List<String> args) {
@@ -347,9 +410,9 @@ class AutomationCommandHandler {
         return count;
     }
 
-    CommandPort.CommandResult handleSchedule(List<String> args) {
+    CommandOutcome handleSchedule(List<String> args) {
         if (!automationCommandService.isAutoFeatureEnabled()) {
-            return CommandPort.CommandResult.success(msg(MSG_AUTO_NOT_AVAILABLE));
+            return CommandOutcome.success(msg(MSG_AUTO_NOT_AVAILABLE));
         }
 
         if (args.isEmpty()) {
@@ -364,17 +427,17 @@ class AutomationCommandHandler {
         case "task" -> handleScheduleTask(subArgs);
         case SUBCMD_LIST -> handleScheduleList();
         case "delete" -> handleScheduleDelete(subArgs);
-        case CMD_HELP -> CommandPort.CommandResult.success(msg("command.schedule.help.text"));
-        default -> CommandPort.CommandResult.success(msg("command.schedule.usage"));
+        case CMD_HELP -> CommandOutcome.success(msg("command.schedule.help.text"));
+        default -> CommandOutcome.success(msg("command.schedule.usage"));
         };
     }
 
-    CommandPort.CommandResult handleLater(List<String> args, String channelType, String conversationKey) {
+    CommandOutcome handleLater(List<String> args, String channelType, String conversationKey) {
         if (!automationCommandService.isLaterFeatureEnabled()) {
-            return CommandPort.CommandResult.success(msg("command.later.not-available"));
+            return CommandOutcome.success(msg("command.later.not-available"));
         }
         if (args.isEmpty()) {
-            return CommandPort.CommandResult.success(msg("command.later.usage"));
+            return CommandOutcome.success(msg("command.later.usage"));
         }
 
         String subcommand = args.get(0).toLowerCase(Locale.ROOT);
@@ -382,33 +445,33 @@ class AutomationCommandHandler {
         case SUBCMD_LIST -> handleLaterList(channelType, conversationKey);
         case "cancel" -> handleLaterCancel(args.subList(1, args.size()), channelType, conversationKey);
         case "now" -> handleLaterRunNow(args.subList(1, args.size()), channelType, conversationKey);
-        case CMD_HELP -> CommandPort.CommandResult.success(msg("command.later.help.text"));
-        default -> CommandPort.CommandResult.success(msg("command.later.usage"));
+        case CMD_HELP -> CommandOutcome.success(msg("command.later.help.text"));
+        default -> CommandOutcome.success(msg("command.later.usage"));
         };
     }
 
-    private CommandPort.CommandResult handleScheduleGoal(List<String> args) {
+    private CommandOutcome handleScheduleGoal(List<String> args) {
         if (args.isEmpty()) {
-            return CommandPort.CommandResult.success(msg("command.schedule.goal.usage"));
+            return CommandOutcome.success(msg("command.schedule.goal.usage"));
         }
         String goalId = args.get(0);
         AutomationCommandService.ScheduleOutcome outcome = automationCommandService.createGoalSchedule(goalId, args);
         return renderScheduleOutcome(outcome);
     }
 
-    private CommandPort.CommandResult handleScheduleTask(List<String> args) {
+    private CommandOutcome handleScheduleTask(List<String> args) {
         if (args.isEmpty()) {
-            return CommandPort.CommandResult.success(msg("command.schedule.task.usage"));
+            return CommandOutcome.success(msg("command.schedule.task.usage"));
         }
         String taskId = args.get(0);
         AutomationCommandService.ScheduleOutcome outcome = automationCommandService.createTaskSchedule(taskId, args);
         return renderScheduleOutcome(outcome);
     }
 
-    private CommandPort.CommandResult handleScheduleList() {
+    private CommandOutcome handleScheduleList() {
         AutomationCommandService.ScheduleOutcome outcome = automationCommandService.listSchedules();
         if (outcome instanceof AutomationCommandService.EmptySchedules) {
-            return CommandPort.CommandResult.success(msg("command.schedule.list.empty"));
+            return CommandOutcome.success(msg("command.schedule.list.empty"));
         }
         List<ScheduleEntry> schedules = ((AutomationCommandService.SchedulesOverview) outcome).schedules();
 
@@ -432,30 +495,30 @@ class AutomationCommandHandler {
             }
         }
 
-        return CommandPort.CommandResult.success(builder.toString());
+        return CommandOutcome.success(builder.toString());
     }
 
-    private CommandPort.CommandResult handleScheduleDelete(List<String> args) {
+    private CommandOutcome handleScheduleDelete(List<String> args) {
         AutomationCommandService.ScheduleOutcome outcome = automationCommandService
                 .deleteSchedule(args.isEmpty() ? null : args.get(0));
         if (outcome instanceof AutomationCommandService.DeleteScheduleUsage) {
-            return CommandPort.CommandResult.success(msg("command.schedule.delete.usage"));
+            return CommandOutcome.success(msg("command.schedule.delete.usage"));
         }
         if (outcome instanceof AutomationCommandService.ScheduleDeleted deleted) {
-            return CommandPort.CommandResult.success(msg("command.schedule.deleted", deleted.scheduleId()));
+            return CommandOutcome.success(msg("command.schedule.deleted", deleted.scheduleId()));
         }
         AutomationCommandService.ScheduleNotFound scheduleNotFound = (AutomationCommandService.ScheduleNotFound) outcome;
-        return CommandPort.CommandResult.failure(msg("command.schedule.not-found", scheduleNotFound.scheduleId()));
+        return CommandOutcome.failure(msg("command.schedule.not-found", scheduleNotFound.scheduleId()));
     }
 
-    private CommandPort.CommandResult handleLaterList(String channelType, String conversationKey) {
+    private CommandOutcome handleLaterList(String channelType, String conversationKey) {
         AutomationCommandService.LaterOutcome outcome = automationCommandService.listLaterActions(channelType,
                 conversationKey);
         if (outcome instanceof AutomationCommandService.LaterUnavailable) {
-            return CommandPort.CommandResult.success(msg("command.later.not-available"));
+            return CommandOutcome.success(msg("command.later.not-available"));
         }
         if (outcome instanceof AutomationCommandService.EmptyLaterActions) {
-            return CommandPort.CommandResult.success(msg("command.later.list.empty"));
+            return CommandOutcome.success(msg("command.later.list.empty"));
         }
         List<DelayedSessionAction> actions = ((AutomationCommandService.LaterActionsOverview) outcome).actions();
 
@@ -473,63 +536,63 @@ class AutomationCommandHandler {
             }
             builder.append(DOUBLE_NEWLINE);
         }
-        return CommandPort.CommandResult.success(builder.toString().stripTrailing());
+        return CommandOutcome.success(builder.toString().stripTrailing());
     }
 
-    private CommandPort.CommandResult handleLaterCancel(List<String> args, String channelType, String conversationKey) {
+    private CommandOutcome handleLaterCancel(List<String> args, String channelType, String conversationKey) {
         AutomationCommandService.LaterActionOutcome outcome = automationCommandService.cancelLaterAction(
                 args.isEmpty() ? null : args.get(0),
                 channelType,
                 conversationKey);
         if (outcome instanceof AutomationCommandService.LaterUnavailable) {
-            return CommandPort.CommandResult.success(msg("command.later.not-available"));
+            return CommandOutcome.success(msg("command.later.not-available"));
         }
         if (outcome instanceof AutomationCommandService.LaterCancelUsage) {
-            return CommandPort.CommandResult.success(msg("command.later.cancel.usage"));
+            return CommandOutcome.success(msg("command.later.cancel.usage"));
         }
         if (outcome instanceof AutomationCommandService.LaterCancelled cancelled) {
-            return CommandPort.CommandResult.success(msg("command.later.cancelled", cancelled.actionId()));
+            return CommandOutcome.success(msg("command.later.cancelled", cancelled.actionId()));
         }
-        return CommandPort.CommandResult.failure(
+        return CommandOutcome.failure(
                 msg("command.later.not-found", ((AutomationCommandService.LaterNotFound) outcome).actionId()));
     }
 
-    private CommandPort.CommandResult handleLaterRunNow(List<String> args, String channelType, String conversationKey) {
+    private CommandOutcome handleLaterRunNow(List<String> args, String channelType, String conversationKey) {
         AutomationCommandService.LaterActionOutcome outcome = automationCommandService.runLaterActionNow(
                 args.isEmpty() ? null : args.get(0),
                 channelType,
                 conversationKey);
         if (outcome instanceof AutomationCommandService.LaterUnavailable) {
-            return CommandPort.CommandResult.success(msg("command.later.not-available"));
+            return CommandOutcome.success(msg("command.later.not-available"));
         }
         if (outcome instanceof AutomationCommandService.LaterRunNowUsage) {
-            return CommandPort.CommandResult.success(msg("command.later.now.usage"));
+            return CommandOutcome.success(msg("command.later.now.usage"));
         }
         if (outcome instanceof AutomationCommandService.LaterRunNow runNow) {
-            return CommandPort.CommandResult.success(msg("command.later.now.done", runNow.actionId()));
+            return CommandOutcome.success(msg("command.later.now.done", runNow.actionId()));
         }
-        return CommandPort.CommandResult.failure(
+        return CommandOutcome.failure(
                 msg("command.later.not-found", ((AutomationCommandService.LaterNotFound) outcome).actionId()));
     }
 
-    private CommandPort.CommandResult renderScheduleOutcome(AutomationCommandService.ScheduleOutcome outcome) {
+    private CommandOutcome renderScheduleOutcome(AutomationCommandService.ScheduleOutcome outcome) {
         if (outcome instanceof AutomationCommandService.GoalScheduleUsage) {
-            return CommandPort.CommandResult.success(msg("command.schedule.goal.usage"));
+            return CommandOutcome.success(msg("command.schedule.goal.usage"));
         }
         if (outcome instanceof AutomationCommandService.TaskScheduleUsage) {
-            return CommandPort.CommandResult.success(msg("command.schedule.task.usage"));
+            return CommandOutcome.success(msg("command.schedule.task.usage"));
         }
         if (outcome instanceof AutomationCommandService.GoalNotFound goalNotFound) {
-            return CommandPort.CommandResult.failure(msg("command.schedule.goal.not-found", goalNotFound.goalId()));
+            return CommandOutcome.failure(msg("command.schedule.goal.not-found", goalNotFound.goalId()));
         }
         if (outcome instanceof AutomationCommandService.TaskNotFound taskNotFound) {
-            return CommandPort.CommandResult.failure(msg("command.schedule.task.not-found", taskNotFound.taskId()));
+            return CommandOutcome.failure(msg("command.schedule.task.not-found", taskNotFound.taskId()));
         }
         if (outcome instanceof AutomationCommandService.InvalidCron invalidCron) {
-            return CommandPort.CommandResult.failure(msg("command.schedule.invalid-cron", invalidCron.message()));
+            return CommandOutcome.failure(msg("command.schedule.invalid-cron", invalidCron.message()));
         }
         AutomationCommandService.ScheduleCreated created = (AutomationCommandService.ScheduleCreated) outcome;
-        return CommandPort.CommandResult.success(msg(
+        return CommandOutcome.success(msg(
                 "command.schedule.created",
                 created.scheduleId(),
                 created.cronExpression()));
