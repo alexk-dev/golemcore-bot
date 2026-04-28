@@ -92,14 +92,16 @@ Field notes:
 
 - `repeatGuardEnabled`: enables pre-execution repeat protection.
 - `repeatGuardShadowMode`: records warning telemetry and model-visible hints for would-block decisions while still allowing execution.
-- `repeatGuardMaxSameObservePerTurn`: identical observe calls allowed before blocking.
-- `repeatGuardMaxSameUnknownPerTurn`: identical unknown execution calls, including shell, allowed before blocking.
+- `repeatGuardMaxSameObservePerTurn`: successful identical observe calls allowed in the current verified state before blocking.
+- `repeatGuardMaxSameUnknownPerTurn`: successful identical unknown execution calls, including shell, allowed before blocking. Unknown executions do not by themselves prove that workspace or remote state changed.
 - `repeatGuardMaxBlockedRepeatsPerTurn`: stops a turn after repeated ignored guard hints.
-- `repeatGuardMinPollIntervalSeconds`: minimum backoff before repeating the same polling call.
-- `repeatGuardAutoLedgerTtlMinutes`: TTL for autonomous task/goal repeat ledgers under `auto/tool-ledgers/`.
+- `repeatGuardMinPollIntervalSeconds`: minimum backoff before repeating the same polling call, independent of unrelated local environment changes.
+- `repeatGuardAutoLedgerTtlMinutes`: TTL for autonomous task/goal repeat ledgers under `auto/tool-ledgers/`; applies to observations, polling, unknown executions and guard-blocked synthetic records.
 
-The persisted auto ledger stores fingerprints, output digests and environment version only. It does not persist
-per-turn warning/block counters, full tool outputs or raw secret-like arguments.
+The persisted auto ledger stores fingerprints, output digests and environment version only. It is capped to the newest
+bounded records per work item, and it does not persist per-turn warning/block counters, full tool outputs or raw
+secret-like arguments. Policy denials, confirmation denials and guard synthetic records may be retained for diagnostics,
+but they are not counted as successful prior executions for repeat-block decisions.
 
 ### SelfEvolving
 

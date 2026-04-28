@@ -111,11 +111,15 @@ Default behavior:
 - the first identical observation is allowed
 - the second identical observation in the same state is warned and allowed
 - the third identical observation is blocked with a synthetic tool result and a recovery hint
-- repeated observations from a later scheduled run are blocked until the ledger TTL expires or state changes
+- repeated observations from a later scheduled run are blocked until the ledger TTL expires or verified state changes
+- repeated unknown executions such as exact shell commands are also TTL-bound; read-only shell commands do not reset the observation or polling repeat window
+- polling backoff follows the last same poll attempt across local environment changes
 - blocked synthetic results are still written as normal tool results, so tool-call history remains protocol-correct
 
 When a repeated auto observation is blocked, the recovery hint asks the model to use previous tool history, change
-arguments, perform a state-changing next step, write a diary/checkpoint, schedule a later check or finish the turn.
+arguments, perform a verified state-changing next step, write a diary/checkpoint, schedule a later check or finish the
+turn. In auto mode, the hint scope is the current autonomous task or goal until state changes, arguments change or the
+ledger TTL expires.
 
 ### GOAL schedule
 
@@ -268,7 +272,10 @@ One JSON object per line, split by UTC date.
 Repeat-guard continuity for autonomous work. Ledger files store bounded tool-use fingerprints, output digests,
 and environment version. Per-turn warning and blocked-repeat counters are intentionally not restored from durable
 storage, so a later scheduled run can still receive a fresh recovery hint instead of being stopped by stale counters.
-Ledgers intentionally do not store full tool outputs, raw arguments containing secrets or large payloads.
+Ledgers intentionally do not store full tool outputs, raw arguments containing secrets or large payloads. Observation,
+poll, unknown-execution and guard-blocked synthetic records expire by `repeatGuardAutoLedgerTtlMinutes`; remaining
+records are also capped to bound per-work-item storage. A stored `scheduleId` is audit-only: task and goal ledgers
+survive schedule replacement.
 
 ## Configuration
 
@@ -311,7 +318,7 @@ Field notes:
 7. `notifyMilestones`: send completion notifications to the registered channel.
 
 Repeat guard fields live in the `toolLoop` runtime section. `repeatGuardAutoLedgerTtlMinutes` controls how long
-scheduled auto runs remember observation fingerprints for the same task or goal.
+scheduled auto runs remember observation, poll and unknown-execution fingerprints for the same task or goal.
 
 ## Pipeline Integration
 

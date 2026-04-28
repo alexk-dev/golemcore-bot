@@ -7,6 +7,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.Objects;
 import java.util.function.Supplier;
+import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.ToolResult;
 import me.golemcore.bot.domain.system.toolloop.ToolExecutionOutcome;
@@ -58,12 +59,15 @@ public class ToolRepeatGuard {
             return new ToolRepeatDecision.Allow(fingerprint);
         }
 
+        boolean durableLedgerActive = durableLedgerActive(turnState);
         return switch (fingerprint.category()) {
-        case OBSERVE -> decideCountedRepeat(ledger, fingerprint, settings.maxSameObservePerTurn(), settings);
+        case OBSERVE -> decideCountedRepeat(ledger, fingerprint, settings.maxSameObservePerTurn(), settings,
+                durableLedgerActive);
         case EXECUTE_UNKNOWN -> decideAnyEnvironmentRepeat(
-                ledger, fingerprint, settings.maxSameUnknownPerTurn(), settings);
+                ledger, fingerprint, settings.maxSameUnknownPerTurn(), settings, durableLedgerActive);
         case POLL -> decidePolling(ledger, fingerprint, settings);
-        case MUTATE_IDEMPOTENT, MUTATE_NON_IDEMPOTENT -> decideMutation(ledger, fingerprint, settings);
+        case MUTATE_IDEMPOTENT, MUTATE_NON_IDEMPOTENT -> decideMutation(ledger, fingerprint, settings,
+                durableLedgerActive);
         case CONTROL -> new ToolRepeatDecision.Allow(fingerprint);
         };
     }
@@ -91,10 +95,18 @@ public class ToolRepeatGuard {
     }
 
     public String repeatHint(ToolUseFingerprint fingerprint, int count) {
+        return repeatHint(fingerprint, count, false);
+    }
+
+    public String repeatHint(ToolUseFingerprint fingerprint, int count, boolean durableLedgerActive) {
         String toolName = fingerprint != null ? fingerprint.toolName() : "unknown";
+        String scope = durableLedgerActive
+                ? "for this autonomous task until state changes, arguments change, or the repeat ledger TTL expires"
+                : "in this turn";
         return "Repeated tool call blocked by repeat guard. Tool: " + toolName
                 + ". Reason: same fingerprint was already executed " + count
-                + " times with no state change. Do not call this tool with the same arguments again in this turn. "
+                + " times with no verified state change. Do not call this tool with the same arguments again "
+                + scope + ". "
                 + "Use the previous result already present in conversation/tool history, change the arguments, "
                 + "perform a state-changing next step, write a diary/checkpoint, schedule a later check, "
                 + "or provide the final answer.";
@@ -104,32 +116,36 @@ public class ToolRepeatGuard {
             ToolUseLedger ledger,
             ToolUseFingerprint fingerprint,
             int maxAllowed,
-            ToolRepeatGuardSettings settings) {
-        int count = ledger.repeatCountInCurrentEnvironment(fingerprint);
+            ToolRepeatGuardSettings settings,
+            boolean durableLedgerActive) {
+        int count = ledger.successfulRepeatCountInCurrentEnvironment(fingerprint);
         if (count <= 0) {
             return new ToolRepeatDecision.Allow(fingerprint);
         }
         if (count < maxAllowed) {
             ledger.incrementWarnedRepeatCount();
-            return new ToolRepeatDecision.WarnAndAllow(fingerprint, repeatHint(fingerprint, count));
+            return new ToolRepeatDecision.WarnAndAllow(fingerprint, repeatHint(fingerprint, count,
+                    durableLedgerActive));
         }
-        return blockOrShadow(ledger, fingerprint, repeatHint(fingerprint, count), settings);
+        return blockOrShadow(ledger, fingerprint, repeatHint(fingerprint, count, durableLedgerActive), settings);
     }
 
     private ToolRepeatDecision decideAnyEnvironmentRepeat(
             ToolUseLedger ledger,
             ToolUseFingerprint fingerprint,
             int maxAllowed,
-            ToolRepeatGuardSettings settings) {
-        int count = ledger.repeatCount(fingerprint);
+            ToolRepeatGuardSettings settings,
+            boolean durableLedgerActive) {
+        int count = ledger.successfulRepeatCount(fingerprint);
         if (count <= 0) {
             return new ToolRepeatDecision.Allow(fingerprint);
         }
         if (count < maxAllowed) {
             ledger.incrementWarnedRepeatCount();
-            return new ToolRepeatDecision.WarnAndAllow(fingerprint, repeatHint(fingerprint, count));
+            return new ToolRepeatDecision.WarnAndAllow(fingerprint, repeatHint(fingerprint, count,
+                    durableLedgerActive));
         }
-        return blockOrShadow(ledger, fingerprint, repeatHint(fingerprint, count), settings);
+        return blockOrShadow(ledger, fingerprint, repeatHint(fingerprint, count, durableLedgerActive), settings);
     }
 
     private ToolRepeatDecision decidePolling(
@@ -137,10 +153,9 @@ public class ToolRepeatGuard {
             ToolUseFingerprint fingerprint,
             ToolRepeatGuardSettings settings) {
         Instant now = clock.instant();
-        boolean tooSoon = ledger.recordsForCurrentEnvironment(fingerprint).stream()
-                .map(ToolUseRecord::finishedAt)
-                .filter(Objects::nonNull)
-                .anyMatch(finished -> finished.plus(settings.minPollInterval()).isAfter(now));
+        boolean tooSoon = ledger.lastActualAttemptAt(fingerprint)
+                .map(finished -> finished.plus(settings.minPollInterval()).isAfter(now))
+                .orElse(false);
         if (!tooSoon) {
             return new ToolRepeatDecision.Allow(fingerprint);
         }
@@ -152,8 +167,9 @@ public class ToolRepeatGuard {
     private ToolRepeatDecision decideMutation(
             ToolUseLedger ledger,
             ToolUseFingerprint fingerprint,
-            ToolRepeatGuardSettings settings) {
-        int count = ledger.repeatCountInCurrentEnvironment(fingerprint);
+            ToolRepeatGuardSettings settings,
+            boolean durableLedgerActive) {
+        int count = ledger.successfulRepeatCountInCurrentEnvironment(fingerprint);
         if (count <= 0) {
             return new ToolRepeatDecision.Allow(fingerprint);
         }
@@ -179,6 +195,11 @@ public class ToolRepeatGuard {
     private ToolRepeatGuardSettings settings() {
         ToolRepeatGuardSettings settings = settingsSupplier.get();
         return settings != null ? settings : ToolRepeatGuardSettings.defaults();
+    }
+
+    private boolean durableLedgerActive(TurnState turnState) {
+        AgentContext context = turnState != null ? turnState.getContext() : null;
+        return context != null && AutonomyWorkKey.fromMetadata(context.getAttributes()).isPresent();
     }
 
     private String outputDigest(ToolExecutionOutcome outcome) {

@@ -196,6 +196,56 @@ class DefaultToolLoopSystemToolExecutionTest extends DefaultToolLoopSystemFixtur
     }
 
     @Test
+    void autoRunAllowsSameShellAfterLedgerTtlExpired() {
+        AgentContext context = buildContext();
+        context.setAttribute(ContextAttributes.AUTO_MODE, true);
+        context.setAttribute(ContextAttributes.CONVERSATION_KEY, "web:chat-1");
+        context.setAttribute(ContextAttributes.AUTO_GOAL_ID, "goal-1");
+        context.setAttribute(ContextAttributes.AUTO_TASK_ID, "task-1");
+        Message.ToolCall shellCall = Message.ToolCall.builder()
+                .id(TOOL_CALL_ID)
+                .name("shell")
+                .arguments(Map.of("command", "git status"))
+                .build();
+        ToolUseFingerprintService fingerprintService = new ToolUseFingerprintService();
+        ToolRepeatGuard repeatGuard = new ToolRepeatGuard(fingerprintService, ToolRepeatGuardSettings.defaults(),
+                clock);
+        ToolUseLedgerStore ledgerStore = new JsonToolUseLedgerStore(
+                storagePort(), new ObjectMapper().findAndRegisterModules(), clock);
+        ToolUseLedger priorLedger = new ToolUseLedger();
+        ToolUseFingerprint fingerprint = fingerprintService.fingerprint(shellCall);
+        Instant expired = clock.instant().minus(Duration.ofMinutes(121));
+        priorLedger.recordUse(priorShell(fingerprint, expired, "sha256:first"));
+        priorLedger.recordUse(priorShell(fingerprint, expired, "sha256:second"));
+        ledgerStore.save(new AutonomyWorkKey("web:chat-1", "goal-1", "task-1", null), priorLedger);
+
+        DefaultToolLoopSystem guardedSystem = DefaultToolLoopSystem.builder()
+                .llmPort(llmPort)
+                .toolExecutor(toolExecutor)
+                .historyWriter(historyWriter)
+                .viewBuilder(viewBuilder)
+                .turnSettings(me.golemcore.bot.support.TestPorts.turn(turnSettings))
+                .settings(me.golemcore.bot.support.TestPorts.toolLoop(settings))
+                .modelSelectionService(modelSelectionService)
+                .contextCompactionPolicy(new ContextCompactionPolicy(runtimeConfigService, modelSelectionService))
+                .repeatGuard(repeatGuard)
+                .toolUseLedgerStore(ledgerStore)
+                .clock(clock)
+                .build();
+
+        when(llmPort.chat(any()))
+                .thenReturn(CompletableFuture.completedFuture(toolCallResponse(List.of(shellCall))))
+                .thenReturn(CompletableFuture.completedFuture(finalResponse(CONTENT_DONE)));
+        when(toolExecutor.execute(context, shellCall)).thenReturn(new ToolExecutionOutcome(
+                TOOL_CALL_ID, "shell", ToolResult.success("clean"), "clean", false, null));
+
+        ToolLoopTurnResult result = guardedSystem.processTurn(context);
+
+        assertTrue(result.finalAnswerReady());
+        verify(toolExecutor).execute(context, shellCall);
+    }
+
+    @Test
     void shouldPublishIntentAndFlushProgressThroughTurnProgressService() {
         AgentContext context = buildContext();
         DefaultToolLoopSystem progressSystem = buildSystemWithTurnProgress();
@@ -437,6 +487,19 @@ class DefaultToolLoopSystemToolExecutionTest extends DefaultToolLoopSystemFixtur
 
     private ToolUseRecord priorObservation(ToolUseFingerprint fingerprint, String outputDigest) {
         Instant finishedAt = clock.instant().minusSeconds(30);
+        return new ToolUseRecord(
+                fingerprint,
+                finishedAt.minusMillis(10),
+                finishedAt,
+                true,
+                null,
+                outputDigest,
+                0,
+                false,
+                null);
+    }
+
+    private ToolUseRecord priorShell(ToolUseFingerprint fingerprint, Instant finishedAt, String outputDigest) {
         return new ToolUseRecord(
                 fingerprint,
                 finishedAt.minusMillis(10),

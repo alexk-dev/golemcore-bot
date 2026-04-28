@@ -6,6 +6,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -23,6 +24,7 @@ import me.golemcore.bot.port.outbound.StoragePort;
 public class JsonToolUseLedgerStore implements ToolUseLedgerStore {
 
     private static final int SCHEMA_VERSION = 1;
+    private static final int MAX_STORED_RECORDS_PER_WORK_ITEM = 500;
 
     private final StoragePort storagePort;
     private final ObjectMapper objectMapper;
@@ -79,7 +81,7 @@ public class JsonToolUseLedgerStore implements ToolUseLedgerStore {
         }
         ledger.setEnvironmentVersion(stored.environmentVersion());
         Instant cutoff = clock.instant().minus(ttl != null ? ttl : Duration.ZERO);
-        for (StoredRecord storedRecord : stored.records()) {
+        for (StoredRecord storedRecord : capStoredRecords(stored.records())) {
             ToolUseRecord entry = storedRecord.toRecord();
             if (!isExpired(entry, cutoff)) {
                 ledger.restore(entry);
@@ -99,7 +101,7 @@ public class JsonToolUseLedgerStore implements ToolUseLedgerStore {
                 ledger.getEnvironmentVersion(),
                 0,
                 0,
-                storedRecords);
+                capStoredRecords(storedRecords));
     }
 
     private boolean isLoadable(StoredLedger stored, AutonomyWorkKey requestedKey) {
@@ -113,9 +115,27 @@ public class JsonToolUseLedgerStore implements ToolUseLedgerStore {
         if (entry == null || entry.fingerprint() == null || entry.finishedAt() == null) {
             return false;
         }
+        if (!entry.finishedAt().isBefore(cutoff)) {
+            return false;
+        }
         ToolUseCategory category = entry.fingerprint().category();
-        return (category == ToolUseCategory.OBSERVE || category == ToolUseCategory.POLL)
-                && entry.finishedAt().isBefore(cutoff);
+        return switch (category) {
+        case OBSERVE, POLL, EXECUTE_UNKNOWN, CONTROL -> true;
+        case MUTATE_IDEMPOTENT, MUTATE_NON_IDEMPOTENT -> entry.guardBlocked();
+        };
+    }
+
+    private List<StoredRecord> capStoredRecords(List<StoredRecord> records) {
+        if (records == null || records.size() <= MAX_STORED_RECORDS_PER_WORK_ITEM) {
+            return records == null ? List.of() : List.copyOf(records);
+        }
+        List<StoredRecord> sorted = new ArrayList<>(records);
+        sorted.sort(Comparator.comparing(
+                StoredRecord::finishedAt,
+                Comparator.nullsFirst(Comparator.naturalOrder())));
+        return List.copyOf(sorted.subList(
+                sorted.size() - MAX_STORED_RECORDS_PER_WORK_ITEM,
+                sorted.size()));
     }
 
     @JsonIgnoreProperties(ignoreUnknown = true)
@@ -144,6 +164,7 @@ public class JsonToolUseLedgerStore implements ToolUseLedgerStore {
             if (key == null) {
                 return false;
             }
+            // scheduleId is audit-only: a task ledger intentionally survives schedule replacement.
             return Objects.equals(sessionKey, key.sessionKey())
                     && Objects.equals(goalId, key.goalId())
                     && Objects.equals(taskId, key.taskId());

@@ -30,6 +30,10 @@ polling and re-check behavior after state changes.
 - [x] Implement the `ToolUseLedgerStore` domain port and JSON infrastructure adapter.
 - [x] Add RED auto-mode integration test proving a prior task ledger blocks repeated observations across scheduled runs.
 - [x] Load and flush durable ledgers around the tool loop for autonomous goal/task work.
+- [x] Add RED review-hardening tests for unknown TTL, read-only shell, poll backoff and synthetic denial poisoning.
+- [x] Make `EXECUTE_UNKNOWN` TTL-bound and prevent unverified unknown execution from resetting observation or poll windows.
+- [x] Count only successful actual executions for repeat blockers while keeping synthetic failures available as diagnostics.
+- [x] Cap durable ledger records per autonomous work item.
 - [x] Document repeat guard defaults, storage layout and troubleshooting.
 - [x] Run full local verification.
 - [x] Push the branch and open a `feat:` PR.

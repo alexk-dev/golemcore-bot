@@ -42,12 +42,26 @@ class ToolUseLedgerTest {
     }
 
     @Test
-    void successfulUnknownExecutionAdvancesEnvironmentVersionConservatively() {
+    void successfulUnknownExecutionDoesNotAdvanceEnvironmentVersionWithoutVerifiedStateChange() {
         ToolUseLedger ledger = new ToolUseLedger();
 
         ledger.recordUse(toolUseRecord(fingerprint(ToolUseCategory.EXECUTE_UNKNOWN), true, false));
 
-        assertEquals(1, ledger.getEnvironmentVersion());
+        assertEquals(0, ledger.getEnvironmentVersion());
+    }
+
+    @Test
+    void successfulRepeatCountersIgnoreFailuresAndGuardBlocks() {
+        ToolUseLedger ledger = new ToolUseLedger();
+        ToolUseFingerprint fingerprint = fingerprint(ToolUseCategory.OBSERVE);
+
+        ledger.recordUse(toolUseRecord(fingerprint, false, false));
+        ledger.recordUse(toolUseRecord(fingerprint, false, true));
+        ledger.recordUse(toolUseRecord(fingerprint, true, false));
+
+        assertEquals(3, ledger.recordsFor(fingerprint).size());
+        assertEquals(1, ledger.successfulRepeatCountInCurrentEnvironment(fingerprint));
+        assertEquals(1, ledger.successfulRepeatCount(fingerprint));
     }
 
     @Test

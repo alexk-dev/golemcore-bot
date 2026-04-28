@@ -1,10 +1,14 @@
 package me.golemcore.bot.domain.system.toolloop.repeat;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.Set;
 
 /**
  * Mutable per-turn tool-use ledger.
@@ -16,6 +20,11 @@ import java.util.Map;
 public class ToolUseLedger {
 
     private static final int DEFAULT_MAX_RECORDS_PER_FINGERPRINT = 20;
+    private static final Set<String> SYNTHETIC_FAILURE_KINDS = Set.of(
+            "POLICY_DENIED",
+            "CONFIRMATION_DENIED",
+            "REPEATED_TOOL_USE_BLOCKED",
+            "REPEAT_GUARD_STOP_TURN");
 
     private final Map<String, List<ToolUseRecord>> recordsByFingerprint = new LinkedHashMap<>();
     private final int maxRecordsPerFingerprint;
@@ -81,6 +90,31 @@ public class ToolUseLedger {
         return recordsFor(fingerprint).size();
     }
 
+    public int successfulRepeatCountInCurrentEnvironment(ToolUseFingerprint fingerprint) {
+        return (int) recordsForCurrentEnvironment(fingerprint).stream()
+                .filter(this::isSuccessfulActualExecution)
+                .count();
+    }
+
+    public int successfulRepeatCount(ToolUseFingerprint fingerprint) {
+        return (int) recordsFor(fingerprint).stream()
+                .filter(this::isSuccessfulActualExecution)
+                .count();
+    }
+
+    public List<ToolUseRecord> actualAttemptsFor(ToolUseFingerprint fingerprint) {
+        return recordsFor(fingerprint).stream()
+                .filter(this::isActualAttempt)
+                .toList();
+    }
+
+    public Optional<Instant> lastActualAttemptAt(ToolUseFingerprint fingerprint) {
+        return actualAttemptsFor(fingerprint).stream()
+                .map(ToolUseRecord::finishedAt)
+                .filter(Objects::nonNull)
+                .max(Instant::compareTo);
+    }
+
     public Map<String, List<ToolUseRecord>> snapshotRecords() {
         Map<String, List<ToolUseRecord>> snapshot = new LinkedHashMap<>();
         recordsByFingerprint.forEach((key, value) -> snapshot.put(key, List.copyOf(value)));
@@ -126,8 +160,20 @@ public class ToolUseLedger {
             return false;
         }
         return switch (entry.fingerprint().category()) {
-        case MUTATE_IDEMPOTENT, MUTATE_NON_IDEMPOTENT, EXECUTE_UNKNOWN -> true;
-        case OBSERVE, POLL, CONTROL -> false;
+        case MUTATE_IDEMPOTENT, MUTATE_NON_IDEMPOTENT -> true;
+        case OBSERVE, POLL, EXECUTE_UNKNOWN, CONTROL -> false;
         };
+    }
+
+    private boolean isSuccessfulActualExecution(ToolUseRecord entry) {
+        return entry != null && entry.success() && isActualAttempt(entry);
+    }
+
+    private boolean isActualAttempt(ToolUseRecord entry) {
+        if (entry == null || entry.guardBlocked()) {
+            return false;
+        }
+        String failureKind = entry.failureKind();
+        return failureKind == null || !SYNTHETIC_FAILURE_KINDS.contains(failureKind);
     }
 }

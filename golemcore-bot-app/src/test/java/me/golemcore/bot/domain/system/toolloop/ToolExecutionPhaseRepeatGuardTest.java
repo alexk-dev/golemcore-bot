@@ -176,6 +176,30 @@ class ToolExecutionPhaseRepeatGuardTest {
         assertTrue(result.getError().contains("Plan mode is active"));
     }
 
+    @Test
+    void planModePolicyDenialsDoNotPoisonRepeatGuardAfterPlanModeEnds() {
+        SessionIdentity sessionIdentity = new SessionIdentity("web", "chat-1");
+        planService.activatePlanMode(sessionIdentity, "chat-1", null);
+        ToolExecutionPhase phase = phaseWithPlanMode();
+        TurnState turnState = buildTurnState();
+        Message.ToolCall shell = Message.ToolCall.builder()
+                .id("tc-shell")
+                .name(ToolNames.SHELL)
+                .arguments(Map.of("command", "pwd"))
+                .build();
+        when(failurePolicy.evaluate(any(), any(), any())).thenReturn(new ToolFailurePolicy.Verdict.Ok());
+
+        phase.execute(turnState, response(shell), historyWriter, llmCallPhase);
+        phase.execute(turnState, response(shell), historyWriter, llmCallPhase);
+        planService.deactivatePlanMode(sessionIdentity);
+        when(toolExecutor.execute(turnState.getContext(), shell)).thenReturn(success(shell, "ok"));
+
+        phase.execute(turnState, response(shell), historyWriter, llmCallPhase);
+
+        verify(toolExecutor).execute(turnState.getContext(), shell);
+        assertTrue(turnState.getContext().getToolResults().get("tc-shell").isSuccess());
+    }
+
     private ToolExecutionPhase phase() {
         return new ToolExecutionPhase(toolExecutor, failurePolicy, null, null, null, null, clock, null, repeatGuard);
     }

@@ -1,7 +1,7 @@
 package me.golemcore.bot.domain.system.toolloop.repeat;
 
-import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 
 import java.time.Clock;
 import java.time.Duration;
@@ -11,6 +11,7 @@ import java.util.Map;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.Message;
+import me.golemcore.bot.domain.model.ToolFailureKind;
 import me.golemcore.bot.domain.model.ToolResult;
 import me.golemcore.bot.domain.system.toolloop.ToolExecutionOutcome;
 import me.golemcore.bot.domain.system.toolloop.TurnState;
@@ -68,13 +69,74 @@ class ToolRepeatGuardTest {
     }
 
     @Test
-    void allowsObservationAfterSuccessfulUnknownExecutionChangesEnvironmentConservatively() {
+    void readOnlyShellDoesNotResetObservationRepeatWindow() {
         TurnState turnState = turnState();
         Message.ToolCall read = readCall("README.md");
-        Message.ToolCall shell = toolCall("shell", Map.of("command", "printf updated > README.md"));
+        Message.ToolCall shell = toolCall("shell", Map.of("command", "pwd"));
         guard.afterOutcome(turnState, read, success(read, "before-1"));
         guard.afterOutcome(turnState, read, success(read, "before-2"));
         guard.afterOutcome(turnState, shell, success(shell, "ok"));
+
+        ToolRepeatDecision decision = guard.beforeExecute(turnState, read);
+
+        assertInstanceOf(ToolRepeatDecision.BlockAndHint.class, decision);
+    }
+
+    @Test
+    void pollBackoffUsesLastPollAcrossAllEnvironmentVersions() {
+        TurnState turnState = turnState();
+        Message.ToolCall poll = toolCall("job.status", Map.of("jobId", "42"));
+        Message.ToolCall write = writeCall("README.md");
+        guard.afterOutcome(turnState, poll, success(poll, "pending"));
+        guard.afterOutcome(turnState, write, success(write, "updated"));
+
+        ToolRepeatDecision decision = guard.beforeExecute(turnState, poll);
+
+        assertInstanceOf(ToolRepeatDecision.BlockAndHint.class, decision);
+    }
+
+    @Test
+    void policyDeniedOutcomeDoesNotCountAsSuccessfulRepeat() {
+        TurnState turnState = turnState();
+        Message.ToolCall shell = toolCall("shell", Map.of("command", "pwd"));
+        guard.afterOutcome(turnState, shell, new ToolExecutionOutcome(
+                shell.getId(),
+                shell.getName(),
+                ToolResult.failure(ToolFailureKind.POLICY_DENIED, "denied"),
+                "denied",
+                false,
+                null));
+        guard.afterOutcome(turnState, shell, new ToolExecutionOutcome(
+                shell.getId(),
+                shell.getName(),
+                ToolResult.failure(ToolFailureKind.POLICY_DENIED, "denied"),
+                "denied",
+                false,
+                null));
+
+        ToolRepeatDecision decision = guard.beforeExecute(turnState, shell);
+
+        assertInstanceOf(ToolRepeatDecision.Allow.class, decision);
+    }
+
+    @Test
+    void failedObservationDoesNotTriggerUsePreviousResultRepeatBlock() {
+        TurnState turnState = turnState();
+        Message.ToolCall read = readCall("README.md");
+        guard.afterOutcome(turnState, read, new ToolExecutionOutcome(
+                read.getId(),
+                read.getName(),
+                ToolResult.failure(ToolFailureKind.EXECUTION_FAILED, "temporary"),
+                "temporary",
+                false,
+                null));
+        guard.afterOutcome(turnState, read, new ToolExecutionOutcome(
+                read.getId(),
+                read.getName(),
+                ToolResult.failure(ToolFailureKind.EXECUTION_FAILED, "temporary"),
+                "temporary",
+                false,
+                null));
 
         ToolRepeatDecision decision = guard.beforeExecute(turnState, read);
 
@@ -222,7 +284,7 @@ class ToolRepeatGuardTest {
         guard.afterOutcome(turnState, write, new ToolExecutionOutcome(
                 write.getId(),
                 write.getName(),
-                ToolResult.failure(me.golemcore.bot.domain.model.ToolFailureKind.REPEATED_TOOL_USE_BLOCKED, "blocked"),
+                ToolResult.failure(ToolFailureKind.REPEATED_TOOL_USE_BLOCKED, "blocked"),
                 "blocked",
                 false,
                 null));

@@ -260,7 +260,6 @@ class ToolExecutionPhase {
         private ToolExecutionOutcome executeToolCall(AgentContext context, Message.ToolCall toolCall,
                 TurnState turnState,
                 HistoryWriter historyWriter) {
-            LlmCallPhase.LlmCallOutcome unusedForEventHelper = null;
             emitRuntimeEvent(context, RuntimeEventType.TOOL_STARTED,
                     eventPayload("toolCallId", toolCall.getId(), "tool", toolCall.getName()));
 

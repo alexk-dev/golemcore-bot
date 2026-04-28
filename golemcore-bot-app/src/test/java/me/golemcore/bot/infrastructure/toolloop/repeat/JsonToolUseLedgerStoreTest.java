@@ -32,6 +32,12 @@ class JsonToolUseLedgerStoreTest {
             "sha256:read",
             "filesystem:OBSERVE:sha256:read",
             "{\"path\":\"secret.txt\",\"token\":\"<redacted>\"}");
+    private static final ToolUseFingerprint SHELL_FINGERPRINT = new ToolUseFingerprint(
+            "shell",
+            ToolUseCategory.EXECUTE_UNKNOWN,
+            "sha256:shell",
+            "shell:EXECUTE_UNKNOWN:sha256:shell",
+            "{\"command\":\"git status\"}");
     private static final AutonomyWorkKey WORK_KEY = new AutonomyWorkKey(
             "web:chat-1", "goal-1", "task-1", "schedule-a");
 
@@ -72,6 +78,19 @@ class JsonToolUseLedgerStoreTest {
 
         assertEquals(1, loaded.recordsFor(READ_FINGERPRINT).size());
         assertEquals("sha256:new", loaded.recordsFor(READ_FINGERPRINT).getFirst().outputDigest());
+    }
+
+    @Test
+    void loadPrunesExpiredExecuteUnknownRecordsByAutoLedgerTtl() {
+        ToolUseLedger ledger = new ToolUseLedger();
+        ledger.recordUse(successfulShell(NOW.minus(Duration.ofMinutes(121)), "sha256:old-shell"));
+        ledger.recordUse(successfulShell(NOW.minus(Duration.ofMinutes(5)), "sha256:new-shell"));
+        store.save(WORK_KEY, ledger);
+
+        ToolUseLedger loaded = store.load(WORK_KEY, Duration.ofMinutes(120)).orElseThrow();
+
+        assertEquals(1, loaded.recordsFor(SHELL_FINGERPRINT).size());
+        assertEquals("sha256:new-shell", loaded.recordsFor(SHELL_FINGERPRINT).getFirst().outputDigest());
     }
 
     @Test
@@ -161,6 +180,40 @@ class JsonToolUseLedgerStoreTest {
     }
 
     @Test
+    void loadCapsTotalStoredRecordsPerWorkItem() {
+        ToolUseLedger ledger = new ToolUseLedger();
+        for (int index = 0; index < 520; index++) {
+            ToolUseFingerprint fingerprint = new ToolUseFingerprint(
+                    "tool-" + index,
+                    ToolUseCategory.EXECUTE_UNKNOWN,
+                    "sha256:" + index,
+                    "tool-" + index + ":EXECUTE_UNKNOWN:sha256:" + index,
+                    null);
+            ledger.recordUse(new ToolUseRecord(
+                    fingerprint,
+                    NOW.plusSeconds(index),
+                    NOW.plusSeconds(index),
+                    true,
+                    null,
+                    "sha256:out-" + index,
+                    0,
+                    false,
+                    null));
+        }
+
+        store.save(WORK_KEY, ledger);
+        ToolUseLedger loaded = store.load(WORK_KEY, Duration.ofMinutes(120)).orElseThrow();
+
+        assertEquals(500, loaded.snapshotRecords().values().stream().mapToInt(List::size).sum());
+        assertEquals(1, loaded.recordsFor(new ToolUseFingerprint(
+                "tool-519",
+                ToolUseCategory.EXECUTE_UNKNOWN,
+                "sha256:519",
+                "tool-519:EXECUTE_UNKNOWN:sha256:519",
+                null)).size());
+    }
+
+    @Test
     void saveIgnoresNullInputs() {
         store.save(null, new ToolUseLedger());
         store.save(WORK_KEY, null);
@@ -199,6 +252,19 @@ class JsonToolUseLedgerStoreTest {
     private ToolUseRecord successfulRead(Instant finishedAt, String outputDigest) {
         return new ToolUseRecord(
                 READ_FINGERPRINT,
+                finishedAt.minusMillis(50),
+                finishedAt,
+                true,
+                null,
+                outputDigest,
+                0,
+                false,
+                null);
+    }
+
+    private ToolUseRecord successfulShell(Instant finishedAt, String outputDigest) {
+        return new ToolUseRecord(
+                SHELL_FINGERPRINT,
                 finishedAt.minusMillis(50),
                 finishedAt,
                 true,
