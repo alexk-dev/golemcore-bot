@@ -101,6 +101,22 @@ Scheduled auto messages no longer bypass normal turn orchestration. They are sub
 - a long-running auto turn no longer races a same-session user message by entering `AgentLoop` directly
 - scheduler code can still await completion of the submitted run and apply `taskTimeLimitMinutes`
 
+### Repeat tool-use guard
+
+Auto runs also carry a durable repeat-guard ledger keyed by session plus task or goal id. The ledger prevents a scheduled
+run from repeatedly spending tool budget on the same observation when no state has changed.
+
+Default behavior:
+
+- the first identical observation is allowed
+- the second identical observation in the same state is warned and allowed
+- the third identical observation is blocked with a synthetic tool result and a recovery hint
+- repeated observations from a later scheduled run are blocked until the ledger TTL expires or state changes
+- blocked synthetic results are still written as normal tool results, so tool-call history remains protocol-correct
+
+When a repeated auto observation is blocked, the recovery hint asks the model to use previous tool history, change
+arguments, perform a state-changing next step, write a diary/checkpoint, schedule a later check or finish the turn.
+
 ### GOAL schedule
 
 When a goal schedule fires:
@@ -218,9 +234,13 @@ auto/
 ├── state.json
 ├── goals.json
 ├── schedules.json
-└── diary/
-    ├── 2026-03-08.jsonl
-    └── ...
+├── diary/
+│   ├── 2026-03-08.jsonl
+│   └── ...
+└── tool-ledgers/
+    └── <session-key>/
+        ├── goals/<goal-id>.json
+        └── tasks/<task-id>.json
 ```
 
 ### `state.json`
@@ -243,6 +263,12 @@ JSON array of `ScheduleEntry` records. Goals or tasks without schedules are neve
 
 One JSON object per line, split by UTC date.
 
+### `tool-ledgers/*`
+
+Repeat-guard continuity for autonomous work. Ledger files store bounded tool-use fingerprints, output digests,
+environment version and repeat counters. They intentionally do not store full tool outputs, raw arguments containing
+secrets or large payloads.
+
 ## Configuration
 
 Runtime config:
@@ -260,6 +286,15 @@ Runtime config:
   },
   "tools": {
     "goalManagementEnabled": true
+  },
+  "toolLoop": {
+    "repeatGuardEnabled": true,
+    "repeatGuardShadowMode": false,
+    "repeatGuardMaxSameObservePerTurn": 2,
+    "repeatGuardMaxSameUnknownPerTurn": 2,
+    "repeatGuardMaxBlockedRepeatsPerTurn": 4,
+    "repeatGuardMinPollIntervalSeconds": 60,
+    "repeatGuardAutoLedgerTtlMinutes": 120
   }
 }
 ```
@@ -273,6 +308,9 @@ Field notes:
 5. `maxGoals`: guardrail for concurrently active goals.
 6. `modelTier`: preferred tier for auto messages when no tier is already assigned.
 7. `notifyMilestones`: send completion notifications to the registered channel.
+
+Repeat guard fields live in the `toolLoop` runtime section. `repeatGuardAutoLedgerTtlMinutes` controls how long
+scheduled auto runs remember observation fingerprints for the same task or goal.
 
 ## Pipeline Integration
 

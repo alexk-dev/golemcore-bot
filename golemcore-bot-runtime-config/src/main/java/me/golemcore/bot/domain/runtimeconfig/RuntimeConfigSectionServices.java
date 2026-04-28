@@ -97,6 +97,13 @@ import static me.golemcore.bot.domain.runtimeconfig.RuntimeConfigDefaults.DEFAUL
 import static me.golemcore.bot.domain.runtimeconfig.RuntimeConfigDefaults.DEFAULT_SMART_REASONING;
 import static me.golemcore.bot.domain.runtimeconfig.RuntimeConfigDefaults.DEFAULT_TOOL_LOOP_MAX_LLM_CALLS;
 import static me.golemcore.bot.domain.runtimeconfig.RuntimeConfigDefaults.DEFAULT_TOOL_LOOP_MAX_TOOL_EXECUTIONS;
+import static me.golemcore.bot.domain.runtimeconfig.RuntimeConfigDefaults.DEFAULT_TOOL_REPEAT_GUARD_AUTO_LEDGER_TTL_MINUTES;
+import static me.golemcore.bot.domain.runtimeconfig.RuntimeConfigDefaults.DEFAULT_TOOL_REPEAT_GUARD_ENABLED;
+import static me.golemcore.bot.domain.runtimeconfig.RuntimeConfigDefaults.DEFAULT_TOOL_REPEAT_GUARD_MAX_BLOCKED_REPEATS_PER_TURN;
+import static me.golemcore.bot.domain.runtimeconfig.RuntimeConfigDefaults.DEFAULT_TOOL_REPEAT_GUARD_MAX_SAME_OBSERVE_PER_TURN;
+import static me.golemcore.bot.domain.runtimeconfig.RuntimeConfigDefaults.DEFAULT_TOOL_REPEAT_GUARD_MAX_SAME_UNKNOWN_PER_TURN;
+import static me.golemcore.bot.domain.runtimeconfig.RuntimeConfigDefaults.DEFAULT_TOOL_REPEAT_GUARD_MIN_POLL_INTERVAL_SECONDS;
+import static me.golemcore.bot.domain.runtimeconfig.RuntimeConfigDefaults.DEFAULT_TOOL_REPEAT_GUARD_SHADOW_MODE;
 import static me.golemcore.bot.domain.runtimeconfig.RuntimeConfigDefaults.DEFAULT_TRACING_CAPTURE_INBOUND_PAYLOADS;
 import static me.golemcore.bot.domain.runtimeconfig.RuntimeConfigDefaults.DEFAULT_TRACING_CAPTURE_LLM_PAYLOADS;
 import static me.golemcore.bot.domain.runtimeconfig.RuntimeConfigDefaults.DEFAULT_TRACING_CAPTURE_OUTBOUND_PAYLOADS;
@@ -542,6 +549,32 @@ final class SessionRuntimeConfigService implements RuntimeConfigSectionService {
         Integer toolLoopMaxToolExecutions = toolLoop.getMaxToolExecutions();
         if (toolLoopMaxToolExecutions == null || toolLoopMaxToolExecutions < 1) {
             toolLoop.setMaxToolExecutions(DEFAULT_TOOL_LOOP_MAX_TOOL_EXECUTIONS);
+        }
+        if (toolLoop.getRepeatGuardEnabled() == null) {
+            toolLoop.setRepeatGuardEnabled(DEFAULT_TOOL_REPEAT_GUARD_ENABLED);
+        }
+        if (toolLoop.getRepeatGuardShadowMode() == null) {
+            toolLoop.setRepeatGuardShadowMode(DEFAULT_TOOL_REPEAT_GUARD_SHADOW_MODE);
+        }
+        Integer maxSameObserve = toolLoop.getRepeatGuardMaxSameObservePerTurn();
+        if (maxSameObserve == null || maxSameObserve < 1) {
+            toolLoop.setRepeatGuardMaxSameObservePerTurn(DEFAULT_TOOL_REPEAT_GUARD_MAX_SAME_OBSERVE_PER_TURN);
+        }
+        Integer maxSameUnknown = toolLoop.getRepeatGuardMaxSameUnknownPerTurn();
+        if (maxSameUnknown == null || maxSameUnknown < 1) {
+            toolLoop.setRepeatGuardMaxSameUnknownPerTurn(DEFAULT_TOOL_REPEAT_GUARD_MAX_SAME_UNKNOWN_PER_TURN);
+        }
+        Integer maxBlocked = toolLoop.getRepeatGuardMaxBlockedRepeatsPerTurn();
+        if (maxBlocked == null || maxBlocked < 1) {
+            toolLoop.setRepeatGuardMaxBlockedRepeatsPerTurn(DEFAULT_TOOL_REPEAT_GUARD_MAX_BLOCKED_REPEATS_PER_TURN);
+        }
+        Long minPollInterval = toolLoop.getRepeatGuardMinPollIntervalSeconds();
+        if (minPollInterval == null || minPollInterval < 1L) {
+            toolLoop.setRepeatGuardMinPollIntervalSeconds(DEFAULT_TOOL_REPEAT_GUARD_MIN_POLL_INTERVAL_SECONDS);
+        }
+        Long autoLedgerTtl = toolLoop.getRepeatGuardAutoLedgerTtlMinutes();
+        if (autoLedgerTtl == null || autoLedgerTtl < 1L) {
+            toolLoop.setRepeatGuardAutoLedgerTtlMinutes(DEFAULT_TOOL_REPEAT_GUARD_AUTO_LEDGER_TTL_MINUTES);
         }
     }
 

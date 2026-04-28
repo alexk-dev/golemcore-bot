@@ -59,10 +59,11 @@ import org.springframework.stereotype.Service;
  */
 @Service
 @Slf4j
-public class RuntimeConfigService implements RuntimeConfigQueryPort, RuntimeConfigAdminPort,
-        SelfEvolvingRuntimeConfigPort, ManagedPolicyRuntimeConfigPort, SessionRetentionRuntimeConfigPort,
-        ModelRoutingConfigView, AutoModeConfigView, UpdateRuntimeConfigView, TracingConfigView, ShellRuntimeConfigView,
-        TurnRuntimeConfigView, MemoryRuntimeConfigView, DelayedActionsRuntimeConfigView, RuntimeConfigMutationPort {
+public class RuntimeConfigService
+        implements RuntimeConfigQueryPort, RuntimeConfigAdminPort, SelfEvolvingRuntimeConfigPort,
+        ManagedPolicyRuntimeConfigPort, SessionRetentionRuntimeConfigPort, ModelRoutingConfigView, AutoModeConfigView,
+        UpdateRuntimeConfigView, TracingConfigView, ShellRuntimeConfigView, TurnRuntimeConfigView,
+        ToolLoopRuntimeConfigView, MemoryRuntimeConfigView, DelayedActionsRuntimeConfigView, RuntimeConfigMutationPort {
 
     private final RuntimeConfigPersistencePort runtimeConfigPersistencePort;
     private final SelfEvolvingBootstrapOverridePort selfEvolvingBootstrapOverrideService;

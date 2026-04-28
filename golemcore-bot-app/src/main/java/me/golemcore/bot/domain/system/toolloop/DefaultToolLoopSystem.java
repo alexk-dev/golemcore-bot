@@ -32,6 +32,10 @@ import me.golemcore.bot.domain.events.RuntimeEventService;
 import me.golemcore.bot.domain.tracing.TraceRuntimeConfigSupport;
 import me.golemcore.bot.domain.tracing.TraceService;
 import me.golemcore.bot.domain.progress.TurnProgressService;
+import me.golemcore.bot.domain.system.toolloop.repeat.AutonomyWorkKey;
+import me.golemcore.bot.domain.system.toolloop.repeat.ToolRepeatGuard;
+import me.golemcore.bot.domain.system.toolloop.repeat.ToolUseLedger;
+import me.golemcore.bot.domain.system.toolloop.repeat.ToolUseLedgerStore;
 import me.golemcore.bot.domain.system.toolloop.view.ConversationViewBuilder;
 import me.golemcore.bot.port.outbound.LlmPort;
 import me.golemcore.bot.port.outbound.ToolRuntimeSettingsPort;
@@ -42,6 +46,8 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Thin orchestrator for the tool loop (single-turn internal loop).
@@ -71,11 +77,14 @@ import java.util.Objects;
  */
 public class DefaultToolLoopSystem implements ToolLoopSystem {
 
+    private static final Logger log = LoggerFactory.getLogger(DefaultToolLoopSystem.class);
+
     private final HistoryWriter historyWriter;
     private final ToolRuntimeSettingsPort.TurnSettings turnSettings;
     private final ToolRuntimeSettingsPort.ToolLoopSettings settings;
     private final RuntimeConfigService runtimeConfigService;
     private final RuntimeEventService runtimeEventService;
+    private final ToolUseLedgerStore toolUseLedgerStore;
     private final Clock clock;
 
     private final LlmCallPhase llmCallPhase;
@@ -87,6 +96,7 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
         this.settings = builder.settings;
         this.runtimeConfigService = builder.runtimeConfigService;
         this.runtimeEventService = builder.runtimeEventService;
+        this.toolUseLedgerStore = builder.toolUseLedgerStore;
         this.clock = builder.clock;
 
         ContextTokenEstimator contextTokenEstimator = builder.contextTokenEstimator != null
@@ -132,7 +142,8 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
                 builder.toolExecutor, failurePolicy, builder.runtimeEventService,
                 builder.turnProgressService, builder.traceService,
                 builder.runtimeConfigService, builder.clock,
-                builder.planModeToolRestrictionService);
+                builder.planModeToolRestrictionService,
+                builder.repeatGuard);
     }
 
     /**
@@ -170,52 +181,56 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
     public ToolLoopTurnResult processTurn(AgentContext context) {
         TurnState turnState = initializeTurn(context);
 
-        while (turnState.canContinue(clock.instant())) {
-            // --- Phase 1: LLM call ---
-            LlmCallPhase.LlmCallOutcome llmOutcome = llmCallPhase.execute(turnState, historyWriter);
+        try {
+            while (turnState.canContinue(clock.instant())) {
+                // --- Phase 1: LLM call ---
+                LlmCallPhase.LlmCallOutcome llmOutcome = llmCallPhase.execute(turnState, historyWriter);
 
-            if (llmOutcome instanceof LlmCallPhase.LlmCallOutcome.RetryScheduled) {
-                continue;
-            }
-            if (llmOutcome instanceof LlmCallPhase.LlmCallOutcome.Failed failed) {
-                return failed.result();
-            }
-            if (llmOutcome instanceof LlmCallPhase.LlmCallOutcome.Interrupted interrupted) {
-                return interrupted.result();
-            }
-
-            LlmResponse response = ((LlmCallPhase.LlmCallOutcome.Success) llmOutcome).response();
-
-            // --- Phase 2: Check for final answer ---
-            boolean hasToolCalls = response != null && response.hasToolCalls();
-            if (!hasToolCalls) {
-                LlmCallPhase.EmptyResponseCheck emptyCheck = llmCallPhase.checkEmptyFinalResponse(
-                        turnState, response, historyWriter);
-
-                if (emptyCheck instanceof LlmCallPhase.EmptyResponseCheck.Failed failed) {
-                    return failed.result();
-                }
-                if (emptyCheck instanceof LlmCallPhase.EmptyResponseCheck.RetryScheduled) {
+                if (llmOutcome instanceof LlmCallPhase.LlmCallOutcome.RetryScheduled) {
                     continue;
                 }
-                return llmCallPhase.finalizeFinalAnswer(turnState, response, historyWriter);
+                if (llmOutcome instanceof LlmCallPhase.LlmCallOutcome.Failed failed) {
+                    return failed.result();
+                }
+                if (llmOutcome instanceof LlmCallPhase.LlmCallOutcome.Interrupted interrupted) {
+                    return interrupted.result();
+                }
+
+                LlmResponse response = ((LlmCallPhase.LlmCallOutcome.Success) llmOutcome).response();
+
+                // --- Phase 2: Check for final answer ---
+                boolean hasToolCalls = response != null && response.hasToolCalls();
+                if (!hasToolCalls) {
+                    LlmCallPhase.EmptyResponseCheck emptyCheck = llmCallPhase.checkEmptyFinalResponse(
+                            turnState, response, historyWriter);
+
+                    if (emptyCheck instanceof LlmCallPhase.EmptyResponseCheck.Failed failed) {
+                        return failed.result();
+                    }
+                    if (emptyCheck instanceof LlmCallPhase.EmptyResponseCheck.RetryScheduled) {
+                        continue;
+                    }
+                    return llmCallPhase.finalizeFinalAnswer(turnState, response, historyWriter);
+                }
+
+                // --- Phase 3: Execute tool calls ---
+                ToolExecutionPhase.ToolBatchOutcome batchOutcome = toolExecutionPhase.execute(
+                        turnState, response, historyWriter, llmCallPhase);
+
+                if (batchOutcome instanceof ToolExecutionPhase.ToolBatchOutcome.StopTurn stop) {
+                    return stop.result();
+                }
+                if (batchOutcome instanceof ToolExecutionPhase.ToolBatchOutcome.Interrupted interrupted) {
+                    return interrupted.result();
+                }
+                // RecoveryHintInjected and Continue both loop back to LLM call
             }
 
-            // --- Phase 3: Execute tool calls ---
-            ToolExecutionPhase.ToolBatchOutcome batchOutcome = toolExecutionPhase.execute(
-                    turnState, response, historyWriter, llmCallPhase);
-
-            if (batchOutcome instanceof ToolExecutionPhase.ToolBatchOutcome.StopTurn stop) {
-                return stop.result();
-            }
-            if (batchOutcome instanceof ToolExecutionPhase.ToolBatchOutcome.Interrupted interrupted) {
-                return interrupted.result();
-            }
-            // RecoveryHintInjected and Continue both loop back to LLM call
+            // --- Limit reached ---
+            return llmCallPhase.handleLimitReached(turnState, historyWriter);
+        } finally {
+            saveAutoToolUseLedger(context, turnState);
         }
-
-        // --- Limit reached ---
-        return llmCallPhase.handleLimitReached(turnState, historyWriter);
     }
 
     // ==================== Turn initialization ====================
@@ -237,9 +252,32 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
         long retryBaseDelayMs = resolveAutoRetryBaseDelayMs();
         boolean retryEnabled = isAutoRetryEnabled();
 
+        ToolUseLedger toolUseLedger = loadAutoToolUseLedger(context);
+
         return new TurnState(context, tracingConfig, maxLlmCalls, maxToolExecutions, deadline,
                 stopOnToolFailure, stopOnConfirmationDenied, stopOnToolPolicyDenied,
-                maxRetries, retryBaseDelayMs, retryEnabled);
+                maxRetries, retryBaseDelayMs, retryEnabled, toolUseLedger);
+    }
+
+    private ToolUseLedger loadAutoToolUseLedger(AgentContext context) {
+        if (toolUseLedgerStore == null || context == null) {
+            return new ToolUseLedger();
+        }
+        return AutonomyWorkKey.fromMetadata(context.getAttributes())
+                .flatMap(key -> toolUseLedgerStore.load(key, resolveAutoLedgerTtl()))
+                .orElseGet(ToolUseLedger::new);
+    }
+
+    private void saveAutoToolUseLedger(AgentContext context, TurnState turnState) {
+        if (toolUseLedgerStore == null || context == null || turnState == null) {
+            return;
+        }
+        try {
+            AutonomyWorkKey.fromMetadata(context.getAttributes())
+                    .ifPresent(key -> toolUseLedgerStore.save(key, turnState.getToolUseLedger()));
+        } catch (RuntimeException e) {
+            log.warn("Failed to persist auto tool-use ledger", e);
+        }
     }
 
     // ==================== Configuration resolution ====================
@@ -294,6 +332,13 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
             return false;
         }
         return runtimeConfigService.isTurnAutoRetryEnabled();
+    }
+
+    private Duration resolveAutoLedgerTtl() {
+        if (runtimeConfigService == null) {
+            return Duration.ofMinutes(120);
+        }
+        return Duration.ofMinutes(Math.max(1L, runtimeConfigService.getToolRepeatGuardAutoLedgerTtlMinutes()));
     }
 
     private boolean shouldForceTracingPayloadCapture() {
@@ -371,6 +416,8 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
         private TraceService traceService;
         private ToolFailureRecoveryService toolFailureRecoveryService;
         private PlanModeToolRestrictionService planModeToolRestrictionService;
+        private ToolRepeatGuard repeatGuard;
+        private ToolUseLedgerStore toolUseLedgerStore;
         private me.golemcore.bot.domain.system.toolloop.resilience.LlmResilienceOrchestrator resilienceOrchestrator;
         private Clock clock;
 
@@ -483,6 +530,18 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
         public Builder planModeToolRestrictionService(
                 PlanModeToolRestrictionService planModeToolRestrictionService) {
             this.planModeToolRestrictionService = planModeToolRestrictionService;
+            return this;
+        }
+
+        /** Sets the repeated tool-use guard (optional, defaults to no-op). */
+        public Builder repeatGuard(ToolRepeatGuard repeatGuard) {
+            this.repeatGuard = repeatGuard;
+            return this;
+        }
+
+        /** Sets the durable ledger store used for autonomous repeat guard state. */
+        public Builder toolUseLedgerStore(ToolUseLedgerStore toolUseLedgerStore) {
+            this.toolUseLedgerStore = toolUseLedgerStore;
             return this;
         }
 

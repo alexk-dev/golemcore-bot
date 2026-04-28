@@ -114,6 +114,11 @@ public class ToolFailurePolicy {
 
         ToolFailureKind kind = outcome.toolResult().getFailureKind();
 
+        if (kind == ToolFailureKind.REPEATED_TOOL_USE_BLOCKED) {
+            return new Verdict.RecoveryHint(repeatGuardHint(outcome), repeatGuardFingerprint(toolCall),
+                    "REPEAT_GUARD");
+        }
+
         // Layer 1: Immediate stop conditions
         if (turnState.isStopOnConfirmationDenied() && kind == ToolFailureKind.CONFIRMATION_DENIED) {
             return new Verdict.StopTurn("confirmation denied");
@@ -138,6 +143,22 @@ public class ToolFailurePolicy {
 
         return new Verdict.Ok();
     }
+
+        private String repeatGuardHint(ToolExecutionOutcome outcome) {
+            String error = outcome.toolResult().getError();
+            if (error == null || error.isBlank()) {
+                return "Repeated tool call blocked by repeat guard. Use the previous result, change arguments, "
+                        + "perform a state-changing step, checkpoint progress, or finish the turn.";
+            }
+            return error;
+        }
+
+        private String repeatGuardFingerprint(Message.ToolCall toolCall) {
+            if (toolCall == null) {
+                return "repeat-guard:unknown";
+            }
+            return "repeat-guard:" + toolCall.getName() + ":" + toolCall.getId();
+        }
 
         private ToolFailureRecoveryDecision evaluateRecovery(TurnState turnState, Message.ToolCall toolCall,
                 ToolExecutionOutcome outcome) {

@@ -23,5 +23,11 @@ public enum ToolFailureKind {
      * Tool execution failed during runtime (exceptions, timeouts, non-zero exit,
      * etc.).
      */
-    EXECUTION_FAILED
+    EXECUTION_FAILED,
+
+    /**
+     * Tool execution was skipped by the loop because the same call repeated without
+     * progress.
+     */
+    REPEATED_TOOL_USE_BLOCKED
 }

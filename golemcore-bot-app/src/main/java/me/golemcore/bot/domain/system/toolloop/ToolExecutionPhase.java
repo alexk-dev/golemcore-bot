@@ -38,6 +38,8 @@ import me.golemcore.bot.domain.events.RuntimeEventService;
 import me.golemcore.bot.domain.tracing.TraceMdcSupport;
 import me.golemcore.bot.domain.tracing.TraceService;
 import me.golemcore.bot.domain.progress.TurnProgressService;
+import me.golemcore.bot.domain.system.toolloop.repeat.ToolRepeatDecision;
+import me.golemcore.bot.domain.system.toolloop.repeat.ToolRepeatGuard;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Duration;
@@ -82,6 +84,7 @@ class ToolExecutionPhase {
     private final TraceService traceService;
     private final RuntimeConfigService runtimeConfigService;
     private final PlanModeToolRestrictionService planModeToolRestrictionService;
+    private final ToolRepeatGuard repeatGuard;
     private final Clock clock;
     private final ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
 
@@ -105,13 +108,21 @@ class ToolExecutionPhase {
             RuntimeEventService runtimeEventService, TurnProgressService turnProgressService,
             TraceService traceService, RuntimeConfigService runtimeConfigService, Clock clock) {
         this(toolExecutor, failurePolicy, runtimeEventService, turnProgressService, traceService,
-                runtimeConfigService, clock, null);
+                runtimeConfigService, clock, null, ToolRepeatGuard.noop());
     }
 
     ToolExecutionPhase(ToolExecutorPort toolExecutor, ToolFailurePolicy failurePolicy,
             RuntimeEventService runtimeEventService, TurnProgressService turnProgressService,
             TraceService traceService, RuntimeConfigService runtimeConfigService, Clock clock,
             PlanModeToolRestrictionService planModeToolRestrictionService) {
+        this(toolExecutor, failurePolicy, runtimeEventService, turnProgressService, traceService,
+                runtimeConfigService, clock, planModeToolRestrictionService, ToolRepeatGuard.noop());
+    }
+
+    ToolExecutionPhase(ToolExecutorPort toolExecutor, ToolFailurePolicy failurePolicy,
+            RuntimeEventService runtimeEventService, TurnProgressService turnProgressService,
+            TraceService traceService, RuntimeConfigService runtimeConfigService, Clock clock,
+            PlanModeToolRestrictionService planModeToolRestrictionService, ToolRepeatGuard repeatGuard) {
         this.toolExecutor = toolExecutor;
         this.failurePolicy = failurePolicy;
         this.runtimeEventService = runtimeEventService;
@@ -120,6 +131,7 @@ class ToolExecutionPhase {
         this.runtimeConfigService = runtimeConfigService;
         this.clock = clock;
         this.planModeToolRestrictionService = planModeToolRestrictionService;
+        this.repeatGuard = repeatGuard != null ? repeatGuard : ToolRepeatGuard.noop();
     }
 
     /**
@@ -257,8 +269,8 @@ class ToolExecutionPhase {
                     ? planModeToolRestrictionService.denialReason(context, toolCall)
                             .map(reason -> ToolExecutionOutcome.synthetic(toolCall, ToolFailureKind.POLICY_DENIED,
                                     reason))
-                            .orElseGet(() -> executeWithTracing(context, toolCall, turnState.getTracingConfig()))
-                    : executeWithTracing(context, toolCall, turnState.getTracingConfig());
+                            .orElseGet(() -> executeAfterRepeatGuard(context, toolCall, turnState))
+                    : executeAfterRepeatGuard(context, toolCall, turnState);
             turnState.incrementToolExecutions();
             long toolDuration = Duration.between(toolStarted, clock.instant()).toMillis();
 
@@ -285,9 +297,24 @@ class ToolExecutionPhase {
             if (outcome != null) {
                 recordToolProgress(context, toolCall, outcome, toolDuration);
                 historyWriter.appendToolResult(context, outcome);
+                repeatGuard.afterOutcome(turnState, toolCall, outcome);
             }
 
             return outcome;
+        }
+
+        private ToolExecutionOutcome executeAfterRepeatGuard(AgentContext context, Message.ToolCall toolCall,
+                TurnState turnState) {
+            ToolRepeatDecision decision = repeatGuard.beforeExecute(turnState, toolCall);
+            if (decision instanceof ToolRepeatDecision.BlockAndHint block) {
+                return ToolExecutionOutcome.synthetic(toolCall, ToolFailureKind.REPEATED_TOOL_USE_BLOCKED,
+                        block.hint());
+            }
+            if (decision instanceof ToolRepeatDecision.StopTurn stop) {
+                return ToolExecutionOutcome.synthetic(toolCall, ToolFailureKind.REPEATED_TOOL_USE_BLOCKED,
+                        stop.reason());
+            }
+            return executeWithTracing(context, toolCall, turnState.getTracingConfig());
         }
 
         private ToolExecutionOutcome executeWithTracing(AgentContext context, Message.ToolCall toolCall,

@@ -49,22 +49,6 @@ public interface TurnRuntimeConfigView extends RuntimeConfigSource {
         return val != null ? val : DEFAULT_TURN_MAX_TOOL_EXECUTIONS;
     }
 
-    default int getToolLoopMaxLlmCalls() {
-        RuntimeConfig.ToolLoopConfig toolLoopConfig = getRuntimeConfig().getToolLoop();
-        if (toolLoopConfig != null && toolLoopConfig.getMaxLlmCalls() != null) {
-            return toolLoopConfig.getMaxLlmCalls();
-        }
-        return getTurnMaxLlmCalls();
-    }
-
-    default int getToolLoopMaxToolExecutions() {
-        RuntimeConfig.ToolLoopConfig toolLoopConfig = getRuntimeConfig().getToolLoop();
-        if (toolLoopConfig != null && toolLoopConfig.getMaxToolExecutions() != null) {
-            return toolLoopConfig.getMaxToolExecutions();
-        }
-        return getTurnMaxToolExecutions();
-    }
-
     default Duration getTurnDeadline() {
         RuntimeConfig.TurnConfig turnConfig = getRuntimeConfig().getTurn();
         if (turnConfig == null || turnConfig.getDeadline() == null || turnConfig.getDeadline().isBlank()) {

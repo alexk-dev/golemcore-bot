@@ -804,6 +804,13 @@ class RuntimeConfigServiceTest {
         assertEquals(500, service.getTurnMaxToolExecutions());
         assertEquals(20, service.getToolLoopMaxLlmCalls());
         assertEquals(80, service.getToolLoopMaxToolExecutions());
+        assertTrue(service.isToolRepeatGuardEnabled());
+        assertFalse(service.isToolRepeatGuardShadowMode());
+        assertEquals(2, service.getToolRepeatGuardMaxSameObservePerTurn());
+        assertEquals(2, service.getToolRepeatGuardMaxSameUnknownPerTurn());
+        assertEquals(4, service.getToolRepeatGuardMaxBlockedRepeatsPerTurn());
+        assertEquals(60L, service.getToolRepeatGuardMinPollIntervalSeconds());
+        assertEquals(120L, service.getToolRepeatGuardAutoLedgerTtlMinutes());
         assertEquals(java.time.Duration.ofHours(1), service.getTurnDeadline());
     }
 
@@ -820,6 +827,25 @@ class RuntimeConfigServiceTest {
         assertEquals(500, service.getTurnMaxToolExecutions());
         assertEquals(12, service.getToolLoopMaxLlmCalls());
         assertEquals(34, service.getToolLoopMaxToolExecutions());
+    }
+
+    @Test
+    void shouldReturnConfiguredToolRepeatGuardSettings() throws Exception {
+        RuntimeConfig config = RuntimeConfig.builder()
+                .toolLoop(RuntimeConfig.ToolLoopConfig.builder().repeatGuardEnabled(false).repeatGuardShadowMode(true)
+                        .repeatGuardMaxSameObservePerTurn(3).repeatGuardMaxSameUnknownPerTurn(4)
+                        .repeatGuardMaxBlockedRepeatsPerTurn(5).repeatGuardMinPollIntervalSeconds(30L)
+                        .repeatGuardAutoLedgerTtlMinutes(45L).build())
+                .build();
+        setCachedConfig(config);
+
+        assertFalse(service.isToolRepeatGuardEnabled());
+        assertTrue(service.isToolRepeatGuardShadowMode());
+        assertEquals(3, service.getToolRepeatGuardMaxSameObservePerTurn());
+        assertEquals(4, service.getToolRepeatGuardMaxSameUnknownPerTurn());
+        assertEquals(5, service.getToolRepeatGuardMaxBlockedRepeatsPerTurn());
+        assertEquals(30L, service.getToolRepeatGuardMinPollIntervalSeconds());
+        assertEquals(45L, service.getToolRepeatGuardAutoLedgerTtlMinutes());
     }
 
     @Test

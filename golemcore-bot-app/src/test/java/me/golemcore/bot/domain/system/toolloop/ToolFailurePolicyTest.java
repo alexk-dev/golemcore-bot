@@ -236,6 +236,41 @@ class ToolFailurePolicyTest {
         assertTrue(stop.reason().contains("shell"));
     }
 
+    @Test
+    void repeatGuardFailureKindReturnsRecoveryHintBeforeGenericStopOnFailure() {
+        TurnState turnState = buildTurnState(true, false, false);
+        Message.ToolCall toolCall = filesystemReadToolCall("README.md");
+        ToolExecutionOutcome outcome = new ToolExecutionOutcome(
+                "tc-1", "filesystem",
+                ToolResult.failure(ToolFailureKind.REPEATED_TOOL_USE_BLOCKED,
+                        "Repeated tool call blocked by repeat guard."),
+                "Repeated tool call blocked by repeat guard.", true, null);
+
+        ToolFailurePolicy.Verdict verdict = policy.evaluate(turnState, toolCall, outcome);
+
+        assertInstanceOf(ToolFailurePolicy.Verdict.RecoveryHint.class, verdict);
+        ToolFailurePolicy.Verdict.RecoveryHint hint = (ToolFailurePolicy.Verdict.RecoveryHint) verdict;
+        assertEquals("REPEAT_GUARD", hint.recoverabilityName());
+        assertTrue(hint.hint().contains("Repeated tool call blocked"));
+    }
+
+    @Test
+    void repeatGuardFailureKindDoesNotUseShellFailureRecoveryCounters() {
+        TurnState turnState = buildTurnState(false, false, false);
+        Message.ToolCall toolCall = shellToolCall("ls -la");
+        ToolExecutionOutcome outcome = new ToolExecutionOutcome(
+                "tc-1", "shell",
+                ToolResult.failure(ToolFailureKind.REPEATED_TOOL_USE_BLOCKED,
+                        "Repeated shell command blocked by repeat guard."),
+                "Repeated shell command blocked by repeat guard.", true, null);
+
+        ToolFailurePolicy.Verdict verdict = policy.evaluate(turnState, toolCall, outcome);
+
+        assertInstanceOf(ToolFailurePolicy.Verdict.RecoveryHint.class, verdict);
+        assertTrue(turnState.getToolFailureCounts().isEmpty());
+        assertTrue(turnState.getToolRecoveryCounts().isEmpty());
+    }
+
     // -----------------------------------------------------------------------
     // Helpers
     // -----------------------------------------------------------------------
@@ -266,6 +301,14 @@ class ToolFailurePolicyTest {
                 .id("tc-1")
                 .name("shell")
                 .arguments(Map.of("command", command))
+                .build();
+    }
+
+    private Message.ToolCall filesystemReadToolCall(String path) {
+        return Message.ToolCall.builder()
+                .id("tc-1")
+                .name("filesystem")
+                .arguments(Map.of("operation", "read_file", "path", path))
                 .build();
     }
 }

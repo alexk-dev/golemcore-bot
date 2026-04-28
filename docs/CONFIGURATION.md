@@ -62,6 +62,45 @@ Notable runtime sections:
 - `hive.json`
 - `self-evolving.json`
 
+### Tool Loop Repeat Guard
+
+Repeat guard settings live in `preferences/tool-loop.json` under the `toolLoop` section. The guard prevents the
+same tool call with the same canonical arguments from being executed indefinitely when no state changes.
+
+Default runtime shape:
+
+```json
+{
+  "toolLoop": {
+    "maxLlmCalls": 20,
+    "maxToolExecutions": 80,
+    "stopOnToolFailure": false,
+    "stopOnConfirmationDenied": true,
+    "stopOnToolPolicyDenied": true,
+    "repeatGuardEnabled": true,
+    "repeatGuardShadowMode": false,
+    "repeatGuardMaxSameObservePerTurn": 2,
+    "repeatGuardMaxSameUnknownPerTurn": 2,
+    "repeatGuardMaxBlockedRepeatsPerTurn": 4,
+    "repeatGuardMinPollIntervalSeconds": 60,
+    "repeatGuardAutoLedgerTtlMinutes": 120
+  }
+}
+```
+
+Field notes:
+
+- `repeatGuardEnabled`: enables pre-execution repeat protection.
+- `repeatGuardShadowMode`: logs/warns would-block decisions while still allowing execution.
+- `repeatGuardMaxSameObservePerTurn`: identical observe calls allowed before blocking.
+- `repeatGuardMaxSameUnknownPerTurn`: identical unknown execution calls, including shell, allowed before blocking.
+- `repeatGuardMaxBlockedRepeatsPerTurn`: stops a turn after repeated ignored guard hints.
+- `repeatGuardMinPollIntervalSeconds`: minimum backoff before repeating the same polling call.
+- `repeatGuardAutoLedgerTtlMinutes`: TTL for autonomous task/goal repeat ledgers under `auto/tool-ledgers/`.
+
+The persisted auto ledger stores fingerprints and output digests only. It does not persist full tool outputs or raw
+secret-like arguments.
+
 ### SelfEvolving
 
 `SelfEvolving` is the native observe, judge, evolve, and promote runtime plane for the bot.

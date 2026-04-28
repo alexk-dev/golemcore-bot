@@ -63,6 +63,12 @@ class RuntimeConfigSectionServicesTest {
                 cfg.getTracing().getSessionTraceBudgetMb());
         assertEquals(RuntimeConfigDefaults.DEFAULT_TURN_MAX_SKILL_TRANSITIONS, cfg.getTurn().getMaxSkillTransitions());
         assertEquals(RuntimeConfigDefaults.DEFAULT_TOOL_LOOP_MAX_LLM_CALLS, cfg.getToolLoop().getMaxLlmCalls());
+        assertEquals(RuntimeConfigDefaults.DEFAULT_TOOL_REPEAT_GUARD_ENABLED,
+                cfg.getToolLoop().getRepeatGuardEnabled());
+        assertEquals(RuntimeConfigDefaults.DEFAULT_TOOL_REPEAT_GUARD_MAX_SAME_OBSERVE_PER_TURN,
+                cfg.getToolLoop().getRepeatGuardMaxSameObservePerTurn());
+        assertEquals(RuntimeConfigDefaults.DEFAULT_TOOL_REPEAT_GUARD_MIN_POLL_INTERVAL_SECONDS,
+                cfg.getToolLoop().getRepeatGuardMinPollIntervalSeconds());
         assertEquals(RuntimeConfigDefaults.DEFAULT_DELAYED_ACTIONS_MAX_PENDING_PER_SESSION,
                 cfg.getDelayedActions().getMaxPendingPerSession());
         assertEquals(RuntimeConfigDefaults.DEFAULT_MEMORY_VERSION, cfg.getMemory().getVersion());
@@ -99,7 +105,10 @@ class RuntimeConfigSectionServicesTest {
         cfg.setTurn(RuntimeConfig.TurnConfig.builder().maxSkillTransitions(0).queueSteeringMode(" ")
                 .queueFollowUpMode("invalid").progressBatchSize(0).progressMaxSilenceSeconds(0)
                 .progressSummaryTimeoutMs(999).build());
-        cfg.setToolLoop(RuntimeConfig.ToolLoopConfig.builder().maxLlmCalls(0).maxToolExecutions(0).build());
+        cfg.setToolLoop(RuntimeConfig.ToolLoopConfig.builder().maxLlmCalls(0).maxToolExecutions(0)
+                .repeatGuardMaxSameObservePerTurn(0).repeatGuardMaxSameUnknownPerTurn(0)
+                .repeatGuardMaxBlockedRepeatsPerTurn(0).repeatGuardMinPollIntervalSeconds(0L)
+                .repeatGuardAutoLedgerTtlMinutes(0L).build());
         cfg.setSessionRetention(RuntimeConfig.SessionRetentionConfig.builder().maxAge("bad").cleanupInterval("also-bad")
                 .protectActiveSessions(null).protectSessionsWithPlans(null).protectSessionsWithDelayedActions(null)
                 .build());
@@ -119,6 +128,10 @@ class RuntimeConfigSectionServicesTest {
         assertEquals(RuntimeConfigDefaults.DEFAULT_TURN_QUEUE_FOLLOW_UP_MODE, cfg.getTurn().getQueueFollowUpMode());
         assertEquals(RuntimeConfigDefaults.DEFAULT_TOOL_LOOP_MAX_TOOL_EXECUTIONS,
                 cfg.getToolLoop().getMaxToolExecutions());
+        assertEquals(RuntimeConfigDefaults.DEFAULT_TOOL_REPEAT_GUARD_MAX_SAME_OBSERVE_PER_TURN,
+                cfg.getToolLoop().getRepeatGuardMaxSameObservePerTurn());
+        assertEquals(RuntimeConfigDefaults.DEFAULT_TOOL_REPEAT_GUARD_MIN_POLL_INTERVAL_SECONDS,
+                cfg.getToolLoop().getRepeatGuardMinPollIntervalSeconds());
         assertEquals(RuntimeConfigDefaults.DEFAULT_SESSION_RETENTION_MAX_AGE.toString(),
                 cfg.getSessionRetention().getMaxAge());
         assertEquals(RuntimeConfigDefaults.DEFAULT_DELAYED_ACTIONS_MAX_DELAY.toString(),
