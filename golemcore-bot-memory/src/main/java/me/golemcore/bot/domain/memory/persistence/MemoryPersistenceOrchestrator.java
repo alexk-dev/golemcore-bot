@@ -29,7 +29,7 @@ import java.util.List;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.MemoryItem;
 import me.golemcore.bot.domain.memory.MemoryScopeSupport;
-import me.golemcore.bot.domain.runtimeconfig.RuntimeConfigService;
+import me.golemcore.bot.domain.runtimeconfig.MemoryRuntimeConfigView;
 import me.golemcore.bot.port.outbound.StoragePort;
 import me.golemcore.bot.port.outbound.MemorySettingsPort;
 import org.springframework.stereotype.Service;
@@ -47,12 +47,12 @@ public class MemoryPersistenceOrchestrator {
 
     private final StoragePort storagePort;
     private final MemorySettingsPort settingsPort;
-    private final RuntimeConfigService runtimeConfigService;
+    private final MemoryRuntimeConfigView runtimeConfigService;
     private final MemoryNormalizationService memoryNormalizationService;
     private final ObjectMapper objectMapper;
 
     public MemoryPersistenceOrchestrator(StoragePort storagePort, MemorySettingsPort settingsPort,
-            RuntimeConfigService runtimeConfigService, MemoryNormalizationService memoryNormalizationService,
+            MemoryRuntimeConfigView runtimeConfigService, MemoryNormalizationService memoryNormalizationService,
             ObjectMapper objectMapper) {
         this.storagePort = storagePort;
         this.settingsPort = settingsPort;

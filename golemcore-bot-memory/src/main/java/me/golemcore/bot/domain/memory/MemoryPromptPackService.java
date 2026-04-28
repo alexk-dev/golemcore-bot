@@ -1,6 +1,6 @@
 package me.golemcore.bot.domain.memory;
 
-import me.golemcore.bot.domain.runtimeconfig.RuntimeConfigService;
+import me.golemcore.bot.domain.runtimeconfig.MemoryRuntimeConfigView;
 
 /*
  * Copyright 2026 Aleksei Kuleshov
@@ -46,12 +46,12 @@ import java.util.Map;
 @Service
 public class MemoryPromptPackService {
 
-    private final RuntimeConfigService runtimeConfigService;
+    private final MemoryRuntimeConfigView runtimeConfigService;
     private final MemoryDisclosurePlanner memoryDisclosurePlanner;
     private final MemorySectionAssembler memorySectionAssembler;
     private final MemoryPackRenderer memoryPackRenderer;
 
-    public MemoryPromptPackService(RuntimeConfigService runtimeConfigService,
+    public MemoryPromptPackService(MemoryRuntimeConfigView runtimeConfigService,
             MemoryDisclosurePlanner memoryDisclosurePlanner, MemorySectionAssembler memorySectionAssembler,
             MemoryPackRenderer memoryPackRenderer) {
         this.runtimeConfigService = runtimeConfigService;

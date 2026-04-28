@@ -110,8 +110,9 @@ public class CoreLayerConfiguration {
             RuntimeEventService runtimeEventService) {
         return new AgentLoopFactory().create(
                 new AgentLoopPorts(sessionService, rateLimiter, channelRuntimePort, llmPort),
-                new AgentLoopRuntimeServices(runtimeConfigService, preferencesService, clock, traceService,
-                        traceSnapshotCodecPort, contextHygieneService, runtimeEventService),
+                new AgentLoopRuntimeServices(runtimeConfigService, runtimeConfigService, runtimeConfigService,
+                        preferencesService, clock, traceService, traceSnapshotCodecPort, contextHygieneService,
+                        runtimeEventService),
                 systems);
     }
 

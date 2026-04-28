@@ -1,36 +1,33 @@
 package me.golemcore.bot.domain.tracing;
 
 import me.golemcore.bot.domain.model.RuntimeConfig;
-import me.golemcore.bot.domain.runtimeconfig.RuntimeConfigService;
+import me.golemcore.bot.domain.runtimeconfig.TracingConfigView;
 
 public final class TraceRuntimeConfigSupport {
 
     private TraceRuntimeConfigSupport() {
     }
 
-    public static RuntimeConfig.TracingConfig resolve(RuntimeConfigService runtimeConfigService) {
-        if (runtimeConfigService == null) {
+    public static RuntimeConfig.TracingConfig resolve(TracingConfigView tracingConfigView,
+            boolean forcePayloadCapture) {
+        if (tracingConfigView == null) {
             return null;
         }
-        boolean forcePayloadCapture = runtimeConfigService.isSelfEvolvingEnabled()
-                && runtimeConfigService.isSelfEvolvingTracePayloadOverrideEnabled();
         RuntimeConfig.TracingConfig tracingConfig = new RuntimeConfig.TracingConfig();
-        tracingConfig.setEnabled(runtimeConfigService.isTracingEnabled());
-        tracingConfig
-                .setPayloadSnapshotsEnabled(runtimeConfigService.isPayloadSnapshotsEnabled() || forcePayloadCapture);
-        tracingConfig.setSessionTraceBudgetMb(runtimeConfigService.getSessionTraceBudgetMb());
-        tracingConfig.setMaxSnapshotSizeKb(runtimeConfigService.getTraceMaxSnapshotSizeKb());
-        tracingConfig.setMaxSnapshotsPerSpan(runtimeConfigService.getTraceMaxSnapshotsPerSpan());
-        tracingConfig.setMaxTracesPerSession(runtimeConfigService.getTraceMaxTracesPerSession());
+        tracingConfig.setEnabled(tracingConfigView.isTracingEnabled());
+        tracingConfig.setPayloadSnapshotsEnabled(tracingConfigView.isPayloadSnapshotsEnabled() || forcePayloadCapture);
+        tracingConfig.setSessionTraceBudgetMb(tracingConfigView.getSessionTraceBudgetMb());
+        tracingConfig.setMaxSnapshotSizeKb(tracingConfigView.getTraceMaxSnapshotSizeKb());
+        tracingConfig.setMaxSnapshotsPerSpan(tracingConfigView.getTraceMaxSnapshotsPerSpan());
+        tracingConfig.setMaxTracesPerSession(tracingConfigView.getTraceMaxTracesPerSession());
         tracingConfig.setCaptureInboundPayloads(
-                runtimeConfigService.isTraceInboundPayloadCaptureEnabled() || forcePayloadCapture);
+                tracingConfigView.isTraceInboundPayloadCaptureEnabled() || forcePayloadCapture);
         tracingConfig.setCaptureOutboundPayloads(
-                runtimeConfigService.isTraceOutboundPayloadCaptureEnabled() || forcePayloadCapture);
+                tracingConfigView.isTraceOutboundPayloadCaptureEnabled() || forcePayloadCapture);
         tracingConfig
-                .setCaptureToolPayloads(runtimeConfigService.isTraceToolPayloadCaptureEnabled() || forcePayloadCapture);
-        tracingConfig
-                .setCaptureLlmPayloads(runtimeConfigService.isTraceLlmPayloadCaptureEnabled() || forcePayloadCapture);
-        tracingConfig.setResiliencePayloadSampleRate(runtimeConfigService.getTraceResiliencePayloadSampleRate());
+                .setCaptureToolPayloads(tracingConfigView.isTraceToolPayloadCaptureEnabled() || forcePayloadCapture);
+        tracingConfig.setCaptureLlmPayloads(tracingConfigView.isTraceLlmPayloadCaptureEnabled() || forcePayloadCapture);
+        tracingConfig.setResiliencePayloadSampleRate(tracingConfigView.getTraceResiliencePayloadSampleRate());
         return tracingConfig;
     }
 }

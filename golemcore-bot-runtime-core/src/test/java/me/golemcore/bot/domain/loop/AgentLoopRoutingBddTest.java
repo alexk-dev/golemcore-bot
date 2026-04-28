@@ -152,7 +152,8 @@ class AgentLoopRoutingBddTest {
             UserPreferencesService preferencesService, LlmPort llmPort, Clock clock) {
         return new AgentLoopFactory().create(
                 new AgentLoopFactory.AgentLoopPorts(sessionPort, rateLimitPort, runtime(channels), llmPort),
-                new AgentLoopFactory.AgentLoopRuntimeServices(runtimeConfigService, preferencesService, clock,
+                new AgentLoopFactory.AgentLoopRuntimeServices(runtimeConfigService, runtimeConfigService,
+                        runtimeConfigService, preferencesService, clock,
                         new TraceService(new TraceSnapshotCompressionService(), new TraceBudgetService()),
                         traceSnapshotCodec(), new DefaultContextHygieneService(), new RuntimeEventService(clock)),
                 systems);

@@ -1,6 +1,6 @@
 package me.golemcore.bot.domain.memory;
 
-import me.golemcore.bot.domain.runtimeconfig.RuntimeConfigService;
+import me.golemcore.bot.domain.runtimeconfig.MemoryRuntimeConfigView;
 
 /*
  * Copyright 2026 Aleksei Kuleshov
@@ -32,9 +32,9 @@ import java.util.List;
 @Service
 public class MemoryPromotionService {
 
-    private final RuntimeConfigService runtimeConfigService;
+    private final MemoryRuntimeConfigView runtimeConfigService;
 
-    public MemoryPromotionService(RuntimeConfigService runtimeConfigService) {
+    public MemoryPromotionService(MemoryRuntimeConfigView runtimeConfigService) {
         this.runtimeConfigService = runtimeConfigService;
     }
 

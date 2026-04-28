@@ -21,7 +21,7 @@ package me.golemcore.bot.domain.session;
 import me.golemcore.bot.domain.scheduling.DelayedSessionActionService;
 import me.golemcore.bot.domain.resilience.ResilienceObservabilitySupport;
 import me.golemcore.bot.domain.events.RuntimeEventService;
-import me.golemcore.bot.domain.runtimeconfig.RuntimeConfigService;
+import me.golemcore.bot.domain.runtimeconfig.TurnRuntimeConfigView;
 import me.golemcore.bot.port.outbound.RuntimeEventPublishPort;
 import me.golemcore.bot.port.outbound.SessionRunDispatchPort;
 import lombok.extern.slf4j.Slf4j;
@@ -52,6 +52,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
+import java.util.concurrent.FutureTask;
 
 /**
  * Coordinates execution of {@link AgentLoop} per session.
@@ -78,7 +79,7 @@ public class SessionRunCoordinator implements SessionRunDispatchPort {
 
     private final AgentLoop agentLoop;
     private final ExecutorService sessionRunExecutor;
-    private final RuntimeConfigService runtimeConfigService;
+    private final TurnRuntimeConfigView runtimeConfigService;
     private final DelayedSessionActionService delayedSessionActionService;
 
     private final Map<SessionKey, SessionRunner> runners = new ConcurrentHashMap<>();
@@ -89,7 +90,7 @@ public class SessionRunCoordinator implements SessionRunDispatchPort {
     private final TurnRunResultMapper turnRunResultMapper = new TurnRunResultMapper();
 
     public SessionRunCoordinator(SessionPort sessionPort, AgentLoop agentLoop, ExecutorService sessionRunExecutor,
-            RuntimeEventService runtimeEventService, RuntimeConfigService runtimeConfigService,
+            RuntimeEventService runtimeEventService, TurnRuntimeConfigView runtimeConfigService,
             DelayedSessionActionService delayedSessionActionService,
             RuntimeEventPublishPort runtimeEventPublishPort) {
         this.agentLoop = agentLoop;
@@ -217,7 +218,7 @@ public class SessionRunCoordinator implements SessionRunDispatchPort {
         private long latestRealUserActivitySequence = 0L;
         private boolean pausedAfterStop = false;
         private Optional<Future<?>> runningTask = Optional.empty();
-        private Message runningInbound;
+        private Optional<Message> runningInbound = Optional.empty();
 
         private SessionRunner(SessionKey key) {
             this.key = key;
@@ -320,7 +321,7 @@ public class SessionRunCoordinator implements SessionRunDispatchPort {
                 if (targetedHiveStop) {
                     cancelledQueuedMessage = removeQueuedHiveMessage(expectedRunId, expectedCommandId);
                     if (cancelledQueuedMessage == null
-                            && !matchesHiveTarget(runningInbound, expectedRunId, expectedCommandId)) {
+                            && !matchesHiveTarget(runningInbound.orElse(null), expectedRunId, expectedCommandId)) {
                         log.info(
                                 "[Stop] targeted hive stop ignored for non-matching runner: channel={}, chatId={}, runId={}, commandId={}",
                                 key.channelType(), key.chatId(), expectedRunId, expectedCommandId);
@@ -419,10 +420,7 @@ public class SessionRunCoordinator implements SessionRunDispatchPort {
 
         private void startRun(Message inbound, Deque<Message> prefix) {
             SessionKey runKey = new SessionKey(inbound.getChannelType(), inbound.getChatId());
-            synchronized (lock) {
-                runningInbound = inbound;
-            }
-            runningTask = Optional.of(sessionRunExecutor.submit(() -> {
+            FutureTask<Void> task = new FutureTask<>(() -> {
                 try {
                     stopRequestController.clearInterruptRequested(runKey);
                     if (!prefix.isEmpty()) {
@@ -438,7 +436,24 @@ public class SessionRunCoordinator implements SessionRunDispatchPort {
                 } finally {
                     onRunComplete();
                 }
-            }));
+            }, null);
+            synchronized (lock) {
+                runningInbound = Optional.of(inbound);
+                runningTask = Optional.of(task);
+            }
+            try {
+                sessionRunExecutor.execute(task);
+            } catch (RuntimeException e) {
+                synchronized (lock) {
+                    if (runningTask.filter(task::equals).isPresent()) {
+                        runningTask = Optional.empty();
+                        runningInbound = Optional.empty();
+                    }
+                }
+                handleRunFailure(inbound, e);
+                pendingCompletions.fail(inbound, e);
+                evictIfIdle();
+            }
         }
 
         private void handleRunFailure(Message inbound, Exception e) {
@@ -471,12 +486,11 @@ public class SessionRunCoordinator implements SessionRunDispatchPort {
                     inbound.getChannelType(), inbound.getChatId(), e.getMessage(), e);
         }
 
-        @SuppressWarnings("PMD.NullAssignment")
         private void onRunComplete() {
             Message next;
             synchronized (lock) {
                 runningTask = Optional.empty();
-                runningInbound = null;
+                runningInbound = Optional.empty();
                 if (pausedAfterStop) {
                     return;
                 }
@@ -833,7 +847,7 @@ public class SessionRunCoordinator implements SessionRunDispatchPort {
                 return !pausedAfterStop && !isRunning() && queuedSteeringMessages.isEmpty()
                         && queuedFollowUpMessages.isEmpty()
                         && queuedInternalContinuationMessages.isEmpty()
-                        && runningInbound == null;
+                        && runningInbound.isEmpty();
             }
         }
 
@@ -963,10 +977,9 @@ public class SessionRunCoordinator implements SessionRunDispatchPort {
         }
         String messageRunId = readMetadataString(message.getMetadata(), ContextAttributes.HIVE_RUN_ID);
         String messageCommandId = readMetadataString(message.getMetadata(), ContextAttributes.HIVE_COMMAND_ID);
-        if (!isBlank(expectedRunId)) {
-            return expectedRunId.equals(messageRunId);
-        }
-        return !isBlank(expectedCommandId) && expectedCommandId.equals(messageCommandId);
+        boolean runMatches = isBlank(expectedRunId) || expectedRunId.equals(messageRunId);
+        boolean commandMatches = isBlank(expectedCommandId) || expectedCommandId.equals(messageCommandId);
+        return runMatches && commandMatches;
     }
 
     private boolean isBlank(String value) {

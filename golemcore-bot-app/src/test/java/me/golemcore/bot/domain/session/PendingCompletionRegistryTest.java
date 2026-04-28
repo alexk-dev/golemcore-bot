@@ -31,7 +31,7 @@ class PendingCompletionRegistryTest {
     }
 
     @Test
-    void shouldTransferCompletionsByMessageIdentity() {
+    void shouldTransferCompletionsAndStartCallbacksByMessageIdentity() {
         PendingCompletionRegistry registry = new PendingCompletionRegistry();
         Message source = message("source");
         Message target = message("target");
@@ -42,9 +42,10 @@ class PendingCompletionRegistryTest {
         registry.registerStartCallback(source, () -> started.set(true));
         registry.transfer(source, target);
         registry.runStartCallbacks(source);
+        registry.runStartCallbacks(target);
         registry.completeResult(target, TurnRunResult.skipped("session-1", "transferred"));
 
-        assertEquals(false, started.get());
+        assertEquals(true, started.get());
         assertEquals("transferred", resultCompletion.join().persistence().errorMessage());
     }
 

@@ -131,7 +131,8 @@ public class ResponseRoutingSystem implements ResponseRoutingAgentSystem {
             return context;
         }
 
-        RuntimeConfig.TracingConfig tracingConfig = TraceRuntimeConfigSupport.resolve(runtimeConfigService);
+        RuntimeConfig.TracingConfig tracingConfig = TraceRuntimeConfigSupport.resolve(runtimeConfigService,
+                shouldForceTracingPayloadCapture());
         TraceContext routingSpan = startRoutingSpan(context);
         captureOutgoingSnapshot(context, routingSpan, tracingConfig, outgoing);
 
@@ -687,6 +688,12 @@ public class ResponseRoutingSystem implements ResponseRoutingAgentSystem {
     private boolean hasTextMetadata(Message message, String key) {
         Object value = message.getMetadata().get(key);
         return value instanceof String text && !text.isBlank();
+    }
+
+    private boolean shouldForceTracingPayloadCapture() {
+        return runtimeConfigService != null
+                && runtimeConfigService.isSelfEvolvingEnabled()
+                && runtimeConfigService.isSelfEvolvingTracePayloadOverrideEnabled();
     }
 
     private record WebhookDeliveryTarget(String channelType, String chatId) {

@@ -56,7 +56,7 @@ class OptionalLlmErrorExplanationProviderTest {
     }
 
     @Test
-    void shouldReturnRedactedExplanationWhenEnabled() {
+    void shouldReturnRedactedExplanationForWhitelistedLlmFailureWhenEnabled() {
         System.setProperty(ENABLED_PROPERTY, "true");
         ModelRoutingConfigView configView = mock(ModelRoutingConfigView.class);
         when(configView.getRoutingModel()).thenReturn("gpt-test");
@@ -68,7 +68,7 @@ class OptionalLlmErrorExplanationProviderTest {
         OptionalLlmErrorExplanationProvider provider = new OptionalLlmErrorExplanationProvider(configView, llmPort,
                 CLOCK);
 
-        Optional<String> explanation = provider.explain(contextWithFailure("token=secret-value"));
+        Optional<String> explanation = provider.explain(contextWithLlmFailure("timeout token=secret-value"));
 
         assertEquals(Optional.of("A safe explanation"), explanation);
         ArgumentCaptor<LlmRequest> captor = ArgumentCaptor.forClass(LlmRequest.class);
@@ -77,6 +77,20 @@ class OptionalLlmErrorExplanationProviderTest {
         String prompt = captor.getValue().getMessages().getFirst().getContent();
         assertTrue(prompt.contains("token=<redacted>"));
         assertTrue(!prompt.contains("secret-value"));
+    }
+
+    @Test
+    void shouldSkipNonWhitelistedSystemFailuresWhenEnabled() {
+        System.setProperty(ENABLED_PROPERTY, "true");
+        LlmPort llmPort = mock(LlmPort.class);
+        when(llmPort.isAvailable()).thenReturn(true);
+        OptionalLlmErrorExplanationProvider provider = new OptionalLlmErrorExplanationProvider(
+                mock(ModelRoutingConfigView.class), llmPort, CLOCK);
+
+        Optional<String> explanation = provider.explain(contextWithFailure("NullPointerException token=secret-value"));
+
+        assertTrue(explanation.isEmpty());
+        verify(llmPort, never()).chat(any());
     }
 
     @Test
@@ -143,7 +157,7 @@ class OptionalLlmErrorExplanationProviderTest {
         OptionalLlmErrorExplanationProvider provider = new OptionalLlmErrorExplanationProvider(configView, llmPort,
                 CLOCK);
 
-        Optional<String> explanation = provider.explain(contextWithFailure("password=sensitive"));
+        Optional<String> explanation = provider.explain(contextWithLlmFailure("timeout password=sensitive"));
 
         assertTrue(explanation.isEmpty());
     }
@@ -158,7 +172,7 @@ class OptionalLlmErrorExplanationProviderTest {
         OptionalLlmErrorExplanationProvider provider = new OptionalLlmErrorExplanationProvider(configView, llmPort,
                 CLOCK);
 
-        Optional<String> explanation = provider.explain(contextWithFailure("password=sensitive"));
+        Optional<String> explanation = provider.explain(contextWithLlmFailure("timeout password=sensitive"));
 
         assertTrue(explanation.isEmpty());
     }
@@ -173,7 +187,7 @@ class OptionalLlmErrorExplanationProviderTest {
         OptionalLlmErrorExplanationProvider provider = new OptionalLlmErrorExplanationProvider(configView, llmPort,
                 CLOCK);
 
-        Optional<String> explanation = provider.explain(contextWithFailure("secret=value"));
+        Optional<String> explanation = provider.explain(contextWithLlmFailure("timeout secret=value"));
 
         assertTrue(explanation.isEmpty());
     }
@@ -193,7 +207,8 @@ class OptionalLlmErrorExplanationProviderTest {
         context.setTraceContext(TraceContext.builder().traceId("trace-1").spanId("span-1").parentSpanId("parent-1")
                 .rootKind("turn").build());
         context.setTurnOutcome(TurnOutcome.builder()
-                .routingOutcome(RoutingOutcome.builder().errorMessage("Bearer abc.def").build()).build());
+                .routingOutcome(RoutingOutcome.builder().errorMessage("Delivery timeout Bearer abc.def").build())
+                .build());
 
         Optional<String> explanation = provider.explain(context);
 
@@ -212,6 +227,12 @@ class OptionalLlmErrorExplanationProviderTest {
         context.setAttribute(ContextAttributes.LLM_ERROR, message);
         context.addFailure(
                 new FailureEvent(FailureSource.SYSTEM, "test", FailureKind.EXCEPTION, message, CLOCK.instant()));
+        return context;
+    }
+
+    private static AgentContext contextWithLlmFailure(String message) {
+        AgentContext context = AgentContext.builder().session(AgentSession.builder().id("session-1").build()).build();
+        context.addFailure(new FailureEvent(FailureSource.LLM, "test", FailureKind.TIMEOUT, message, CLOCK.instant()));
         return context;
     }
 

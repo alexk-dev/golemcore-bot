@@ -2,10 +2,7 @@ package me.golemcore.bot.domain.runtimeconfig;
 
 import static me.golemcore.bot.domain.runtimeconfig.RuntimeConfigDefaults.*;
 import static me.golemcore.bot.domain.runtimeconfig.RuntimeConfigSupport.normalizeCompactionTriggerMode;
-import static me.golemcore.bot.domain.runtimeconfig.RuntimeConfigSupport.normalizeNonBlankString;
 import static me.golemcore.bot.domain.runtimeconfig.RuntimeConfigSupport.normalizeOptionalModelTier;
-import static me.golemcore.bot.domain.runtimeconfig.RuntimeConfigSupport.normalizeQueueMode;
-import static me.golemcore.bot.domain.runtimeconfig.RuntimeConfigSupport.normalizeUtcTimeValue;
 import static me.golemcore.bot.domain.runtimeconfig.RuntimeConfigSupport.normalizeVoiceProvider;
 
 /*
@@ -29,13 +26,11 @@ import static me.golemcore.bot.domain.runtimeconfig.RuntimeConfigSupport.normali
 import java.time.Duration;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import lombok.extern.slf4j.Slf4j;
-import me.golemcore.bot.domain.model.ModelTierCatalog;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.Secret;
 import me.golemcore.bot.port.outbound.RuntimeConfigQueryPort;
@@ -66,8 +61,8 @@ import org.springframework.stereotype.Service;
 @Slf4j
 public class RuntimeConfigService implements RuntimeConfigQueryPort, RuntimeConfigAdminPort,
         SelfEvolvingRuntimeConfigPort, ManagedPolicyRuntimeConfigPort, SessionRetentionRuntimeConfigPort,
-        ModelRoutingConfigView, ToolRuntimeConfigView, AutoModeConfigView, UpdateRuntimeConfigView, TracingConfigView,
-        ShellRuntimeConfigView, TurnRuntimeConfigView, RuntimeConfigMutationPort {
+        ModelRoutingConfigView, AutoModeConfigView, UpdateRuntimeConfigView, TracingConfigView, ShellRuntimeConfigView,
+        TurnRuntimeConfigView, MemoryRuntimeConfigView, DelayedActionsRuntimeConfigView, RuntimeConfigMutationPort {
 
     private final RuntimeConfigPersistencePort runtimeConfigPersistencePort;
     private final SelfEvolvingBootstrapOverridePort selfEvolvingBootstrapOverrideService;
@@ -455,142 +450,6 @@ public class RuntimeConfigService implements RuntimeConfigQueryPort, RuntimeConf
         return llm.getProviders().get(providerName);
     }
 
-    public String getBalancedModel() {
-        String val = getRuntimeConfig().getModelRouter().getBalancedModel();
-        return val != null ? val : DEFAULT_BALANCED_MODEL;
-    }
-
-    public String getRoutingModel() {
-        String val = getRuntimeConfig().getModelRouter().getRoutingModel();
-        return val != null ? val : DEFAULT_ROUTING_MODEL;
-    }
-
-    public String getRoutingModelReasoning() {
-        String val = getRuntimeConfig().getModelRouter().getRoutingModelReasoning();
-        return val != null ? val : DEFAULT_ROUTING_REASONING;
-    }
-
-    public String getBalancedModelReasoning() {
-        String val = getRuntimeConfig().getModelRouter().getBalancedModelReasoning();
-        return val != null ? val : DEFAULT_BALANCED_REASONING;
-    }
-
-    public String getSmartModel() {
-        String val = getRuntimeConfig().getModelRouter().getSmartModel();
-        return val != null ? val : DEFAULT_SMART_MODEL;
-    }
-
-    public String getSmartModelReasoning() {
-        String val = getRuntimeConfig().getModelRouter().getSmartModelReasoning();
-        return val != null ? val : DEFAULT_SMART_REASONING;
-    }
-
-    public String getCodingModel() {
-        String val = getRuntimeConfig().getModelRouter().getCodingModel();
-        return val != null ? val : DEFAULT_CODING_MODEL;
-    }
-
-    public String getCodingModelReasoning() {
-        String val = getRuntimeConfig().getModelRouter().getCodingModelReasoning();
-        return val != null ? val : DEFAULT_CODING_REASONING;
-    }
-
-    public String getDeepModel() {
-        String val = getRuntimeConfig().getModelRouter().getDeepModel();
-        return val != null ? val : DEFAULT_DEEP_MODEL;
-    }
-
-    public String getDeepModelReasoning() {
-        String val = getRuntimeConfig().getModelRouter().getDeepModelReasoning();
-        return val != null ? val : DEFAULT_DEEP_REASONING;
-    }
-
-    public boolean isDynamicTierEnabled() {
-        Boolean val = getRuntimeConfig().getModelRouter().getDynamicTierEnabled();
-        return val != null ? val : true;
-    }
-
-    public RuntimeConfig.TierBinding getModelTierBinding(String tier) {
-        RuntimeConfig.ModelRouterConfig modelRouter = getRuntimeConfig().getModelRouter();
-        if (ModelTierCatalog.ROUTING_TIER.equals(tier)) {
-            return modelRouter.getRouting();
-        }
-        return modelRouter.getTierBinding(tier);
-    }
-
-    public double getTemperatureForModel(String tier, String model) {
-        Double configuredTemperature = findConfiguredTemperature(tier, model);
-        return configuredTemperature != null ? configuredTemperature : DEFAULT_TIER_TEMPERATURE;
-    }
-
-    private Double findConfiguredTemperature(String tier, String model) {
-        RuntimeConfig.TierBinding binding = getModelTierBinding(tier);
-        String normalizedModel = normalizeNonBlankString(model, null);
-        if (binding == null) {
-            return null;
-        }
-        if (normalizedModel == null || normalizedModel.equals(binding.getModel())) {
-            return binding.getTemperature();
-        }
-        if (binding.getFallbacks() == null) {
-            return null;
-        }
-        for (RuntimeConfig.TierFallback fallback : binding.getFallbacks()) {
-            if (fallback != null && normalizedModel.equals(fallback.getModel())) {
-                return fallback.getTemperature();
-            }
-        }
-        return null;
-    }
-
-    public boolean isFilesystemEnabled() {
-        Boolean val = getRuntimeConfig().getTools().getFilesystemEnabled();
-        return val != null ? val : true;
-    }
-
-    public boolean isShellEnabled() {
-        Boolean val = getRuntimeConfig().getTools().getShellEnabled();
-        return val != null ? val : true;
-    }
-
-    public Map<String, String> getShellEnvironmentVariables() {
-        List<RuntimeConfig.ShellEnvironmentVariable> configured = getRuntimeConfig().getTools()
-                .getShellEnvironmentVariables();
-        if (configured == null || configured.isEmpty()) {
-            return Map.of();
-        }
-        Map<String, String> result = new LinkedHashMap<>();
-        for (RuntimeConfig.ShellEnvironmentVariable variable : configured) {
-            if (variable == null || variable.getName() == null || variable.getName().isBlank()) {
-                continue;
-            }
-            String name = variable.getName().trim();
-            String value = variable.getValue() != null ? variable.getValue() : "";
-            result.put(name, value);
-        }
-        return result;
-    }
-
-    public boolean isSkillManagementEnabled() {
-        Boolean val = getRuntimeConfig().getTools().getSkillManagementEnabled();
-        return val != null ? val : true;
-    }
-
-    public boolean isSkillTransitionEnabled() {
-        Boolean val = getRuntimeConfig().getTools().getSkillTransitionEnabled();
-        return val != null ? val : true;
-    }
-
-    public boolean isTierToolEnabled() {
-        Boolean val = getRuntimeConfig().getTools().getTierEnabled();
-        return val != null ? val : true;
-    }
-
-    public boolean isGoalManagementEnabled() {
-        Boolean val = getRuntimeConfig().getTools().getGoalManagementEnabled();
-        return val != null ? val : true;
-    }
-
     // ==================== Voice ====================
 
     public boolean isVoiceEnabled() {
@@ -642,92 +501,6 @@ public class RuntimeConfigService implements RuntimeConfigQueryPort, RuntimeConf
     public String getPlanModelTier() {
         RuntimeConfig.PlanConfig planConfig = getRuntimeConfig().getPlan();
         return planConfig != null ? normalizeOptionalModelTier(planConfig.getModelTier()) : null;
-    }
-
-    // ==================== Delayed Actions ====================
-
-    public boolean isDelayedActionsEnabled() {
-        RuntimeConfig.DelayedActionsConfig delayedConfig = getRuntimeConfig().getDelayedActions();
-        if (delayedConfig == null) {
-            return DEFAULT_DELAYED_ACTIONS_ENABLED;
-        }
-        Boolean val = delayedConfig.getEnabled();
-        return val != null ? val : DEFAULT_DELAYED_ACTIONS_ENABLED;
-    }
-
-    public int getDelayedActionsTickSeconds() {
-        RuntimeConfig.DelayedActionsConfig delayedConfig = getRuntimeConfig().getDelayedActions();
-        if (delayedConfig == null) {
-            return DEFAULT_DELAYED_ACTIONS_TICK_SECONDS;
-        }
-        Integer val = delayedConfig.getTickSeconds();
-        return val != null && val > 0 ? val : DEFAULT_DELAYED_ACTIONS_TICK_SECONDS;
-    }
-
-    public int getDelayedActionsMaxPendingPerSession() {
-        RuntimeConfig.DelayedActionsConfig delayedConfig = getRuntimeConfig().getDelayedActions();
-        if (delayedConfig == null) {
-            return DEFAULT_DELAYED_ACTIONS_MAX_PENDING_PER_SESSION;
-        }
-        Integer val = delayedConfig.getMaxPendingPerSession();
-        return val != null && val > 0 ? Math.min(val, DEFAULT_DELAYED_ACTIONS_MAX_PENDING_PER_SESSION)
-                : DEFAULT_DELAYED_ACTIONS_MAX_PENDING_PER_SESSION;
-    }
-
-    public Duration getDelayedActionsMaxDelay() {
-        RuntimeConfig.DelayedActionsConfig delayedConfig = getRuntimeConfig().getDelayedActions();
-        if (delayedConfig == null || delayedConfig.getMaxDelay() == null || delayedConfig.getMaxDelay().isBlank()) {
-            return DEFAULT_DELAYED_ACTIONS_MAX_DELAY;
-        }
-        try {
-            return Duration.parse(delayedConfig.getMaxDelay());
-        } catch (DateTimeParseException e) {
-            return DEFAULT_DELAYED_ACTIONS_MAX_DELAY;
-        }
-    }
-
-    public int getDelayedActionsDefaultMaxAttempts() {
-        RuntimeConfig.DelayedActionsConfig delayedConfig = getRuntimeConfig().getDelayedActions();
-        if (delayedConfig == null) {
-            return DEFAULT_DELAYED_ACTIONS_MAX_ATTEMPTS;
-        }
-        Integer val = delayedConfig.getDefaultMaxAttempts();
-        return val != null && val > 0 ? val : DEFAULT_DELAYED_ACTIONS_MAX_ATTEMPTS;
-    }
-
-    public Duration getDelayedActionsLeaseDuration() {
-        RuntimeConfig.DelayedActionsConfig delayedConfig = getRuntimeConfig().getDelayedActions();
-        if (delayedConfig == null || delayedConfig.getLeaseDuration() == null
-                || delayedConfig.getLeaseDuration().isBlank()) {
-            return DEFAULT_DELAYED_ACTIONS_LEASE_DURATION;
-        }
-        try {
-            return Duration.parse(delayedConfig.getLeaseDuration());
-        } catch (DateTimeParseException e) {
-            return DEFAULT_DELAYED_ACTIONS_LEASE_DURATION;
-        }
-    }
-
-    public Duration getDelayedActionsRetentionAfterCompletion() {
-        RuntimeConfig.DelayedActionsConfig delayedConfig = getRuntimeConfig().getDelayedActions();
-        if (delayedConfig == null || delayedConfig.getRetentionAfterCompletion() == null
-                || delayedConfig.getRetentionAfterCompletion().isBlank()) {
-            return DEFAULT_DELAYED_ACTIONS_RETENTION;
-        }
-        try {
-            return Duration.parse(delayedConfig.getRetentionAfterCompletion());
-        } catch (DateTimeParseException e) {
-            return DEFAULT_DELAYED_ACTIONS_RETENTION;
-        }
-    }
-
-    public boolean isDelayedActionsRunLaterEnabled() {
-        RuntimeConfig.DelayedActionsConfig delayedConfig = getRuntimeConfig().getDelayedActions();
-        if (delayedConfig == null) {
-            return DEFAULT_DELAYED_ACTIONS_ALLOW_RUN_LATER;
-        }
-        Boolean val = delayedConfig.getAllowRunLater();
-        return val != null ? val : DEFAULT_DELAYED_ACTIONS_ALLOW_RUN_LATER;
     }
 
     public String getVoiceApiKey() {
@@ -783,206 +556,6 @@ public class RuntimeConfigService implements RuntimeConfigQueryPort, RuntimeConf
 
     public boolean isWhisperSttConfigured() {
         return DEFAULT_WHISPER_STT_PROVIDER.equals(getSttProvider()) && !getWhisperSttUrl().isBlank();
-    }
-
-    // ==================== Auto Mode ====================
-
-    public boolean isAutoModeEnabled() {
-        Boolean val = getRuntimeConfig().getAutoMode().getEnabled();
-        return val != null ? val : true;
-    }
-
-    public int getAutoTickIntervalSeconds() {
-        Integer val = getRuntimeConfig().getAutoMode().getTickIntervalSeconds();
-        return val != null ? val : DEFAULT_AUTO_TICK_INTERVAL_SECONDS;
-    }
-
-    public int getAutoTaskTimeLimitMinutes() {
-        Integer val = getRuntimeConfig().getAutoMode().getTaskTimeLimitMinutes();
-        return val != null ? val : DEFAULT_AUTO_TIMEOUT_MINUTES;
-    }
-
-    public boolean isAutoStartEnabled() {
-        Boolean val = getRuntimeConfig().getAutoMode().getAutoStart();
-        return val != null ? val : true;
-    }
-
-    public String getAutoModelTier() {
-        String val = getRuntimeConfig().getAutoMode().getModelTier();
-        return val != null ? val : DEFAULT_AUTO_MODEL_TIER;
-    }
-
-    public boolean isAutoReflectionEnabled() {
-        Boolean val = getRuntimeConfig().getAutoMode().getReflectionEnabled();
-        return val != null ? val : DEFAULT_AUTO_REFLECTION_ENABLED;
-    }
-
-    public int getAutoReflectionFailureThreshold() {
-        Integer val = getRuntimeConfig().getAutoMode().getReflectionFailureThreshold();
-        return val != null ? val : DEFAULT_AUTO_REFLECTION_FAILURE_THRESHOLD;
-    }
-
-    public String getAutoReflectionModelTier() {
-        return getRuntimeConfig().getAutoMode().getReflectionModelTier();
-    }
-
-    public boolean isAutoReflectionTierPriority() {
-        Boolean val = getRuntimeConfig().getAutoMode().getReflectionTierPriority();
-        return val != null && val;
-    }
-
-    public boolean isAutoNotifyMilestonesEnabled() {
-        Boolean val = getRuntimeConfig().getAutoMode().getNotifyMilestones();
-        return val != null ? val : true;
-    }
-
-    // ==================== Update ====================
-
-    public boolean isAutoUpdateEnabled() {
-        RuntimeConfig.UpdateConfig updateConfig = getRuntimeConfig().getUpdate();
-        if (updateConfig == null) {
-            return DEFAULT_UPDATE_AUTO_ENABLED;
-        }
-        Boolean val = updateConfig.getAutoEnabled();
-        return val != null ? val : DEFAULT_UPDATE_AUTO_ENABLED;
-    }
-
-    public int getUpdateCheckIntervalMinutes() {
-        RuntimeConfig.UpdateConfig updateConfig = getRuntimeConfig().getUpdate();
-        if (updateConfig == null) {
-            return DEFAULT_UPDATE_CHECK_INTERVAL_MINUTES;
-        }
-        Integer val = updateConfig.getCheckIntervalMinutes();
-        return val != null ? val : DEFAULT_UPDATE_CHECK_INTERVAL_MINUTES;
-    }
-
-    public boolean isUpdateMaintenanceWindowEnabled() {
-        RuntimeConfig.UpdateConfig updateConfig = getRuntimeConfig().getUpdate();
-        if (updateConfig == null) {
-            return DEFAULT_UPDATE_MAINTENANCE_WINDOW_ENABLED;
-        }
-        Boolean val = updateConfig.getMaintenanceWindowEnabled();
-        return val != null ? val : DEFAULT_UPDATE_MAINTENANCE_WINDOW_ENABLED;
-    }
-
-    public String getUpdateMaintenanceWindowStartUtc() {
-        RuntimeConfig.UpdateConfig updateConfig = getRuntimeConfig().getUpdate();
-        if (updateConfig == null) {
-            return DEFAULT_UPDATE_MAINTENANCE_WINDOW_START_UTC;
-        }
-        return normalizeUtcTimeValue(updateConfig.getMaintenanceWindowStartUtc(),
-                DEFAULT_UPDATE_MAINTENANCE_WINDOW_START_UTC);
-    }
-
-    public String getUpdateMaintenanceWindowEndUtc() {
-        RuntimeConfig.UpdateConfig updateConfig = getRuntimeConfig().getUpdate();
-        if (updateConfig == null) {
-            return DEFAULT_UPDATE_MAINTENANCE_WINDOW_END_UTC;
-        }
-        return normalizeUtcTimeValue(updateConfig.getMaintenanceWindowEndUtc(),
-                DEFAULT_UPDATE_MAINTENANCE_WINDOW_END_UTC);
-    }
-
-    public boolean isTracingEnabled() {
-        RuntimeConfig.TracingConfig tracingConfig = getRuntimeConfig().getTracing();
-        if (tracingConfig == null) {
-            return DEFAULT_TRACING_ENABLED;
-        }
-        Boolean value = tracingConfig.getEnabled();
-        return value != null ? value : DEFAULT_TRACING_ENABLED;
-    }
-
-    public RuntimeConfig.TracingConfig getTracingConfig() {
-        return getRuntimeConfig().getTracing();
-    }
-
-    public boolean isPayloadSnapshotsEnabled() {
-        RuntimeConfig.TracingConfig tracingConfig = getRuntimeConfig().getTracing();
-        if (tracingConfig == null) {
-            return DEFAULT_TRACING_PAYLOAD_SNAPSHOTS_ENABLED;
-        }
-        Boolean value = tracingConfig.getPayloadSnapshotsEnabled();
-        return value != null ? value : DEFAULT_TRACING_PAYLOAD_SNAPSHOTS_ENABLED;
-    }
-
-    public int getSessionTraceBudgetMb() {
-        RuntimeConfig.TracingConfig tracingConfig = getRuntimeConfig().getTracing();
-        if (tracingConfig == null || tracingConfig.getSessionTraceBudgetMb() == null) {
-            return DEFAULT_TRACING_SESSION_TRACE_BUDGET_MB;
-        }
-        return tracingConfig.getSessionTraceBudgetMb();
-    }
-
-    public int getTraceMaxSnapshotSizeKb() {
-        RuntimeConfig.TracingConfig tracingConfig = getRuntimeConfig().getTracing();
-        if (tracingConfig == null || tracingConfig.getMaxSnapshotSizeKb() == null) {
-            return DEFAULT_TRACING_MAX_SNAPSHOT_SIZE_KB;
-        }
-        return tracingConfig.getMaxSnapshotSizeKb();
-    }
-
-    public int getTraceMaxSnapshotsPerSpan() {
-        RuntimeConfig.TracingConfig tracingConfig = getRuntimeConfig().getTracing();
-        if (tracingConfig == null || tracingConfig.getMaxSnapshotsPerSpan() == null) {
-            return DEFAULT_TRACING_MAX_SNAPSHOTS_PER_SPAN;
-        }
-        return tracingConfig.getMaxSnapshotsPerSpan();
-    }
-
-    public int getTraceMaxTracesPerSession() {
-        RuntimeConfig.TracingConfig tracingConfig = getRuntimeConfig().getTracing();
-        if (tracingConfig == null || tracingConfig.getMaxTracesPerSession() == null) {
-            return DEFAULT_TRACING_MAX_TRACES_PER_SESSION;
-        }
-        return tracingConfig.getMaxTracesPerSession();
-    }
-
-    public boolean isTraceInboundPayloadCaptureEnabled() {
-        RuntimeConfig.TracingConfig tracingConfig = getRuntimeConfig().getTracing();
-        if (tracingConfig == null) {
-            return DEFAULT_TRACING_CAPTURE_INBOUND_PAYLOADS;
-        }
-        Boolean value = tracingConfig.getCaptureInboundPayloads();
-        return value != null ? value : DEFAULT_TRACING_CAPTURE_INBOUND_PAYLOADS;
-    }
-
-    public boolean isTraceOutboundPayloadCaptureEnabled() {
-        RuntimeConfig.TracingConfig tracingConfig = getRuntimeConfig().getTracing();
-        if (tracingConfig == null) {
-            return DEFAULT_TRACING_CAPTURE_OUTBOUND_PAYLOADS;
-        }
-        Boolean value = tracingConfig.getCaptureOutboundPayloads();
-        return value != null ? value : DEFAULT_TRACING_CAPTURE_OUTBOUND_PAYLOADS;
-    }
-
-    public boolean isTraceToolPayloadCaptureEnabled() {
-        RuntimeConfig.TracingConfig tracingConfig = getRuntimeConfig().getTracing();
-        if (tracingConfig == null) {
-            return DEFAULT_TRACING_CAPTURE_TOOL_PAYLOADS;
-        }
-        Boolean value = tracingConfig.getCaptureToolPayloads();
-        return value != null ? value : DEFAULT_TRACING_CAPTURE_TOOL_PAYLOADS;
-    }
-
-    public boolean isTraceLlmPayloadCaptureEnabled() {
-        RuntimeConfig.TracingConfig tracingConfig = getRuntimeConfig().getTracing();
-        if (tracingConfig == null) {
-            return DEFAULT_TRACING_CAPTURE_LLM_PAYLOADS;
-        }
-        Boolean value = tracingConfig.getCaptureLlmPayloads();
-        return value != null ? value : DEFAULT_TRACING_CAPTURE_LLM_PAYLOADS;
-    }
-
-    public double getTraceResiliencePayloadSampleRate() {
-        RuntimeConfig.TracingConfig tracingConfig = getRuntimeConfig().getTracing();
-        if (tracingConfig == null || tracingConfig.getResiliencePayloadSampleRate() == null) {
-            return DEFAULT_TRACING_RESILIENCE_PAYLOAD_SAMPLE_RATE;
-        }
-        Double value = tracingConfig.getResiliencePayloadSampleRate();
-        if (value.isNaN()) {
-            return DEFAULT_TRACING_RESILIENCE_PAYLOAD_SAMPLE_RATE;
-        }
-        return Math.max(0.0d, Math.min(1.0d, value.doubleValue()));
     }
 
     // ==================== Rate Limit ====================
@@ -1045,13 +618,51 @@ public class RuntimeConfigService implements RuntimeConfigQueryPort, RuntimeConf
     }
 
     public boolean isToolConfirmationEnabled() {
-        Boolean val = getRuntimeConfig().getSecurity().getToolConfirmationEnabled();
-        return val != null ? val : DEFAULT_TOOL_CONFIRMATION_ENABLED;
+        return ShellRuntimeConfigView.super.isToolConfirmationEnabled();
     }
 
     public int getToolConfirmationTimeoutSeconds() {
-        Integer val = getRuntimeConfig().getSecurity().getToolConfirmationTimeoutSeconds();
-        return val != null ? val : DEFAULT_TOOL_CONFIRMATION_TIMEOUT_SECONDS;
+        return ShellRuntimeConfigView.super.getToolConfirmationTimeoutSeconds();
+    }
+
+    public boolean isTracingEnabled() {
+        return TracingConfigView.super.isTracingEnabled();
+    }
+
+    public boolean isPayloadSnapshotsEnabled() {
+        return TracingConfigView.super.isPayloadSnapshotsEnabled();
+    }
+
+    public int getSessionTraceBudgetMb() {
+        return TracingConfigView.super.getSessionTraceBudgetMb();
+    }
+
+    public int getTraceMaxSnapshotSizeKb() {
+        return TracingConfigView.super.getTraceMaxSnapshotSizeKb();
+    }
+
+    public int getTraceMaxSnapshotsPerSpan() {
+        return TracingConfigView.super.getTraceMaxSnapshotsPerSpan();
+    }
+
+    public int getTraceMaxTracesPerSession() {
+        return TracingConfigView.super.getTraceMaxTracesPerSession();
+    }
+
+    public boolean isTraceInboundPayloadCaptureEnabled() {
+        return TracingConfigView.super.isTraceInboundPayloadCaptureEnabled();
+    }
+
+    public boolean isTraceOutboundPayloadCaptureEnabled() {
+        return TracingConfigView.super.isTraceOutboundPayloadCaptureEnabled();
+    }
+
+    public boolean isTraceToolPayloadCaptureEnabled() {
+        return TracingConfigView.super.isTraceToolPayloadCaptureEnabled();
+    }
+
+    public boolean isTraceLlmPayloadCaptureEnabled() {
+        return TracingConfigView.super.isTraceLlmPayloadCaptureEnabled();
     }
 
     // ==================== Compaction ====================
@@ -1102,63 +713,6 @@ public class RuntimeConfigService implements RuntimeConfigQueryPort, RuntimeConf
     public int getCompactionSummaryTimeoutMs() {
         Integer val = getRuntimeConfig().getCompaction().getSummaryTimeoutMs();
         return val != null ? val : DEFAULT_COMPACTION_SUMMARY_TIMEOUT_MS;
-    }
-
-    // ==================== Turn Budget ====================
-
-    public int getTurnMaxSkillTransitions() {
-        RuntimeConfig.TurnConfig turnConfig = getRuntimeConfig().getTurn();
-        if (turnConfig == null) {
-            return DEFAULT_TURN_MAX_SKILL_TRANSITIONS;
-        }
-        Integer val = turnConfig.getMaxSkillTransitions();
-        return val != null ? val : DEFAULT_TURN_MAX_SKILL_TRANSITIONS;
-    }
-
-    public int getTurnMaxLlmCalls() {
-        RuntimeConfig.TurnConfig turnConfig = getRuntimeConfig().getTurn();
-        if (turnConfig == null) {
-            return DEFAULT_TURN_MAX_LLM_CALLS;
-        }
-        Integer val = turnConfig.getMaxLlmCalls();
-        return val != null ? val : DEFAULT_TURN_MAX_LLM_CALLS;
-    }
-
-    public int getTurnMaxToolExecutions() {
-        RuntimeConfig.TurnConfig turnConfig = getRuntimeConfig().getTurn();
-        if (turnConfig == null) {
-            return DEFAULT_TURN_MAX_TOOL_EXECUTIONS;
-        }
-        Integer val = turnConfig.getMaxToolExecutions();
-        return val != null ? val : DEFAULT_TURN_MAX_TOOL_EXECUTIONS;
-    }
-
-    public int getToolLoopMaxLlmCalls() {
-        RuntimeConfig.ToolLoopConfig toolLoopConfig = getRuntimeConfig().getToolLoop();
-        if (toolLoopConfig != null && toolLoopConfig.getMaxLlmCalls() != null) {
-            return toolLoopConfig.getMaxLlmCalls();
-        }
-        return getTurnMaxLlmCalls();
-    }
-
-    public int getToolLoopMaxToolExecutions() {
-        RuntimeConfig.ToolLoopConfig toolLoopConfig = getRuntimeConfig().getToolLoop();
-        if (toolLoopConfig != null && toolLoopConfig.getMaxToolExecutions() != null) {
-            return toolLoopConfig.getMaxToolExecutions();
-        }
-        return getTurnMaxToolExecutions();
-    }
-
-    public Duration getTurnDeadline() {
-        RuntimeConfig.TurnConfig turnConfig = getRuntimeConfig().getTurn();
-        if (turnConfig == null || turnConfig.getDeadline() == null || turnConfig.getDeadline().isBlank()) {
-            return DEFAULT_TURN_DEADLINE;
-        }
-        try {
-            return Duration.parse(turnConfig.getDeadline());
-        } catch (DateTimeParseException e) {
-            return DEFAULT_TURN_DEADLINE;
-        }
     }
 
     public boolean isSessionRetentionEnabled() {
@@ -1224,282 +778,6 @@ public class RuntimeConfigService implements RuntimeConfigQueryPort, RuntimeConf
             log.warn("Failed to parse duration for {}: {} (falling back to {})", fieldName, raw, defaultValue);
             return defaultValue;
         }
-    }
-
-    public boolean isTurnAutoRetryEnabled() {
-        RuntimeConfig.TurnConfig turnConfig = getRuntimeConfig().getTurn();
-        if (turnConfig == null) {
-            return DEFAULT_TURN_AUTO_RETRY_ENABLED;
-        }
-        Boolean val = turnConfig.getAutoRetryEnabled();
-        return val != null ? val : DEFAULT_TURN_AUTO_RETRY_ENABLED;
-    }
-
-    public int getTurnAutoRetryMaxAttempts() {
-        RuntimeConfig.TurnConfig turnConfig = getRuntimeConfig().getTurn();
-        if (turnConfig == null) {
-            return DEFAULT_TURN_AUTO_RETRY_MAX_ATTEMPTS;
-        }
-        Integer val = turnConfig.getAutoRetryMaxAttempts();
-        return val != null ? val : DEFAULT_TURN_AUTO_RETRY_MAX_ATTEMPTS;
-    }
-
-    public long getTurnAutoRetryBaseDelayMs() {
-        RuntimeConfig.TurnConfig turnConfig = getRuntimeConfig().getTurn();
-        if (turnConfig == null) {
-            return DEFAULT_TURN_AUTO_RETRY_BASE_DELAY_MS;
-        }
-        Long val = turnConfig.getAutoRetryBaseDelayMs();
-        return val != null ? val : DEFAULT_TURN_AUTO_RETRY_BASE_DELAY_MS;
-    }
-
-    public boolean isTurnQueueSteeringEnabled() {
-        RuntimeConfig.TurnConfig turnConfig = getRuntimeConfig().getTurn();
-        if (turnConfig == null) {
-            return DEFAULT_TURN_QUEUE_STEERING_ENABLED;
-        }
-        Boolean val = turnConfig.getQueueSteeringEnabled();
-        return val != null ? val : DEFAULT_TURN_QUEUE_STEERING_ENABLED;
-    }
-
-    public String getTurnQueueSteeringMode() {
-        RuntimeConfig.TurnConfig turnConfig = getRuntimeConfig().getTurn();
-        if (turnConfig == null || turnConfig.getQueueSteeringMode() == null
-                || turnConfig.getQueueSteeringMode().isBlank()) {
-            return DEFAULT_TURN_QUEUE_STEERING_MODE;
-        }
-        return normalizeQueueMode(turnConfig.getQueueSteeringMode());
-    }
-
-    public String getTurnQueueFollowUpMode() {
-        RuntimeConfig.TurnConfig turnConfig = getRuntimeConfig().getTurn();
-        if (turnConfig == null || turnConfig.getQueueFollowUpMode() == null
-                || turnConfig.getQueueFollowUpMode().isBlank()) {
-            return DEFAULT_TURN_QUEUE_FOLLOW_UP_MODE;
-        }
-        return normalizeQueueMode(turnConfig.getQueueFollowUpMode());
-    }
-
-    public boolean isTurnProgressUpdatesEnabled() {
-        RuntimeConfig.TurnConfig turnConfig = getRuntimeConfig().getTurn();
-        if (turnConfig == null) {
-            return DEFAULT_TURN_PROGRESS_UPDATES_ENABLED;
-        }
-        Boolean val = turnConfig.getProgressUpdatesEnabled();
-        return val != null ? val : DEFAULT_TURN_PROGRESS_UPDATES_ENABLED;
-    }
-
-    public boolean isTurnProgressIntentEnabled() {
-        RuntimeConfig.TurnConfig turnConfig = getRuntimeConfig().getTurn();
-        if (turnConfig == null) {
-            return DEFAULT_TURN_PROGRESS_INTENT_ENABLED;
-        }
-        Boolean val = turnConfig.getProgressIntentEnabled();
-        return val != null ? val : DEFAULT_TURN_PROGRESS_INTENT_ENABLED;
-    }
-
-    public int getTurnProgressBatchSize() {
-        RuntimeConfig.TurnConfig turnConfig = getRuntimeConfig().getTurn();
-        if (turnConfig == null) {
-            return DEFAULT_TURN_PROGRESS_BATCH_SIZE;
-        }
-        Integer val = turnConfig.getProgressBatchSize();
-        return val != null ? val : DEFAULT_TURN_PROGRESS_BATCH_SIZE;
-    }
-
-    public Duration getTurnProgressMaxSilence() {
-        RuntimeConfig.TurnConfig turnConfig = getRuntimeConfig().getTurn();
-        if (turnConfig == null) {
-            return Duration.ofSeconds(DEFAULT_TURN_PROGRESS_MAX_SILENCE_SECONDS);
-        }
-        Integer seconds = turnConfig.getProgressMaxSilenceSeconds();
-        int safeSeconds = seconds != null ? seconds : DEFAULT_TURN_PROGRESS_MAX_SILENCE_SECONDS;
-        return Duration.ofSeconds(safeSeconds);
-    }
-
-    public int getTurnProgressSummaryTimeoutMs() {
-        RuntimeConfig.TurnConfig turnConfig = getRuntimeConfig().getTurn();
-        if (turnConfig == null) {
-            return DEFAULT_TURN_PROGRESS_SUMMARY_TIMEOUT_MS;
-        }
-        Integer val = turnConfig.getProgressSummaryTimeoutMs();
-        return val != null ? val : DEFAULT_TURN_PROGRESS_SUMMARY_TIMEOUT_MS;
-    }
-
-    // ==================== Memory ====================
-
-    public boolean isMemoryEnabled() {
-        RuntimeConfig.MemoryConfig memoryConfig = getRuntimeConfig().getMemory();
-        if (memoryConfig == null) {
-            return true;
-        }
-        Boolean val = memoryConfig.getEnabled();
-        return val != null ? val : true;
-    }
-
-    public int getMemorySoftPromptBudgetTokens() {
-        RuntimeConfig.MemoryConfig memoryConfig = getRuntimeConfig().getMemory();
-        if (memoryConfig == null) {
-            return DEFAULT_MEMORY_SOFT_PROMPT_BUDGET_TOKENS;
-        }
-        Integer val = memoryConfig.getSoftPromptBudgetTokens();
-        return val != null ? val : DEFAULT_MEMORY_SOFT_PROMPT_BUDGET_TOKENS;
-    }
-
-    public int getMemoryVersion() {
-        RuntimeConfig.MemoryConfig memoryConfig = getRuntimeConfig().getMemory();
-        if (memoryConfig == null) {
-            return DEFAULT_MEMORY_VERSION;
-        }
-        Integer val = memoryConfig.getVersion();
-        return val != null ? val : DEFAULT_MEMORY_VERSION;
-    }
-
-    public int getMemoryMaxPromptBudgetTokens() {
-        RuntimeConfig.MemoryConfig memoryConfig = getRuntimeConfig().getMemory();
-        if (memoryConfig == null) {
-            return DEFAULT_MEMORY_MAX_PROMPT_BUDGET_TOKENS;
-        }
-        Integer val = memoryConfig.getMaxPromptBudgetTokens();
-        return val != null ? val : DEFAULT_MEMORY_MAX_PROMPT_BUDGET_TOKENS;
-    }
-
-    public int getMemoryWorkingTopK() {
-        RuntimeConfig.MemoryConfig memoryConfig = getRuntimeConfig().getMemory();
-        if (memoryConfig == null) {
-            return DEFAULT_MEMORY_WORKING_TOP_K;
-        }
-        Integer val = memoryConfig.getWorkingTopK();
-        return val != null ? val : DEFAULT_MEMORY_WORKING_TOP_K;
-    }
-
-    public int getMemoryEpisodicTopK() {
-        RuntimeConfig.MemoryConfig memoryConfig = getRuntimeConfig().getMemory();
-        if (memoryConfig == null) {
-            return DEFAULT_MEMORY_EPISODIC_TOP_K;
-        }
-        Integer val = memoryConfig.getEpisodicTopK();
-        return val != null ? val : DEFAULT_MEMORY_EPISODIC_TOP_K;
-    }
-
-    public int getMemorySemanticTopK() {
-        RuntimeConfig.MemoryConfig memoryConfig = getRuntimeConfig().getMemory();
-        if (memoryConfig == null) {
-            return DEFAULT_MEMORY_SEMANTIC_TOP_K;
-        }
-        Integer val = memoryConfig.getSemanticTopK();
-        return val != null ? val : DEFAULT_MEMORY_SEMANTIC_TOP_K;
-    }
-
-    public int getMemoryProceduralTopK() {
-        RuntimeConfig.MemoryConfig memoryConfig = getRuntimeConfig().getMemory();
-        if (memoryConfig == null) {
-            return DEFAULT_MEMORY_PROCEDURAL_TOP_K;
-        }
-        Integer val = memoryConfig.getProceduralTopK();
-        return val != null ? val : DEFAULT_MEMORY_PROCEDURAL_TOP_K;
-    }
-
-    public boolean isMemoryPromotionEnabled() {
-        RuntimeConfig.MemoryConfig memoryConfig = getRuntimeConfig().getMemory();
-        if (memoryConfig == null) {
-            return DEFAULT_MEMORY_PROMOTION_ENABLED;
-        }
-        Boolean val = memoryConfig.getPromotionEnabled();
-        return val != null ? val : DEFAULT_MEMORY_PROMOTION_ENABLED;
-    }
-
-    public double getMemoryPromotionMinConfidence() {
-        RuntimeConfig.MemoryConfig memoryConfig = getRuntimeConfig().getMemory();
-        if (memoryConfig == null) {
-            return DEFAULT_MEMORY_PROMOTION_MIN_CONFIDENCE;
-        }
-        Double val = memoryConfig.getPromotionMinConfidence();
-        return val != null ? val : DEFAULT_MEMORY_PROMOTION_MIN_CONFIDENCE;
-    }
-
-    public boolean isMemoryDecayEnabled() {
-        RuntimeConfig.MemoryConfig memoryConfig = getRuntimeConfig().getMemory();
-        if (memoryConfig == null) {
-            return DEFAULT_MEMORY_DECAY_ENABLED;
-        }
-        Boolean val = memoryConfig.getDecayEnabled();
-        return val != null ? val : DEFAULT_MEMORY_DECAY_ENABLED;
-    }
-
-    public int getMemoryDecayDays() {
-        RuntimeConfig.MemoryConfig memoryConfig = getRuntimeConfig().getMemory();
-        if (memoryConfig == null) {
-            return DEFAULT_MEMORY_DECAY_DAYS;
-        }
-        Integer val = memoryConfig.getDecayDays();
-        return val != null ? val : DEFAULT_MEMORY_DECAY_DAYS;
-    }
-
-    public int getMemoryRetrievalLookbackDays() {
-        RuntimeConfig.MemoryConfig memoryConfig = getRuntimeConfig().getMemory();
-        if (memoryConfig == null) {
-            return DEFAULT_MEMORY_RETRIEVAL_LOOKBACK_DAYS;
-        }
-        Integer val = memoryConfig.getRetrievalLookbackDays();
-        return val != null ? val : DEFAULT_MEMORY_RETRIEVAL_LOOKBACK_DAYS;
-    }
-
-    public boolean isMemoryCodeAwareExtractionEnabled() {
-        RuntimeConfig.MemoryConfig memoryConfig = getRuntimeConfig().getMemory();
-        if (memoryConfig == null) {
-            return DEFAULT_MEMORY_CODE_AWARE_EXTRACTION_ENABLED;
-        }
-        Boolean val = memoryConfig.getCodeAwareExtractionEnabled();
-        return val != null ? val : DEFAULT_MEMORY_CODE_AWARE_EXTRACTION_ENABLED;
-    }
-
-    public String getMemoryDisclosureMode() {
-        RuntimeConfig.MemoryDisclosureConfig disclosureConfig = getMemoryDisclosureConfig();
-        String val = disclosureConfig.getMode();
-        return val != null ? val : DEFAULT_MEMORY_DISCLOSURE_MODE;
-    }
-
-    public String getMemoryPromptStyle() {
-        RuntimeConfig.MemoryDisclosureConfig disclosureConfig = getMemoryDisclosureConfig();
-        String val = disclosureConfig.getPromptStyle();
-        return val != null ? val : DEFAULT_MEMORY_PROMPT_STYLE;
-    }
-
-    public boolean isMemoryToolExpansionEnabled() {
-        RuntimeConfig.MemoryDisclosureConfig disclosureConfig = getMemoryDisclosureConfig();
-        Boolean val = disclosureConfig.getToolExpansionEnabled();
-        return val != null ? val : DEFAULT_MEMORY_TOOL_EXPANSION_ENABLED;
-    }
-
-    public boolean isMemoryDisclosureHintsEnabled() {
-        RuntimeConfig.MemoryDisclosureConfig disclosureConfig = getMemoryDisclosureConfig();
-        Boolean val = disclosureConfig.getDisclosureHintsEnabled();
-        return val != null ? val : DEFAULT_MEMORY_DISCLOSURE_HINTS_ENABLED;
-    }
-
-    public double getMemoryDetailMinScore() {
-        RuntimeConfig.MemoryDisclosureConfig disclosureConfig = getMemoryDisclosureConfig();
-        Double val = disclosureConfig.getDetailMinScore();
-        return val != null ? val : DEFAULT_MEMORY_DISCLOSURE_DETAIL_MIN_SCORE;
-    }
-
-    public boolean isMemoryRerankingEnabled() {
-        RuntimeConfig.MemoryRerankingConfig rerankingConfig = getMemoryRerankingConfig();
-        Boolean val = rerankingConfig.getEnabled();
-        return val != null ? val : DEFAULT_MEMORY_RERANKING_ENABLED;
-    }
-
-    public String getMemoryRerankingProfile() {
-        RuntimeConfig.MemoryRerankingConfig rerankingConfig = getMemoryRerankingConfig();
-        String val = rerankingConfig.getProfile();
-        return val != null ? val : DEFAULT_MEMORY_RERANKING_PROFILE;
-    }
-
-    public String getMemoryDiagnosticsVerbosity() {
-        RuntimeConfig.MemoryDiagnosticsConfig diagnosticsConfig = getMemoryDiagnosticsConfig();
-        String val = diagnosticsConfig.getVerbosity();
-        return val != null ? val : DEFAULT_MEMORY_DIAGNOSTICS_VERBOSITY;
     }
 
     // ==================== Skills ====================
@@ -1608,30 +886,6 @@ public class RuntimeConfigService implements RuntimeConfigQueryPort, RuntimeConf
         List<String> overriddenPaths = selfEvolvingBootstrapOverrideService.getOverriddenPaths();
         cfg.getSelfEvolving().setManagedByProperties(selfEvolvingBootstrapOverrideService.hasManagedOverrides());
         cfg.getSelfEvolving().setOverriddenPaths(new ArrayList<>(overriddenPaths));
-    }
-
-    private RuntimeConfig.MemoryDisclosureConfig getMemoryDisclosureConfig() {
-        RuntimeConfig.MemoryConfig memoryConfig = getRuntimeConfig().getMemory();
-        if (memoryConfig == null || memoryConfig.getDisclosure() == null) {
-            return RuntimeConfig.MemoryDisclosureConfig.builder().build();
-        }
-        return memoryConfig.getDisclosure();
-    }
-
-    private RuntimeConfig.MemoryDiagnosticsConfig getMemoryDiagnosticsConfig() {
-        RuntimeConfig.MemoryConfig memoryConfig = getRuntimeConfig().getMemory();
-        if (memoryConfig == null || memoryConfig.getDiagnostics() == null) {
-            return RuntimeConfig.MemoryDiagnosticsConfig.builder().build();
-        }
-        return memoryConfig.getDiagnostics();
-    }
-
-    private RuntimeConfig.MemoryRerankingConfig getMemoryRerankingConfig() {
-        RuntimeConfig.MemoryConfig memoryConfig = getRuntimeConfig().getMemory();
-        if (memoryConfig == null || memoryConfig.getReranking() == null) {
-            return RuntimeConfig.MemoryRerankingConfig.builder().build();
-        }
-        return memoryConfig.getReranking();
     }
 
 }

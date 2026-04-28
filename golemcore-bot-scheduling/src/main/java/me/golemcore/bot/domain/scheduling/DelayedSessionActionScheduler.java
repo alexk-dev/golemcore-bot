@@ -18,7 +18,7 @@ package me.golemcore.bot.domain.scheduling;
  * Contact: alex@kuleshov.tech
  */
 
-import me.golemcore.bot.domain.runtimeconfig.RuntimeConfigService;
+import me.golemcore.bot.domain.runtimeconfig.DelayedActionsRuntimeConfigView;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
@@ -47,7 +47,7 @@ public class DelayedSessionActionScheduler {
 
     private final DelayedSessionActionService delayedActionService;
     private final DelayedActionDispatcher delayedActionDispatcher;
-    private final RuntimeConfigService runtimeConfigService;
+    private final DelayedActionsRuntimeConfigView runtimeConfigService;
     private final Clock clock;
     private final AtomicBoolean ticking = new AtomicBoolean(false);
 
@@ -56,7 +56,8 @@ public class DelayedSessionActionScheduler {
     private ScheduledFuture<?> tickTask;
 
     public DelayedSessionActionScheduler(DelayedSessionActionService delayedActionService,
-            DelayedActionDispatcher delayedActionDispatcher, RuntimeConfigService runtimeConfigService, Clock clock) {
+            DelayedActionDispatcher delayedActionDispatcher, DelayedActionsRuntimeConfigView runtimeConfigService,
+            Clock clock) {
         this.delayedActionService = delayedActionService;
         this.delayedActionDispatcher = delayedActionDispatcher;
         this.runtimeConfigService = runtimeConfigService;

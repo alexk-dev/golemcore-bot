@@ -25,7 +25,7 @@ import me.golemcore.bot.domain.memory.persistence.TurnMemoryExtractionOrchestrat
 import me.golemcore.bot.domain.model.MemoryItem;
 import me.golemcore.bot.domain.model.TurnMemoryEvent;
 import me.golemcore.bot.domain.memory.MemoryScopeSupport;
-import me.golemcore.bot.domain.runtimeconfig.RuntimeConfigService;
+import me.golemcore.bot.domain.runtimeconfig.MemoryRuntimeConfigView;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -39,13 +39,13 @@ import java.util.List;
 @Service
 public class MemoryLifecycleOrchestrator {
 
-    private final RuntimeConfigService runtimeConfigService;
+    private final MemoryRuntimeConfigView runtimeConfigService;
     private final TurnMemoryExtractionOrchestrator turnMemoryExtractionOrchestrator;
     private final MemoryNormalizationService memoryNormalizationService;
     private final MemoryPersistenceOrchestrator memoryPersistenceOrchestrator;
     private final MemoryPromotionOrchestrator memoryPromotionOrchestrator;
 
-    public MemoryLifecycleOrchestrator(RuntimeConfigService runtimeConfigService,
+    public MemoryLifecycleOrchestrator(MemoryRuntimeConfigView runtimeConfigService,
             TurnMemoryExtractionOrchestrator turnMemoryExtractionOrchestrator,
             MemoryNormalizationService memoryNormalizationService,
             MemoryPersistenceOrchestrator memoryPersistenceOrchestrator,

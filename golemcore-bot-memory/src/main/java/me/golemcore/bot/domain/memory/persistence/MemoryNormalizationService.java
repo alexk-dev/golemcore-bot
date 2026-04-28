@@ -20,7 +20,7 @@ package me.golemcore.bot.domain.memory.persistence;
 
 import me.golemcore.bot.domain.model.MemoryItem;
 import me.golemcore.bot.domain.memory.MemoryScopeSupport;
-import me.golemcore.bot.domain.runtimeconfig.RuntimeConfigService;
+import me.golemcore.bot.domain.runtimeconfig.MemoryRuntimeConfigView;
 import org.springframework.stereotype.Service;
 
 import java.nio.charset.StandardCharsets;
@@ -41,9 +41,9 @@ import java.util.UUID;
 @Service
 public class MemoryNormalizationService {
 
-    private final RuntimeConfigService runtimeConfigService;
+    private final MemoryRuntimeConfigView runtimeConfigService;
 
-    public MemoryNormalizationService(RuntimeConfigService runtimeConfigService) {
+    public MemoryNormalizationService(MemoryRuntimeConfigView runtimeConfigService) {
         this.runtimeConfigService = runtimeConfigService;
     }
 

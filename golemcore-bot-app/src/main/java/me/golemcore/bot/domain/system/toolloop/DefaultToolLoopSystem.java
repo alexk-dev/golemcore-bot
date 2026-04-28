@@ -223,7 +223,8 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
     private TurnState initializeTurn(AgentContext context) {
         ensureMessageLists(context);
         emitRuntimeEvent(context, RuntimeEventType.TURN_STARTED, eventPayload());
-        RuntimeConfig.TracingConfig tracingConfig = TraceRuntimeConfigSupport.resolve(runtimeConfigService);
+        RuntimeConfig.TracingConfig tracingConfig = TraceRuntimeConfigSupport.resolve(runtimeConfigService,
+                shouldForceTracingPayloadCapture());
 
         int maxLlmCalls = resolveMaxLlmCalls();
         int maxToolExecutions = resolveMaxToolExecutions();
@@ -293,6 +294,12 @@ public class DefaultToolLoopSystem implements ToolLoopSystem {
             return false;
         }
         return runtimeConfigService.isTurnAutoRetryEnabled();
+    }
+
+    private boolean shouldForceTracingPayloadCapture() {
+        return runtimeConfigService != null
+                && runtimeConfigService.isSelfEvolvingEnabled()
+                && runtimeConfigService.isSelfEvolvingTracePayloadOverrideEnabled();
     }
 
     // ==================== Utility ====================

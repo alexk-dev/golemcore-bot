@@ -1,6 +1,6 @@
 package me.golemcore.bot.domain.memory;
 
-import me.golemcore.bot.domain.runtimeconfig.RuntimeConfigService;
+import me.golemcore.bot.domain.runtimeconfig.MemoryRuntimeConfigView;
 
 /*
  * Copyright 2026 Aleksei Kuleshov
@@ -38,14 +38,14 @@ import java.util.List;
 @Service
 public class MemoryRetrievalService {
 
-    private final RuntimeConfigService runtimeConfigService;
+    private final MemoryRuntimeConfigView runtimeConfigService;
     private final MemoryRetrievalPlanner memoryRetrievalPlanner;
     private final MemoryCandidateCollector memoryCandidateCollector;
     private final MemoryCandidateScorer memoryCandidateScorer;
     private final MemoryCandidateReranker memoryCandidateReranker;
     private final MemoryCandidateSelector memoryCandidateSelector;
 
-    public MemoryRetrievalService(RuntimeConfigService runtimeConfigService,
+    public MemoryRetrievalService(MemoryRuntimeConfigView runtimeConfigService,
             MemoryRetrievalPlanner memoryRetrievalPlanner, MemoryCandidateCollector memoryCandidateCollector,
             MemoryCandidateScorer memoryCandidateScorer, MemoryCandidateReranker memoryCandidateReranker,
             MemoryCandidateSelector memoryCandidateSelector) {

@@ -20,7 +20,7 @@ package me.golemcore.bot.domain.memory.persistence;
 
 import me.golemcore.bot.domain.model.MemoryItem;
 import me.golemcore.bot.domain.model.TurnMemoryEvent;
-import me.golemcore.bot.domain.runtimeconfig.RuntimeConfigService;
+import me.golemcore.bot.domain.runtimeconfig.MemoryRuntimeConfigView;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
@@ -44,10 +44,10 @@ public class TurnMemoryExtractionOrchestrator {
     private static final Pattern TEST_REFERENCE_PATTERN = Pattern
             .compile("\\b([A-Za-z0-9_$.]+Test(?:#[A-Za-z0-9_]+)?)\\b");
 
-    private final RuntimeConfigService runtimeConfigService;
+    private final MemoryRuntimeConfigView runtimeConfigService;
     private final MemoryNormalizationService memoryNormalizationService;
 
-    public TurnMemoryExtractionOrchestrator(RuntimeConfigService runtimeConfigService,
+    public TurnMemoryExtractionOrchestrator(MemoryRuntimeConfigView runtimeConfigService,
             MemoryNormalizationService memoryNormalizationService) {
         this.runtimeConfigService = runtimeConfigService;
         this.memoryNormalizationService = memoryNormalizationService;

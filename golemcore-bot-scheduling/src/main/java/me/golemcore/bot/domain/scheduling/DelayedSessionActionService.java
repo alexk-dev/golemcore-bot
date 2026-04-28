@@ -21,7 +21,7 @@ package me.golemcore.bot.domain.scheduling;
 import me.golemcore.bot.domain.validation.ConversationKeyValidator;
 import me.golemcore.bot.domain.autorun.AutoRunContextSupport;
 import me.golemcore.bot.domain.support.StringValueSupport;
-import me.golemcore.bot.domain.runtimeconfig.RuntimeConfigService;
+import me.golemcore.bot.domain.runtimeconfig.DelayedActionsRuntimeConfigView;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.DelayedActionDeliveryMode;
 import me.golemcore.bot.domain.model.DelayedActionKind;
@@ -58,7 +58,7 @@ public class DelayedSessionActionService implements SessionDelayedActionProtecti
     private static final int MAX_ACTIVE_ACTIONS_PER_SESSION = 3;
 
     private final DelayedActionRegistryPort delayedActionRegistryPort;
-    private final RuntimeConfigService runtimeConfigService;
+    private final DelayedActionsRuntimeConfigView runtimeConfigService;
     private final Clock clock;
     private final Object lock = new Object();
 
@@ -66,7 +66,7 @@ public class DelayedSessionActionService implements SessionDelayedActionProtecti
     private volatile boolean loaded = false;
 
     public DelayedSessionActionService(DelayedActionRegistryPort delayedActionRegistryPort,
-            RuntimeConfigService runtimeConfigService, Clock clock) {
+            DelayedActionsRuntimeConfigView runtimeConfigService, Clock clock) {
         this.delayedActionRegistryPort = delayedActionRegistryPort;
         this.runtimeConfigService = runtimeConfigService;
         this.clock = clock;

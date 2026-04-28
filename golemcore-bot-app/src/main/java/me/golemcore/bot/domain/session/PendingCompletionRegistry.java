@@ -47,11 +47,16 @@ final class PendingCompletionRegistry {
     void transfer(Message source, Message target) {
         List<CompletableFuture<Void>> removedCompletions = removeCompletions(source);
         List<CompletableFuture<TurnRunResult>> removedResultCompletions = removeResultCompletions(source);
-        removeStartCallbacks(source);
-        if (removedCompletions.isEmpty() && removedResultCompletions.isEmpty()) {
+        List<Runnable> removedStartCallbacks = removeStartCallbacks(source);
+        if (removedCompletions.isEmpty() && removedResultCompletions.isEmpty() && removedStartCallbacks.isEmpty()) {
             return;
         }
 
+        if (!removedStartCallbacks.isEmpty()) {
+            synchronized (startCallbacks) {
+                startCallbacks.computeIfAbsent(target, ignored -> new ArrayList<>()).addAll(removedStartCallbacks);
+            }
+        }
         if (!removedCompletions.isEmpty()) {
             synchronized (completions) {
                 completions.computeIfAbsent(target, ignored -> new ArrayList<>()).addAll(removedCompletions);

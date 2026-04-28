@@ -5,7 +5,9 @@ import java.util.List;
 import java.util.Objects;
 import me.golemcore.bot.domain.events.RuntimeEventService;
 import me.golemcore.bot.domain.context.hygiene.ContextHygieneService;
-import me.golemcore.bot.domain.runtimeconfig.RuntimeConfigService;
+import me.golemcore.bot.domain.runtimeconfig.ModelRoutingConfigView;
+import me.golemcore.bot.domain.runtimeconfig.TracingConfigView;
+import me.golemcore.bot.domain.runtimeconfig.TurnRuntimeConfigView;
 import me.golemcore.bot.domain.tracing.TraceService;
 import me.golemcore.bot.domain.runtimeconfig.UserPreferencesService;
 import me.golemcore.bot.domain.system.AgentSystem;
@@ -24,21 +26,21 @@ public final class AgentLoopFactory {
         AgentLoopPorts safePorts = Objects.requireNonNull(ports, "ports must not be null");
         AgentLoopRuntimeServices safeServices = Objects.requireNonNull(services, "services must not be null");
         AgentPipelinePlan plan = new AgentPipelinePlanFactory().create(systems);
-        AgentPipelineRunner pipelineRunner = new AgentPipelineRunner(plan, safeServices.runtimeConfigService(),
-                safeServices.runtimeConfigService(), safeServices.preferencesService(), safeServices.clock(),
+        AgentPipelineRunner pipelineRunner = new AgentPipelineRunner(plan, safeServices.modelRoutingConfigView(),
+                safeServices.tracingConfigView(), safeServices.preferencesService(), safeServices.clock(),
                 safeServices.traceService(), safeServices.contextHygieneService());
         return new AgentLoop(safePorts.sessionService(), safePorts.rateLimiter(), new AgentLoop.AgentLoopCollaborators(
                 new TurnFeedbackCoordinator(safePorts.channelRuntimePort(), safeServices.preferencesService()),
-                new TurnPersistenceGuard(safePorts.sessionService(), safeServices.runtimeConfigService(),
+                new TurnPersistenceGuard(safePorts.sessionService(), safeServices.tracingConfigView(),
                         safeServices.traceService(), safeServices.contextHygieneService(), safeServices.clock(),
                         safeServices.runtimeEventService()),
-                new TurnContextFactory(safeServices.runtimeConfigService(), safeServices.runtimeConfigService(),
+                new TurnContextFactory(safeServices.turnRuntimeConfigView(), safeServices.tracingConfigView(),
                         safeServices.traceService(), safeServices.clock(), safeServices.traceSnapshotCodecPort()),
                 pipelineRunner,
                 new TurnFeedbackGuarantee(new UnsentResponseDetector(),
                         new SafeErrorFeedbackRenderer(safeServices.preferencesService()),
                         new GenericFallbackRouter(pipelineRunner), new OptionalLlmErrorExplanationProvider(
-                                safeServices.runtimeConfigService(), safePorts.llmPort(), safeServices.clock())),
+                                safeServices.modelRoutingConfigView(), safePorts.llmPort(), safeServices.clock())),
                 new AutoRunOutcomeRecorder()));
     }
 
@@ -52,13 +54,16 @@ public final class AgentLoopFactory {
         }
     }
 
-    public record AgentLoopRuntimeServices(RuntimeConfigService runtimeConfigService,
+    public record AgentLoopRuntimeServices(ModelRoutingConfigView modelRoutingConfigView,
+            TracingConfigView tracingConfigView, TurnRuntimeConfigView turnRuntimeConfigView,
             UserPreferencesService preferencesService, Clock clock, TraceService traceService,
             TraceSnapshotCodecPort traceSnapshotCodecPort, ContextHygieneService contextHygieneService,
             RuntimeEventService runtimeEventService) {
 
         public AgentLoopRuntimeServices {
-            Objects.requireNonNull(runtimeConfigService, "runtimeConfigService must not be null");
+            Objects.requireNonNull(modelRoutingConfigView, "modelRoutingConfigView must not be null");
+            Objects.requireNonNull(tracingConfigView, "tracingConfigView must not be null");
+            Objects.requireNonNull(turnRuntimeConfigView, "turnRuntimeConfigView must not be null");
             Objects.requireNonNull(preferencesService, "preferencesService must not be null");
             Objects.requireNonNull(clock, "clock must not be null");
             Objects.requireNonNull(traceService, "traceService must not be null");
