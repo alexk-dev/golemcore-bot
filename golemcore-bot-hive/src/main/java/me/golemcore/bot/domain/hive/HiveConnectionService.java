@@ -241,7 +241,7 @@ public class HiveConnectionService implements HiveConnectionPort {
                 return getStatus();
             } catch (RuntimeException exception) {
                 handleFailure(exception);
-                throw exception;
+                throw toHiveActionException("Hive join failed", exception);
             }
         }
     }
@@ -269,7 +269,7 @@ public class HiveConnectionService implements HiveConnectionPort {
                     throw new IllegalStateException(RECONNECT_AUTH_FAILURE_MESSAGE, exception);
                 }
                 handleFailure(exception);
-                throw exception;
+                throw toHiveActionException("Hive reconnect failed", exception);
             }
         }
     }
@@ -729,6 +729,13 @@ public class HiveConnectionService implements HiveConnectionPort {
         stateRef.set(HiveConnectionState.DISCONNECTED);
         log.warn("[Hive] Cleared stale Hive session after reconnect authorization failure: {}",
                 exception.getMessage());
+    }
+
+    private IllegalStateException toHiveActionException(String message, RuntimeException exception) {
+        if (exception instanceof IllegalStateException illegalStateException) {
+            return illegalStateException;
+        }
+        return new IllegalStateException(message, exception);
     }
 
     private void clearLocalHiveSession() {

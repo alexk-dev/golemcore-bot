@@ -1,6 +1,7 @@
 package me.golemcore.bot.domain.loop;
 
 import java.time.Clock;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.ExecutionException;
@@ -71,7 +72,7 @@ final class OptionalLlmErrorExplanationProvider {
         if (context == null) {
             return List.of();
         }
-        java.util.ArrayList<String> errors = new java.util.ArrayList<>();
+        List<String> errors = new ArrayList<>();
         append(errors, context.getAttribute(ContextAttributes.LLM_ERROR));
         for (FailureEvent failure : context.getFailures()) {
             append(errors, failure.message());

@@ -444,7 +444,6 @@ class ToolCallExecutionServiceTest {
 
     @Test
     void shouldReturnNullAttachmentWhenResultIsFailure() {
-        AgentContext context = buildContext();
         ToolResult failureResult = ToolResult.failure("error");
 
         Attachment attachment = attachmentExtractor.extract(failureResult, TOOL_NAME);
@@ -454,8 +453,6 @@ class ToolCallExecutionServiceTest {
 
     @Test
     void shouldReturnNullAttachmentWhenResultIsNull() {
-        AgentContext context = buildContext();
-
         Attachment attachment = attachmentExtractor.extract(null, TOOL_NAME);
 
         assertNull(attachment);
@@ -463,7 +460,6 @@ class ToolCallExecutionServiceTest {
 
     @Test
     void shouldReturnNullAttachmentWhenDataIsNotMap() {
-        AgentContext context = buildContext();
         ToolResult successResult = ToolResult.builder().success(true).output("ok").data("not a map").build();
 
         Attachment attachment = attachmentExtractor.extract(successResult, TOOL_NAME);

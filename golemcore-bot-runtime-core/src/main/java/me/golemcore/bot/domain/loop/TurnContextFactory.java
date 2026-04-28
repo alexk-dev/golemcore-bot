@@ -23,7 +23,6 @@ import me.golemcore.bot.domain.identity.SessionIdentitySupport;
 import me.golemcore.bot.domain.tracing.TraceContextSupport;
 import me.golemcore.bot.domain.tracing.TraceMdcSupport;
 import me.golemcore.bot.domain.tracing.TraceNamingSupport;
-import me.golemcore.bot.domain.tracing.TraceRuntimeConfigSupport;
 import me.golemcore.bot.domain.tracing.TraceService;
 import me.golemcore.bot.port.outbound.TraceSnapshotCodecPort;
 
