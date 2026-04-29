@@ -20,6 +20,133 @@ function toNullableString(value: string): string | null {
   return value.length > 0 ? value : null;
 }
 
+interface RepeatGuardSettingsSectionProps {
+  toolLoopForm: ToolLoopConfig;
+  setToolLoopForm: (value: ToolLoopConfig) => void;
+}
+
+function RepeatGuardSettingsSection({
+  toolLoopForm,
+  setToolLoopForm,
+}: RepeatGuardSettingsSectionProps): ReactElement {
+  const updateToolLoopForm = (patch: Partial<ToolLoopConfig>): void => {
+    setToolLoopForm({ ...toolLoopForm, ...patch });
+  };
+
+  return (
+    <div className="border-top pt-3 mt-2">
+      <SettingsCardTitle
+        title="Tool Loop Repeat Guard"
+        tip="Pre-execution guard that bounds repeated tool calls and autonomous ledger reuse."
+      />
+      <Row className="g-3 mb-3">
+        <Col md={6}>
+          <Form.Check
+            type="switch"
+            id="repeat-guard-enabled"
+            label="Enable repeat guard"
+            checked={toolLoopForm.repeatGuardEnabled ?? true}
+            onChange={(e) => updateToolLoopForm({ repeatGuardEnabled: e.target.checked })}
+          />
+        </Col>
+        <Col md={6}>
+          <Form.Check
+            type="switch"
+            id="repeat-guard-shadow-mode"
+            label="Shadow mode"
+            checked={toolLoopForm.repeatGuardShadowMode ?? false}
+            onChange={(e) => updateToolLoopForm({ repeatGuardShadowMode: e.target.checked })}
+          />
+        </Col>
+      </Row>
+      <Row className="g-3 mb-3">
+        <Col md={4}>
+          <Form.Group>
+            <Form.Label className="small fw-medium">
+              Same Observe Calls <HelpTip text="Successful identical observation calls allowed in the current verified state before blocking." />
+            </Form.Label>
+            <Form.Control
+              size="sm"
+              type="number"
+              min={1}
+              value={toolLoopForm.repeatGuardMaxSameObservePerTurn ?? 2}
+              onChange={(e) => updateToolLoopForm({
+                repeatGuardMaxSameObservePerTurn: toNullableInt(e.target.value),
+              })}
+            />
+          </Form.Group>
+        </Col>
+        <Col md={4}>
+          <Form.Group>
+            <Form.Label className="small fw-medium">
+              Same Unknown Calls <HelpTip text="Successful identical unknown executions allowed before blocking in the current verified state." />
+            </Form.Label>
+            <Form.Control
+              size="sm"
+              type="number"
+              min={1}
+              value={toolLoopForm.repeatGuardMaxSameUnknownPerTurn ?? 2}
+              onChange={(e) => updateToolLoopForm({
+                repeatGuardMaxSameUnknownPerTurn: toNullableInt(e.target.value),
+              })}
+            />
+          </Form.Group>
+        </Col>
+        <Col md={4}>
+          <Form.Group>
+            <Form.Label className="small fw-medium">
+              Blocked Repeats <HelpTip text="Repeated ignored guard hints allowed before the turn stops." />
+            </Form.Label>
+            <Form.Control
+              size="sm"
+              type="number"
+              min={1}
+              value={toolLoopForm.repeatGuardMaxBlockedRepeatsPerTurn ?? 4}
+              onChange={(e) => updateToolLoopForm({
+                repeatGuardMaxBlockedRepeatsPerTurn: toNullableInt(e.target.value),
+              })}
+            />
+          </Form.Group>
+        </Col>
+      </Row>
+      <Row className="g-3 mb-3">
+        <Col md={4}>
+          <Form.Group>
+            <Form.Label className="small fw-medium">
+              Poll Backoff <HelpTip text="Minimum seconds before repeating the same polling call." />
+            </Form.Label>
+            <Form.Control
+              size="sm"
+              type="number"
+              min={1}
+              value={toolLoopForm.repeatGuardMinPollIntervalSeconds ?? 60}
+              onChange={(e) => updateToolLoopForm({
+                repeatGuardMinPollIntervalSeconds: toNullableInt(e.target.value),
+              })}
+            />
+          </Form.Group>
+        </Col>
+        <Col md={4}>
+          <Form.Group>
+            <Form.Label className="small fw-medium">
+              Auto Ledger TTL <HelpTip text="Minutes to keep autonomous task/goal repeat ledger records for observations, polling, unknown executions and guard synthetic records." />
+            </Form.Label>
+            <Form.Control
+              size="sm"
+              type="number"
+              min={1}
+              value={toolLoopForm.repeatGuardAutoLedgerTtlMinutes ?? 120}
+              onChange={(e) => updateToolLoopForm({
+                repeatGuardAutoLedgerTtlMinutes: toNullableInt(e.target.value),
+              })}
+            />
+          </Form.Group>
+        </Col>
+      </Row>
+    </div>
+  );
+}
+
 interface TurnTabProps {
   config: TurnConfig;
   toolLoopConfig: ToolLoopConfig;
@@ -98,6 +225,7 @@ export default function TurnTab({ config, toolLoopConfig }: TurnTabProps): React
             </Form.Group>
           </Col>
         </Row>
+        <RepeatGuardSettingsSection toolLoopForm={toolLoopForm} setToolLoopForm={setToolLoopForm} />
         <div className="border-top pt-3 mt-2">
           <SettingsCardTitle title="Turn Settings" />
           <Row className="g-3 mb-3">

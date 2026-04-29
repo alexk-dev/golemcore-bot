@@ -52,6 +52,13 @@ const TURN_CONFIG: TurnConfig = {
 const TOOL_LOOP_CONFIG: ToolLoopConfig = {
   maxLlmCalls: 20,
   maxToolExecutions: 80,
+  repeatGuardEnabled: true,
+  repeatGuardShadowMode: false,
+  repeatGuardMaxSameObservePerTurn: 2,
+  repeatGuardMaxSameUnknownPerTurn: 2,
+  repeatGuardMaxBlockedRepeatsPerTurn: 4,
+  repeatGuardMinPollIntervalSeconds: 60,
+  repeatGuardAutoLedgerTtlMinutes: 120,
 };
 
 interface RenderResult {
@@ -104,6 +111,14 @@ function setInputValue(input: HTMLInputElement, value: string): void {
   });
 }
 
+function setCheckboxChecked(input: HTMLInputElement, checked: boolean): void {
+  act(() => {
+    const descriptor = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'checked');
+    descriptor?.set?.call(input, checked);
+    input.dispatchEvent(new Event('click', { bubbles: true }));
+  });
+}
+
 function clickSave(): void {
   const buttons = Array.from(document.querySelectorAll('button'));
   const button = buttons.find((candidate) => candidate.textContent?.trim() === 'Save');
@@ -142,9 +157,50 @@ describe('TurnTab', () => {
     expect(updateToolLoopMutateAsync).toHaveBeenCalledWith({
       maxLlmCalls: 37,
       maxToolExecutions: 80,
+      repeatGuardEnabled: true,
+      repeatGuardShadowMode: false,
+      repeatGuardMaxSameObservePerTurn: 2,
+      repeatGuardMaxSameUnknownPerTurn: 2,
+      repeatGuardMaxBlockedRepeatsPerTurn: 4,
+      repeatGuardMinPollIntervalSeconds: 60,
+      repeatGuardAutoLedgerTtlMinutes: 120,
     });
     expect(updateTurnMutateAsync).not.toHaveBeenCalled();
     expect(toastSuccess).toHaveBeenCalledWith('Turn budget settings saved');
+
+    view.unmount();
+  });
+
+  it('edits repeat guard settings through tool-loop config', async () => {
+    const view = renderTurnTab();
+    const enabled = view.container.querySelector('#repeat-guard-enabled');
+    const shadow = view.container.querySelector('#repeat-guard-shadow-mode');
+    if (!(enabled instanceof HTMLInputElement) || !(shadow instanceof HTMLInputElement)) {
+      throw new Error('Repeat guard switches not found');
+    }
+
+    setCheckboxChecked(enabled, false);
+    setCheckboxChecked(shadow, true);
+    setInputValue(getInputByLabel(view.container, 'Same Observe Calls'), '3');
+    setInputValue(getInputByLabel(view.container, 'Same Unknown Calls'), '4');
+    setInputValue(getInputByLabel(view.container, 'Blocked Repeats'), '5');
+    setInputValue(getInputByLabel(view.container, 'Poll Backoff'), '30');
+    setInputValue(getInputByLabel(view.container, 'Auto Ledger TTL'), '45');
+    clickSave();
+    await flushPromises();
+
+    expect(updateToolLoopMutateAsync).toHaveBeenCalledWith({
+      maxLlmCalls: 20,
+      maxToolExecutions: 80,
+      repeatGuardEnabled: false,
+      repeatGuardShadowMode: true,
+      repeatGuardMaxSameObservePerTurn: 3,
+      repeatGuardMaxSameUnknownPerTurn: 4,
+      repeatGuardMaxBlockedRepeatsPerTurn: 5,
+      repeatGuardMinPollIntervalSeconds: 30,
+      repeatGuardAutoLedgerTtlMinutes: 45,
+    });
+    expect(updateTurnMutateAsync).not.toHaveBeenCalled();
 
     view.unmount();
   });
