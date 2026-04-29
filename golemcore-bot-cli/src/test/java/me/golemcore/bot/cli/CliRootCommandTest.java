@@ -20,6 +20,50 @@ class CliRootCommandTest {
     void shouldRegisterInitialCommandSurface() {
         CommandLine commandLine = commandLine(new StringWriter(), new StringWriter());
 
+        assertIterableEquals(CliCommandFactory.subcommandNames(), commandLine.getSubcommands().keySet().stream()
+                .filter(commandName -> !"help".equals(commandName))
+                .toList());
+        assertEquals(Set.of(
+                "help",
+                "run",
+                "serve",
+                "attach",
+                "acp",
+                "session",
+                "agent",
+                "auth",
+                "providers",
+                "models",
+                "tier",
+                "mcp",
+                "skill",
+                "plugin",
+                "tool",
+                "permissions",
+                "project",
+                "config",
+                "memory",
+                "rag",
+                "auto",
+                "lsp",
+                "terminal",
+                "git",
+                "patch",
+                "github",
+                "trace",
+                "stats",
+                "doctor",
+                "export",
+                "import",
+                "completion",
+                "upgrade",
+                "uninstall"), commandLine.getSubcommands().keySet());
+    }
+
+    @Test
+    void shouldCreateDefaultCommandLineFromFactory() {
+        CommandLine commandLine = CliCommandFactory.create();
+
         assertEquals(Set.of(
                 "help",
                 "run",
@@ -67,6 +111,41 @@ class CliRootCommandTest {
         assertTrue(help.contains("Usage: cli"));
         assertTrue(help.contains("run"));
         assertTrue(help.contains("doctor"));
+    }
+
+    @Test
+    void shouldRunCliApplicationEntrypoint() {
+        StringWriter out = new StringWriter();
+        int exitCode = CliApplication.run(new String[] { "doctor", "--json" },
+                new PrintWriter(out, true),
+                new PrintWriter(new StringWriter(), true));
+
+        assertEquals(0, exitCode);
+        assertEquals(
+                """
+                        {"status":"ok","checks":[{"name":"cli","status":"ok","message":"CLI adapter slice is available"}]}
+                        """,
+                out.toString());
+    }
+
+    @Test
+    void shouldRecordRootInvocationWhenNoSubcommandIsProvided() {
+        CliRootCommand rootCommand = new CliRootCommand(new PrintWriter(new StringWriter(), true),
+                new PrintWriter(new StringWriter(), true));
+        int exitCode = CliApplication.commandLine(rootCommand).execute();
+
+        assertEquals(0, exitCode);
+        assertEquals("cli", rootCommand.invocation().commandName());
+    }
+
+    @Test
+    void shouldRecordStubCommandInvocation() {
+        CliRootCommand rootCommand = new CliRootCommand(new PrintWriter(new StringWriter(), true),
+                new PrintWriter(new StringWriter(), true));
+        int exitCode = CliApplication.commandLine(rootCommand).execute("run");
+
+        assertEquals(0, exitCode);
+        assertEquals("run", rootCommand.invocation().commandName());
     }
 
     @Test
@@ -232,6 +311,15 @@ class CliRootCommandTest {
                         {"status":"ok","checks":[{"name":"cli","status":"ok","message":"CLI adapter slice is available"}]}
                         """,
                 out.toString());
+    }
+
+    @Test
+    void shouldRenderDeterministicDoctorText() {
+        StringWriter out = new StringWriter();
+        int exitCode = commandLine(out, new StringWriter()).execute("doctor");
+
+        assertEquals(0, exitCode);
+        assertEquals("CLI: ok - command surface is available\n", out.toString());
     }
 
     @Test
