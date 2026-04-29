@@ -6,6 +6,24 @@ All notable changes to this project will be documented in this file. See [conven
 - (**auto**) add configurable session retention cleanup for persisted chat sessions
 
 - - -
+## v0.73.0 - 2026-04-29
+#### Features
+- add repeat tool use guard (#329) - (f6d0870) - Alex Kuleshov
+#### Refactoring
+- split command interaction boundary (#327) - (a66cec0) - Alex Kuleshov
+- burn down runtime architecture debt (#328) - (8397b2e) - Alex Kuleshov
+- split app domain context ownership (#326) - (5697872) - Alex Kuleshov
+- modular runtime boundaries (#320) - (50de13f) - Alex Kuleshov
+#### Miscellaneous
+- (**deps**) bump org.jetbrains.pty4j:pty4j from 0.13.10 to 0.13.12 (#315) - (d0c0be5) - dependabot[bot]
+- (**deps**) bump org.xerial:sqlite-jdbc from 3.51.3.0 to 3.53.0.0 (#314) - (b391333) - dependabot[bot]
+- (**deps**) bump feign.version from 13.11 to 13.12 (#312) - (079306f) - dependabot[bot]
+- (**deps**) bump com.networknt:json-schema-validator from 1.5.6 to 3.0.2 (#313) - (2f3a676) - dependabot[bot]
+- (**deps-dev**) bump postcss from 8.5.8 to 8.5.10 in /dashboard (#319) - (b562b47) - dependabot[bot]
+- (**deps-dev**) bump com.tngtech.archunit:archunit-junit5 from 1.4.1 to 1.4.2 (#311) - (b5d52b2) - dependabot[bot]
+
+- - -
+
 ## v0.12.0 - 2026-02-25
 #### Features
 - (**browser**) fetch Playwright driver bundle from Maven at runtime (#117) - (2121f20) - Alex Kuleshov
