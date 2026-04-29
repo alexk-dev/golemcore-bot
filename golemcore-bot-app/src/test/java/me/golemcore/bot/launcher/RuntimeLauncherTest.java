@@ -217,6 +217,70 @@ class RuntimeLauncherTest {
     }
 
     @Test
+    void shouldForwardCliHelpToBundledRuntime(@TempDir Path tempDir) throws Exception {
+        Path bundledJar = tempDir.resolve("bot-bundled.jar");
+        Files.writeString(bundledJar, "payload", StandardCharsets.UTF_8);
+        RecordingProcessStarter processStarter = new RecordingProcessStarter(List.of(0));
+        RuntimeLauncher launcher = createLauncher(
+                Map.of("UPDATE_PATH", tempDir.toString()),
+                processStarter,
+                new NoOpLauncherOutput(),
+                null,
+                bundledJar,
+                Map.of());
+
+        int exitCode = launcher.run(new String[] { "cli", "--help" });
+
+        assertEquals(0, exitCode);
+        assertEquals(List.of(
+                "java",
+                "-jar",
+                bundledJar.toAbsolutePath().normalize().toString(),
+                "cli",
+                "--help"), processStarter.commands().getFirst());
+    }
+
+    @Test
+    void shouldForwardCliLauncherOptionsAndArgumentsToBundledRuntime(@TempDir Path tempDir) throws Exception {
+        Path bundledJar = tempDir.resolve("configured.jar");
+        Path storagePath = tempDir.resolve("workspace");
+        Path updatesPath = tempDir.resolve("updates");
+        Files.writeString(bundledJar, "payload", StandardCharsets.UTF_8);
+        RecordingProcessStarter processStarter = new RecordingProcessStarter(List.of(0));
+        RuntimeLauncher launcher = createLauncher(
+                Map.of(),
+                processStarter,
+                new NoOpLauncherOutput(),
+                null,
+                null,
+                Map.of());
+
+        int exitCode = launcher.run(new String[] {
+                "--storage-path=" + storagePath,
+                "cli",
+                "--updates-path=" + updatesPath,
+                "--bundled-jar=" + bundledJar,
+                "-J=-Xmx512m",
+                "--java-option=-Dcli.flag=true",
+                "run",
+                "--json"
+        });
+
+        assertEquals(0, exitCode);
+        assertEquals(List.of(
+                "java",
+                "-Xmx512m",
+                "-Dcli.flag=true",
+                "-Dbot.storage.local.base-path=" + storagePath.toAbsolutePath().normalize(),
+                "-Dbot.update.updates-path=" + updatesPath.toAbsolutePath().normalize(),
+                "-jar",
+                bundledJar.toAbsolutePath().normalize().toString(),
+                "cli",
+                "run",
+                "--json"), processStarter.commands().getFirst());
+    }
+
+    @Test
     void shouldNotDuplicateForwardedServerPortWhenPassedAsApplicationArgument(@TempDir Path tempDir) throws Exception {
         Path bundledJar = tempDir.resolve("bot-bundled.jar");
         Files.writeString(bundledJar, "payload", StandardCharsets.UTF_8);
@@ -752,6 +816,8 @@ class RuntimeLauncherTest {
                 RuntimeLauncher.legacyEntrypointArguments(new String[] { "--server.port=9090" }));
         assertArrayEquals(new String[] { "web", "--port=8080" },
                 RuntimeLauncher.legacyEntrypointArguments(new String[] { "web", "--port=8080" }));
+        assertArrayEquals(new String[] { "web", "cli", "--help" },
+                RuntimeLauncher.legacyEntrypointArguments(new String[] { "cli", "--help" }));
     }
 
     @Test

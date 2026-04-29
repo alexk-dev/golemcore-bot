@@ -45,11 +45,13 @@ class MavenModuleDependencyArchitectureTest {
             Map.entry("golemcore-bot-self-evolving", Set.of("golemcore-bot-contracts", "golemcore-bot-client")),
             Map.entry("golemcore-bot-hive", Set.of("golemcore-bot-contracts", "golemcore-bot-client")),
             Map.entry("golemcore-bot-extensions", Set.of("golemcore-bot-contracts")),
+            Map.entry("golemcore-bot-cli", Set.of("golemcore-bot-contracts")),
             Map.entry("golemcore-bot-app",
                     Set.of("golemcore-bot-contracts", "golemcore-bot-runtime-config", "golemcore-bot-sessions",
                             "golemcore-bot-memory", "golemcore-bot-tools", "golemcore-bot-tracing",
                             "golemcore-bot-scheduling", "golemcore-bot-runtime-core", "golemcore-bot-client",
-                            "golemcore-bot-self-evolving", "golemcore-bot-hive", "golemcore-bot-extensions")));
+                            "golemcore-bot-self-evolving", "golemcore-bot-hive", "golemcore-bot-extensions",
+                            "golemcore-bot-cli")));
 
     @Test
     void allowed_dependency_graph_should_cover_every_parent_maven_module() {

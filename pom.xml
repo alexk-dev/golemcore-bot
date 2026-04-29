@@ -53,6 +53,7 @@
         <module>golemcore-bot-self-evolving</module>
         <module>golemcore-bot-hive</module>
         <module>golemcore-bot-extensions</module>
+        <module>golemcore-bot-cli</module>
         <module>golemcore-bot-app</module>
     </modules>
 

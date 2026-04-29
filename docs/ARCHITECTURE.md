@@ -17,6 +17,7 @@ client           -> contracts
 extensions       -> contracts + plugin API
 hive             -> contracts + client
 self-evolving    -> contracts + client + its own ports
+cli              -> contracts, terminal/Picocli inbound adapter and CLI presenters, no app/runtime composition ownership
 app              -> composition root, wires runtime/feature modules and adapters
 dashboard        -> web control plane
 ```
@@ -37,6 +38,7 @@ golemcore-bot-parent
 ├── golemcore-bot-extensions
 ├── golemcore-bot-hive
 ├── golemcore-bot-self-evolving
+├── golemcore-bot-cli
 ├── golemcore-bot-app
 └── dashboard
 ```
@@ -46,7 +48,9 @@ golemcore-bot-parent
 - `golemcore-bot-contracts` contains stable DTOs, value objects, events, ports, lightweight shared views, and shared helpers only.
 - Public ports must not expose mutable runtime internals such as `AgentContext`; async turn execution returns immutable `TurnRunResult`.
 - `golemcore-bot-app` may depend on all runtime and feature modules.
+- `golemcore-bot-cli` owns terminal command parsing, CLI presenters, and local CLI adapters; reusable run/session/permission behavior must stay in contracts or runtime use cases.
 - Runtime and feature modules must not depend on `golemcore-bot-app`.
+- Runtime and feature modules must not depend on `golemcore-bot-cli`.
 - Runtime and feature modules must not depend on app adapters, web controllers, launchers, or security configuration.
 - Adapters implement ports; domain/runtime code depends on ports and contracts.
 - New module dependencies must follow the graph above and be covered by architecture tests.

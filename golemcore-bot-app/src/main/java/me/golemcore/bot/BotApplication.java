@@ -17,7 +17,9 @@ package me.golemcore.bot;
  *
  * Contact: alex@kuleshov.tech
  */
+import java.io.PrintWriter;
 
+import me.golemcore.bot.cli.CliApplication;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.properties.ConfigurationPropertiesScan;
@@ -72,7 +74,17 @@ import org.springframework.scheduling.annotation.EnableAsync;
 public class BotApplication {
 
     public static void main(String[] args) {
-        SpringApplication.run(BotApplication.class, args);
+        if (BotApplicationCommandLine.isCliMode(args)) {
+            int exitCode = CliApplication.run(
+                    BotApplicationCommandLine.cliArguments(args),
+                    new PrintWriter(System.out, true),
+                    new PrintWriter(System.err, true));
+            if (exitCode != 0) {
+                System.exit(exitCode);
+            }
+            return;
+        }
+        SpringApplication.run(BotApplication.class, BotApplicationCommandLine.springArguments(args));
     }
 
 }
