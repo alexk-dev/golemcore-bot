@@ -9,12 +9,28 @@ import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.OutgoingResponse;
 import me.golemcore.bot.domain.model.RuntimeEvent;
 import me.golemcore.bot.domain.model.RuntimeEventType;
+import me.golemcore.bot.domain.model.ToolFailureKind;
 import me.golemcore.bot.domain.model.ToolResult;
+import me.golemcore.bot.domain.context.compaction.ContextCompactionPolicy;
+import me.golemcore.bot.domain.system.toolloop.repeat.ToolRepeatGuard;
+import me.golemcore.bot.domain.system.toolloop.repeat.ToolRepeatGuardSettings;
+import me.golemcore.bot.domain.system.toolloop.repeat.AutonomyWorkKey;
+import me.golemcore.bot.domain.system.toolloop.repeat.ToolUseFingerprint;
+import me.golemcore.bot.domain.system.toolloop.repeat.ToolUseFingerprintService;
+import me.golemcore.bot.domain.system.toolloop.repeat.ToolUseLedger;
+import me.golemcore.bot.domain.system.toolloop.repeat.ToolUseLedgerStore;
+import me.golemcore.bot.domain.system.toolloop.repeat.ToolUseRecord;
 import me.golemcore.bot.domain.system.toolloop.view.ConversationView;
+import me.golemcore.bot.infrastructure.toolloop.repeat.JsonToolUseLedgerStore;
+import me.golemcore.bot.port.outbound.StoragePort;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 
+import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CompletableFuture;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
@@ -23,11 +39,272 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class DefaultToolLoopSystemToolExecutionTest extends DefaultToolLoopSystemFixture {
+
+    @Test
+    void repeatedSuccessfulReadIsBlockedAndModelGetsRecoveryHint() {
+        AgentContext context = buildContext();
+        Message.ToolCall readCall = Message.ToolCall.builder()
+                .id(TOOL_CALL_ID)
+                .name("filesystem")
+                .arguments(Map.of("operation", "read_file", "path", "README.md"))
+                .build();
+        DefaultToolLoopSystem guardedSystem = DefaultToolLoopSystem.builder()
+                .llmPort(llmPort)
+                .toolExecutor(toolExecutor)
+                .historyWriter(historyWriter)
+                .viewBuilder(viewBuilder)
+                .turnSettings(me.golemcore.bot.support.TestPorts.turn(turnSettings))
+                .settings(me.golemcore.bot.support.TestPorts.toolLoop(settings))
+                .modelSelectionService(modelSelectionService)
+                .contextCompactionPolicy(new ContextCompactionPolicy(runtimeConfigService, modelSelectionService))
+                .repeatGuard(new ToolRepeatGuard(new ToolUseFingerprintService(), ToolRepeatGuardSettings.defaults(),
+                        clock))
+                .clock(clock)
+                .build();
+
+        when(llmPort.chat(any()))
+                .thenReturn(CompletableFuture.completedFuture(toolCallResponse(List.of(readCall))))
+                .thenReturn(CompletableFuture.completedFuture(toolCallResponse(List.of(readCall))))
+                .thenReturn(CompletableFuture.completedFuture(toolCallResponse(List.of(readCall))))
+                .thenReturn(CompletableFuture.completedFuture(finalResponse(CONTENT_DONE)));
+        when(toolExecutor.execute(any(), any())).thenReturn(new ToolExecutionOutcome(
+                TOOL_CALL_ID, "filesystem", ToolResult.success("read result"), "read result", false, null));
+
+        ToolLoopTurnResult result = guardedSystem.processTurn(context);
+
+        assertTrue(result.finalAnswerReady());
+        assertEquals(3, result.toolExecutions());
+        verify(toolExecutor, times(2)).execute(any(), any());
+        ToolResult blockedResult = context.getToolResults().get(TOOL_CALL_ID);
+        assertEquals(ToolFailureKind.REPEATED_TOOL_USE_BLOCKED, blockedResult.getFailureKind());
+        assertTrue(blockedResult.getError().contains("Repeated tool call blocked"));
+    }
+
+    @Test
+    void autoRunLoadsPriorTaskLedgerAndBlocksSameObservationAcrossRuns() {
+        AgentContext context = buildContext();
+        context.setAttribute(ContextAttributes.AUTO_MODE, true);
+        context.setAttribute(ContextAttributes.CONVERSATION_KEY, "web:chat-1");
+        context.setAttribute(ContextAttributes.AUTO_GOAL_ID, "goal-1");
+        context.setAttribute(ContextAttributes.AUTO_TASK_ID, "task-1");
+        Message.ToolCall readCall = Message.ToolCall.builder()
+                .id(TOOL_CALL_ID)
+                .name("filesystem")
+                .arguments(Map.of("operation", "read_file", "path", "README.md"))
+                .build();
+        ToolUseFingerprintService fingerprintService = new ToolUseFingerprintService();
+        ToolRepeatGuard repeatGuard = new ToolRepeatGuard(fingerprintService, ToolRepeatGuardSettings.defaults(),
+                clock);
+        ToolUseLedgerStore ledgerStore = new JsonToolUseLedgerStore(
+                storagePort(), new ObjectMapper().findAndRegisterModules(), clock);
+        ToolUseLedger priorLedger = new ToolUseLedger();
+        ToolUseFingerprint fingerprint = fingerprintService.fingerprint(readCall);
+        priorLedger.recordUse(priorObservation(fingerprint, "sha256:same"));
+        priorLedger.recordUse(priorObservation(fingerprint, "sha256:same"));
+        ledgerStore.save(new AutonomyWorkKey("web:chat-1", "goal-1", "task-1", null), priorLedger);
+
+        DefaultToolLoopSystem guardedSystem = DefaultToolLoopSystem.builder()
+                .llmPort(llmPort)
+                .toolExecutor(toolExecutor)
+                .historyWriter(historyWriter)
+                .viewBuilder(viewBuilder)
+                .turnSettings(me.golemcore.bot.support.TestPorts.turn(turnSettings))
+                .settings(me.golemcore.bot.support.TestPorts.toolLoop(settings))
+                .modelSelectionService(modelSelectionService)
+                .contextCompactionPolicy(new ContextCompactionPolicy(runtimeConfigService, modelSelectionService))
+                .repeatGuard(repeatGuard)
+                .toolUseLedgerStore(ledgerStore)
+                .clock(clock)
+                .build();
+
+        when(llmPort.chat(any()))
+                .thenReturn(CompletableFuture.completedFuture(toolCallResponse(List.of(readCall))))
+                .thenReturn(CompletableFuture.completedFuture(finalResponse(CONTENT_DONE)));
+
+        ToolLoopTurnResult result = guardedSystem.processTurn(context);
+
+        assertTrue(result.finalAnswerReady());
+        assertEquals(1, result.toolExecutions());
+        verify(toolExecutor, never()).execute(any(), any());
+        assertEquals(3, ledgerStore.load(new AutonomyWorkKey("web:chat-1", "goal-1", "task-1", null),
+                Duration.ofMinutes(120)).orElseThrow().recordsFor(fingerprint).size());
+    }
+
+    @Test
+    void autoRunDoesNotStopImmediatelyBecausePreviousRunAccumulatedBlockedRepeats() {
+        AgentContext context = buildContext();
+        context.setAttribute(ContextAttributes.AUTO_MODE, true);
+        context.setAttribute(ContextAttributes.CONVERSATION_KEY, "web:chat-1");
+        context.setAttribute(ContextAttributes.AUTO_GOAL_ID, "goal-1");
+        context.setAttribute(ContextAttributes.AUTO_TASK_ID, "task-1");
+        Message.ToolCall readCall = Message.ToolCall.builder()
+                .id(TOOL_CALL_ID)
+                .name("filesystem")
+                .arguments(Map.of("operation", "read_file", "path", "README.md"))
+                .build();
+        ToolUseFingerprintService fingerprintService = new ToolUseFingerprintService();
+        ToolRepeatGuard repeatGuard = new ToolRepeatGuard(fingerprintService, ToolRepeatGuardSettings.defaults(),
+                clock);
+        ToolUseLedgerStore ledgerStore = new JsonToolUseLedgerStore(
+                storagePort(), new ObjectMapper().findAndRegisterModules(), clock);
+        ToolUseLedger priorLedger = new ToolUseLedger();
+        ToolUseFingerprint fingerprint = fingerprintService.fingerprint(readCall);
+        priorLedger.recordUse(priorObservation(fingerprint, "sha256:same"));
+        priorLedger.recordUse(priorObservation(fingerprint, "sha256:same"));
+        for (int index = 0; index < ToolRepeatGuardSettings.defaults().maxBlockedRepeatsPerTurn(); index++) {
+            priorLedger.incrementBlockedRepeatCount();
+        }
+        ledgerStore.save(new AutonomyWorkKey("web:chat-1", "goal-1", "task-1", null), priorLedger);
+
+        DefaultToolLoopSystem guardedSystem = DefaultToolLoopSystem.builder()
+                .llmPort(llmPort)
+                .toolExecutor(toolExecutor)
+                .historyWriter(historyWriter)
+                .viewBuilder(viewBuilder)
+                .turnSettings(me.golemcore.bot.support.TestPorts.turn(turnSettings))
+                .settings(me.golemcore.bot.support.TestPorts.toolLoop(settings))
+                .modelSelectionService(modelSelectionService)
+                .contextCompactionPolicy(new ContextCompactionPolicy(runtimeConfigService, modelSelectionService))
+                .repeatGuard(repeatGuard)
+                .toolUseLedgerStore(ledgerStore)
+                .clock(clock)
+                .build();
+
+        when(llmPort.chat(any()))
+                .thenReturn(CompletableFuture.completedFuture(toolCallResponse(List.of(readCall))))
+                .thenReturn(CompletableFuture.completedFuture(finalResponse(CONTENT_DONE)));
+
+        ToolLoopTurnResult result = guardedSystem.processTurn(context);
+
+        assertTrue(result.finalAnswerReady());
+        assertEquals(1, result.toolExecutions());
+        verify(toolExecutor, never()).execute(any(), any());
+        ToolUseLedger loaded = ledgerStore.load(
+                new AutonomyWorkKey("web:chat-1", "goal-1", "task-1", null),
+                Duration.ofMinutes(120)).orElseThrow();
+        assertEquals(0, loaded.getBlockedRepeatCount());
+    }
+
+    @Test
+    void autoRunAllowsSameShellAfterLedgerTtlExpired() {
+        AgentContext context = buildContext();
+        context.setAttribute(ContextAttributes.AUTO_MODE, true);
+        context.setAttribute(ContextAttributes.CONVERSATION_KEY, "web:chat-1");
+        context.setAttribute(ContextAttributes.AUTO_GOAL_ID, "goal-1");
+        context.setAttribute(ContextAttributes.AUTO_TASK_ID, "task-1");
+        Message.ToolCall shellCall = Message.ToolCall.builder()
+                .id(TOOL_CALL_ID)
+                .name("shell")
+                .arguments(Map.of("command", "git status"))
+                .build();
+        ToolUseFingerprintService fingerprintService = new ToolUseFingerprintService();
+        ToolRepeatGuard repeatGuard = new ToolRepeatGuard(fingerprintService, ToolRepeatGuardSettings.defaults(),
+                clock);
+        ToolUseLedgerStore ledgerStore = new JsonToolUseLedgerStore(
+                storagePort(), new ObjectMapper().findAndRegisterModules(), clock);
+        ToolUseLedger priorLedger = new ToolUseLedger();
+        ToolUseFingerprint fingerprint = fingerprintService.fingerprint(shellCall);
+        Instant expired = clock.instant().minus(Duration.ofMinutes(121));
+        priorLedger.recordUse(priorShell(fingerprint, expired, "sha256:first"));
+        priorLedger.recordUse(priorShell(fingerprint, expired, "sha256:second"));
+        ledgerStore.save(new AutonomyWorkKey("web:chat-1", "goal-1", "task-1", null), priorLedger);
+
+        DefaultToolLoopSystem guardedSystem = DefaultToolLoopSystem.builder()
+                .llmPort(llmPort)
+                .toolExecutor(toolExecutor)
+                .historyWriter(historyWriter)
+                .viewBuilder(viewBuilder)
+                .turnSettings(me.golemcore.bot.support.TestPorts.turn(turnSettings))
+                .settings(me.golemcore.bot.support.TestPorts.toolLoop(settings))
+                .modelSelectionService(modelSelectionService)
+                .contextCompactionPolicy(new ContextCompactionPolicy(runtimeConfigService, modelSelectionService))
+                .repeatGuard(repeatGuard)
+                .toolUseLedgerStore(ledgerStore)
+                .clock(clock)
+                .build();
+
+        when(llmPort.chat(any()))
+                .thenReturn(CompletableFuture.completedFuture(toolCallResponse(List.of(shellCall))))
+                .thenReturn(CompletableFuture.completedFuture(finalResponse(CONTENT_DONE)));
+        when(toolExecutor.execute(context, shellCall)).thenReturn(new ToolExecutionOutcome(
+                TOOL_CALL_ID, "shell", ToolResult.success("clean"), "clean", false, null));
+
+        ToolLoopTurnResult result = guardedSystem.processTurn(context);
+
+        assertTrue(result.finalAnswerReady());
+        verify(toolExecutor).execute(context, shellCall);
+    }
+
+    @Test
+    void autonomousCodingLoopMayRepeatSameShellCommandAfterFileEdit() {
+        AgentContext context = buildContext();
+        Message.ToolCall firstWrite = Message.ToolCall.builder()
+                .id("tc-write-1")
+                .name("filesystem")
+                .arguments(Map.of("operation", "write_file", "path", "src/main/java/App.java",
+                        "content", "class App {}"))
+                .build();
+        Message.ToolCall firstShell = Message.ToolCall.builder()
+                .id("tc-shell-1")
+                .name("shell")
+                .arguments(Map.of("command", "mvn test", "cwd", "."))
+                .build();
+        Message.ToolCall secondWrite = Message.ToolCall.builder()
+                .id("tc-write-2")
+                .name("filesystem")
+                .arguments(Map.of("operation", "write_file", "path", "src/main/java/App.java",
+                        "content", "class App { String value; }"))
+                .build();
+        Message.ToolCall secondShell = Message.ToolCall.builder()
+                .id("tc-shell-2")
+                .name("shell")
+                .arguments(Map.of("command", "mvn test", "cwd", "."))
+                .build();
+        DefaultToolLoopSystem guardedSystem = DefaultToolLoopSystem.builder()
+                .llmPort(llmPort)
+                .toolExecutor(toolExecutor)
+                .historyWriter(historyWriter)
+                .viewBuilder(viewBuilder)
+                .turnSettings(me.golemcore.bot.support.TestPorts.turn(turnSettings))
+                .settings(me.golemcore.bot.support.TestPorts.toolLoop(settings))
+                .modelSelectionService(modelSelectionService)
+                .contextCompactionPolicy(new ContextCompactionPolicy(runtimeConfigService, modelSelectionService))
+                .repeatGuard(new ToolRepeatGuard(new ToolUseFingerprintService(), ToolRepeatGuardSettings.defaults(),
+                        clock))
+                .clock(clock)
+                .build();
+
+        when(llmPort.chat(any()))
+                .thenReturn(CompletableFuture.completedFuture(toolCallResponse(List.of(firstWrite))))
+                .thenReturn(CompletableFuture.completedFuture(toolCallResponse(List.of(firstShell))))
+                .thenReturn(CompletableFuture.completedFuture(toolCallResponse(List.of(secondWrite))))
+                .thenReturn(CompletableFuture.completedFuture(toolCallResponse(List.of(secondShell))))
+                .thenReturn(CompletableFuture.completedFuture(finalResponse(CONTENT_DONE)));
+        when(toolExecutor.execute(eq(context), any())).thenAnswer(invocation -> {
+            Message.ToolCall call = invocation.getArgument(1, Message.ToolCall.class);
+            return new ToolExecutionOutcome(
+                    call.getId(), call.getName(), ToolResult.success("ok"), "ok", false, null);
+        });
+
+        ToolLoopTurnResult result = guardedSystem.processTurn(context);
+
+        assertTrue(result.finalAnswerReady());
+        verify(toolExecutor, times(2)).execute(eq(context),
+                argThat(call -> call != null && "shell".equals(call.getName())));
+        assertTrue(context.getToolResults().get("tc-shell-1").isSuccess());
+        assertTrue(context.getToolResults().get("tc-shell-2").isSuccess());
+    }
 
     @Test
     void shouldPublishIntentAndFlushProgressThroughTurnProgressService() {
@@ -267,5 +544,50 @@ class DefaultToolLoopSystemToolExecutionTest extends DefaultToolLoopSystemFixtur
         ToolLoopTurnResult result = system.processTurn(context);
 
         assertTrue(result.finalAnswerReady());
+    }
+
+    private ToolUseRecord priorObservation(ToolUseFingerprint fingerprint, String outputDigest) {
+        Instant finishedAt = clock.instant().minusSeconds(30);
+        return new ToolUseRecord(
+                fingerprint,
+                finishedAt.minusMillis(10),
+                finishedAt,
+                true,
+                null,
+                outputDigest,
+                0,
+                false,
+                null);
+    }
+
+    private ToolUseRecord priorShell(ToolUseFingerprint fingerprint, Instant finishedAt, String outputDigest) {
+        return new ToolUseRecord(
+                fingerprint,
+                finishedAt.minusMillis(10),
+                finishedAt,
+                true,
+                null,
+                outputDigest,
+                0,
+                false,
+                null);
+    }
+
+    private StoragePort storagePort() {
+        Map<String, String> files = new ConcurrentHashMap<>();
+        StoragePort storagePort = mock(StoragePort.class);
+        when(storagePort.exists(anyString(), anyString()))
+                .thenAnswer(invocation -> CompletableFuture.completedFuture(files.containsKey(
+                        invocation.getArgument(0, String.class) + "/" + invocation.getArgument(1, String.class))));
+        when(storagePort.getText(anyString(), anyString()))
+                .thenAnswer(invocation -> CompletableFuture.completedFuture(files.get(
+                        invocation.getArgument(0, String.class) + "/" + invocation.getArgument(1, String.class))));
+        when(storagePort.putTextAtomic(anyString(), anyString(), anyString(), anyBoolean()))
+                .thenAnswer(invocation -> {
+                    files.put(invocation.getArgument(0, String.class) + "/"
+                            + invocation.getArgument(1, String.class), invocation.getArgument(2, String.class));
+                    return CompletableFuture.completedFuture(null);
+                });
+        return storagePort;
     }
 }

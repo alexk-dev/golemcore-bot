@@ -97,6 +97,13 @@ import static me.golemcore.bot.domain.runtimeconfig.RuntimeConfigDefaults.DEFAUL
 import static me.golemcore.bot.domain.runtimeconfig.RuntimeConfigDefaults.DEFAULT_SMART_REASONING;
 import static me.golemcore.bot.domain.runtimeconfig.RuntimeConfigDefaults.DEFAULT_TOOL_LOOP_MAX_LLM_CALLS;
 import static me.golemcore.bot.domain.runtimeconfig.RuntimeConfigDefaults.DEFAULT_TOOL_LOOP_MAX_TOOL_EXECUTIONS;
+import static me.golemcore.bot.domain.runtimeconfig.RuntimeConfigDefaults.DEFAULT_TOOL_REPEAT_GUARD_AUTO_LEDGER_TTL_MINUTES;
+import static me.golemcore.bot.domain.runtimeconfig.RuntimeConfigDefaults.DEFAULT_TOOL_REPEAT_GUARD_ENABLED;
+import static me.golemcore.bot.domain.runtimeconfig.RuntimeConfigDefaults.DEFAULT_TOOL_REPEAT_GUARD_MAX_BLOCKED_REPEATS_PER_TURN;
+import static me.golemcore.bot.domain.runtimeconfig.RuntimeConfigDefaults.DEFAULT_TOOL_REPEAT_GUARD_MAX_SAME_OBSERVE_PER_TURN;
+import static me.golemcore.bot.domain.runtimeconfig.RuntimeConfigDefaults.DEFAULT_TOOL_REPEAT_GUARD_MAX_SAME_UNKNOWN_PER_TURN;
+import static me.golemcore.bot.domain.runtimeconfig.RuntimeConfigDefaults.DEFAULT_TOOL_REPEAT_GUARD_MIN_POLL_INTERVAL_SECONDS;
+import static me.golemcore.bot.domain.runtimeconfig.RuntimeConfigDefaults.DEFAULT_TOOL_REPEAT_GUARD_SHADOW_MODE;
 import static me.golemcore.bot.domain.runtimeconfig.RuntimeConfigDefaults.DEFAULT_TRACING_CAPTURE_INBOUND_PAYLOADS;
 import static me.golemcore.bot.domain.runtimeconfig.RuntimeConfigDefaults.DEFAULT_TRACING_CAPTURE_LLM_PAYLOADS;
 import static me.golemcore.bot.domain.runtimeconfig.RuntimeConfigDefaults.DEFAULT_TRACING_CAPTURE_OUTBOUND_PAYLOADS;
@@ -535,14 +542,34 @@ final class SessionRuntimeConfigService implements RuntimeConfigSectionService {
     }
 
     private void normalizeToolLoop(RuntimeConfig.ToolLoopConfig toolLoop) {
-        Integer toolLoopMaxLlmCalls = toolLoop.getMaxLlmCalls();
-        if (toolLoopMaxLlmCalls == null || toolLoopMaxLlmCalls < 1) {
-            toolLoop.setMaxLlmCalls(DEFAULT_TOOL_LOOP_MAX_LLM_CALLS);
+        toolLoop.setMaxLlmCalls(positiveOrDefault(toolLoop.getMaxLlmCalls(), DEFAULT_TOOL_LOOP_MAX_LLM_CALLS));
+        toolLoop.setMaxToolExecutions(
+                positiveOrDefault(toolLoop.getMaxToolExecutions(), DEFAULT_TOOL_LOOP_MAX_TOOL_EXECUTIONS));
+        if (toolLoop.getRepeatGuardEnabled() == null) {
+            toolLoop.setRepeatGuardEnabled(DEFAULT_TOOL_REPEAT_GUARD_ENABLED);
         }
-        Integer toolLoopMaxToolExecutions = toolLoop.getMaxToolExecutions();
-        if (toolLoopMaxToolExecutions == null || toolLoopMaxToolExecutions < 1) {
-            toolLoop.setMaxToolExecutions(DEFAULT_TOOL_LOOP_MAX_TOOL_EXECUTIONS);
+        if (toolLoop.getRepeatGuardShadowMode() == null) {
+            toolLoop.setRepeatGuardShadowMode(DEFAULT_TOOL_REPEAT_GUARD_SHADOW_MODE);
         }
+        toolLoop.setRepeatGuardMaxSameObservePerTurn(positiveOrDefault(toolLoop.getRepeatGuardMaxSameObservePerTurn(),
+                DEFAULT_TOOL_REPEAT_GUARD_MAX_SAME_OBSERVE_PER_TURN));
+        toolLoop.setRepeatGuardMaxSameUnknownPerTurn(positiveOrDefault(toolLoop.getRepeatGuardMaxSameUnknownPerTurn(),
+                DEFAULT_TOOL_REPEAT_GUARD_MAX_SAME_UNKNOWN_PER_TURN));
+        toolLoop.setRepeatGuardMaxBlockedRepeatsPerTurn(
+                positiveOrDefault(toolLoop.getRepeatGuardMaxBlockedRepeatsPerTurn(),
+                        DEFAULT_TOOL_REPEAT_GUARD_MAX_BLOCKED_REPEATS_PER_TURN));
+        toolLoop.setRepeatGuardMinPollIntervalSeconds(positiveOrDefault(toolLoop.getRepeatGuardMinPollIntervalSeconds(),
+                DEFAULT_TOOL_REPEAT_GUARD_MIN_POLL_INTERVAL_SECONDS));
+        toolLoop.setRepeatGuardAutoLedgerTtlMinutes(positiveOrDefault(toolLoop.getRepeatGuardAutoLedgerTtlMinutes(),
+                DEFAULT_TOOL_REPEAT_GUARD_AUTO_LEDGER_TTL_MINUTES));
+    }
+
+    private int positiveOrDefault(Integer value, int defaultValue) {
+        return value != null && value >= 1 ? value : defaultValue;
+    }
+
+    private long positiveOrDefault(Long value, long defaultValue) {
+        return value != null && value >= 1L ? value : defaultValue;
     }
 
     private void normalizeSessionRetention(RuntimeConfig.SessionRetentionConfig sessionRetention) {

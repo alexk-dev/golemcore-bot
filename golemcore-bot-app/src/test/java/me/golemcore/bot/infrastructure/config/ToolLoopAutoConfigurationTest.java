@@ -21,6 +21,8 @@ import me.golemcore.bot.domain.system.toolloop.ToolExecutorPort;
 import me.golemcore.bot.domain.system.toolloop.ToolFailureRecoveryService;
 import me.golemcore.bot.domain.system.toolloop.ToolLoopSystem;
 import me.golemcore.bot.domain.system.toolloop.ToolCallExecutionServiceToolExecutorAdapter;
+import me.golemcore.bot.domain.system.toolloop.repeat.ToolRepeatGuard;
+import me.golemcore.bot.domain.system.toolloop.repeat.ToolUseLedgerStore;
 import me.golemcore.bot.domain.system.toolloop.view.ContextBudgetResolver;
 import me.golemcore.bot.domain.system.toolloop.view.ContextWindowProjector;
 import me.golemcore.bot.domain.system.toolloop.view.ConversationViewBuilder;
@@ -119,6 +121,8 @@ class ToolLoopAutoConfigurationTest {
                 traceService,
                 toolFailureRecoveryService,
                 mock(PlanModeToolRestrictionService.class),
+                mock(ToolRepeatGuard.class),
+                mock(ToolUseLedgerStore.class),
                 null);
 
         assertNotNull(system);

@@ -25,6 +25,7 @@ import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.ToolFailureKind;
 
 import java.time.Clock;
+import java.util.Map;
 
 /**
  * Unified policy for all tool failure handling within the tool loop.
@@ -63,9 +64,8 @@ public class ToolFailurePolicy {
     /**
      * Result of evaluating the failure policy for a single tool execution.
      */
-    public sealed
-
-    interface Verdict {
+    // @formatter:off
+    public sealed interface Verdict {
 
         /** Continue normally — no policy triggered. */
         record Ok() implements Verdict {
@@ -93,6 +93,7 @@ public class ToolFailurePolicy {
         record RecoveryHint(String hint, String fingerprint, String recoverabilityName) implements Verdict {
         }
     }
+    // @formatter:on
 
     /**
      * Evaluates the failure policy for a tool execution outcome.
@@ -113,6 +114,15 @@ public class ToolFailurePolicy {
         }
 
         ToolFailureKind kind = outcome.toolResult().getFailureKind();
+
+        if (kind == ToolFailureKind.REPEAT_GUARD_STOP_TURN) {
+            return new Verdict.StopTurn(repeatGuardHint(outcome));
+        }
+
+        if (kind == ToolFailureKind.REPEATED_TOOL_USE_BLOCKED) {
+            return new Verdict.RecoveryHint(repeatGuardHint(outcome), repeatGuardFingerprint(toolCall, outcome),
+                    "REPEAT_GUARD");
+        }
 
         // Layer 1: Immediate stop conditions
         if (turnState.isStopOnConfirmationDenied() && kind == ToolFailureKind.CONFIRMATION_DENIED) {
@@ -138,6 +148,29 @@ public class ToolFailurePolicy {
 
         return new Verdict.Ok();
     }
+
+        private String repeatGuardHint(ToolExecutionOutcome outcome) {
+            String error = outcome.toolResult().getError();
+            if (error == null || error.isBlank()) {
+                return "Repeated tool call blocked by repeat guard. Use the previous result, change arguments, "
+                        + "perform a state-changing step, checkpoint progress, or finish the turn.";
+            }
+            return error;
+        }
+
+        private String repeatGuardFingerprint(Message.ToolCall toolCall, ToolExecutionOutcome outcome) {
+            if (outcome != null && outcome.toolResult() != null
+                    && outcome.toolResult().getData() instanceof Map<?, ?> data) {
+                Object fingerprint = data.get("repeatFingerprint");
+                if (fingerprint instanceof String text && !text.isBlank()) {
+                    return text;
+                }
+            }
+            if (toolCall == null) {
+                return "repeat-guard:unknown";
+            }
+            return "repeat-guard:" + toolCall.getName() + ":" + toolCall.getId();
+        }
 
         private ToolFailureRecoveryDecision evaluateRecovery(TurnState turnState, Message.ToolCall toolCall,
                 ToolExecutionOutcome outcome) {

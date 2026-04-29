@@ -22,6 +22,7 @@ import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.Attachment;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.RuntimeConfig;
+import me.golemcore.bot.domain.system.toolloop.repeat.ToolUseLedger;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -72,6 +73,7 @@ public class TurnState {
     private final List<Map<String, Object>> turnFileChanges = new ArrayList<>();
     private final Map<String, Integer> toolFailureCounts = new LinkedHashMap<>();
     private final Map<String, Integer> toolRecoveryCounts = new LinkedHashMap<>();
+    private final ToolUseLedger toolUseLedger;
 
     // --- Last LLM response for stop-turn bookkeeping ---
     private LlmResponse lastLlmResponse;
@@ -105,6 +107,15 @@ public class TurnState {
     public TurnState(AgentContext context, RuntimeConfig.TracingConfig tracingConfig, int maxLlmCalls,
             int maxToolExecutions, Instant deadline, boolean stopOnToolFailure, boolean stopOnConfirmationDenied,
             boolean stopOnToolPolicyDenied, int maxRetries, long retryBaseDelayMs, boolean retryEnabled) {
+        this(context, tracingConfig, maxLlmCalls, maxToolExecutions, deadline, stopOnToolFailure,
+                stopOnConfirmationDenied, stopOnToolPolicyDenied, maxRetries, retryBaseDelayMs, retryEnabled,
+                new ToolUseLedger());
+    }
+
+    public TurnState(AgentContext context, RuntimeConfig.TracingConfig tracingConfig, int maxLlmCalls,
+            int maxToolExecutions, Instant deadline, boolean stopOnToolFailure, boolean stopOnConfirmationDenied,
+            boolean stopOnToolPolicyDenied, int maxRetries, long retryBaseDelayMs, boolean retryEnabled,
+            ToolUseLedger toolUseLedger) {
         this.context = context;
         this.tracingConfig = tracingConfig;
         this.maxLlmCalls = maxLlmCalls;
@@ -116,6 +127,7 @@ public class TurnState {
         this.maxRetries = maxRetries;
         this.retryBaseDelayMs = retryBaseDelayMs;
         this.retryEnabled = retryEnabled;
+        this.toolUseLedger = toolUseLedger != null ? toolUseLedger : new ToolUseLedger();
     }
 
     /**
@@ -243,6 +255,10 @@ public class TurnState {
 
     public Map<String, Integer> getToolRecoveryCounts() {
         return toolRecoveryCounts;
+    }
+
+    public ToolUseLedger getToolUseLedger() {
+        return toolUseLedger;
     }
 
     public LlmResponse getLastLlmResponse() {

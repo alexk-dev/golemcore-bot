@@ -86,6 +86,13 @@ final class RuntimeConfigDefaults {
     static final int DEFAULT_TURN_MAX_SKILL_TRANSITIONS = 3;
     static final int DEFAULT_TURN_MAX_LLM_CALLS = 200;
     static final int DEFAULT_TOOL_LOOP_MAX_LLM_CALLS = 20;
+    static final boolean DEFAULT_TOOL_REPEAT_GUARD_ENABLED = true;
+    static final boolean DEFAULT_TOOL_REPEAT_GUARD_SHADOW_MODE = false;
+    static final int DEFAULT_TOOL_REPEAT_GUARD_MAX_SAME_OBSERVE_PER_TURN = 2;
+    static final int DEFAULT_TOOL_REPEAT_GUARD_MAX_SAME_UNKNOWN_PER_TURN = 2;
+    static final int DEFAULT_TOOL_REPEAT_GUARD_MAX_BLOCKED_REPEATS_PER_TURN = 4;
+    static final long DEFAULT_TOOL_REPEAT_GUARD_MIN_POLL_INTERVAL_SECONDS = 60L;
+    static final long DEFAULT_TOOL_REPEAT_GUARD_AUTO_LEDGER_TTL_MINUTES = 120L;
     static final boolean DEFAULT_SESSION_RETENTION_ENABLED = true;
     static final Duration DEFAULT_SESSION_RETENTION_MAX_AGE = Duration.ofDays(30);
     static final Duration DEFAULT_SESSION_RETENTION_CLEANUP_INTERVAL = Duration.ofHours(24);

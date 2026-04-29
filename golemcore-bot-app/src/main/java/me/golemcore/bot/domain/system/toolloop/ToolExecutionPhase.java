@@ -38,6 +38,10 @@ import me.golemcore.bot.domain.events.RuntimeEventService;
 import me.golemcore.bot.domain.tracing.TraceMdcSupport;
 import me.golemcore.bot.domain.tracing.TraceService;
 import me.golemcore.bot.domain.progress.TurnProgressService;
+import me.golemcore.bot.domain.system.toolloop.repeat.ToolRepeatDecision;
+import me.golemcore.bot.domain.system.toolloop.repeat.ToolRepeatGuard;
+import me.golemcore.bot.domain.system.toolloop.repeat.ToolStateDomain;
+import me.golemcore.bot.domain.system.toolloop.repeat.ToolUseFingerprint;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Duration;
@@ -82,6 +86,7 @@ class ToolExecutionPhase {
     private final TraceService traceService;
     private final RuntimeConfigService runtimeConfigService;
     private final PlanModeToolRestrictionService planModeToolRestrictionService;
+    private final ToolRepeatGuard repeatGuard;
     private final Clock clock;
     private final ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
 
@@ -105,13 +110,21 @@ class ToolExecutionPhase {
             RuntimeEventService runtimeEventService, TurnProgressService turnProgressService,
             TraceService traceService, RuntimeConfigService runtimeConfigService, Clock clock) {
         this(toolExecutor, failurePolicy, runtimeEventService, turnProgressService, traceService,
-                runtimeConfigService, clock, null);
+                runtimeConfigService, clock, null, ToolRepeatGuard.noop());
     }
 
     ToolExecutionPhase(ToolExecutorPort toolExecutor, ToolFailurePolicy failurePolicy,
             RuntimeEventService runtimeEventService, TurnProgressService turnProgressService,
             TraceService traceService, RuntimeConfigService runtimeConfigService, Clock clock,
             PlanModeToolRestrictionService planModeToolRestrictionService) {
+        this(toolExecutor, failurePolicy, runtimeEventService, turnProgressService, traceService,
+                runtimeConfigService, clock, planModeToolRestrictionService, ToolRepeatGuard.noop());
+    }
+
+    ToolExecutionPhase(ToolExecutorPort toolExecutor, ToolFailurePolicy failurePolicy,
+            RuntimeEventService runtimeEventService, TurnProgressService turnProgressService,
+            TraceService traceService, RuntimeConfigService runtimeConfigService, Clock clock,
+            PlanModeToolRestrictionService planModeToolRestrictionService, ToolRepeatGuard repeatGuard) {
         this.toolExecutor = toolExecutor;
         this.failurePolicy = failurePolicy;
         this.runtimeEventService = runtimeEventService;
@@ -120,14 +133,14 @@ class ToolExecutionPhase {
         this.runtimeConfigService = runtimeConfigService;
         this.clock = clock;
         this.planModeToolRestrictionService = planModeToolRestrictionService;
+        this.repeatGuard = repeatGuard != null ? repeatGuard : ToolRepeatGuard.noop();
     }
 
     /**
      * Outcome of executing a tool call batch.
      */
-    sealed
-
-    interface ToolBatchOutcome {
+    // @formatter:off
+    sealed interface ToolBatchOutcome {
 
         /** All tool calls executed successfully — continue the main loop. */
         record Continue() implements ToolBatchOutcome {
@@ -145,6 +158,7 @@ class ToolExecutionPhase {
         record Interrupted(ToolLoopTurnResult result) implements ToolBatchOutcome {
         }
     }
+    // @formatter:on
 
     /**
      * Executes a batch of tool calls, applying failure policy after each.
@@ -168,6 +182,7 @@ class ToolExecutionPhase {
 
         maybePublishIntent(context, response);
         historyWriter.appendAssistantToolCalls(context, response, toolCalls);
+        List<PendingWarningHint> pendingWarningHints = new ArrayList<>();
 
         for (int index = 0; index < toolCalls.size(); index++) {
             Message.ToolCall toolCall = toolCalls.get(index);
@@ -187,7 +202,8 @@ class ToolExecutionPhase {
             }
 
             // --- Execute tool call ---
-            ToolExecutionOutcome outcome = executeToolCall(context, toolCall, turnState, historyWriter);
+            ToolExecutionOutcome outcome = executeToolCall(context, toolCall, turnState, historyWriter,
+                    pendingWarningHints);
 
             if (shouldStopAfterPlanExit(planModeActiveAtBatchStart, toolCall, outcome)) {
                 llmCallPhase.applyAttachments(context, turnState.getAccumulatedAttachments());
@@ -227,6 +243,7 @@ class ToolExecutionPhase {
             }
         }
 
+        appendPendingWarningHints(turnState, context, historyWriter, pendingWarningHints);
         return new ToolBatchOutcome.Continue();
     }
 
@@ -247,26 +264,28 @@ class ToolExecutionPhase {
 
         private ToolExecutionOutcome executeToolCall(AgentContext context, Message.ToolCall toolCall,
                 TurnState turnState,
-                HistoryWriter historyWriter) {
-            LlmCallPhase.LlmCallOutcome unusedForEventHelper = null;
+                HistoryWriter historyWriter,
+                List<PendingWarningHint> pendingWarningHints) {
             emitRuntimeEvent(context, RuntimeEventType.TOOL_STARTED,
                     eventPayload("toolCallId", toolCall.getId(), "tool", toolCall.getName()));
 
             Instant toolStarted = clock.instant();
-            ToolExecutionOutcome outcome = planModeToolRestrictionService != null
+            RepeatGuardExecution execution = planModeToolRestrictionService != null
                     ? planModeToolRestrictionService.denialReason(context, toolCall)
-                            .map(reason -> ToolExecutionOutcome.synthetic(toolCall, ToolFailureKind.POLICY_DENIED,
-                                    reason))
-                            .orElseGet(() -> executeWithTracing(context, toolCall, turnState.getTracingConfig()))
-                    : executeWithTracing(context, toolCall, turnState.getTracingConfig());
+                            .map(reason -> new RepeatGuardExecution(ToolExecutionOutcome.synthetic(toolCall,
+                                    ToolFailureKind.POLICY_DENIED, reason), null, null))
+                            .orElseGet(() -> executeAfterRepeatGuard(context, toolCall, turnState))
+                    : executeAfterRepeatGuard(context, toolCall, turnState);
+            ToolExecutionOutcome outcome = execution.outcome();
             turnState.incrementToolExecutions();
             long toolDuration = Duration.between(toolStarted, clock.instant()).toMillis();
 
-            emitRuntimeEvent(context, RuntimeEventType.TOOL_FINISHED,
-                    eventPayload("toolCallId", toolCall.getId(), "tool", toolCall.getName(),
-                            "success", outcome != null && outcome.toolResult() != null
-                                    && outcome.toolResult().isSuccess(),
-                            "durationMs", toolDuration));
+            Map<String, Object> finishedPayload = eventPayload("toolCallId", toolCall.getId(), "tool",
+                    toolCall.getName(),
+                    "success", outcome != null && outcome.toolResult() != null && outcome.toolResult().isSuccess(),
+                    "durationMs", toolDuration);
+            addRepeatGuardPayload(finishedPayload, execution.decision());
+            emitRuntimeEvent(context, RuntimeEventType.TOOL_FINISHED, finishedPayload);
 
             if (outcome != null && outcome.toolResult() != null && outcome.toolResult().isSuccess()) {
                 captureFileChanges(toolCall, turnState.getTurnFileChanges());
@@ -285,279 +304,414 @@ class ToolExecutionPhase {
             if (outcome != null) {
                 recordToolProgress(context, toolCall, outcome, toolDuration);
                 historyWriter.appendToolResult(context, outcome);
+                if (execution.warningHint() != null) {
+                    pendingWarningHints.add(execution.warningHint());
+                }
+                repeatGuard.afterOutcome(turnState, toolCall, outcome);
             }
 
             return outcome;
         }
 
-        private ToolExecutionOutcome executeWithTracing(AgentContext context, Message.ToolCall toolCall,
-                RuntimeConfig.TracingConfig tracingConfig) {
-            Map<String, Object> attributes = new LinkedHashMap<>();
-            if (toolCall.getName() != null) {
-                attributes.put("tool.name", toolCall.getName());
-            }
-            if (toolCall.getId() != null) {
-                attributes.put("tool.callId", toolCall.getId());
-            }
-            putIfPresent(attributes, ContextAttributes.SELF_EVOLVING_RUN_ID,
-                    readContextAttribute(context, ContextAttributes.SELF_EVOLVING_RUN_ID));
-            putIfPresent(attributes, ContextAttributes.SELF_EVOLVING_ARTIFACT_BUNDLE_ID,
-                    readContextAttribute(context, ContextAttributes.SELF_EVOLVING_ARTIFACT_BUNDLE_ID));
-            TraceContext toolSpan = startChildSpan(context, "tool." + toolCall.getName(), TraceSpanKind.TOOL,
-                    attributes);
-            captureToolSnapshot(context, toolSpan, tracingConfig, "input", toolCall);
-            try (MdcSupport.Scope ignored = MdcSupport.withContext(buildTraceMdcContext(toolSpan, context))) {
-                ToolExecutionOutcome outcome = toolExecutor.execute(context, toolCall);
-                captureToolSnapshot(context, toolSpan, tracingConfig, "output", outcome);
-                TraceStatusCode statusCode = outcome != null && outcome.toolResult() != null
-                        && outcome.toolResult().isSuccess()
-                                ? TraceStatusCode.OK
-                                : TraceStatusCode.ERROR;
-                finishChildSpan(context, toolSpan, statusCode,
-                        outcome != null && outcome.toolResult() != null ? outcome.toolResult().getError() : null);
-                return outcome;
-            } catch (Exception e) { // NOSONAR - tool execution must not break the loop
-                ToolExecutionOutcome synthetic = ToolExecutionOutcome.synthetic(toolCall,
-                        ToolFailureKind.EXECUTION_FAILED,
-                        "Tool execution failed: " + e.getMessage());
-                captureToolSnapshot(context, toolSpan, tracingConfig, "output", synthetic);
-                finishChildSpan(context, toolSpan, TraceStatusCode.ERROR, e.getMessage());
-                return synthetic;
-            }
-        }
-
-        // ==================== Synthetic results for remaining tool calls
-        // ====================
-
-        /**
-         * Writes synthetic failure results for tool calls that were not executed
-         * because the batch was interrupted mid-way.
-         *
-         * <p>
-         * This ensures conversation history remains consistent: every tool call in the
-         * assistant message gets a corresponding tool result message, even if some
-         * tools were skipped due to a recovery hint or stop decision.
-         *
-         * @param context
-         *            the agent context
-         * @param toolCalls
-         *            full list of tool calls in the batch
-         * @param startIndex
-         *            index of the first unexecuted tool call
-         * @param reason
-         *            reason for skipping (used in the synthetic result message)
-         * @param historyWriter
-         *            history writer for recording synthetic results
-         */
-        private void writeSyntheticResultsForRemaining(AgentContext context, List<Message.ToolCall> toolCalls,
-                int startIndex, String reason, HistoryWriter historyWriter) {
-            for (int index = startIndex; index < toolCalls.size(); index++) {
-                Message.ToolCall remainingCall = toolCalls.get(index);
-                if (context.getToolResults() != null && context.getToolResults().containsKey(remainingCall.getId())) {
-                    continue;
-                }
-                ToolExecutionOutcome synthetic = ToolExecutionOutcome.synthetic(remainingCall,
-                        ToolFailureKind.EXECUTION_FAILED, "Tool skipped: " + reason);
-                context.addToolResult(synthetic.toolCallId(), synthetic.toolResult());
-                historyWriter.appendToolResult(context, synthetic);
-            }
-        }
-
-        // ==================== File change tracking ====================
-
-        private void captureFileChanges(Message.ToolCall toolCall, List<Map<String, Object>> turnFileChanges) {
-            if (toolCall == null || turnFileChanges == null) {
+        private void appendPendingWarningHints(TurnState turnState, AgentContext context, HistoryWriter historyWriter,
+                List<PendingWarningHint> pendingWarningHints) {
+            if (pendingWarningHints == null || pendingWarningHints.isEmpty()) {
                 return;
             }
-            if (!"filesystem".equals(toolCall.getName())) {
-                return;
-            }
-            if (toolCall.getArguments() == null || toolCall.getArguments().isEmpty()) {
-                return;
-            }
-
-            Object operationObject = toolCall.getArguments().get("operation");
-            Object pathObject = toolCall.getArguments().get("path");
-            if (!(operationObject instanceof String operation) || !(pathObject instanceof String path)
-                    || path.isBlank()) {
-                return;
-            }
-
-            boolean edited = "write_file".equals(operation)
-                    || "append".equals(operation)
-                    || "delete".equals(operation)
-                    || "create_directory".equals(operation);
-            if (!edited) {
-                return;
-            }
-
-            int addedLines = 0;
-            int removedLines = 0;
-            boolean deleted = false;
-            if ("write_file".equals(operation) || "append".equals(operation)) {
-                Object contentObject = toolCall.getArguments().get("content");
-                if (contentObject instanceof String content && !content.isBlank()) {
-                    addedLines = content.split("\\R", -1).length;
+            List<String> uniqueHints = new ArrayList<>();
+            for (PendingWarningHint pendingWarning : pendingWarningHints) {
+                if (pendingWarning != null
+                        && pendingWarning.isStillCurrent(turnState)
+                        && pendingWarning.hint() != null
+                        && !pendingWarning.hint().isBlank()
+                        && !uniqueHints.contains(pendingWarning.hint())) {
+                    uniqueHints.add(pendingWarning.hint());
                 }
             }
-            if ("delete".equals(operation)) {
-                deleted = true;
-                removedLines = 1;
+            if (!uniqueHints.isEmpty()) {
+                historyWriter.appendInternalRecoveryHint(context, String.join("\n\n", uniqueHints));
             }
-
-            Map<String, Object> stat = new LinkedHashMap<>();
-            stat.put("path", path);
-            stat.put("addedLines", addedLines);
-            stat.put("removedLines", removedLines);
-            stat.put("deleted", deleted);
-
-            for (Map<String, Object> existing : turnFileChanges) {
-                Object existingPath = existing.get("path");
-                if (existingPath instanceof String && path.equals(existingPath)) {
-                    int existingAdded = readInt(existing.get("addedLines"));
-                    int existingRemoved = readInt(existing.get("removedLines"));
-                    existing.put("addedLines", existingAdded + addedLines);
-                    existing.put("removedLines", existingRemoved + removedLines);
-                    existing.put("deleted", Boolean.TRUE.equals(existing.get("deleted")) || deleted);
-                    return;
-                }
-            }
-
-            turnFileChanges.add(stat);
         }
 
-        private int readInt(Object value) {
-            if (value instanceof Number number) {
-                return number.intValue();
+        private RepeatGuardExecution executeAfterRepeatGuard(AgentContext context, Message.ToolCall toolCall,
+                TurnState turnState) {
+            ToolRepeatDecision decision = repeatGuard.beforeExecute(turnState, toolCall);
+            if (decision instanceof ToolRepeatDecision.BlockAndHint block) {
+                return new RepeatGuardExecution(repeatGuardSyntheticOutcome(toolCall,
+                        ToolFailureKind.REPEATED_TOOL_USE_BLOCKED, block.hint(), block), null, decision);
             }
-            return 0;
+            if (decision instanceof ToolRepeatDecision.StopTurn stop) {
+                return new RepeatGuardExecution(repeatGuardSyntheticOutcome(toolCall,
+                        ToolFailureKind.REPEAT_GUARD_STOP_TURN, stop.reason(), stop), null, decision);
+            }
+            PendingWarningHint warningHint = decision instanceof ToolRepeatDecision.WarnAndAllow warn
+                    ? new PendingWarningHint(
+                            warn.hint(),
+                            warn.fingerprint(),
+                            turnState.getToolUseLedger().environmentSnapshotFor(warn.fingerprint()))
+                    : null;
+            return new RepeatGuardExecution(executeWithTracing(context, toolCall, turnState.getTracingConfig()),
+                    warningHint, decision);
         }
 
-        // ==================== Utility ====================
-
-        private String stopReasonKey(String reason) {
-            if (reason.contains("confirmation denied")) {
-                return "confirmation_denied";
-            }
-            if (reason.contains("tool denied by policy")) {
-                return "tool_policy_denied";
-            }
-            if (reason.contains("repeated tool failure")) {
-                return "repeated_tool_failure";
-            }
-            if (reason.contains("tool failure")) {
-                return "tool_failure";
-            }
-            return "tool_stop";
+        private ToolExecutionOutcome repeatGuardSyntheticOutcome(
+                Message.ToolCall toolCall,
+                ToolFailureKind failureKind,
+                String message,
+                ToolRepeatDecision decision) {
+            me.golemcore.bot.domain.model.ToolResult toolResult = me.golemcore.bot.domain.model.ToolResult.builder()
+                    .success(false)
+                    .failureKind(failureKind)
+                    .error(message)
+                    .data(repeatGuardPayload(decision))
+                    .build();
+            return new ToolExecutionOutcome(
+                    toolCall.getId(), toolCall.getName(), toolResult, message, true, null);
         }
 
-        private String normalizeToolName(String toolName) {
-            return toolName == null ? "" : toolName.trim().toLowerCase(Locale.ROOT);
-        }
-
-        private void maybePublishIntent(AgentContext context, LlmResponse response) {
-            if (turnProgressService == null || context == null || response == null) {
+        private void addRepeatGuardPayload(Map<String, Object> payload, ToolRepeatDecision decision) {
+            if (payload == null || decision == null) {
                 return;
             }
-            turnProgressService.maybePublishIntent(context, response);
+            Map<String, Object> guardPayload = repeatGuardPayload(decision);
+            payload.put("repeatGuardDecision", decisionName(decision));
+            guardPayload.forEach(payload::putIfAbsent);
         }
 
-        private void recordToolProgress(AgentContext context, Message.ToolCall toolCall, ToolExecutionOutcome outcome,
-                long durationMs) {
-            if (turnProgressService == null || context == null || toolCall == null || outcome == null) {
-                return;
-            }
-            turnProgressService.recordToolExecution(context, toolCall, outcome, durationMs);
-        }
-
-        // ==================== Events ====================
-
-        private void emitRuntimeEvent(AgentContext context, RuntimeEventType type, Map<String, Object> payload) {
-            if (runtimeEventService == null || context == null) {
-                return;
-            }
-            runtimeEventService.emit(context, type, payload);
-        }
-
-        private Map<String, Object> eventPayload(Object... entries) {
+        private Map<String, Object> repeatGuardPayload(ToolRepeatDecision decision) {
             Map<String, Object> payload = new LinkedHashMap<>();
-            if (entries == null || entries.length == 0) {
+            if (decision == null) {
                 return payload;
             }
-            if (entries.length % 2 != 0) {
-                throw new IllegalArgumentException("Runtime event payload entries must be key/value pairs");
-            }
-            for (int index = 0; index < entries.length; index += 2) {
-                Object keyObject = entries[index];
-                if (!(keyObject instanceof String key) || key.isBlank()) {
-                    throw new IllegalArgumentException("Runtime event payload keys must be non-blank strings");
-                }
-                payload.put(key, entries[index + 1]);
+            ToolUseFingerprint fingerprint = decisionFingerprint(decision);
+            payload.put("repeatGuardDecision", decisionName(decision));
+            if (fingerprint != null) {
+                payload.put("repeatFingerprint", fingerprint.stableKey());
+                payload.put("repeatCategory", fingerprint.category().name());
+                payload.put("repeatTool", fingerprint.toolName());
             }
             return payload;
         }
 
-        // ==================== Tracing ====================
-
-        private TraceContext startChildSpan(AgentContext context, String spanName, TraceSpanKind spanKind,
-                Map<String, Object> attributes) {
-            if (traceService == null || context == null || context.getSession() == null
-                    || context.getTraceContext() == null
-                    || runtimeConfigService == null || !runtimeConfigService.isTracingEnabled()) {
-                return null;
+        private String decisionName(ToolRepeatDecision decision) {
+            if (decision instanceof ToolRepeatDecision.WarnAndAllow warn && warn.wouldBlock()) {
+                return "WOULD_BLOCK_SHADOW";
             }
-            return traceService.startSpan(context.getSession(), context.getTraceContext(), spanName, spanKind,
-                    clock.instant(), attributes);
+            if (decision instanceof ToolRepeatDecision.Allow) {
+                return "ALLOW";
+            }
+            if (decision instanceof ToolRepeatDecision.WarnAndAllow) {
+                return "WARN_AND_ALLOW";
+            }
+            if (decision instanceof ToolRepeatDecision.BlockAndHint) {
+                return "BLOCK_AND_HINT";
+            }
+            if (decision instanceof ToolRepeatDecision.StopTurn) {
+                return "STOP_TURN";
+            }
+            return "UNKNOWN";
         }
 
-        private void finishChildSpan(AgentContext context, TraceContext spanContext, TraceStatusCode statusCode,
-                String statusMessage) {
-            if (traceService == null || context == null || context.getSession() == null || spanContext == null) {
+        private ToolUseFingerprint decisionFingerprint(ToolRepeatDecision decision) {
+            return switch (decision) {
+            case ToolRepeatDecision.Allow allow -> allow.fingerprint();
+            case ToolRepeatDecision.WarnAndAllow warn -> warn.fingerprint();
+            case ToolRepeatDecision.BlockAndHint block -> block.fingerprint();
+            case ToolRepeatDecision.StopTurn stop -> stop.fingerprint();
+            };
+        }
+
+        private record RepeatGuardExecution(
+                ToolExecutionOutcome outcome,
+                PendingWarningHint warningHint,
+                ToolRepeatDecision decision) {
+        }
+
+    private record PendingWarningHint(
+            String hint,
+            ToolUseFingerprint fingerprint,
+            Map<ToolStateDomain, Integer> environmentSnapshot) {
+
+        boolean isStillCurrent(TurnState turnState) {
+            return turnState != null
+                    && turnState.getToolUseLedger().isEnvironmentSnapshotCurrent(fingerprint, environmentSnapshot);
+        }
+    }
+
+    private ToolExecutionOutcome executeWithTracing(AgentContext context, Message.ToolCall toolCall,
+            RuntimeConfig.TracingConfig tracingConfig) {
+        Map<String, Object> attributes = new LinkedHashMap<>();
+        if (toolCall.getName() != null) {
+            attributes.put("tool.name", toolCall.getName());
+        }
+        if (toolCall.getId() != null) {
+            attributes.put("tool.callId", toolCall.getId());
+        }
+        putIfPresent(attributes, ContextAttributes.SELF_EVOLVING_RUN_ID,
+                readContextAttribute(context, ContextAttributes.SELF_EVOLVING_RUN_ID));
+        putIfPresent(attributes, ContextAttributes.SELF_EVOLVING_ARTIFACT_BUNDLE_ID,
+                readContextAttribute(context, ContextAttributes.SELF_EVOLVING_ARTIFACT_BUNDLE_ID));
+        TraceContext toolSpan = startChildSpan(context, "tool." + toolCall.getName(), TraceSpanKind.TOOL,
+                attributes);
+        captureToolSnapshot(context, toolSpan, tracingConfig, "input", toolCall);
+        try (MdcSupport.Scope ignored = MdcSupport.withContext(buildTraceMdcContext(toolSpan, context))) {
+            ToolExecutionOutcome outcome = toolExecutor.execute(context, toolCall);
+            captureToolSnapshot(context, toolSpan, tracingConfig, "output", outcome);
+            TraceStatusCode statusCode = outcome != null && outcome.toolResult() != null
+                    && outcome.toolResult().isSuccess()
+                            ? TraceStatusCode.OK
+                            : TraceStatusCode.ERROR;
+            finishChildSpan(context, toolSpan, statusCode,
+                    outcome != null && outcome.toolResult() != null ? outcome.toolResult().getError() : null);
+            return outcome;
+        } catch (Exception e) { // NOSONAR - tool execution must not break the loop
+            ToolExecutionOutcome synthetic = ToolExecutionOutcome.synthetic(toolCall,
+                    ToolFailureKind.EXECUTION_FAILED,
+                    "Tool execution failed: " + e.getMessage());
+            captureToolSnapshot(context, toolSpan, tracingConfig, "output", synthetic);
+            finishChildSpan(context, toolSpan, TraceStatusCode.ERROR, e.getMessage());
+            return synthetic;
+        }
+    }
+
+    // ==================== Synthetic results for remaining tool calls
+    // ====================
+
+    /**
+     * Writes synthetic failure results for tool calls that were not executed
+     * because the batch was interrupted mid-way.
+     *
+     * <p>
+     * This ensures conversation history remains consistent: every tool call in the
+     * assistant message gets a corresponding tool result message, even if some
+     * tools were skipped due to a recovery hint or stop decision.
+     *
+     * @param context
+     *            the agent context
+     * @param toolCalls
+     *            full list of tool calls in the batch
+     * @param startIndex
+     *            index of the first unexecuted tool call
+     * @param reason
+     *            reason for skipping (used in the synthetic result message)
+     * @param historyWriter
+     *            history writer for recording synthetic results
+     */
+    private void writeSyntheticResultsForRemaining(AgentContext context, List<Message.ToolCall> toolCalls,
+            int startIndex, String reason, HistoryWriter historyWriter) {
+        for (int index = startIndex; index < toolCalls.size(); index++) {
+            Message.ToolCall remainingCall = toolCalls.get(index);
+            if (context.getToolResults() != null && context.getToolResults().containsKey(remainingCall.getId())) {
+                continue;
+            }
+            ToolExecutionOutcome synthetic = ToolExecutionOutcome.synthetic(remainingCall,
+                    ToolFailureKind.EXECUTION_FAILED, "Tool skipped: " + reason);
+            context.addToolResult(synthetic.toolCallId(), synthetic.toolResult());
+            historyWriter.appendToolResult(context, synthetic);
+        }
+    }
+
+    // ==================== File change tracking ====================
+
+    private void captureFileChanges(Message.ToolCall toolCall, List<Map<String, Object>> turnFileChanges) {
+        if (toolCall == null || turnFileChanges == null) {
+            return;
+        }
+        if (!"filesystem".equals(toolCall.getName())) {
+            return;
+        }
+        if (toolCall.getArguments() == null || toolCall.getArguments().isEmpty()) {
+            return;
+        }
+
+        Object operationObject = toolCall.getArguments().get("operation");
+        Object pathObject = toolCall.getArguments().get("path");
+        if (!(operationObject instanceof String operation) || !(pathObject instanceof String path)
+                || path.isBlank()) {
+            return;
+        }
+
+        boolean edited = "write_file".equals(operation)
+                || "append".equals(operation)
+                || "delete".equals(operation)
+                || "create_directory".equals(operation);
+        if (!edited) {
+            return;
+        }
+
+        int addedLines = 0;
+        int removedLines = 0;
+        boolean deleted = false;
+        if ("write_file".equals(operation) || "append".equals(operation)) {
+            Object contentObject = toolCall.getArguments().get("content");
+            if (contentObject instanceof String content && !content.isBlank()) {
+                addedLines = content.split("\\R", -1).length;
+            }
+        }
+        if ("delete".equals(operation)) {
+            deleted = true;
+            removedLines = 1;
+        }
+
+        Map<String, Object> stat = new LinkedHashMap<>();
+        stat.put("path", path);
+        stat.put("addedLines", addedLines);
+        stat.put("removedLines", removedLines);
+        stat.put("deleted", deleted);
+
+        for (Map<String, Object> existing : turnFileChanges) {
+            Object existingPath = existing.get("path");
+            if (existingPath instanceof String && path.equals(existingPath)) {
+                int existingAdded = readInt(existing.get("addedLines"));
+                int existingRemoved = readInt(existing.get("removedLines"));
+                existing.put("addedLines", existingAdded + addedLines);
+                existing.put("removedLines", existingRemoved + removedLines);
+                existing.put("deleted", Boolean.TRUE.equals(existing.get("deleted")) || deleted);
                 return;
             }
-            traceService.finishSpan(context.getSession(), spanContext, statusCode, statusMessage, clock.instant());
         }
 
-        private void captureToolSnapshot(AgentContext context, TraceContext spanContext,
-                RuntimeConfig.TracingConfig tracingConfig, String role, Object payload) {
-            if (traceService == null || context == null || context.getSession() == null || spanContext == null
-                    || tracingConfig == null || !Boolean.TRUE.equals(tracingConfig.getCaptureToolPayloads())) {
-                return;
-            }
-            traceService.captureSnapshot(context.getSession(), spanContext, tracingConfig,
-                    role, "application/json", serializeSnapshotPayload(payload));
-        }
+        turnFileChanges.add(stat);
+    }
 
-        private Map<String, String> buildTraceMdcContext(TraceContext spanContext, AgentContext context) {
-            if (spanContext == null) {
-                return Map.of();
-            }
-            return TraceMdcSupport.buildMdcContext(spanContext, context != null ? context.getAttributes() : Map.of());
+    private int readInt(Object value) {
+        if (value instanceof Number number) {
+            return number.intValue();
         }
+        return 0;
+    }
 
-        private byte[] serializeSnapshotPayload(Object payload) {
-            if (payload == null) {
-                return new byte[0];
-            }
-            try {
-                return objectMapper.writeValueAsBytes(payload);
-            } catch (Exception e) { // NOSONAR - tracing must not break tool loop
-                return String.valueOf(payload).getBytes(StandardCharsets.UTF_8);
-            }
-        }
+    // ==================== Utility ====================
 
-        private String readContextAttribute(AgentContext context, String key) {
-            if (context == null || context.getAttributes() == null || key == null || key.isBlank()) {
-                return null;
-            }
-            Object value = context.getAttributes().get(key);
-            return value instanceof String stringValue && !stringValue.isBlank() ? stringValue : null;
+    private String stopReasonKey(String reason) {
+        if (reason == null) {
+            return "tool_stop";
         }
+        if (reason.contains("repeat guard") || reason.contains("repeated blocked tool calls")) {
+            return "repeat_guard_stop";
+        }
+        if (reason.contains("confirmation denied")) {
+            return "confirmation_denied";
+        }
+        if (reason.contains("tool denied by policy")) {
+            return "tool_policy_denied";
+        }
+        if (reason.contains("repeated tool failure")) {
+            return "repeated_tool_failure";
+        }
+        if (reason.contains("tool failure")) {
+            return "tool_failure";
+        }
+        return "tool_stop";
+    }
 
-        private void putIfPresent(Map<String, Object> attributes, String key, String value) {
-            if (attributes == null || key == null || key.isBlank() || value == null || value.isBlank()) {
-                return;
-            }
-            attributes.put(key, value);
+    private String normalizeToolName(String toolName) {
+        return toolName == null ? "" : toolName.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private void maybePublishIntent(AgentContext context, LlmResponse response) {
+        if (turnProgressService == null || context == null || response == null) {
+            return;
         }
+        turnProgressService.maybePublishIntent(context, response);
+    }
+
+    private void recordToolProgress(AgentContext context, Message.ToolCall toolCall, ToolExecutionOutcome outcome,
+            long durationMs) {
+        if (turnProgressService == null || context == null || toolCall == null || outcome == null) {
+            return;
+        }
+        turnProgressService.recordToolExecution(context, toolCall, outcome, durationMs);
+    }
+
+    // ==================== Events ====================
+
+    private void emitRuntimeEvent(AgentContext context, RuntimeEventType type, Map<String, Object> payload) {
+        if (runtimeEventService == null || context == null) {
+            return;
+        }
+        runtimeEventService.emit(context, type, payload);
+    }
+
+    private Map<String, Object> eventPayload(Object... entries) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        if (entries == null || entries.length == 0) {
+            return payload;
+        }
+        if (entries.length % 2 != 0) {
+            throw new IllegalArgumentException("Runtime event payload entries must be key/value pairs");
+        }
+        for (int index = 0; index < entries.length; index += 2) {
+            Object keyObject = entries[index];
+            if (!(keyObject instanceof String key) || key.isBlank()) {
+                throw new IllegalArgumentException("Runtime event payload keys must be non-blank strings");
+            }
+            payload.put(key, entries[index + 1]);
+        }
+        return payload;
+    }
+
+    // ==================== Tracing ====================
+
+    private TraceContext startChildSpan(AgentContext context, String spanName, TraceSpanKind spanKind,
+            Map<String, Object> attributes) {
+        if (traceService == null || context == null || context.getSession() == null
+                || context.getTraceContext() == null
+                || runtimeConfigService == null || !runtimeConfigService.isTracingEnabled()) {
+            return null;
+        }
+        return traceService.startSpan(context.getSession(), context.getTraceContext(), spanName, spanKind,
+                clock.instant(), attributes);
+    }
+
+    private void finishChildSpan(AgentContext context, TraceContext spanContext, TraceStatusCode statusCode,
+            String statusMessage) {
+        if (traceService == null || context == null || context.getSession() == null || spanContext == null) {
+            return;
+        }
+        traceService.finishSpan(context.getSession(), spanContext, statusCode, statusMessage, clock.instant());
+    }
+
+    private void captureToolSnapshot(AgentContext context, TraceContext spanContext,
+            RuntimeConfig.TracingConfig tracingConfig, String role, Object payload) {
+        if (traceService == null || context == null || context.getSession() == null || spanContext == null
+                || tracingConfig == null || !Boolean.TRUE.equals(tracingConfig.getCaptureToolPayloads())) {
+            return;
+        }
+        traceService.captureSnapshot(context.getSession(), spanContext, tracingConfig,
+                role, "application/json", serializeSnapshotPayload(payload));
+    }
+
+    private Map<String, String> buildTraceMdcContext(TraceContext spanContext, AgentContext context) {
+        if (spanContext == null) {
+            return Map.of();
+        }
+        return TraceMdcSupport.buildMdcContext(spanContext, context != null ? context.getAttributes() : Map.of());
+    }
+
+    private byte[] serializeSnapshotPayload(Object payload) {
+        if (payload == null) {
+            return new byte[0];
+        }
+        try {
+            return objectMapper.writeValueAsBytes(payload);
+        } catch (Exception e) { // NOSONAR - tracing must not break tool loop
+            return String.valueOf(payload).getBytes(StandardCharsets.UTF_8);
+        }
+    }
+
+    private String readContextAttribute(AgentContext context, String key) {
+        if (context == null || context.getAttributes() == null || key == null || key.isBlank()) {
+            return null;
+        }
+        Object value = context.getAttributes().get(key);
+        return value instanceof String stringValue && !stringValue.isBlank() ? stringValue : null;
+    }
+
+    private void putIfPresent(Map<String, Object> attributes, String key, String value) {
+        if (attributes == null || key == null || key.isBlank() || value == null || value.isBlank()) {
+            return;
+        }
+        attributes.put(key, value);
+    }
 }
