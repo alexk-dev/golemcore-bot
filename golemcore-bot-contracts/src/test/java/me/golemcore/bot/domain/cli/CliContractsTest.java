@@ -61,7 +61,6 @@ class CliContractsTest {
                 List.of("/workspace/golemcore/.golemcore/rules/GOLEM.md"));
         ProjectTrust trust = new ProjectTrust(project, ProjectTrustState.TRUSTED, now, "alice",
                 List.of("filesystem.read"));
-        CliSessionRef session = new CliSessionRef("session-1", "project-1", "CLI design", now, now);
         CliInvocation invocation = new CliInvocation(
                 "golemcore-bot",
                 List.of("exec", "task"),
@@ -317,14 +316,16 @@ class CliContractsTest {
                 .anyMatch(annotationType -> annotationType.startsWith("org.springframework.stereotype."));
     }
 
+    private static final String AGENT_CONTEXT_TYPE = "me.golemcore.bot.domain.model.AgentContext";
+
     private static boolean exposesAgentContext(Class<?> contractType) {
         if (contractType.isRecord()) {
             return Arrays.stream(contractType.getRecordComponents())
                     .map(component -> component.getType().getName())
-                    .anyMatch(typeName -> typeName.equals("me.golemcore.bot.domain.model.AgentContext"));
+                    .anyMatch(AGENT_CONTEXT_TYPE::equals);
         }
         return Arrays.stream(contractType.getDeclaredFields())
                 .map(field -> field.getType().getName())
-                .anyMatch(typeName -> typeName.equals("me.golemcore.bot.domain.model.AgentContext"));
+                .anyMatch(AGENT_CONTEXT_TYPE::equals);
     }
 }

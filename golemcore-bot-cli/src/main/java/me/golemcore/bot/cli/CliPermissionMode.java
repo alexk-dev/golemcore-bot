@@ -5,15 +5,15 @@ import picocli.CommandLine.ITypeConverter;
 enum CliPermissionMode {
     ASK("ask"), READ_ONLY("read-only"), PLAN("plan"), EDIT("edit"), FULL("full");
 
-    private final String cliValue;
+    private final String serializedValue;
 
-    CliPermissionMode(String cliValue) {
-        this.cliValue = cliValue;
+    CliPermissionMode(String serializedValue) {
+        this.serializedValue = serializedValue;
     }
 
     static CliPermissionMode parse(String value) {
         for (CliPermissionMode mode : values()) {
-            if (mode.cliValue.equals(value)) {
+            if (mode.serializedValue.equals(value)) {
                 return mode;
             }
         }
@@ -21,7 +21,7 @@ enum CliPermissionMode {
     }
 
     String cliValue() {
-        return cliValue;
+        return serializedValue;
     }
 
     static final class Converter implements ITypeConverter<CliPermissionMode> {

@@ -6,13 +6,13 @@ package me.golemcore.bot.domain.cli;
 public enum CliOutputFormat {
     TEXT("text"), JSON("json"), NDJSON("ndjson"), MARKDOWN("markdown");
 
-    private final String wireValue;
+    private final String serializedValue;
 
-    CliOutputFormat(String wireValue) {
-        this.wireValue = wireValue;
+    CliOutputFormat(String serializedValue) {
+        this.serializedValue = serializedValue;
     }
 
     public String wireValue() {
-        return wireValue;
+        return serializedValue;
     }
 }

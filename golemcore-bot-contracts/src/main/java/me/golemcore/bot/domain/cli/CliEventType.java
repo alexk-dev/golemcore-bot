@@ -24,13 +24,13 @@ public enum CliEventType {
                                                                                                                                             "run.completed"), RUN_FAILED(
                                                                                                                                                     "run.failed");
 
-    private final String wireValue;
+    private final String serializedValue;
 
-    CliEventType(String wireValue) {
-        this.wireValue = wireValue;
+    CliEventType(String serializedValue) {
+        this.serializedValue = serializedValue;
     }
 
     public String wireValue() {
-        return wireValue;
+        return serializedValue;
     }
 }

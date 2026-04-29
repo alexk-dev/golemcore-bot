@@ -8,6 +8,7 @@ import picocli.CommandLine.Option;
 /**
  * Global options accepted by the first CLI command surface.
  */
+@SuppressWarnings("PMD.AvoidFieldNameMatchingMethodName")
 final class CliGlobalOptions {
 
     @Option(names = "--cwd", paramLabel = "<path>", description = "Working directory for command.")

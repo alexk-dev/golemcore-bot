@@ -6,13 +6,13 @@ package me.golemcore.bot.domain.cli;
 public enum ProjectTrustState {
     TRUSTED("trusted"), UNTRUSTED("untrusted"), RESTRICTED("restricted"), NEVER_TRUST("never-trust");
 
-    private final String wireValue;
+    private final String serializedValue;
 
-    ProjectTrustState(String wireValue) {
-        this.wireValue = wireValue;
+    ProjectTrustState(String serializedValue) {
+        this.serializedValue = serializedValue;
     }
 
     public String wireValue() {
-        return wireValue;
+        return serializedValue;
     }
 }

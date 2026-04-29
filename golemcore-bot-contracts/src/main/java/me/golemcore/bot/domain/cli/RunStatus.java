@@ -6,13 +6,13 @@ package me.golemcore.bot.domain.cli;
 public enum RunStatus {
     STARTED("started"), RUNNING("running"), COMPLETED("completed"), FAILED("failed"), CANCELLED("cancelled");
 
-    private final String wireValue;
+    private final String serializedValue;
 
-    RunStatus(String wireValue) {
-        this.wireValue = wireValue;
+    RunStatus(String serializedValue) {
+        this.serializedValue = serializedValue;
     }
 
     public String wireValue() {
-        return wireValue;
+        return serializedValue;
     }
 }

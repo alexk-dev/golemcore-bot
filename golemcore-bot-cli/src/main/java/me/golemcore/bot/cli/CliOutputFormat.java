@@ -5,15 +5,15 @@ import picocli.CommandLine.ITypeConverter;
 enum CliOutputFormat {
     TEXT("text"), JSON("json"), NDJSON("ndjson"), MARKDOWN("markdown");
 
-    private final String cliValue;
+    private final String serializedValue;
 
-    CliOutputFormat(String cliValue) {
-        this.cliValue = cliValue;
+    CliOutputFormat(String serializedValue) {
+        this.serializedValue = serializedValue;
     }
 
     static CliOutputFormat parse(String value) {
         for (CliOutputFormat format : values()) {
-            if (format.cliValue.equals(value)) {
+            if (format.serializedValue.equals(value)) {
                 return format;
             }
         }
@@ -21,7 +21,7 @@ enum CliOutputFormat {
     }
 
     String cliValue() {
-        return cliValue;
+        return serializedValue;
     }
 
     static final class Converter implements ITypeConverter<CliOutputFormat> {

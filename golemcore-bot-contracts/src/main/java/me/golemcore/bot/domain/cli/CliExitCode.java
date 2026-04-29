@@ -8,19 +8,19 @@ public enum CliExitCode {
             5), TOOL_EXECUTION_FAILURE(6), MODEL_FAILURE(7), TIMEOUT(8), RUNTIME_UNAVAILABLE(9), PROJECT_UNTRUSTED(
                     10), PATCH_CONFLICT(11), NETWORK_OR_MCP_FAILURE(12), CHECK_FAILED(13), CANCELLED(130);
 
-    private final int processCode;
+    private final int numericCode;
 
-    CliExitCode(int processCode) {
-        this.processCode = processCode;
+    CliExitCode(int numericCode) {
+        this.numericCode = numericCode;
     }
 
     public int processCode() {
-        return processCode;
+        return numericCode;
     }
 
     public static CliExitCode fromProcessCode(int processCode) {
         for (CliExitCode exitCode : values()) {
-            if (exitCode.processCode == processCode) {
+            if (exitCode.numericCode == processCode) {
                 return exitCode;
             }
         }

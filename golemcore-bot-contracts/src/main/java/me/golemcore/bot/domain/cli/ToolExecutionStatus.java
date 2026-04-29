@@ -7,13 +7,13 @@ public enum ToolExecutionStatus {
     REQUESTED("requested"), STARTED("started"), COMPLETED("completed"), FAILED("failed"), CANCELLED(
             "cancelled"), DENIED("denied");
 
-    private final String wireValue;
+    private final String serializedValue;
 
-    ToolExecutionStatus(String wireValue) {
-        this.wireValue = wireValue;
+    ToolExecutionStatus(String serializedValue) {
+        this.serializedValue = serializedValue;
     }
 
     public String wireValue() {
-        return wireValue;
+        return serializedValue;
     }
 }

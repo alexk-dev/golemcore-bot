@@ -50,6 +50,7 @@ import picocli.CommandLine.Model.CommandSpec;
         CliRootCommand.UninstallCommand.class,
         HelpCommand.class
 })
+@SuppressWarnings("PMD.AvoidFieldNameMatchingMethodName")
 public final class CliRootCommand implements Callable<Integer> {
 
     @Mixin

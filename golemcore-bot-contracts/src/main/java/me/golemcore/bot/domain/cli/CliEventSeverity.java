@@ -6,13 +6,13 @@ package me.golemcore.bot.domain.cli;
 public enum CliEventSeverity {
     DEBUG("debug"), INFO("info"), WARN("warn"), ERROR("error");
 
-    private final String wireValue;
+    private final String serializedValue;
 
-    CliEventSeverity(String wireValue) {
-        this.wireValue = wireValue;
+    CliEventSeverity(String serializedValue) {
+        this.serializedValue = serializedValue;
     }
 
     public String wireValue() {
-        return wireValue;
+        return serializedValue;
     }
 }

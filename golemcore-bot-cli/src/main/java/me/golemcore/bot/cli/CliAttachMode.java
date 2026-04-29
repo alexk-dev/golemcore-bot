@@ -5,15 +5,15 @@ import picocli.CommandLine.ITypeConverter;
 enum CliAttachMode {
     AUTO("auto"), REQUIRED("required"), NEVER("never");
 
-    private final String cliValue;
+    private final String serializedValue;
 
-    CliAttachMode(String cliValue) {
-        this.cliValue = cliValue;
+    CliAttachMode(String serializedValue) {
+        this.serializedValue = serializedValue;
     }
 
     static CliAttachMode parse(String value) {
         for (CliAttachMode mode : values()) {
-            if (mode.cliValue.equals(value)) {
+            if (mode.serializedValue.equals(value)) {
                 return mode;
             }
         }
@@ -21,7 +21,7 @@ enum CliAttachMode {
     }
 
     String cliValue() {
-        return cliValue;
+        return serializedValue;
     }
 
     static final class Converter implements ITypeConverter<CliAttachMode> {

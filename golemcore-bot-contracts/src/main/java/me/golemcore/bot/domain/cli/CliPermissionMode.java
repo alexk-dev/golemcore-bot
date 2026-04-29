@@ -6,13 +6,13 @@ package me.golemcore.bot.domain.cli;
 public enum CliPermissionMode {
     ASK("ask"), READ_ONLY("read-only"), PLAN("plan"), EDIT("edit"), FULL("full");
 
-    private final String wireValue;
+    private final String serializedValue;
 
-    CliPermissionMode(String wireValue) {
-        this.wireValue = wireValue;
+    CliPermissionMode(String serializedValue) {
+        this.serializedValue = serializedValue;
     }
 
     public String wireValue() {
-        return wireValue;
+        return serializedValue;
     }
 }

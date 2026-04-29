@@ -7,13 +7,13 @@ public enum PermissionDecisionKind {
     ALLOW_ONCE("allow_once"), ALLOW_SESSION("allow_session"), ALLOW_PROJECT("allow_project"), DENY(
             "deny"), DENY_SESSION("deny_session"), EDIT("edit"), EXPLAIN("explain");
 
-    private final String wireValue;
+    private final String serializedValue;
 
-    PermissionDecisionKind(String wireValue) {
-        this.wireValue = wireValue;
+    PermissionDecisionKind(String serializedValue) {
+        this.serializedValue = serializedValue;
     }
 
     public String wireValue() {
-        return wireValue;
+        return serializedValue;
     }
 }

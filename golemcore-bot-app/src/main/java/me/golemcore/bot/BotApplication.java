@@ -18,6 +18,7 @@ package me.golemcore.bot;
  * Contact: alex@kuleshov.tech
  */
 import java.io.PrintWriter;
+import java.nio.charset.StandardCharsets;
 
 import me.golemcore.bot.cli.CliApplication;
 import org.springframework.boot.SpringApplication;
@@ -77,8 +78,8 @@ public class BotApplication {
         if (BotApplicationCommandLine.isCliMode(args)) {
             int exitCode = CliApplication.run(
                     BotApplicationCommandLine.cliArguments(args),
-                    new PrintWriter(System.out, true),
-                    new PrintWriter(System.err, true));
+                    new PrintWriter(System.out, true, StandardCharsets.UTF_8),
+                    new PrintWriter(System.err, true, StandardCharsets.UTF_8));
             if (exitCode != 0) {
                 System.exit(exitCode);
             }

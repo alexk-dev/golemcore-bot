@@ -7,13 +7,13 @@ public enum PatchStatus {
     PROPOSED("proposed"), APPLIED("applied"), ACCEPTED("accepted"), REJECTED("rejected"), CONFLICTED(
             "conflicted"), REVERTED("reverted");
 
-    private final String wireValue;
+    private final String serializedValue;
 
-    PatchStatus(String wireValue) {
-        this.wireValue = wireValue;
+    PatchStatus(String serializedValue) {
+        this.serializedValue = serializedValue;
     }
 
     public String wireValue() {
-        return wireValue;
+        return serializedValue;
     }
 }

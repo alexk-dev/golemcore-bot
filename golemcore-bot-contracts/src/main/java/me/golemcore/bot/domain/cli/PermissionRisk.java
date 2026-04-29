@@ -6,13 +6,13 @@ package me.golemcore.bot.domain.cli;
 public enum PermissionRisk {
     LOW("low"), MEDIUM("medium"), HIGH("high"), CRITICAL("critical");
 
-    private final String wireValue;
+    private final String serializedValue;
 
-    PermissionRisk(String wireValue) {
-        this.wireValue = wireValue;
+    PermissionRisk(String serializedValue) {
+        this.serializedValue = serializedValue;
     }
 
     public String wireValue() {
-        return wireValue;
+        return serializedValue;
     }
 }
