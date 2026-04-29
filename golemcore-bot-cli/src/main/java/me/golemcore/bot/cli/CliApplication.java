@@ -23,6 +23,7 @@ public final class CliApplication {
         commandLine.setOut(rootCommand.out());
         commandLine.setErr(rootCommand.err());
         commandLine.setUnmatchedArgumentsAllowed(false);
+        CliRootCommand.configureStubParsing(commandLine);
         return commandLine;
     }
 }

@@ -13,7 +13,7 @@ Legend: `[ ]` pending · `[~]` in progress · `[x]` done
 - [x] Created the `feat/cli-client` worktree branch from `origin/main`.
 - [x] Added a dedicated `golemcore-bot-cli` adapter module and wired it into the Maven reactor.
 - [x] Added stable first-slice CLI DTO contracts, event taxonomy, permission/run/session/patch/trust records, and contract tests.
-- [x] Added the first Picocli root command surface with global option binding, deterministic help, non-zero "not implemented" command stubs, `--version`, and structured `doctor` text/JSON output.
+- [x] Added the first Picocli root command surface with global option binding before and after subcommands, deterministic help, non-zero "not implemented" command stubs, planned argument passthrough for not-yet-implemented handlers, `--version`, and structured `doctor` text/JSON output.
 - [x] Split the first CLI slice into Picocli adapter, application input boundaries/use cases, domain command state, presenters, router catalog, and config packages with architecture tests.
 - [x] Added launcher/runtime application dispatch so `golemcore-bot cli ...` is a first-class entrypoint next to `web`.
 - [x] Updated module dependency architecture tests so runtime modules cannot depend on the CLI adapter.
@@ -53,10 +53,10 @@ Legend: `[ ]` pending · `[~]` in progress · `[x]` done
 - [x] 0.2 Green: add the minimal module/package skeleton required by the tests: `golemcore-bot-cli` for CLI adapters/presentation where feasible, shared use cases/ports in runtime/contracts modules, and app-only Spring wiring in `golemcore-bot-app`.
 - [x] 0.3 Red: add package ownership tests for `adapter.inbound.picocli`, `adapter.inbound.tui`, `adapter.outbound.terminal`, `adapter.outbound.pty`, `adapter.outbound.localfs`, `presentation`, `router`, and `config`.
 - [x] 0.4 Green: add placeholder packages/classes only where needed to satisfy ownership tests without implementing behavior early.
-- [ ] 0.5 Red: add DTO serialization tests for `CliInvocation`, `RunRequest`, `RunResult`, `CliEvent`, `PermissionRequest`, `PermissionDecision`, `PatchSet`, `ProjectIdentity`, `ProjectTrust`, `CliSessionRef`, `AgentProfile`, `WorkspaceSnapshot`, `LspDiagnosticPack`, `ContextBudgetReport`, and `ToolExecutionRecord`.
-- [ ] 0.6 Green: implement stable DTOs with Jackson-friendly constructors/builders and no framework-specific leakage.
-- [ ] 0.7 Red: add event taxonomy/schema tests for `run.started`, `run.title.updated`, `assistant.delta`, `assistant.message.completed`, `plan.updated`, `context.budget.updated`, `context.hygiene.reported`, `memory.pack.loaded`, `rag.results.loaded`, `model.selected`, `tool.requested`, `tool.permission.requested`, `tool.started`, `tool.output.delta`, `tool.completed`, `patch.proposed`, `patch.applied`, `lsp.diagnostics.updated`, `terminal.session.started`, `run.cancelled`, `run.completed`, and `run.failed`.
-- [ ] 0.8 Green: implement versionable `CliEvent` contract constants/builders and JSON/NDJSON compatibility fixtures.
+- [x] 0.5 Red: add DTO serialization tests for `CliInvocation`, `RunRequest`, `RunResult`, `CliEvent`, `PermissionRequest`, `PermissionDecision`, `PatchSet`, `ProjectIdentity`, `ProjectTrust`, `CliSessionRef`, `AgentProfile`, `WorkspaceSnapshot`, `LspDiagnosticPack`, `ContextBudgetReport`, and `ToolExecutionRecord`.
+- [x] 0.6 Green: implement stable DTOs with Jackson-friendly constructors/builders and no framework-specific leakage.
+- [x] 0.7 Red: add event taxonomy/schema tests for `run.started`, `run.title.updated`, `assistant.delta`, `assistant.message.completed`, `plan.updated`, `context.budget.updated`, `context.hygiene.reported`, `memory.pack.loaded`, `rag.results.loaded`, `model.selected`, `tool.requested`, `tool.permission.requested`, `tool.started`, `tool.output.delta`, `tool.completed`, `patch.proposed`, `patch.applied`, `lsp.diagnostics.updated`, `terminal.session.started`, `run.cancelled`, `run.completed`, and `run.failed`.
+- [~] 0.8 Green: implement versionable `CliEvent` contract constants/builders and JSON/NDJSON compatibility fixtures.
 - [x] 0.9 Red: add exit-code mapping tests for success, invalid args, config error, provider auth error, permission denial, tool failure, model failure, timeout, runtime unavailable, untrusted project, patch conflict, network/MCP failure, and verification failure.
 - [x] 0.10 Green: implement `CliExitCodes` and presenter-safe error mapping.
 - [x] 0.11 Red: add command naming contract tests that the root command advertises `run`, `serve`, `attach`, `session`, `agent`, `auth`, `providers`, `models`, `tier`, `mcp`, `skill`, `plugin`, `tool`, `permissions`, `project`, `config`, `memory`, `rag`, `auto`, `lsp`, `terminal`, `git`, `patch`, `github`, `trace`, `stats`, `doctor`, `export`, `import`, `completion`, `upgrade`, `uninstall`, and `acp`.
@@ -72,10 +72,10 @@ Legend: `[ ]` pending · `[~]` in progress · `[x]` done
 
 ## Phase 1 — Launcher, Root CLI, Project Detection, Doctor
 
-- [ ] 1.1 Red: launcher test proves `golemcore-bot cli --help` is accepted and forwarded to the staged/bundled runtime without requiring web startup.
-- [ ] 1.2 Green: extend launcher dispatch so `cli` is a first-class command alongside `web`, preserving `-J/--java-option`, storage path, updates path, and passthrough behavior.
-- [x] 1.3 Red: Picocli root tests cover global flags: `--help`, `--version`, `--cwd`, `--project`, `--workspace`, `--config`, `--config-dir`, `--profile`, `--env-file`, `--model`, `--tier`, `--agent`, `--session`, `--continue`, `--fork`, `--format`, `--json`, `--no-color`, `--color`, `--quiet`, `--verbose`, `--log-level`, `--trace`, `--trace-export`, `--no-memory`, `--no-rag`, `--no-mcp`, `--no-skills`, `--permission-mode`, `--yes`, `--no-input`, `--timeout`, `--max-llm-calls`, `--max-tool-executions`, `--attach`, `--port`, `--hostname`, and `-J/--java-option`.
-- [x] 1.4 Green: implement `CliRootCommand`, global option binding, validation, and request DTO normalization.
+- [x] 1.1 Red: launcher test proves `golemcore-bot cli --help` is accepted and forwarded to the staged/bundled runtime without requiring web startup.
+- [x] 1.2 Green: extend launcher dispatch so `cli` is a first-class command alongside `web`, preserving `-J/--java-option`, storage path, updates path, and passthrough behavior.
+- [x] 1.3 Red: Picocli root tests cover global flags before and after subcommands: `--help`, `--version`, `--cwd`, `--project`, `--workspace`, `--config`, `--config-dir`, `--profile`, `--env-file`, `--model`, `--tier`, `--agent`, `--session`, `--continue`, `--fork`, `--format`, `--json`, `--no-color`, `--color`, `--quiet`, `--verbose`, `--log-level`, `--trace`, `--trace-export`, `--no-memory`, `--no-rag`, `--no-mcp`, `--no-skills`, `--permission-mode`, `--yes`, `--no-input`, `--timeout`, `--max-llm-calls`, `--max-tool-executions`, `--attach`, `--port`, `--hostname`, and `-J/--java-option`.
+- [x] 1.4 Green: implement `CliRootCommand`, global option binding, subcommand-local option merging, validation, and request DTO normalization.
 - [ ] 1.5 Red: project discovery tests cover cwd, explicit project, git root, `.golemcore`, rules files, workspace path, and missing/unreadable directories.
 - [ ] 1.6 Green: implement `ProjectDiscoveryPort` and local adapter.
 - [ ] 1.7 Red: trust registry tests cover first-run restricted state, trusted project lookup, scope persistence, never-trust, and untrusted non-interactive failure.

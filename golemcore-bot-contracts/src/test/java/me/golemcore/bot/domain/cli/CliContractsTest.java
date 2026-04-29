@@ -14,6 +14,7 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
 
 class CliContractsTest {
@@ -47,6 +48,37 @@ class CliContractsTest {
         assertEquals("failed", ToolExecutionStatus.FAILED.wireValue());
         assertEquals("completed", RunStatus.COMPLETED.wireValue());
         assertEquals("tool.completed", CliEventType.TOOL_COMPLETED.wireValue());
+    }
+
+    @Test
+    void shouldExposeDocumentedCliEventTaxonomy() {
+        List<String> eventTypes = Arrays.stream(CliEventType.values())
+                .map(CliEventType::wireValue)
+                .toList();
+
+        assertTrue(eventTypes.containsAll(List.of(
+                "run.started",
+                "run.title.updated",
+                "assistant.delta",
+                "assistant.message.completed",
+                "plan.updated",
+                "context.budget.updated",
+                "context.hygiene.reported",
+                "memory.pack.loaded",
+                "rag.results.loaded",
+                "model.selected",
+                "tool.requested",
+                "tool.permission.requested",
+                "tool.started",
+                "tool.output.delta",
+                "tool.completed",
+                "patch.proposed",
+                "patch.applied",
+                "lsp.diagnostics.updated",
+                "terminal.session.started",
+                "run.cancelled",
+                "run.completed",
+                "run.failed")), eventTypes.stream().collect(Collectors.joining(", ")));
     }
 
     @Test
@@ -250,6 +282,22 @@ class CliContractsTest {
     void shouldRoundTripThroughJacksonAsDtoContracts() throws Exception {
         ObjectMapper objectMapper = new ObjectMapper();
         objectMapper.registerModule(new JavaTimeModule());
+        Instant now = Instant.parse("2026-04-28T10:15:30Z");
+        ProjectIdentity project = new ProjectIdentity(
+                "project-1",
+                "/workspace/golemcore",
+                "/workspace/golemcore",
+                ProjectTrustState.TRUSTED,
+                "/workspace/golemcore/.golemcore/config.json",
+                List.of("/workspace/golemcore/.golemcore/rules/GOLEM.md"));
+        CliEvent event = new CliEvent(
+                CliEventType.RUN_COMPLETED,
+                "run-1",
+                "session-1",
+                "trace-1",
+                now,
+                CliEventSeverity.INFO,
+                Map.of("message", "done"));
         RunRequest request = new RunRequest(
                 "request-1",
                 "Run tests",
@@ -264,10 +312,106 @@ class CliContractsTest {
                 CliOutputFormat.JSON,
                 Map.of("traceId", "trace-1"));
 
-        String json = objectMapper.writeValueAsString(request);
-        RunRequest restored = objectMapper.readValue(json, RunRequest.class);
-
-        assertEquals(request, restored);
+        assertJsonRoundTrip(objectMapper, new CliInvocation(
+                "golemcore-bot",
+                List.of("cli", "run"),
+                Map.of("TERM", "xterm-256color"),
+                "/workspace/golemcore",
+                now), CliInvocation.class);
+        assertJsonRoundTrip(objectMapper, project, ProjectIdentity.class);
+        assertJsonRoundTrip(objectMapper, new ProjectTrust(
+                project,
+                ProjectTrustState.TRUSTED,
+                now,
+                "alice",
+                List.of("filesystem.read")), ProjectTrust.class);
+        assertJsonRoundTrip(objectMapper, new CliSessionRef(
+                "session-1",
+                "project-1",
+                "Session",
+                now,
+                now), CliSessionRef.class);
+        assertJsonRoundTrip(objectMapper, new AgentProfile(
+                "code-reviewer",
+                "Code Reviewer",
+                "Reviews code",
+                "primary",
+                null,
+                "coding",
+                List.of("code-review"),
+                List.of("github"),
+                Map.of("filesystem", "read-write"),
+                Map.of("default", "ask"),
+                true,
+                true,
+                true,
+                "markdown",
+                "Prompt"), AgentProfile.class);
+        assertJsonRoundTrip(objectMapper, new RunBudget(4, 8, "PT5M"), RunBudget.class);
+        assertJsonRoundTrip(objectMapper, request, RunRequest.class);
+        assertJsonRoundTrip(objectMapper, event, CliEvent.class);
+        assertJsonRoundTrip(objectMapper, new PermissionRequest(
+                "permission-1",
+                "run-1",
+                "shell.execute",
+                "Run tests",
+                PermissionRisk.MEDIUM,
+                Map.of("command", "mvn test"),
+                List.of("cmd:mvn test"),
+                List.of("allow_once", "deny"),
+                null), PermissionRequest.class);
+        assertJsonRoundTrip(objectMapper, new PermissionDecision(
+                "permission-1",
+                PermissionDecisionKind.ALLOW_ONCE,
+                Duration.ofMinutes(5),
+                List.of("cmd:mvn test"),
+                "approved"), PermissionDecision.class);
+        assertJsonRoundTrip(objectMapper, new PatchSet(
+                "patch-1",
+                List.of("A.java"),
+                List.of("@@ -1 +1 @@"),
+                "run-1",
+                PatchStatus.PROPOSED), PatchSet.class);
+        assertJsonRoundTrip(objectMapper, new WorkspaceSnapshot(
+                "snapshot-1",
+                "abc123",
+                Map.of("A.java", "sha256:abc"),
+                List.of("patch-1")), WorkspaceSnapshot.class);
+        assertJsonRoundTrip(objectMapper, new LspDiagnosticPack(
+                "java",
+                "A.java",
+                List.of(new LspDiagnosticPack.Diagnostic(
+                        "A.java",
+                        12,
+                        8,
+                        CliEventSeverity.WARN,
+                        "compiler.warning",
+                        "unchecked operation")),
+                "1"), LspDiagnosticPack.class);
+        assertJsonRoundTrip(objectMapper, new ContextBudgetReport(
+                10000,
+                2400,
+                7600,
+                List.of(new ContextBudgetReport.Section("prompt", 2400))), ContextBudgetReport.class);
+        assertJsonRoundTrip(objectMapper, new ToolExecutionRecord(
+                "shell.execute",
+                "mvn test",
+                ToolExecutionStatus.COMPLETED,
+                Duration.ofMillis(250),
+                "ok",
+                Map.of("TOKEN", "redacted"),
+                Map.of("exitCode", 0)), ToolExecutionRecord.class);
+        assertJsonRoundTrip(objectMapper, new RunResult(
+                "session-1",
+                "run-1",
+                "trace-1",
+                RunStatus.COMPLETED,
+                "Done",
+                Map.of("inputTokens", 1234),
+                Map.of("memoryPersisted", true),
+                CliExitCode.SUCCESS,
+                List.of(event),
+                now), RunResult.class);
     }
 
     @Test
@@ -327,5 +471,10 @@ class CliContractsTest {
         return Arrays.stream(contractType.getDeclaredFields())
                 .map(field -> field.getType().getName())
                 .anyMatch(AGENT_CONTEXT_TYPE::equals);
+    }
+
+    private static <T> void assertJsonRoundTrip(ObjectMapper objectMapper, T value, Class<T> type) throws Exception {
+        String json = objectMapper.writeValueAsString(value);
+        assertEquals(value, objectMapper.readValue(json, type), type.getName());
     }
 }

@@ -2,6 +2,8 @@ package me.golemcore.bot.cli.adapter.in.picocli;
 
 import java.io.PrintWriter;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.Callable;
 import me.golemcore.bot.cli.application.port.in.CommandStubInputBoundary;
 import me.golemcore.bot.cli.application.port.in.DoctorInputBoundary;
@@ -24,6 +26,7 @@ import picocli.CommandLine.Mixin;
 import picocli.CommandLine.Option;
 import picocli.CommandLine.ParentCommand;
 import picocli.CommandLine.Spec;
+import picocli.CommandLine.Unmatched;
 import picocli.CommandLine.Model.CommandSpec;
 
 @Command(name = "cli", mixinStandardHelpOptions = true, versionProvider = CliVersionProvider.class, sortOptions = false, description = {
@@ -143,63 +146,78 @@ public final class CliRootCommand implements Callable<Integer> {
         return spec.commandLine().getErr();
     }
 
+    public static void configureStubParsing(picocli.CommandLine commandLine) {
+        commandLine.getSubcommands().values().forEach(CliRootCommand::configureStubParsing);
+        if (commandLine.getCommandSpec().userObject() instanceof StubCommand) {
+            commandLine.setUnmatchedArgumentsAllowed(true);
+        }
+    }
+
     CliCommandOptions options() {
+        return options(globalOptions);
+    }
+
+    CliCommandOptions options(CliGlobalOptions sourceOptions) {
         return new CliCommandOptions(
-                path(globalOptions.cwd()),
-                path(globalOptions.project()),
-                path(globalOptions.workspace()),
-                path(globalOptions.config()),
-                path(globalOptions.configDir()),
-                globalOptions.profile(),
-                path(globalOptions.envFile()),
-                globalOptions.model(),
-                globalOptions.tier(),
-                globalOptions.agent(),
-                globalOptions.session(),
-                globalOptions.continueLatest(),
-                globalOptions.fork(),
-                globalOptions.effectiveFormat().wireValue(),
-                globalOptions.json(),
-                globalOptions.noColor(),
-                globalOptions.color(),
-                globalOptions.quiet(),
-                globalOptions.verbose(),
-                globalOptions.logLevel(),
-                globalOptions.trace(),
-                path(globalOptions.traceExport()),
-                globalOptions.noMemory(),
-                globalOptions.noRag(),
-                globalOptions.noMcp(),
-                globalOptions.noSkills(),
-                globalOptions.permissionMode().wireValue(),
-                globalOptions.yes(),
-                globalOptions.noInput(),
-                globalOptions.timeout(),
-                globalOptions.maxLlmCalls(),
-                globalOptions.maxToolExecutions(),
-                globalOptions.attach().cliValue(),
-                globalOptions.port(),
-                globalOptions.hostname(),
-                globalOptions.javaOptions());
+                path(sourceOptions.cwd()),
+                path(sourceOptions.project()),
+                path(sourceOptions.workspace()),
+                path(sourceOptions.config()),
+                path(sourceOptions.configDir()),
+                sourceOptions.profile(),
+                path(sourceOptions.envFile()),
+                sourceOptions.model(),
+                sourceOptions.tier(),
+                sourceOptions.agent(),
+                sourceOptions.session(),
+                sourceOptions.continueLatest(),
+                sourceOptions.fork(),
+                sourceOptions.effectiveFormat().wireValue(),
+                sourceOptions.json(),
+                sourceOptions.noColor(),
+                sourceOptions.color(),
+                sourceOptions.quiet(),
+                sourceOptions.verbose(),
+                sourceOptions.logLevel(),
+                sourceOptions.trace(),
+                path(sourceOptions.traceExport()),
+                sourceOptions.noMemory(),
+                sourceOptions.noRag(),
+                sourceOptions.noMcp(),
+                sourceOptions.noSkills(),
+                sourceOptions.permissionMode().wireValue(),
+                sourceOptions.yes(),
+                sourceOptions.noInput(),
+                sourceOptions.timeout(),
+                sourceOptions.maxLlmCalls(),
+                sourceOptions.maxToolExecutions(),
+                sourceOptions.attach().cliValue(),
+                sourceOptions.port(),
+                sourceOptions.hostname(),
+                sourceOptions.javaOptions());
     }
 
     CliCommandInvocation recordInvocation(String commandName) {
-        invocation = new CliCommandInvocation(commandName, options());
+        return recordInvocation(commandName, globalOptions);
+    }
+
+    CliCommandInvocation recordInvocation(String commandName, CliGlobalOptions sourceOptions) {
+        invocation = new CliCommandInvocation(commandName, options(sourceOptions));
         return invocation;
     }
 
-    int executeStub(String commandName) {
-        CliCommandInvocation currentInvocation = recordInvocation(commandName);
+    int executeStub(String commandName, CliGlobalOptions sourceOptions) {
+        CliCommandInvocation currentInvocation = recordInvocation(commandName, sourceOptions);
         CommandExecutionResult result = commandStubUseCase.execute(currentInvocation);
         return commandResultPresenter.render(result, out(), err());
     }
 
-    DoctorReport doctorReport() {
-        return doctorUseCase.inspect(options());
+    DoctorReport doctorReport(CliGlobalOptions sourceOptions) {
+        return doctorUseCase.inspect(options(sourceOptions));
     }
 
-    void renderDoctor(DoctorReport report, boolean json) {
-        if (json || globalOptions.effectiveFormat() == CliOutputFormat.JSON) {
+    void renderDoctor(DoctorReport report, CliGlobalOptions sourceOptions) {
+        if (sourceOptions.effectiveFormat() == CliOutputFormat.JSON) {
             doctorPresenter.renderJson(report, out());
             return;
         }
@@ -333,13 +351,14 @@ public final class CliRootCommand implements Callable<Integer> {
         @ParentCommand
         private CliRootCommand parent;
 
-        @Option(names = "--json", description = "Render machine-readable output.")
-        private boolean json;
+        @Mixin
+        private final CliGlobalOptions localOptions = new CliGlobalOptions();
 
         @Override
         public Integer call() {
-            parent.recordInvocation("doctor");
-            parent.renderDoctor(parent.doctorReport(), json);
+            CliGlobalOptions effectiveOptions = parent.globalOptions().merge(localOptions);
+            parent.recordInvocation("doctor", effectiveOptions);
+            parent.renderDoctor(parent.doctorReport(effectiveOptions), effectiveOptions);
             return CliExitCodes.SUCCESS;
         }
     }
@@ -372,13 +391,19 @@ public final class CliRootCommand implements Callable<Integer> {
         @Spec
         private CommandSpec commandSpec;
 
+        @Mixin
+        private final CliGlobalOptions localOptions = new CliGlobalOptions();
+
+        @Unmatched
+        private final List<String> plannedArguments = new ArrayList<>();
+
         @Override
         public Integer call() {
             CliRootCommand rootCommand = rootCommand();
             if (rootCommand == null) {
                 return CliExitCodes.GENERAL_FAILURE;
             }
-            return rootCommand.executeStub(commandName());
+            return rootCommand.executeStub(commandName(), effectiveOptions(rootCommand));
         }
 
         private CliRootCommand rootCommand() {
@@ -390,6 +415,24 @@ public final class CliRootCommand implements Callable<Integer> {
                 return rootCommand;
             }
             return null;
+        }
+
+        private CliGlobalOptions effectiveOptions(CliRootCommand rootCommand) {
+            CliGlobalOptions effectiveOptions = rootCommand.globalOptions();
+            for (CliGlobalOptions commandOptions : commandOptionsChain()) {
+                effectiveOptions = effectiveOptions.merge(commandOptions);
+            }
+            return effectiveOptions;
+        }
+
+        private List<CliGlobalOptions> commandOptionsChain() {
+            List<CliGlobalOptions> optionsChain = new ArrayList<>();
+            Object current = this;
+            while (current instanceof StubCommand stubCommand) {
+                optionsChain.add(0, stubCommand.localOptions);
+                current = stubCommand.parent;
+            }
+            return optionsChain;
         }
 
         private String commandName() {

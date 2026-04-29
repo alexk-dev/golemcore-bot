@@ -9,6 +9,13 @@ import picocli.CommandLine.Option;
 
 public final class CliGlobalOptions {
 
+    private static final String DEFAULT_PROFILE = "default";
+    private static final String DEFAULT_COLOR = "auto";
+    private static final CliOutputFormat DEFAULT_FORMAT = CliOutputFormat.TEXT;
+    private static final CliPermissionMode DEFAULT_PERMISSION_MODE = CliPermissionMode.ASK;
+    private static final CliAttachMode DEFAULT_ATTACH_MODE = CliAttachMode.AUTO;
+    private static final String DEFAULT_HOSTNAME = "127.0.0.1";
+
     @Option(names = "--cwd", description = "Working directory for command.")
     private String cwd;
 
@@ -24,7 +31,7 @@ public final class CliGlobalOptions {
     @Option(names = "--config-dir", description = "Config directory.")
     private String configDir;
 
-    @Option(names = "--profile", defaultValue = "default", description = "Runtime/profile selection.")
+    @Option(names = "--profile", description = "Runtime/profile selection.")
     private String profile;
 
     @Option(names = "--env-file", description = "Load provider/API env vars.")
@@ -48,8 +55,8 @@ public final class CliGlobalOptions {
     @Option(names = "--fork", description = "Fork existing session.")
     private String fork;
 
-    @Option(names = "--format", converter = CliOutputFormatConverter.class, defaultValue = "text", description = "Output format: ${COMPLETION-CANDIDATES}.")
-    private CliOutputFormat format = CliOutputFormat.TEXT;
+    @Option(names = "--format", converter = CliOutputFormatConverter.class, description = "Output format: ${COMPLETION-CANDIDATES}.")
+    private CliOutputFormat format;
 
     @Option(names = "--json", description = "Alias for --format json.")
     private boolean json;
@@ -57,8 +64,8 @@ public final class CliGlobalOptions {
     @Option(names = "--no-color", description = "Disable ANSI colors.")
     private boolean noColor;
 
-    @Option(names = "--color", defaultValue = "auto", description = "Color policy: auto, always, never.")
-    private String color = "auto";
+    @Option(names = "--color", description = "Color policy: auto, always, never.")
+    private String color;
 
     @Option(names = "--quiet", description = "Suppress non-essential output.")
     private boolean quiet;
@@ -87,8 +94,8 @@ public final class CliGlobalOptions {
     @Option(names = "--no-skills", description = "Disable skills for this run.")
     private boolean noSkills;
 
-    @Option(names = "--permission-mode", converter = CliPermissionModeConverter.class, defaultValue = "ask", description = "Permission preset.")
-    private CliPermissionMode permissionMode = CliPermissionMode.ASK;
+    @Option(names = "--permission-mode", converter = CliPermissionModeConverter.class, description = "Permission preset.")
+    private CliPermissionMode permissionMode;
 
     @Option(names = { "--yes", "-y" }, description = "Auto-confirm safe prompts only.")
     private boolean yes;
@@ -105,14 +112,14 @@ public final class CliGlobalOptions {
     @Option(names = "--max-tool-executions", description = "Budget override.")
     private Integer maxToolExecutions;
 
-    @Option(names = "--attach", converter = CliAttachModeConverter.class, arity = "0..1", fallbackValue = "required", defaultValue = "auto", description = "Use existing server.")
-    private CliAttachMode attach = CliAttachMode.AUTO;
+    @Option(names = "--attach", arity = "0..1", parameterConsumer = CliAttachModeParameterConsumer.class, description = "Use existing server.")
+    private CliAttachMode attach;
 
     @Option(names = "--port", description = "Server/TUI attach port.")
     private Integer port;
 
-    @Option(names = "--hostname", defaultValue = "127.0.0.1", description = "Server host.")
-    private String hostname = "127.0.0.1";
+    @Option(names = "--hostname", description = "Server host.")
+    private String hostname;
 
     @Option(names = { "-J", "--java-option" }, description = "Forward JVM option.", arity = "1")
     private final List<String> javaOptions = new ArrayList<>();
@@ -138,7 +145,7 @@ public final class CliGlobalOptions {
     }
 
     public String profile() {
-        return profile;
+        return valueOrDefault(profile, DEFAULT_PROFILE);
     }
 
     public String envFile() {
@@ -170,7 +177,7 @@ public final class CliGlobalOptions {
     }
 
     public CliOutputFormat format() {
-        return format;
+        return effectiveFormat();
     }
 
     public boolean json() {
@@ -182,7 +189,7 @@ public final class CliGlobalOptions {
     }
 
     public String color() {
-        return color;
+        return valueOrDefault(color, DEFAULT_COLOR);
     }
 
     public boolean quiet() {
@@ -222,7 +229,7 @@ public final class CliGlobalOptions {
     }
 
     public CliPermissionMode permissionMode() {
-        return permissionMode;
+        return valueOrDefault(permissionMode, DEFAULT_PERMISSION_MODE);
     }
 
     public boolean yes() {
@@ -246,7 +253,7 @@ public final class CliGlobalOptions {
     }
 
     public CliAttachMode attach() {
-        return attach;
+        return valueOrDefault(attach, DEFAULT_ATTACH_MODE);
     }
 
     public Integer port() {
@@ -254,7 +261,7 @@ public final class CliGlobalOptions {
     }
 
     public String hostname() {
-        return hostname;
+        return valueOrDefault(hostname, DEFAULT_HOSTNAME);
     }
 
     public List<String> javaOptions() {
@@ -262,6 +269,60 @@ public final class CliGlobalOptions {
     }
 
     public CliOutputFormat effectiveFormat() {
-        return json ? CliOutputFormat.JSON : format;
+        return json ? CliOutputFormat.JSON : valueOrDefault(format, DEFAULT_FORMAT);
+    }
+
+    CliGlobalOptions merge(CliGlobalOptions override) {
+        CliGlobalOptions merged = new CliGlobalOptions();
+        merged.cwd = firstNonNull(override.cwd, cwd);
+        merged.project = firstNonNull(override.project, project);
+        merged.workspace = firstNonNull(override.workspace, workspace);
+        merged.config = firstNonNull(override.config, config);
+        merged.configDir = firstNonNull(override.configDir, configDir);
+        merged.profile = firstNonNull(override.profile, profile);
+        merged.envFile = firstNonNull(override.envFile, envFile);
+        merged.model = firstNonNull(override.model, model);
+        merged.tier = firstNonNull(override.tier, tier);
+        merged.agent = firstNonNull(override.agent, agent);
+        merged.session = firstNonNull(override.session, session);
+        merged.continueLatest = override.continueLatest || continueLatest;
+        merged.fork = firstNonNull(override.fork, fork);
+        merged.format = firstNonNull(override.format, format);
+        merged.json = override.json || json;
+        merged.noColor = override.noColor || noColor;
+        merged.color = firstNonNull(override.color, color);
+        merged.quiet = override.quiet || quiet;
+        merged.verbose = override.verbose || verbose;
+        merged.logLevel = firstNonNull(override.logLevel, logLevel);
+        merged.trace = override.trace || trace;
+        merged.traceExport = firstNonNull(override.traceExport, traceExport);
+        merged.noMemory = override.noMemory || noMemory;
+        merged.noRag = override.noRag || noRag;
+        merged.noMcp = override.noMcp || noMcp;
+        merged.noSkills = override.noSkills || noSkills;
+        merged.permissionMode = firstNonNull(override.permissionMode, permissionMode);
+        merged.yes = override.yes || yes;
+        merged.noInput = override.noInput || noInput;
+        merged.timeout = firstNonNull(override.timeout, timeout);
+        merged.maxLlmCalls = firstNonNull(override.maxLlmCalls, maxLlmCalls);
+        merged.maxToolExecutions = firstNonNull(override.maxToolExecutions, maxToolExecutions);
+        merged.attach = firstNonNull(override.attach, attach);
+        merged.port = firstNonNull(override.port, port);
+        merged.hostname = firstNonNull(override.hostname, hostname);
+        merged.javaOptions.addAll(javaOptions);
+        merged.javaOptions.addAll(override.javaOptions);
+        return merged;
+    }
+
+    private static String valueOrDefault(String value, String defaultValue) {
+        return value == null ? defaultValue : value;
+    }
+
+    private static <T> T valueOrDefault(T value, T defaultValue) {
+        return value == null ? defaultValue : value;
+    }
+
+    private static <T> T firstNonNull(T primary, T fallback) {
+        return primary == null ? fallback : primary;
     }
 }

@@ -2,6 +2,7 @@ package me.golemcore.bot.cli;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertIterableEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -353,6 +354,108 @@ class CliRootCommandTest {
         assertEquals(4096, invocationOptions.port());
         assertEquals("127.0.0.1", invocationOptions.hostname());
         assertIterableEquals(List.of("-Xmx1g", "-Dgolemcore.test=true"), invocationOptions.javaOptions());
+    }
+
+    @Test
+    void shouldAcceptRunPromptAndGlobalOptionsAfterSubcommand() {
+        StringWriter out = new StringWriter();
+        StringWriter err = new StringWriter();
+        CliRootCommand rootCommand = new CliRootCommand(new PrintWriter(out, true), new PrintWriter(err, true));
+
+        int exitCode = CliApplication.commandLine(rootCommand).execute(
+                "run",
+                "--format",
+                "json",
+                "--permission-mode",
+                "read-only",
+                "review",
+                "this",
+                "change");
+
+        assertEquals(CliExitCodes.NOT_IMPLEMENTED, exitCode);
+        assertEquals("", out.toString());
+        assertTrue(err.toString().contains("run is not implemented in this CLI slice"));
+        assertFalse(err.toString().contains("Unknown option"));
+        assertFalse(err.toString().contains("Unmatched argument"));
+        assertEquals("run", rootCommand.invocation().commandName());
+        assertEquals("json", rootCommand.invocation().options().format());
+        assertEquals("read-only", rootCommand.invocation().options().permissionMode());
+    }
+
+    @Test
+    void shouldAcceptAttachFlagWithoutConsumingRunPrompt() {
+        StringWriter err = new StringWriter();
+        CliRootCommand rootCommand = new CliRootCommand(new PrintWriter(new StringWriter(), true),
+                new PrintWriter(err, true));
+
+        int exitCode = CliApplication.commandLine(rootCommand).execute(
+                "run",
+                "--attach",
+                "fix failing tests");
+
+        assertEquals(CliExitCodes.NOT_IMPLEMENTED, exitCode);
+        assertFalse(err.toString().contains("Invalid value"));
+        assertFalse(err.toString().contains("Unmatched argument"));
+        assertEquals("run", rootCommand.invocation().commandName());
+        assertEquals("required", rootCommand.invocation().options().attach());
+    }
+
+    @Test
+    void shouldAcceptServeOptionsAfterSubcommand() {
+        StringWriter err = new StringWriter();
+        CliRootCommand rootCommand = new CliRootCommand(new PrintWriter(new StringWriter(), true),
+                new PrintWriter(err, true));
+
+        int exitCode = CliApplication.commandLine(rootCommand).execute(
+                "serve",
+                "--port",
+                "4096",
+                "--hostname",
+                "0.0.0.0");
+
+        assertEquals(CliExitCodes.NOT_IMPLEMENTED, exitCode);
+        assertFalse(err.toString().contains("Unknown option"));
+        assertEquals("serve", rootCommand.invocation().commandName());
+        assertEquals(4096, rootCommand.invocation().options().port());
+        assertEquals("0.0.0.0", rootCommand.invocation().options().hostname());
+    }
+
+    @Test
+    void shouldAcceptAttachTargetAndOptionsAfterSubcommand() {
+        StringWriter err = new StringWriter();
+        CliRootCommand rootCommand = new CliRootCommand(new PrintWriter(new StringWriter(), true),
+                new PrintWriter(err, true));
+
+        int exitCode = CliApplication.commandLine(rootCommand).execute(
+                "attach",
+                "--session",
+                "ses_123",
+                "http://127.0.0.1:4096");
+
+        assertEquals(CliExitCodes.NOT_IMPLEMENTED, exitCode);
+        assertFalse(err.toString().contains("Unknown option"));
+        assertFalse(err.toString().contains("Unmatched argument"));
+        assertEquals("attach", rootCommand.invocation().commandName());
+        assertEquals("ses_123", rootCommand.invocation().options().session());
+    }
+
+    @Test
+    void shouldAcceptPlannedManagementCommandArgumentsBeforeRealHandlersExist() {
+        StringWriter err = new StringWriter();
+        CliRootCommand rootCommand = new CliRootCommand(new PrintWriter(new StringWriter(), true),
+                new PrintWriter(err, true));
+
+        int exitCode = CliApplication.commandLine(rootCommand).execute(
+                "session",
+                "show",
+                "ses_123",
+                "--json");
+
+        assertEquals(CliExitCodes.NOT_IMPLEMENTED, exitCode);
+        assertFalse(err.toString().contains("Unknown option"));
+        assertFalse(err.toString().contains("Unmatched argument"));
+        assertEquals("session", rootCommand.invocation().commandName());
+        assertEquals("json", rootCommand.invocation().options().format());
     }
 
     @Test
