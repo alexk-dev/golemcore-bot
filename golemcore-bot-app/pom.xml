@@ -526,7 +526,7 @@
         <profile>
             <id>pitests</id>
             <properties>
-                <pitest.version>1.23.0</pitest.version>
+                <pitest.version>1.23.1</pitest.version>
                 <pitest.junit5.plugin.version>1.2.3</pitest.junit5.plugin.version>
                 <pitest.mutationThreshold>0</pitest.mutationThreshold>
                 <pitest.threads>4</pitest.threads>
