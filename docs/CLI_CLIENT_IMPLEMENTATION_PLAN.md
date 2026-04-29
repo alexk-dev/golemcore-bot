@@ -13,11 +13,12 @@ Legend: `[ ]` pending · `[~]` in progress · `[x]` done
 - [x] Created the `feat/cli-client` worktree branch from `origin/main`.
 - [x] Added a dedicated `golemcore-bot-cli` adapter module and wired it into the Maven reactor.
 - [x] Added stable first-slice CLI DTO contracts, event taxonomy, permission/run/session/patch/trust records, and contract tests.
-- [x] Added the first Picocli root command surface with global option binding, deterministic help, command stubs, and `doctor --json`.
+- [x] Added the first Picocli root command surface with global option binding, deterministic help, non-zero "not implemented" command stubs, `--version`, and structured `doctor` text/JSON output.
+- [x] Split the first CLI slice into Picocli adapter, application input boundaries/use cases, domain command state, presenters, router catalog, and config packages with architecture tests.
 - [x] Added launcher/runtime application dispatch so `golemcore-bot cli ...` is a first-class entrypoint next to `web`.
 - [x] Updated module dependency architecture tests so runtime modules cannot depend on the CLI adapter.
 - [x] Verified the slice with targeted tests and local Maven `clean verify`.
-- [ ] Next implementation slice: project discovery, trust registry, config resolution, and real use-case boundaries behind the current command shell.
+- [ ] Next implementation slice: project discovery, trust registry, config resolution, and real adapters behind the current command shell.
 
 ---
 
@@ -33,48 +34,48 @@ Legend: `[ ]` pending · `[~]` in progress · `[x]` done
 
 ## Non-Negotiable Architecture Rules
 
-- [ ] A.1 CLI command classes are thin: parse args, build request DTO, call use case/input boundary, render presenter output, return exit code.
+- [x] A.1 CLI command classes are thin: parse args, build request DTO, call use case/input boundary, render presenter output, return exit code.
 - [ ] A.2 Shared DTOs, ports, view models, and boundary contracts live in `golemcore-bot-contracts` or the appropriate runtime module, not in app-only adapters.
 - [ ] A.3 Runtime/core modules never depend on CLI packages, Picocli, terminal libraries, HTTP clients used only by attach mode, or launcher classes.
-- [ ] A.4 Presenters never call filesystem, shell, network, model providers, MCP, Git, LSP, or storage directly.
-- [ ] A.5 Use cases depend on ports and shared models, not concrete local filesystem, shell, Git, LSP, MCP, terminal, or HTTP implementations.
+- [x] A.4 Presenters never call filesystem, shell, network, model providers, MCP, Git, LSP, or storage directly.
+- [x] A.5 Use cases depend on ports and shared models, not concrete local filesystem, shell, Git, LSP, MCP, terminal, or HTTP implementations.
 - [ ] A.6 `AgentLoop`, context building, tool loop, memory, RAG, dynamic tier routing, tracing, and sessions are reused rather than bypassed.
 - [ ] A.7 Public event/API DTOs do not expose `AgentContext` or adapter-internal types.
 - [ ] A.8 Any cross-system pipeline keys introduced for CLI/coding-agent behavior use canonical `ContextAttributes` contracts.
-- [ ] A.9 Module placement is explicit and tested: prefer a dedicated `golemcore-bot-cli` adapter module, with shared contracts/use cases in contracts/runtime modules and Spring composition in `golemcore-bot-app`.
+- [x] A.9 Module placement is explicit and tested: prefer a dedicated `golemcore-bot-cli` adapter module, with shared contracts/use cases in contracts/runtime modules and Spring composition in `golemcore-bot-app`.
 - [ ] A.10 Storage schemas are explicit, versioned where needed, and covered by compatibility tests before adapters write user or project state.
 
 ---
 
 ## Phase 0 — Architecture Guardrails and Contracts
 
-- [ ] 0.1 Red: update Maven dependency graph and architecture tests for explicit CLI placement, runtime-to-CLI dependency prohibition, presenter purity, and use-case-to-port rules.
-- [ ] 0.2 Green: add the minimal module/package skeleton required by the tests: `golemcore-bot-cli` for CLI adapters/presentation where feasible, shared use cases/ports in runtime/contracts modules, and app-only Spring wiring in `golemcore-bot-app`.
-- [ ] 0.3 Red: add package ownership tests for `adapter.inbound.picocli`, `adapter.inbound.tui`, `adapter.outbound.terminal`, `adapter.outbound.pty`, `adapter.outbound.localfs`, `presentation`, `router`, and `config`.
-- [ ] 0.4 Green: add placeholder packages/classes only where needed to satisfy ownership tests without implementing behavior early.
+- [x] 0.1 Red: update Maven dependency graph and architecture tests for explicit CLI placement, runtime-to-CLI dependency prohibition, presenter purity, and use-case-to-port rules.
+- [x] 0.2 Green: add the minimal module/package skeleton required by the tests: `golemcore-bot-cli` for CLI adapters/presentation where feasible, shared use cases/ports in runtime/contracts modules, and app-only Spring wiring in `golemcore-bot-app`.
+- [x] 0.3 Red: add package ownership tests for `adapter.inbound.picocli`, `adapter.inbound.tui`, `adapter.outbound.terminal`, `adapter.outbound.pty`, `adapter.outbound.localfs`, `presentation`, `router`, and `config`.
+- [x] 0.4 Green: add placeholder packages/classes only where needed to satisfy ownership tests without implementing behavior early.
 - [ ] 0.5 Red: add DTO serialization tests for `CliInvocation`, `RunRequest`, `RunResult`, `CliEvent`, `PermissionRequest`, `PermissionDecision`, `PatchSet`, `ProjectIdentity`, `ProjectTrust`, `CliSessionRef`, `AgentProfile`, `WorkspaceSnapshot`, `LspDiagnosticPack`, `ContextBudgetReport`, and `ToolExecutionRecord`.
 - [ ] 0.6 Green: implement stable DTOs with Jackson-friendly constructors/builders and no framework-specific leakage.
 - [ ] 0.7 Red: add event taxonomy/schema tests for `run.started`, `run.title.updated`, `assistant.delta`, `assistant.message.completed`, `plan.updated`, `context.budget.updated`, `context.hygiene.reported`, `memory.pack.loaded`, `rag.results.loaded`, `model.selected`, `tool.requested`, `tool.permission.requested`, `tool.started`, `tool.output.delta`, `tool.completed`, `patch.proposed`, `patch.applied`, `lsp.diagnostics.updated`, `terminal.session.started`, `run.cancelled`, `run.completed`, and `run.failed`.
 - [ ] 0.8 Green: implement versionable `CliEvent` contract constants/builders and JSON/NDJSON compatibility fixtures.
-- [ ] 0.9 Red: add exit-code mapping tests for success, invalid args, config error, provider auth error, permission denial, tool failure, model failure, timeout, runtime unavailable, untrusted project, patch conflict, network/MCP failure, and verification failure.
-- [ ] 0.10 Green: implement `CliExitCodes` and presenter-safe error mapping.
-- [ ] 0.11 Red: add command naming contract tests that the root command advertises `run`, `serve`, `attach`, `session`, `agent`, `auth`, `providers`, `models`, `tier`, `mcp`, `skill`, `plugin`, `tool`, `permissions`, `project`, `config`, `memory`, `rag`, `auto`, `lsp`, `terminal`, `git`, `patch`, `github`, `trace`, `stats`, `doctor`, `export`, `import`, `completion`, `upgrade`, `uninstall`, and `acp`.
-- [ ] 0.12 Green: add command stubs that return deterministic "not implemented" exit behavior until each feature slice is built.
+- [x] 0.9 Red: add exit-code mapping tests for success, invalid args, config error, provider auth error, permission denial, tool failure, model failure, timeout, runtime unavailable, untrusted project, patch conflict, network/MCP failure, and verification failure.
+- [x] 0.10 Green: implement `CliExitCodes` and presenter-safe error mapping.
+- [x] 0.11 Red: add command naming contract tests that the root command advertises `run`, `serve`, `attach`, `session`, `agent`, `auth`, `providers`, `models`, `tier`, `mcp`, `skill`, `plugin`, `tool`, `permissions`, `project`, `config`, `memory`, `rag`, `auto`, `lsp`, `terminal`, `git`, `patch`, `github`, `trace`, `stats`, `doctor`, `export`, `import`, `completion`, `upgrade`, `uninstall`, and `acp`.
+- [x] 0.12 Green: add command stubs that return deterministic "not implemented" exit behavior until each feature slice is built.
 - [ ] 0.13 Red: add fake runtime/LLM/session/permission/project/config/storage ports for unit and integration tests.
 - [ ] 0.14 Green: implement reusable test fakes and golden output fixtures.
 - [ ] 0.15 Red: add command convention tests for `ls`/`rm` aliases, hidden `del` alias where supported, `--json`/`--format json` on list/show commands, `--dry-run` on destructive commands, and explicit `--interactive` as the only way non-interactive mode may prompt.
 - [ ] 0.16 Green: implement shared command convention helpers and validation messages.
-- [ ] 0.17 Red: add outbound port contract tests for `AgentRuntimePort`, `ProjectDiscoveryPort`, `ProjectConfigPort`, `SecretStorePort`, `TerminalPort`, `TuiPort`, `PtyPort`, `FileSystemPort`, `ShellPort`, `GitPort`, `PatchPort`, `LspPort`, `McpRegistryPort`, `ClipboardPort`, `BrowserOpenPort`, `TraceSinkPort`, `MetricsPort`, and `UpdatePort`.
-- [ ] 0.18 Green: add port interfaces or adapters only at the correct boundary, reusing existing ports where they already exist.
-- [ ] 0.19 Red: add inbound boundary contract tests for `CliCommandInputBoundary`, `RunPromptInputBoundary`, `SessionInputBoundary`, `AgentProfileInputBoundary`, `PermissionInputBoundary`, `PatchInputBoundary`, `McpInputBoundary`, `ModelRoutingInputBoundary`, `MemoryInputBoundary`, `RagInputBoundary`, `AutoModeInputBoundary`, and `TraceInputBoundary`.
-- [ ] 0.20 Green: expose inbound use case interfaces in shared runtime/application packages without Picocli, terminal, web, or Telegram dependencies.
+- [~] 0.17 Red: add outbound port contract tests for `AgentRuntimePort`, `ProjectDiscoveryPort`, `ProjectConfigPort`, `SecretStorePort`, `TerminalPort`, `TuiPort`, `PtyPort`, `FileSystemPort`, `ShellPort`, `GitPort`, `PatchPort`, `LspPort`, `McpRegistryPort`, `ClipboardPort`, `BrowserOpenPort`, `TraceSinkPort`, `MetricsPort`, and `UpdatePort`.
+- [~] 0.18 Green: add port interfaces or adapters only at the correct boundary, reusing existing ports where they already exist.
+- [~] 0.19 Red: add inbound boundary contract tests for `CliCommandInputBoundary`, `RunPromptInputBoundary`, `SessionInputBoundary`, `AgentProfileInputBoundary`, `PermissionInputBoundary`, `PatchInputBoundary`, `McpInputBoundary`, `ModelRoutingInputBoundary`, `MemoryInputBoundary`, `RagInputBoundary`, `AutoModeInputBoundary`, and `TraceInputBoundary`.
+- [~] 0.20 Green: expose inbound use case interfaces in shared runtime/application packages without Picocli, terminal, web, or Telegram dependencies.
 
 ## Phase 1 — Launcher, Root CLI, Project Detection, Doctor
 
 - [ ] 1.1 Red: launcher test proves `golemcore-bot cli --help` is accepted and forwarded to the staged/bundled runtime without requiring web startup.
 - [ ] 1.2 Green: extend launcher dispatch so `cli` is a first-class command alongside `web`, preserving `-J/--java-option`, storage path, updates path, and passthrough behavior.
-- [ ] 1.3 Red: Picocli root tests cover global flags: `--help`, `--version`, `--cwd`, `--project`, `--workspace`, `--config`, `--config-dir`, `--profile`, `--env-file`, `--model`, `--tier`, `--agent`, `--session`, `--continue`, `--fork`, `--format`, `--json`, `--no-color`, `--color`, `--quiet`, `--verbose`, `--log-level`, `--trace`, `--trace-export`, `--no-memory`, `--no-rag`, `--no-mcp`, `--no-skills`, `--permission-mode`, `--yes`, `--no-input`, `--timeout`, `--max-llm-calls`, `--max-tool-executions`, `--attach`, `--port`, `--hostname`, and `-J/--java-option`.
-- [ ] 1.4 Green: implement `CliRootCommand`, global option binding, validation, and request DTO normalization.
+- [x] 1.3 Red: Picocli root tests cover global flags: `--help`, `--version`, `--cwd`, `--project`, `--workspace`, `--config`, `--config-dir`, `--profile`, `--env-file`, `--model`, `--tier`, `--agent`, `--session`, `--continue`, `--fork`, `--format`, `--json`, `--no-color`, `--color`, `--quiet`, `--verbose`, `--log-level`, `--trace`, `--trace-export`, `--no-memory`, `--no-rag`, `--no-mcp`, `--no-skills`, `--permission-mode`, `--yes`, `--no-input`, `--timeout`, `--max-llm-calls`, `--max-tool-executions`, `--attach`, `--port`, `--hostname`, and `-J/--java-option`.
+- [x] 1.4 Green: implement `CliRootCommand`, global option binding, validation, and request DTO normalization.
 - [ ] 1.5 Red: project discovery tests cover cwd, explicit project, git root, `.golemcore`, rules files, workspace path, and missing/unreadable directories.
 - [ ] 1.6 Green: implement `ProjectDiscoveryPort` and local adapter.
 - [ ] 1.7 Red: trust registry tests cover first-run restricted state, trusted project lookup, scope persistence, never-trust, and untrusted non-interactive failure.
@@ -87,8 +88,8 @@ Legend: `[ ]` pending · `[~]` in progress · `[x]` done
 - [ ] 1.14 Green: implement project use cases and presenters over project discovery, trust, config, ignore, and RAG indexing ports.
 - [ ] 1.15 Red: `config` command tests cover `get`, `set`, `unset`, `list`, `edit`, `validate`, `path`, `import`, `export`, and `reset` across `user`, `project`, `session`, and `profile` scopes.
 - [ ] 1.16 Green: implement config use cases and presenters with source attribution per effective value and secret-safe output.
-- [ ] 1.17 Red: `doctor` presenter tests cover text and JSON output with launcher, Java, workspace, config, providers, models, project, Git, tools, MCP, LSP, memory, RAG, Auto Mode, security, and TUI checks.
-- [ ] 1.18 Green: implement `DoctorUseCase`, fake check providers, text presenter, and JSON presenter.
+- [~] 1.17 Red: `doctor` presenter tests cover text and JSON output with launcher, Java, workspace, config, providers, models, project, Git, tools, MCP, LSP, memory, RAG, Auto Mode, security, and TUI checks.
+- [~] 1.18 Green: implement `DoctorUseCase`, fake check providers, text presenter, and JSON presenter.
 - [ ] 1.19 Red: shell completion tests verify bash, zsh, fish, and PowerShell scripts are generated.
 - [ ] 1.20 Green: wire Picocli completion generation.
 - [ ] 1.21 Red: embedded local mode tests prove `golemcore-bot cli` initializes the runtime without starting the web server, uses current project/workspace storage, lazily starts MCP/LSP, and creates or continues a session according to flags.

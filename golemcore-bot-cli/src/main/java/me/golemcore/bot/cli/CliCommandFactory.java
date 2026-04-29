@@ -2,44 +2,11 @@ package me.golemcore.bot.cli;
 
 import java.util.List;
 
+import me.golemcore.bot.cli.adapter.in.picocli.CliRootCommand;
+import me.golemcore.bot.cli.router.CliCommandCatalog;
 import picocli.CommandLine;
 
 public final class CliCommandFactory {
-
-    private static final List<String> SUBCOMMAND_NAMES = List.of(
-            "run",
-            "serve",
-            "attach",
-            "acp",
-            "session",
-            "agent",
-            "auth",
-            "providers",
-            "models",
-            "tier",
-            "mcp",
-            "skill",
-            "plugin",
-            "tool",
-            "permissions",
-            "project",
-            "config",
-            "memory",
-            "rag",
-            "auto",
-            "lsp",
-            "terminal",
-            "git",
-            "patch",
-            "github",
-            "trace",
-            "stats",
-            "doctor",
-            "export",
-            "import",
-            "completion",
-            "upgrade",
-            "uninstall");
 
     private CliCommandFactory() {
     }
@@ -53,6 +20,6 @@ public final class CliCommandFactory {
     }
 
     public static List<String> subcommandNames() {
-        return SUBCOMMAND_NAMES;
+        return CliCommandCatalog.subcommandNames();
     }
 }

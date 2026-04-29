@@ -11,6 +11,14 @@ import java.io.StringWriter;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Set;
+import me.golemcore.bot.cli.adapter.in.picocli.CliGlobalOptions;
+import me.golemcore.bot.cli.adapter.in.picocli.CliRootCommand;
+import me.golemcore.bot.cli.config.CliAttachMode;
+import me.golemcore.bot.cli.domain.CliExitCodes;
+import me.golemcore.bot.cli.domain.CliCommandInvocation;
+import me.golemcore.bot.cli.domain.CliCommandOptions;
+import me.golemcore.bot.domain.cli.CliOutputFormat;
+import me.golemcore.bot.domain.cli.CliPermissionMode;
 import org.junit.jupiter.api.Test;
 import picocli.CommandLine;
 
@@ -121,31 +129,78 @@ class CliRootCommandTest {
                 new PrintWriter(new StringWriter(), true));
 
         assertEquals(0, exitCode);
-        assertEquals(
-                """
-                        {"status":"ok","checks":[{"name":"cli","status":"ok","message":"CLI adapter slice is available"}]}
-                        """,
-                out.toString());
+        assertTrue(out.toString().contains("\"status\":\"ok\""));
+        assertTrue(out.toString().contains("\"name\":\"cli.command_surface\""));
+        assertTrue(out.toString().contains("\"name\":\"java.runtime\""));
+        assertTrue(out.toString().contains("\"name\":\"cli.package_boundaries\""));
     }
 
     @Test
-    void shouldRecordRootInvocationWhenNoSubcommandIsProvided() {
+    void shouldReportPendingTuiWhenNoSubcommandIsProvided() {
+        StringWriter err = new StringWriter();
         CliRootCommand rootCommand = new CliRootCommand(new PrintWriter(new StringWriter(), true),
-                new PrintWriter(new StringWriter(), true));
+                new PrintWriter(err, true));
         int exitCode = CliApplication.commandLine(rootCommand).execute();
 
-        assertEquals(0, exitCode);
+        assertEquals(CliExitCodes.SESSION_RUNTIME_UNAVAILABLE, exitCode);
+        assertTrue(err.toString().contains("TUI runtime is not implemented in this CLI slice"));
         assertEquals("cli", rootCommand.invocation().commandName());
     }
 
     @Test
-    void shouldRecordStubCommandInvocation() {
+    void shouldReturnDeterministicNotImplementedForStubCommand() {
+        StringWriter err = new StringWriter();
         CliRootCommand rootCommand = new CliRootCommand(new PrintWriter(new StringWriter(), true),
-                new PrintWriter(new StringWriter(), true));
+                new PrintWriter(err, true));
         int exitCode = CliApplication.commandLine(rootCommand).execute("run");
 
-        assertEquals(0, exitCode);
+        assertEquals(CliExitCodes.SESSION_RUNTIME_UNAVAILABLE, exitCode);
+        assertTrue(err.toString().contains("run is not implemented in this CLI slice"));
         assertEquals("run", rootCommand.invocation().commandName());
+    }
+
+    @Test
+    void shouldReturnDeterministicNotImplementedForEveryTopLevelStubCommand() {
+        for (String commandName : CliCommandFactory.subcommandNames()) {
+            if ("doctor".equals(commandName)) {
+                continue;
+            }
+            StringWriter out = new StringWriter();
+            StringWriter err = new StringWriter();
+            CliRootCommand rootCommand = new CliRootCommand(new PrintWriter(out, true), new PrintWriter(err, true));
+
+            int exitCode = CliApplication.commandLine(rootCommand).execute(commandName);
+
+            assertEquals(CliExitCodes.NOT_IMPLEMENTED, exitCode, commandName);
+            assertEquals("", out.toString(), commandName);
+            assertTrue(err.toString().contains(commandName + " is not implemented in this CLI slice"), commandName);
+            assertEquals(commandName, rootCommand.invocation().commandName(), commandName);
+        }
+    }
+
+    @Test
+    void shouldReturnDeterministicNotImplementedForNestedStubCommands() {
+        List<List<String>> commands = List.of(
+                List.of("session", "list"),
+                List.of("session", "ls"),
+                List.of("agent", "list"),
+                List.of("agent", "ls"),
+                List.of("mcp", "list"),
+                List.of("mcp", "ls"));
+        for (List<String> command : commands) {
+            StringWriter out = new StringWriter();
+            StringWriter err = new StringWriter();
+            CliRootCommand rootCommand = new CliRootCommand(new PrintWriter(out, true), new PrintWriter(err, true));
+
+            int exitCode = CliApplication.commandLine(rootCommand).execute(command.toArray(String[]::new));
+
+            String expectedCommandName = command.get(0) + " list";
+            assertEquals(CliExitCodes.NOT_IMPLEMENTED, exitCode, expectedCommandName);
+            assertEquals("", out.toString(), expectedCommandName);
+            assertTrue(err.toString().contains(expectedCommandName + " is not implemented in this CLI slice"),
+                    expectedCommandName);
+            assertEquals(expectedCommandName, rootCommand.invocation().commandName(), expectedCommandName);
+        }
     }
 
     @Test
@@ -258,10 +313,10 @@ class CliRootCommandTest {
         assertEquals("127.0.0.1", options.hostname());
         assertIterableEquals(List.of("-Xmx1g", "-Dgolemcore.test=true"), options.javaOptions());
 
-        CliInvocation invocation = rootCommand.invocation();
+        CliCommandInvocation invocation = rootCommand.invocation();
         assertNotNull(invocation);
         assertEquals("doctor", invocation.commandName());
-        CliOptions invocationOptions = invocation.options();
+        CliCommandOptions invocationOptions = invocation.options();
         assertEquals(Path.of("/repo"), invocationOptions.cwd());
         assertEquals(Path.of("/repo/project"), invocationOptions.project());
         assertEquals(Path.of("/workspace"), invocationOptions.workspace());
@@ -306,11 +361,12 @@ class CliRootCommandTest {
         int exitCode = commandLine(out, new StringWriter()).execute("doctor", "--json");
 
         assertEquals(0, exitCode);
-        assertEquals(
-                """
-                        {"status":"ok","checks":[{"name":"cli","status":"ok","message":"CLI adapter slice is available"}]}
-                        """,
-                out.toString());
+        String json = out.toString();
+        assertTrue(json.contains("\"status\":\"ok\""));
+        assertTrue(json.contains("\"checks\":["));
+        assertTrue(json.contains("\"name\":\"cli.command_surface\""));
+        assertTrue(json.contains("\"name\":\"java.runtime\""));
+        assertTrue(json.contains("\"name\":\"cli.package_boundaries\""));
     }
 
     @Test
@@ -319,7 +375,39 @@ class CliRootCommandTest {
         int exitCode = commandLine(out, new StringWriter()).execute("doctor");
 
         assertEquals(0, exitCode);
-        assertEquals("CLI: ok - command surface is available\n", out.toString());
+        String text = out.toString();
+        assertTrue(text.contains("cli.command_surface: ok"));
+        assertTrue(text.contains("java.runtime: ok"));
+        assertTrue(text.contains("cli.package_boundaries: ok"));
+    }
+
+    @Test
+    void shouldRenderCliVersion() {
+        StringWriter out = new StringWriter();
+        int exitCode = commandLine(out, new StringWriter()).execute("--version");
+
+        assertEquals(0, exitCode);
+        assertTrue(out.toString().contains("golemcore-bot cli"));
+        assertTrue(out.toString().contains("java "));
+    }
+
+    @Test
+    void shouldExposePlanExitCodeSpec() {
+        assertEquals(0, CliExitCodes.SUCCESS);
+        assertEquals(1, CliExitCodes.GENERAL_FAILURE);
+        assertEquals(2, CliExitCodes.INVALID_USAGE);
+        assertEquals(3, CliExitCodes.CONFIG_ERROR);
+        assertEquals(4, CliExitCodes.AUTHENTICATION_OR_PROVIDER_ERROR);
+        assertEquals(5, CliExitCodes.PERMISSION_DENIED);
+        assertEquals(6, CliExitCodes.TOOL_EXECUTION_FAILURE);
+        assertEquals(7, CliExitCodes.MODEL_OR_LLM_FAILURE);
+        assertEquals(8, CliExitCodes.TIMEOUT_OR_BUDGET_EXCEEDED);
+        assertEquals(9, CliExitCodes.SESSION_RUNTIME_UNAVAILABLE);
+        assertEquals(10, CliExitCodes.PROJECT_UNTRUSTED_OR_RESTRICTED);
+        assertEquals(11, CliExitCodes.PATCH_CONFLICT);
+        assertEquals(12, CliExitCodes.NETWORK_OR_MCP_FAILURE);
+        assertEquals(13, CliExitCodes.CHECK_COMMAND_FAILED);
+        assertEquals(CliExitCodes.SESSION_RUNTIME_UNAVAILABLE, CliExitCodes.NOT_IMPLEMENTED);
     }
 
     @Test

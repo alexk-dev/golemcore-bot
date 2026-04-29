@@ -16,6 +16,12 @@
 
     <dependencies>
         <dependency>
+            <groupId>me.golemcore</groupId>
+            <artifactId>golemcore-bot-contracts</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+
+        <dependency>
             <groupId>info.picocli</groupId>
             <artifactId>picocli</artifactId>
             <version>${picocli.version}</version>

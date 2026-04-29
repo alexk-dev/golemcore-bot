@@ -2,6 +2,7 @@ package me.golemcore.bot.cli;
 
 import java.io.PrintWriter;
 
+import me.golemcore.bot.cli.adapter.in.picocli.CliRootCommand;
 import picocli.CommandLine;
 
 /**

@@ -1,8 +1,6 @@
-package me.golemcore.bot.cli;
+package me.golemcore.bot.cli.config;
 
-import picocli.CommandLine.ITypeConverter;
-
-enum CliAttachMode {
+public enum CliAttachMode {
     AUTO("auto"), REQUIRED("required"), NEVER("never");
 
     private final String serializedValue;
@@ -11,7 +9,7 @@ enum CliAttachMode {
         this.serializedValue = serializedValue;
     }
 
-    static CliAttachMode parse(String value) {
+    public static CliAttachMode parse(String value) {
         for (CliAttachMode mode : values()) {
             if (mode.serializedValue.equals(value)) {
                 return mode;
@@ -20,15 +18,8 @@ enum CliAttachMode {
         throw new IllegalArgumentException("Unsupported attach mode: " + value);
     }
 
-    String cliValue() {
+    public String cliValue() {
         return serializedValue;
     }
 
-    static final class Converter implements ITypeConverter<CliAttachMode> {
-
-        @Override
-        public CliAttachMode convert(String value) {
-            return parse(value);
-        }
-    }
 }
