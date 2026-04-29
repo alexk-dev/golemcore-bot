@@ -8,9 +8,12 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import me.golemcore.bot.domain.system.toolloop.repeat.AutonomyWorkKey;
+import me.golemcore.bot.domain.system.toolloop.repeat.ToolStateDomain;
 import me.golemcore.bot.domain.system.toolloop.repeat.ToolUseCategory;
 import me.golemcore.bot.domain.system.toolloop.repeat.ToolUseFingerprint;
 import me.golemcore.bot.domain.system.toolloop.repeat.ToolUseLedger;
@@ -80,6 +83,7 @@ public class JsonToolUseLedgerStore implements ToolUseLedgerStore {
             return ledger;
         }
         ledger.setEnvironmentVersion(stored.environmentVersion());
+        ledger.setEnvironmentVersions(stored.environmentVersions());
         Instant cutoff = clock.instant().minus(ttl != null ? ttl : Duration.ZERO);
         for (StoredRecord storedRecord : capStoredRecords(stored.records())) {
             ToolUseRecord entry = storedRecord.toRecord();
@@ -99,6 +103,7 @@ public class JsonToolUseLedgerStore implements ToolUseLedgerStore {
                 StoredWorkKey.from(key),
                 clock.instant(),
                 ledger.getEnvironmentVersion(),
+                ledger.getEnvironmentVersions(),
                 0,
                 0,
                 capStoredRecords(storedRecords));
@@ -144,11 +149,13 @@ public class JsonToolUseLedgerStore implements ToolUseLedgerStore {
             StoredWorkKey workKey,
             Instant savedAt,
             int environmentVersion,
+            Map<ToolStateDomain, Integer> environmentVersions,
             int blockedRepeatCount,
             int warnedRepeatCount,
             List<StoredRecord> records) {
 
         private StoredLedger {
+            environmentVersions = environmentVersions != null ? Map.copyOf(environmentVersions) : Map.of();
             records = records != null ? List.copyOf(records) : List.of();
         }
     }
@@ -176,18 +183,29 @@ public class JsonToolUseLedgerStore implements ToolUseLedgerStore {
             String toolName,
             ToolUseCategory category,
             String canonicalArgumentsHash,
-            String stableKey) {
+            String stableKey,
+            Set<ToolStateDomain> observedDomains,
+            Set<ToolStateDomain> invalidatedDomains) {
 
         static StoredFingerprint from(ToolUseFingerprint fingerprint) {
             return new StoredFingerprint(
                     fingerprint.toolName(),
                     fingerprint.category(),
                     fingerprint.canonicalArgumentsHash(),
-                    fingerprint.stableKey());
+                    fingerprint.stableKey(),
+                    fingerprint.observedDomains(),
+                    fingerprint.invalidatedDomains());
         }
 
         ToolUseFingerprint toFingerprint() {
-            return new ToolUseFingerprint(toolName, category, canonicalArgumentsHash, stableKey, null);
+            return new ToolUseFingerprint(
+                    toolName,
+                    category,
+                    canonicalArgumentsHash,
+                    stableKey,
+                    null,
+                    observedDomains,
+                    invalidatedDomains);
         }
     }
 
@@ -200,8 +218,13 @@ public class JsonToolUseLedgerStore implements ToolUseLedgerStore {
             String failureKind,
             String outputDigest,
             int environmentVersion,
+            Map<ToolStateDomain, Integer> environmentVersions,
             boolean guardBlocked,
             String decisionReason) {
+
+        private StoredRecord {
+            environmentVersions = environmentVersions != null ? Map.copyOf(environmentVersions) : Map.of();
+        }
 
         static StoredRecord from(ToolUseRecord entry) {
             return new StoredRecord(
@@ -212,6 +235,7 @@ public class JsonToolUseLedgerStore implements ToolUseLedgerStore {
                     entry.failureKind(),
                     entry.outputDigest(),
                     entry.environmentVersion(),
+                    entry.environmentVersions(),
                     entry.guardBlocked(),
                     entry.guardBlocked() ? entry.decisionReason() : null);
         }
@@ -225,6 +249,7 @@ public class JsonToolUseLedgerStore implements ToolUseLedgerStore {
                     failureKind,
                     outputDigest,
                     environmentVersion,
+                    environmentVersions,
                     guardBlocked,
                     decisionReason);
         }

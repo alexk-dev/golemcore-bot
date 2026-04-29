@@ -39,6 +39,9 @@ polling and re-check behavior after state changes.
 - [x] Normalize shell `cwd`/`workdir`/`workingDirectory` values in fingerprints.
 - [x] Treat missing shell workdir as workspace root in fingerprints.
 - [x] Classify documented read-only memory and filesystem operations as observations.
+- [x] Add domain-scoped state invalidation so memory, diary, Hive and scheduling mutations do not globally reset workspace repeats.
+- [x] Add explicit first-party semantics for `goal_management`, `schedule_session_action` and Hive tools.
+- [x] Bound readable durable-ledger path segment lengths while retaining hash identity.
 - [x] Treat disabled repeat guard as a hard kill switch with no ledger learning.
 - [x] Emit a dedicated `repeat_guard_stop` runtime reason for repeat-guard stop turns.
 - [x] Use hash-suffixed durable ledger paths to avoid sanitized work-key collisions.
@@ -54,6 +57,7 @@ polling and re-check behavior after state changes.
 - [x] The model receives an explicit recovery hint.
 - [x] Plan-mode and tool policy denial still run before repeat guard.
 - [x] Exact repeated shell commands are bounded while changed recovery commands remain allowed.
+- [x] Unrelated mutations do not reset repeat windows for workspace reads or local shell commands.
 - [x] Auto-mode task/goal ledgers survive across scheduled runs.
 - [x] Ledger persistence stores only safe fingerprints and output digests, not raw secrets or large outputs.
 - [x] Full Maven verification passes locally.

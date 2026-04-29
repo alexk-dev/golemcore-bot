@@ -99,6 +99,21 @@ class AutonomyWorkKeyTest {
     }
 
     @Test
+    void storagePathSegmentsAreLengthBoundedForLongIds() {
+        String longId = "segment-" + "x".repeat(200);
+
+        AutonomyWorkKey key = new AutonomyWorkKey(longId, longId, longId, null);
+
+        for (String segment : key.storagePath().split("/")) {
+            if (segment.endsWith(".json")) {
+                segment = segment.substring(0, segment.length() - ".json".length());
+            }
+            String currentSegment = segment;
+            assertTrue(currentSegment.length() <= 77, () -> "segment too long: " + currentSegment);
+        }
+    }
+
+    @Test
     void noopLedgerStoreDoesNothing() {
         ToolUseLedgerStore store = ToolUseLedgerStore.noop();
 

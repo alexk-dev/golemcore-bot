@@ -3,6 +3,7 @@ package me.golemcore.bot.domain.system.toolloop.repeat;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.EnumMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -27,6 +28,7 @@ public class ToolUseLedger {
             "REPEAT_GUARD_STOP_TURN");
 
     private final Map<String, List<ToolUseRecord>> recordsByFingerprint = new LinkedHashMap<>();
+    private final Map<ToolStateDomain, Integer> environmentVersions = new EnumMap<>(ToolStateDomain.class);
     private final int maxRecordsPerFingerprint;
     private int environmentVersion;
     private int blockedRepeatCount;
@@ -47,8 +49,12 @@ public class ToolUseLedger {
         boolean stateChangingSuccess = isStateChangingSuccess(entry);
         if (stateChangingSuccess) {
             environmentVersion++;
+            for (ToolStateDomain domain : entry.fingerprint().invalidatedDomains()) {
+                environmentVersions.merge(domain, 1, Integer::sum);
+            }
         }
-        ToolUseRecord stored = entry.withEnvironmentVersion(environmentVersion);
+        ToolUseRecord stored = entry.withEnvironmentSnapshot(environmentVersion,
+                environmentSnapshot(entry.fingerprint()));
         List<ToolUseRecord> entries = recordsByFingerprint.computeIfAbsent(entry.fingerprint().stableKey(),
                 ignored -> new ArrayList<>());
         entries.add(stored);
@@ -78,7 +84,7 @@ public class ToolUseLedger {
 
     public List<ToolUseRecord> recordsForCurrentEnvironment(ToolUseFingerprint fingerprint) {
         return recordsFor(fingerprint).stream()
-                .filter(entry -> entry.environmentVersion() == environmentVersion)
+                .filter(entry -> isCurrentEnvironment(entry, fingerprint))
                 .toList();
     }
 
@@ -129,6 +135,22 @@ public class ToolUseLedger {
         this.environmentVersion = Math.max(0, environmentVersion);
     }
 
+    public Map<ToolStateDomain, Integer> getEnvironmentVersions() {
+        return Collections.unmodifiableMap(environmentVersions);
+    }
+
+    public void setEnvironmentVersions(Map<ToolStateDomain, Integer> versions) {
+        environmentVersions.clear();
+        if (versions == null) {
+            return;
+        }
+        versions.forEach((domain, version) -> {
+            if (domain != null && version != null && version > 0) {
+                environmentVersions.put(domain, version);
+            }
+        });
+    }
+
     public int getBlockedRepeatCount() {
         return blockedRepeatCount;
     }
@@ -156,13 +178,11 @@ public class ToolUseLedger {
     }
 
     private boolean isStateChangingSuccess(ToolUseRecord entry) {
-        if (!entry.success() || entry.guardBlocked() || entry.fingerprint() == null) {
+        if (!entry.success() || entry.guardBlocked() || entry.fingerprint() == null
+                || entry.fingerprint().invalidatedDomains().isEmpty()) {
             return false;
         }
-        return switch (entry.fingerprint().category()) {
-        case MUTATE_IDEMPOTENT, MUTATE_NON_IDEMPOTENT -> true;
-        case OBSERVE, POLL, EXECUTE_UNKNOWN, CONTROL -> false;
-        };
+        return isActualAttempt(entry);
     }
 
     private boolean isSuccessfulActualExecution(ToolUseRecord entry) {
@@ -175,5 +195,36 @@ public class ToolUseLedger {
         }
         String failureKind = entry.failureKind();
         return failureKind == null || !SYNTHETIC_FAILURE_KINDS.contains(failureKind);
+    }
+
+    private boolean isCurrentEnvironment(ToolUseRecord entry, ToolUseFingerprint fingerprint) {
+        if (entry == null || fingerprint == null) {
+            return false;
+        }
+        if (fingerprint.observedDomains().isEmpty()) {
+            return entry.environmentVersion() == environmentVersion;
+        }
+        Map<ToolStateDomain, Integer> entryVersions = entry.environmentVersions();
+        if (entryVersions.isEmpty()) {
+            return entry.environmentVersion() == environmentVersion;
+        }
+        for (ToolStateDomain domain : fingerprint.observedDomains()) {
+            if (!Objects.equals(
+                    entryVersions.getOrDefault(domain, 0),
+                    environmentVersions.getOrDefault(domain, 0))) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private Map<ToolStateDomain, Integer> environmentSnapshot(ToolUseFingerprint fingerprint) {
+        Map<ToolStateDomain, Integer> snapshot = new EnumMap<>(ToolStateDomain.class);
+        snapshot.putAll(environmentVersions);
+        if (fingerprint != null) {
+            fingerprint.observedDomains().forEach(domain -> snapshot.putIfAbsent(domain, 0));
+            fingerprint.invalidatedDomains().forEach(domain -> snapshot.putIfAbsent(domain, 0));
+        }
+        return snapshot.isEmpty() ? Map.of() : Map.copyOf(snapshot);
     }
 }

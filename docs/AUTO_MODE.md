@@ -112,6 +112,7 @@ Default behavior:
 - the second identical observation in the same state is warned and allowed
 - the third identical observation is blocked with a synthetic tool result and a recovery hint
 - repeated observations from a later scheduled run are blocked until the ledger TTL expires or verified state changes
+- verified state changes are domain-scoped: memory and diary updates do not reset workspace reads or local shell repeats
 - repeated unknown executions such as exact shell commands are also TTL-bound; read-only shell commands do not reset the observation or polling repeat window
 - polling backoff follows the last same poll attempt across local environment changes
 - blocked synthetic results are still written as normal tool results, so tool-call history remains protocol-correct
@@ -270,15 +271,15 @@ One JSON object per line, split by UTC date.
 ### `tool-ledgers/*`
 
 Repeat-guard continuity for autonomous work. Ledger files store bounded tool-use fingerprints, output digests,
-and environment version. Per-turn warning and blocked-repeat counters are intentionally not restored from durable
+and state-domain environment versions. Per-turn warning and blocked-repeat counters are intentionally not restored from durable
 storage, so a later scheduled run can still receive a fresh recovery hint instead of being stopped by stale counters.
 Ledgers intentionally do not store full tool outputs, raw arguments containing secrets or large payloads. Disabling the
 repeat guard also disables ledger learning, so re-enabling it cannot immediately block work based on calls made while
 protection was off. Observation, poll, unknown-execution and guard-blocked synthetic records expire by
 `repeatGuardAutoLedgerTtlMinutes`; remaining records are also capped to bound per-work-item storage. A stored
-`scheduleId` is audit-only: task and goal ledgers survive schedule replacement. Path segments keep a readable sanitized
-prefix plus a short SHA-256 suffix so values such as `task/a` and `task_a`, or the same task id under different goals,
-cannot collide.
+`scheduleId` is audit-only: task and goal ledgers survive schedule replacement. Path segments keep a length-bounded
+readable sanitized prefix plus a short SHA-256 suffix so values such as `task/a` and `task_a`, or the same task id
+under different goals, cannot collide.
 
 ## Configuration
 
@@ -314,7 +315,10 @@ For autonomous coding loops, successful filesystem mutations are treated as veri
 task may repeat the same shell command, such as `mvn test`, after an edit without waiting for ledger TTL. Read-only shell
 commands do not reset observation or polling backoff by themselves.
 Read-only memory operations such as `memory_search`, `memory_read` and `memory_expand_section` are classified as
-observations and also do not reset the environment version.
+observations and also do not reset any verified state domain.
+The guard tracks separate workspace, memory, autonomous-progress, Hive and scheduling domains. For example, `memory_add`
+can unlock a later `memory_read`, and `hive_post_thread_message` can unlock a later `hive_get_card`, but neither call
+unlocks an identical `filesystem.read_file` or `shell mvn test` repeat.
 
 Field notes:
 

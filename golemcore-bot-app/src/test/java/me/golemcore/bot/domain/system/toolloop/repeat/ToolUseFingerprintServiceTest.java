@@ -155,6 +155,41 @@ class ToolUseFingerprintServiceTest {
     }
 
     @Test
+    void classifiesGoalManagementReadAndMutationOperationsExplicitly() {
+        assertEquals(ToolUseCategory.OBSERVE,
+                service.fingerprint(toolCall(ToolNames.GOAL_MANAGEMENT, Map.of("operation", "list_goals")))
+                        .category());
+        assertEquals(ToolUseCategory.MUTATE_IDEMPOTENT,
+                service.fingerprint(toolCall(ToolNames.GOAL_MANAGEMENT,
+                        Map.of("operation", "write_diary", "content", "checkpoint"))).category());
+    }
+
+    @Test
+    void classifiesHiveToolsExplicitly() {
+        assertEquals(ToolUseCategory.OBSERVE,
+                service.fingerprint(toolCall(ToolNames.HIVE_GET_CURRENT_CONTEXT, Map.of())).category());
+        assertEquals(ToolUseCategory.OBSERVE,
+                service.fingerprint(toolCall(ToolNames.HIVE_GET_CARD, Map.of("cardId", "card-1"))).category());
+        assertEquals(ToolUseCategory.OBSERVE,
+                service.fingerprint(toolCall(ToolNames.HIVE_SEARCH_CARDS, Map.of("query", "bug"))).category());
+        assertEquals(ToolUseCategory.MUTATE_IDEMPOTENT,
+                service.fingerprint(toolCall(ToolNames.HIVE_POST_THREAD_MESSAGE,
+                        Map.of("threadId", "thread-1", "message", "updated"))).category());
+        assertEquals(ToolUseCategory.MUTATE_IDEMPOTENT,
+                service.fingerprint(toolCall(ToolNames.HIVE_REQUEST_REVIEW, Map.of("cardId", "card-1"))).category());
+    }
+
+    @Test
+    void classifiesScheduleSessionActionByOperation() {
+        assertEquals(ToolUseCategory.OBSERVE,
+                service.fingerprint(toolCall(ToolNames.SCHEDULE_SESSION_ACTION, Map.of("operation", "list")))
+                        .category());
+        assertEquals(ToolUseCategory.MUTATE_IDEMPOTENT,
+                service.fingerprint(toolCall(ToolNames.SCHEDULE_SESSION_ACTION,
+                        Map.of("operation", "create", "message", "check later"))).category());
+    }
+
+    @Test
     void classifiesFilesystemListDirectoryAndFileInfoAsObserve() {
         assertEquals(ToolUseCategory.OBSERVE,
                 service.fingerprint(toolCall(ToolNames.FILESYSTEM,

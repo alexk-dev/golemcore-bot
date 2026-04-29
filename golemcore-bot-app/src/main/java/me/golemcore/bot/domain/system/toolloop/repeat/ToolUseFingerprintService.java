@@ -35,63 +35,106 @@ public class ToolUseFingerprintService {
             "memory_search", "memory_read", "memory_expand_section");
     private static final Set<String> MEMORY_MUTATE_OPERATIONS = Set.of(
             "memory_add", "memory_update", "memory_promote", "memory_forget");
+    private static final Set<String> GOAL_OBSERVE_OPERATIONS = Set.of("list_goals");
+    private static final Set<String> GOAL_MUTATE_OPERATIONS = Set.of(
+            "create_goal",
+            "plan_tasks",
+            "update_task_status",
+            "write_diary",
+            "complete_goal",
+            "delete_goal",
+            "delete_task",
+            "clear_completed");
+    private static final Set<String> SCHEDULE_OBSERVE_OPERATIONS = Set.of("list");
+    private static final Set<String> SCHEDULE_MUTATE_OPERATIONS = Set.of("create", "cancel", "run_now");
     private static final Set<String> SHELL_WORKING_DIRECTORY_FIELDS = Set.of(
             "cwd", "workdir", "workingdirectory", "working_directory");
 
     public ToolUseFingerprint fingerprint(Message.ToolCall toolCall) {
         String toolName = normalizeToolName(toolCall != null ? toolCall.getName() : null);
-        ToolUseCategory category = classify(toolName, toolCall != null ? toolCall.getArguments() : null);
+        ToolSemantics semantics = semantics(toolName, toolCall != null ? toolCall.getArguments() : null);
         Object canonicalArguments = canonicalize(
                 toolName,
                 toolCall != null && toolCall.getArguments() != null ? toolCall.getArguments() : Map.of());
         String debugArguments = canonicalJson(canonicalArguments);
         String hash = sha256(debugArguments);
-        String stableKey = toolName + ":" + category + ":" + hash;
-        return new ToolUseFingerprint(toolName, category, "sha256:" + hash, stableKey, debugArguments);
+        String stableKey = toolName + ":" + semantics.category() + ":" + hash;
+        return new ToolUseFingerprint(
+                toolName,
+                semantics.category(),
+                "sha256:" + hash,
+                stableKey,
+                debugArguments,
+                semantics.observedDomains(),
+                semantics.invalidatedDomains());
     }
 
-    private ToolUseCategory classify(String toolName, Map<String, Object> arguments) {
+    private ToolSemantics semantics(String toolName, Map<String, Object> arguments) {
         if (ToolNames.PLAN_EXIT.equals(toolName)) {
-            return ToolUseCategory.CONTROL;
+            return control();
         }
         if (ToolNames.SHELL.equals(toolName)) {
-            return ToolUseCategory.EXECUTE_UNKNOWN;
+            return observe(ToolUseCategory.EXECUTE_UNKNOWN, ToolStateDomain.WORKSPACE);
         }
         String operation = stringValue(arguments, "operation");
         String normalizedOperation = normalizeValue(operation);
         if (ToolNames.MEMORY.equals(toolName)) {
             if (MEMORY_OBSERVE_OPERATIONS.contains(normalizedOperation)) {
-                return ToolUseCategory.OBSERVE;
+                return observe(ToolUseCategory.OBSERVE, ToolStateDomain.MEMORY);
             }
             if (MEMORY_MUTATE_OPERATIONS.contains(normalizedOperation)) {
-                return ToolUseCategory.MUTATE_IDEMPOTENT;
+                return mutate(ToolUseCategory.MUTATE_IDEMPOTENT, ToolStateDomain.MEMORY);
             }
-            return ToolUseCategory.EXECUTE_UNKNOWN;
+            return observe(ToolUseCategory.EXECUTE_UNKNOWN, ToolStateDomain.MEMORY);
+        }
+        if (ToolNames.GOAL_MANAGEMENT.equals(toolName)) {
+            if (GOAL_OBSERVE_OPERATIONS.contains(normalizedOperation)) {
+                return observe(ToolUseCategory.OBSERVE, ToolStateDomain.AUTONOMY_PROGRESS);
+            }
+            if (GOAL_MUTATE_OPERATIONS.contains(normalizedOperation)) {
+                return mutate(ToolUseCategory.MUTATE_IDEMPOTENT, ToolStateDomain.AUTONOMY_PROGRESS);
+            }
+            return observe(ToolUseCategory.EXECUTE_UNKNOWN, ToolStateDomain.AUTONOMY_PROGRESS);
+        }
+        if (ToolNames.SCHEDULE_SESSION_ACTION.equals(toolName)) {
+            if (SCHEDULE_OBSERVE_OPERATIONS.contains(normalizedOperation)) {
+                return observe(ToolUseCategory.OBSERVE, ToolStateDomain.SCHEDULING);
+            }
+            if (SCHEDULE_MUTATE_OPERATIONS.contains(normalizedOperation)) {
+                return mutate(ToolUseCategory.MUTATE_IDEMPOTENT, ToolStateDomain.SCHEDULING);
+            }
+            return observe(ToolUseCategory.EXECUTE_UNKNOWN, ToolStateDomain.SCHEDULING);
+        }
+        if (isHiveObserveTool(toolName)) {
+            return observe(ToolUseCategory.OBSERVE, ToolStateDomain.HIVE_REMOTE);
+        }
+        if (isHiveMutationTool(toolName)) {
+            return mutate(ToolUseCategory.MUTATE_IDEMPOTENT, ToolStateDomain.HIVE_REMOTE);
         }
         if (ToolNames.FILESYSTEM.equals(toolName)) {
             if (READ_OPERATIONS.contains(normalizedOperation)) {
-                return ToolUseCategory.OBSERVE;
+                return observe(ToolUseCategory.OBSERVE, ToolStateDomain.WORKSPACE);
             }
             if (IDEMPOTENT_FILESYSTEM_MUTATIONS.contains(normalizedOperation)) {
-                return ToolUseCategory.MUTATE_IDEMPOTENT;
+                return mutate(ToolUseCategory.MUTATE_IDEMPOTENT, ToolStateDomain.WORKSPACE);
             }
             if (NON_IDEMPOTENT_FILESYSTEM_MUTATIONS.contains(normalizedOperation)) {
-                return ToolUseCategory.MUTATE_NON_IDEMPOTENT;
+                return mutate(ToolUseCategory.MUTATE_NON_IDEMPOTENT, ToolStateDomain.WORKSPACE);
             }
-            return ToolUseCategory.EXECUTE_UNKNOWN;
+            return observe(ToolUseCategory.EXECUTE_UNKNOWN, ToolStateDomain.WORKSPACE);
         }
         String combined = toolName + "." + normalizeValue(operation);
         if (combined.contains("status") || combined.contains("poll")) {
-            return ToolUseCategory.POLL;
+            return observe(ToolUseCategory.POLL, ToolStateDomain.UNKNOWN);
         }
         if (READ_OPERATIONS.contains(normalizeValue(operation)) || toolName.contains("read")
                 || toolName.contains("list") || toolName.contains("search")) {
-            return ToolUseCategory.OBSERVE;
+            return observe(ToolUseCategory.OBSERVE, ToolStateDomain.UNKNOWN);
         }
         if (toolName.contains("goal") || toolName.contains("diary") || toolName.contains("memory")) {
-            return ToolUseCategory.MUTATE_IDEMPOTENT;
+            return mutate(ToolUseCategory.MUTATE_IDEMPOTENT, ToolStateDomain.AUTONOMY_PROGRESS);
         }
-        return ToolUseCategory.EXECUTE_UNKNOWN;
+        return observe(ToolUseCategory.EXECUTE_UNKNOWN, ToolStateDomain.UNKNOWN);
     }
 
     private Object canonicalize(String toolName, Object value) {
@@ -264,6 +307,31 @@ public class ToolUseFingerprintService {
         return normalizeValue(value);
     }
 
+    private boolean isHiveObserveTool(String toolName) {
+        return ToolNames.HIVE_GET_CURRENT_CONTEXT.equals(toolName)
+                || ToolNames.HIVE_GET_CARD.equals(toolName)
+                || ToolNames.HIVE_SEARCH_CARDS.equals(toolName);
+    }
+
+    private boolean isHiveMutationTool(String toolName) {
+        return ToolNames.HIVE_LIFECYCLE_SIGNAL.equals(toolName)
+                || ToolNames.HIVE_POST_THREAD_MESSAGE.equals(toolName)
+                || ToolNames.HIVE_REQUEST_REVIEW.equals(toolName)
+                || ToolNames.HIVE_CREATE_FOLLOWUP_CARD.equals(toolName);
+    }
+
+    private ToolSemantics observe(ToolUseCategory category, ToolStateDomain domain) {
+        return new ToolSemantics(category, Set.of(domain), Set.of());
+    }
+
+    private ToolSemantics mutate(ToolUseCategory category, ToolStateDomain domain) {
+        return new ToolSemantics(category, Set.of(domain), Set.of(domain));
+    }
+
+    private ToolSemantics control() {
+        return new ToolSemantics(ToolUseCategory.CONTROL, Set.of(), Set.of());
+    }
+
     private String normalizeValue(String value) {
         return value == null ? "" : value.trim().toLowerCase(Locale.ROOT);
     }
@@ -288,5 +356,11 @@ public class ToolUseFingerprintService {
         } catch (NoSuchAlgorithmException e) {
             throw new IllegalStateException("SHA-256 is required", e);
         }
+    }
+
+    private record ToolSemantics(
+            ToolUseCategory category,
+            Set<ToolStateDomain> observedDomains,
+            Set<ToolStateDomain> invalidatedDomains) {
     }
 }

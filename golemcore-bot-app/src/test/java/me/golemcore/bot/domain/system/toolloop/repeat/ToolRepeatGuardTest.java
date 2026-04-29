@@ -98,6 +98,81 @@ class ToolRepeatGuardTest {
     }
 
     @Test
+    void memoryWriteDoesNotResetFilesystemObservationRepeatWindow() {
+        TurnState turnState = turnState();
+        Message.ToolCall read = readCall("README.md");
+        Message.ToolCall memoryAdd = toolCall("memory", Map.of("operation", "memory_add", "content", "checkpoint"));
+        guard.afterOutcome(turnState, read, success(read, "before-1"));
+        guard.afterOutcome(turnState, read, success(read, "before-2"));
+        guard.afterOutcome(turnState, memoryAdd, success(memoryAdd, "stored"));
+
+        ToolRepeatDecision decision = guard.beforeExecute(turnState, read);
+
+        assertInstanceOf(ToolRepeatDecision.BlockAndHint.class, decision);
+    }
+
+    @Test
+    void goalManagementReadDoesNotResetFilesystemObservationRepeatWindow() {
+        TurnState turnState = turnState();
+        Message.ToolCall read = readCall("README.md");
+        Message.ToolCall listGoals = toolCall("goal_management", Map.of("operation", "list_goals"));
+        guard.afterOutcome(turnState, read, success(read, "before-1"));
+        guard.afterOutcome(turnState, read, success(read, "before-2"));
+        guard.afterOutcome(turnState, listGoals, success(listGoals, "goals"));
+
+        ToolRepeatDecision decision = guard.beforeExecute(turnState, read);
+
+        assertInstanceOf(ToolRepeatDecision.BlockAndHint.class, decision);
+    }
+
+    @Test
+    void memoryUpdateResetsMemoryReadWindowButNotFilesystemReadWindow() {
+        TurnState turnState = turnState();
+        Message.ToolCall fileRead = readCall("README.md");
+        Message.ToolCall memoryRead = toolCall("memory", Map.of("operation", "memory_read", "id", "m1"));
+        Message.ToolCall memoryUpdate = toolCall("memory",
+                Map.of("operation", "memory_update", "id", "m1", "content", "updated"));
+        guard.afterOutcome(turnState, fileRead, success(fileRead, "before-1"));
+        guard.afterOutcome(turnState, fileRead, success(fileRead, "before-2"));
+        guard.afterOutcome(turnState, memoryRead, success(memoryRead, "memory-1"));
+        guard.afterOutcome(turnState, memoryRead, success(memoryRead, "memory-2"));
+        guard.afterOutcome(turnState, memoryUpdate, success(memoryUpdate, "updated"));
+
+        assertInstanceOf(ToolRepeatDecision.BlockAndHint.class, guard.beforeExecute(turnState, fileRead));
+        assertInstanceOf(ToolRepeatDecision.Allow.class, guard.beforeExecute(turnState, memoryRead));
+    }
+
+    @Test
+    void unrelatedFilesystemWriteDoesNotResetExactMemoryMutationRepeatWindow() {
+        TurnState turnState = turnState();
+        Message.ToolCall memoryAdd = toolCall("memory", Map.of("operation", "memory_add", "content", "checkpoint"));
+        Message.ToolCall fileWrite = writeCall("README.md");
+        guard.afterOutcome(turnState, memoryAdd, success(memoryAdd, "stored"));
+        guard.afterOutcome(turnState, fileWrite, success(fileWrite, "updated"));
+
+        ToolRepeatDecision decision = guard.beforeExecute(turnState, memoryAdd);
+
+        assertInstanceOf(ToolRepeatDecision.BlockAndHint.class, decision);
+    }
+
+    @Test
+    void hiveMutationResetsHiveObservationButNotWorkspaceShellWindow() {
+        TurnState turnState = turnState();
+        Message.ToolCall shell = toolCall("shell", Map.of("command", "mvn test", "workdir", "."));
+        Message.ToolCall hiveGet = toolCall("hive_get_card", Map.of("cardId", "card-1"));
+        Message.ToolCall hivePost = toolCall("hive_post_thread_message",
+                Map.of("threadId", "thread-1", "message", "updated"));
+        guard.afterOutcome(turnState, shell, success(shell, "first shell"));
+        guard.afterOutcome(turnState, shell, success(shell, "second shell"));
+        guard.afterOutcome(turnState, hiveGet, success(hiveGet, "card-1"));
+        guard.afterOutcome(turnState, hiveGet, success(hiveGet, "card-2"));
+        guard.afterOutcome(turnState, hivePost, success(hivePost, "posted"));
+
+        assertInstanceOf(ToolRepeatDecision.BlockAndHint.class, guard.beforeExecute(turnState, shell));
+        assertInstanceOf(ToolRepeatDecision.Allow.class, guard.beforeExecute(turnState, hiveGet));
+    }
+
+    @Test
     void pollBackoffUsesLastPollAcrossAllEnvironmentVersions() {
         TurnState turnState = turnState();
         Message.ToolCall poll = toolCall("job.status", Map.of("jobId", "42"));

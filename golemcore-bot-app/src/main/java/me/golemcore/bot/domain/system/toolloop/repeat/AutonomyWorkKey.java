@@ -16,6 +16,7 @@ public record AutonomyWorkKey(String sessionKey, String goalId, String taskId, S
     private static final String STORAGE_DIRECTORY = "auto";
     private static final String STORAGE_ROOT = STORAGE_DIRECTORY + "/tool-ledgers";
     private static final String UNKNOWN_SEGMENT = "unknown";
+    private static final int MAX_READABLE_SEGMENT_LENGTH = 64;
 
     public static Optional<AutonomyWorkKey> fromMetadata(Map<String, Object> metadata) {
         if (metadata == null || !Boolean.TRUE.equals(metadata.get(ContextAttributes.AUTO_MODE))) {
@@ -69,7 +70,10 @@ public record AutonomyWorkKey(String sessionKey, String goalId, String taskId, S
         for (int index = 0; index < source.length(); index++) {
             appendSafeCharacter(out, source.charAt(index));
         }
-        return out.isEmpty() ? UNKNOWN_SEGMENT : out.toString();
+        String safe = out.isEmpty() ? UNKNOWN_SEGMENT : out.toString();
+        return safe.length() <= MAX_READABLE_SEGMENT_LENGTH
+                ? safe
+                : safe.substring(0, MAX_READABLE_SEGMENT_LENGTH);
     }
 
     private static String hashedSegment(String displayValue, String identityValue) {

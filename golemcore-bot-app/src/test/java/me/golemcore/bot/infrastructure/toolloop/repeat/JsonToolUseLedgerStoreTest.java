@@ -9,9 +9,11 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import me.golemcore.bot.domain.system.toolloop.repeat.AutonomyWorkKey;
+import me.golemcore.bot.domain.system.toolloop.repeat.ToolStateDomain;
 import me.golemcore.bot.domain.system.toolloop.repeat.ToolUseCategory;
 import me.golemcore.bot.domain.system.toolloop.repeat.ToolUseFingerprint;
 import me.golemcore.bot.domain.system.toolloop.repeat.ToolUseLedger;
@@ -32,6 +34,22 @@ class JsonToolUseLedgerStoreTest {
             "sha256:read",
             "filesystem:OBSERVE:sha256:read",
             "{\"path\":\"secret.txt\",\"token\":\"<redacted>\"}");
+    private static final ToolUseFingerprint WORKSPACE_READ_FINGERPRINT = new ToolUseFingerprint(
+            "filesystem",
+            ToolUseCategory.OBSERVE,
+            "sha256:workspace-read",
+            "filesystem:OBSERVE:sha256:workspace-read",
+            null,
+            Set.of(ToolStateDomain.WORKSPACE),
+            Set.of());
+    private static final ToolUseFingerprint MEMORY_WRITE_FINGERPRINT = new ToolUseFingerprint(
+            "memory",
+            ToolUseCategory.MUTATE_IDEMPOTENT,
+            "sha256:memory-write",
+            "memory:MUTATE_IDEMPOTENT:sha256:memory-write",
+            null,
+            Set.of(ToolStateDomain.MEMORY),
+            Set.of(ToolStateDomain.MEMORY));
     private static final ToolUseFingerprint SHELL_FINGERPRINT = new ToolUseFingerprint(
             "shell",
             ToolUseCategory.EXECUTE_UNKNOWN,
@@ -91,6 +109,19 @@ class JsonToolUseLedgerStoreTest {
 
         assertEquals(1, loaded.recordsFor(SHELL_FINGERPRINT).size());
         assertEquals("sha256:new-shell", loaded.recordsFor(SHELL_FINGERPRINT).getFirst().outputDigest());
+    }
+
+    @Test
+    void savesAndLoadsDomainScopedEnvironmentVersions() {
+        ToolUseLedger ledger = new ToolUseLedger();
+        ledger.recordUse(successfulWorkspaceRead(NOW.minusSeconds(10), "sha256:read"));
+        ledger.recordUse(successfulMemoryWrite(NOW.minusSeconds(5)));
+        store.save(WORK_KEY, ledger);
+
+        ToolUseLedger loaded = store.load(WORK_KEY, Duration.ofMinutes(120)).orElseThrow();
+
+        assertEquals(1, loaded.getEnvironmentVersions().get(ToolStateDomain.MEMORY));
+        assertEquals(1, loaded.recordsForCurrentEnvironment(WORKSPACE_READ_FINGERPRINT).size());
     }
 
     @Test
@@ -257,6 +288,32 @@ class JsonToolUseLedgerStoreTest {
                 true,
                 null,
                 outputDigest,
+                0,
+                false,
+                null);
+    }
+
+    private ToolUseRecord successfulWorkspaceRead(Instant finishedAt, String outputDigest) {
+        return new ToolUseRecord(
+                WORKSPACE_READ_FINGERPRINT,
+                finishedAt.minusMillis(50),
+                finishedAt,
+                true,
+                null,
+                outputDigest,
+                0,
+                false,
+                null);
+    }
+
+    private ToolUseRecord successfulMemoryWrite(Instant finishedAt) {
+        return new ToolUseRecord(
+                MEMORY_WRITE_FINGERPRINT,
+                finishedAt.minusMillis(50),
+                finishedAt,
+                true,
+                null,
+                "sha256:memory-write",
                 0,
                 false,
                 null);
