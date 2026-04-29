@@ -100,7 +100,9 @@ public class ToolUseLedger {
         List<ToolUseRecord> records = recordsForCurrentEnvironment(fingerprint).stream()
                 .filter(this::isSuccessfulActualExecution)
                 .toList();
-        if (fingerprint != null && fingerprint.category() == ToolUseCategory.OBSERVE) {
+        if (fingerprint != null
+                && fingerprint.category() == ToolUseCategory.OBSERVE
+                && fingerprint.outputDigestChangeResetsRepeatCount()) {
             return stableObservationRepeatCount(records);
         }
         return records.size();

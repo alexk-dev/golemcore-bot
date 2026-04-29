@@ -30,9 +30,9 @@ import org.slf4j.LoggerFactory;
 public class JsonToolUseLedgerStore implements ToolUseLedgerStore {
 
     private static final Logger log = LoggerFactory.getLogger(JsonToolUseLedgerStore.class);
-    private static final int SCHEMA_VERSION = 2;
+    private static final int SCHEMA_VERSION = 3;
     private static final int MAX_STORED_RECORDS_PER_WORK_ITEM = 500;
-    private static final Set<Integer> SUPPORTED_SCHEMA_VERSIONS = Set.of(1, SCHEMA_VERSION);
+    private static final Set<Integer> SUPPORTED_SCHEMA_VERSIONS = Set.of(1, 2, SCHEMA_VERSION);
     private static final Set<String> REPEAT_GUARD_SYNTHETIC_FAILURE_KINDS = Set.of(
             ToolFailureKind.REPEATED_TOOL_USE_BLOCKED.name(),
             ToolFailureKind.REPEAT_GUARD_STOP_TURN.name());
@@ -200,7 +200,8 @@ public class JsonToolUseLedgerStore implements ToolUseLedgerStore {
             String canonicalArgumentsHash,
             String stableKey,
             Set<ToolStateDomain> observedDomains,
-            Set<ToolStateDomain> invalidatedDomains) {
+            Set<ToolStateDomain> invalidatedDomains,
+            boolean outputDigestChangeResetsRepeatCount) {
 
         static StoredFingerprint from(ToolUseFingerprint fingerprint) {
             return new StoredFingerprint(
@@ -209,7 +210,8 @@ public class JsonToolUseLedgerStore implements ToolUseLedgerStore {
                     fingerprint.canonicalArgumentsHash(),
                     fingerprint.stableKey(),
                     fingerprint.observedDomains(),
-                    fingerprint.invalidatedDomains());
+                    fingerprint.invalidatedDomains(),
+                    fingerprint.outputDigestChangeResetsRepeatCount());
         }
 
         ToolUseFingerprint toFingerprint() {
@@ -220,7 +222,8 @@ public class JsonToolUseLedgerStore implements ToolUseLedgerStore {
                     stableKey,
                     null,
                     observedDomains,
-                    invalidatedDomains);
+                    invalidatedDomains,
+                    outputDigestChangeResetsRepeatCount);
         }
     }
 

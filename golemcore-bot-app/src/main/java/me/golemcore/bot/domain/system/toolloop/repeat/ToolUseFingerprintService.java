@@ -56,7 +56,8 @@ public class ToolUseFingerprintService {
                 stableKey,
                 debugArguments,
                 semantics.observedDomains(),
-                semantics.invalidatedDomains());
+                semantics.invalidatedDomains(),
+                semantics.outputDigestChangeResetsRepeatCount());
     }
 
     private Object canonicalize(String toolName, Object value) {

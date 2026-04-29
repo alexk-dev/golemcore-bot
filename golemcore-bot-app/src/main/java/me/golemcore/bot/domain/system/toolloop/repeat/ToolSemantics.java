@@ -9,6 +9,7 @@ import java.util.Set;
 record ToolSemantics(
         ToolUseCategory category,
         Set<ToolStateDomain> observedDomains,
-        Set<ToolStateDomain> invalidatedDomains) {
+        Set<ToolStateDomain> invalidatedDomains,
+        boolean outputDigestChangeResetsRepeatCount) {
 }
 // @formatter:on

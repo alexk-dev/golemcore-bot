@@ -41,7 +41,7 @@ polling and re-check behavior after state changes.
 - [x] Classify documented read-only memory and filesystem operations as observations.
 - [x] Add domain-scoped state invalidation so memory, diary, Hive and scheduling mutations do not globally reset workspace repeats.
 - [x] Add explicit first-party semantics for `goal_management`, `schedule_session_action` and Hive tools.
-- [x] Treat changed observation output digests as progress for that fingerprint.
+- [x] Treat changed output digests as progress only for explicit deterministic observation semantics.
 - [x] Preserve conflicting shell workdir aliases in the fingerprint instead of collapsing them.
 - [x] Emit repeat-guard decision telemetry on `TOOL_FINISHED` without raw arguments.
 - [x] Carry stable repeat fingerprints in synthetic blocked results and recovery telemetry.
@@ -51,7 +51,10 @@ polling and re-check behavior after state changes.
 - [x] Classify official plugin observation tools (`browse`, `firecrawl_scrape`, `perplexity_ask`, `weather`, read-only mail) explicitly.
 - [x] Suppress stale batch-level warning hints after same-domain mutations.
 - [x] Allow a different recovery/checkpoint tool after the blocked-repeat threshold; stop only on another would-block repeat.
-- [x] Expire repeat-guard stop-turn synthetic records by durable ledger TTL and write schema version `2`.
+- [x] Expire repeat-guard stop-turn synthetic records by durable ledger TTL and write schema version `3`.
+- [x] Add explicit first-party semantics for plan, skill, session-control and voice tools.
+- [x] Prefer semantic output digests from structured tool result data when available.
+- [x] Include a redacted argument hash in fail-open fingerprint fallback keys.
 - [x] Treat disabled repeat guard as a hard kill switch with no ledger learning.
 - [x] Emit a dedicated `repeat_guard_stop` runtime reason for repeat-guard stop turns.
 - [x] Use hash-suffixed durable ledger paths to avoid sanitized work-key collisions.

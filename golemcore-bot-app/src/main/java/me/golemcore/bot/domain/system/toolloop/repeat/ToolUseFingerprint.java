@@ -13,7 +13,8 @@ public record ToolUseFingerprint(
         String stableKey,
         String debugArguments,
         Set<ToolStateDomain> observedDomains,
-        Set<ToolStateDomain> invalidatedDomains) {
+        Set<ToolStateDomain> invalidatedDomains,
+        boolean outputDigestChangeResetsRepeatCount) {
 
     public ToolUseFingerprint {
         observedDomains = sanitizeObservedDomains(category, observedDomains);
@@ -33,7 +34,27 @@ public record ToolUseFingerprint(
                 stableKey,
                 debugArguments,
                 defaultObservedDomains(category),
-                defaultInvalidatedDomains(category));
+                defaultInvalidatedDomains(category),
+                false);
+    }
+
+    public ToolUseFingerprint(
+            String toolName,
+            ToolUseCategory category,
+            String canonicalArgumentsHash,
+            String stableKey,
+            String debugArguments,
+            Set<ToolStateDomain> observedDomains,
+            Set<ToolStateDomain> invalidatedDomains) {
+        this(
+                toolName,
+                category,
+                canonicalArgumentsHash,
+                stableKey,
+                debugArguments,
+                observedDomains,
+                invalidatedDomains,
+                false);
     }
 
     private static Set<ToolStateDomain> sanitizeObservedDomains(

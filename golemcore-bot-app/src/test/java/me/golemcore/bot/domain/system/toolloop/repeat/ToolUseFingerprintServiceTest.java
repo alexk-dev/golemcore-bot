@@ -261,6 +261,77 @@ class ToolUseFingerprintServiceTest {
     }
 
     @Test
+    void classifiesDynamicObservationToolsWithoutDigestProgress() {
+        assertFalse(service.fingerprint(toolCall("datetime", Map.of())).outputDigestChangeResetsRepeatCount());
+        assertFalse(service.fingerprint(toolCall("weather", Map.of("location", "Santo Domingo")))
+                .outputDigestChangeResetsRepeatCount());
+        assertFalse(service.fingerprint(toolCall("browse", Map.of("url", "https://example.test")))
+                .outputDigestChangeResetsRepeatCount());
+        assertFalse(service.fingerprint(toolCall("brave_search", Map.of("query", "updates")))
+                .outputDigestChangeResetsRepeatCount());
+        assertFalse(service.fingerprint(toolCall("tavily_search", Map.of("query", "updates")))
+                .outputDigestChangeResetsRepeatCount());
+        assertFalse(service.fingerprint(toolCall("firecrawl_scrape", Map.of("url", "https://example.test")))
+                .outputDigestChangeResetsRepeatCount());
+        assertFalse(service.fingerprint(toolCall("perplexity_ask", Map.of("question", "latest status")))
+                .outputDigestChangeResetsRepeatCount());
+        assertFalse(service.fingerprint(toolCall("imap", Map.of("operation", "search")))
+                .outputDigestChangeResetsRepeatCount());
+    }
+
+    @Test
+    void classifiesMailSendAsNonIdempotentMutation() {
+        ToolUseFingerprint smtp = service.fingerprint(toolCall("smtp", Map.of("to", "a@example.test")));
+
+        assertEquals(ToolUseCategory.MUTATE_NON_IDEMPOTENT, smtp.category());
+        assertTrue(smtp.invalidatedDomains().contains(ToolStateDomain.UNKNOWN));
+    }
+
+    @Test
+    void classifiesPlanToolsWithPlanDomain() {
+        ToolUseFingerprint planGet = service.fingerprint(toolCall("plan_get", Map.of()));
+        ToolUseFingerprint planSet = service.fingerprint(toolCall("plan_set_content",
+                Map.of("plan_markdown", "- [ ] Test")));
+
+        assertEquals(ToolUseCategory.OBSERVE, planGet.category());
+        assertTrue(planGet.observedDomains().contains(ToolStateDomain.PLAN));
+        assertTrue(planGet.outputDigestChangeResetsRepeatCount());
+        assertEquals(ToolUseCategory.MUTATE_IDEMPOTENT, planSet.category());
+        assertTrue(planSet.invalidatedDomains().contains(ToolStateDomain.PLAN));
+    }
+
+    @Test
+    void classifiesSkillManagementToolsWithSkillsDomain() {
+        ToolUseFingerprint list = service.fingerprint(toolCall("skill_management",
+                Map.of("operation", "list_skills")));
+        ToolUseFingerprint create = service.fingerprint(toolCall("skill_management",
+                Map.of("operation", "create_skill", "name", "reviewer")));
+        ToolUseFingerprint delete = service.fingerprint(toolCall("skill_management",
+                Map.of("operation", "delete_skill", "name", "reviewer")));
+
+        assertEquals(ToolUseCategory.OBSERVE, list.category());
+        assertTrue(list.observedDomains().contains(ToolStateDomain.SKILLS));
+        assertTrue(list.outputDigestChangeResetsRepeatCount());
+        assertEquals(ToolUseCategory.MUTATE_IDEMPOTENT, create.category());
+        assertTrue(create.invalidatedDomains().contains(ToolStateDomain.SKILLS));
+        assertEquals(ToolUseCategory.MUTATE_NON_IDEMPOTENT, delete.category());
+        assertTrue(delete.invalidatedDomains().contains(ToolStateDomain.SKILLS));
+    }
+
+    @Test
+    void classifiesSessionControlToolsExplicitly() {
+        assertEquals(ToolUseCategory.CONTROL,
+                service.fingerprint(toolCall("skill_transition", Map.of("target_skill", "reviewer")))
+                        .category());
+        assertEquals(ToolUseCategory.CONTROL,
+                service.fingerprint(toolCall("set_tier", Map.of("tier", "coding"))).category());
+        ToolUseFingerprint sendVoice = service.fingerprint(toolCall("send_voice", Map.of("text", "hello")));
+
+        assertEquals(ToolUseCategory.MUTATE_NON_IDEMPOTENT, sendVoice.category());
+        assertTrue(sendVoice.invalidatedDomains().contains(ToolStateDomain.SESSION_CONTROL));
+    }
+
+    @Test
     void classifiesUnknownFilesystemOperationAsExecuteUnknown() {
         assertEquals(ToolUseCategory.EXECUTE_UNKNOWN,
                 service.fingerprint(toolCall("filesystem",

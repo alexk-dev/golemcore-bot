@@ -2,6 +2,7 @@ package me.golemcore.bot.domain.system.toolloop.repeat;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 
 import java.time.Clock;
 import java.time.Duration;
@@ -295,6 +296,56 @@ class ToolRepeatGuardTest {
     }
 
     @Test
+    void datetimeWithChangingOutputStillBlocksAfterThreshold() {
+        TurnState turnState = turnState();
+        Message.ToolCall datetime = toolCall("datetime", Map.of());
+        guard.afterOutcome(turnState, datetime, success(datetime, "2026-04-29T12:00:00Z"));
+        guard.afterOutcome(turnState, datetime, success(datetime, "2026-04-29T12:00:01Z"));
+
+        ToolRepeatDecision decision = guard.beforeExecute(turnState, datetime);
+
+        assertInstanceOf(ToolRepeatDecision.BlockAndHint.class, decision);
+    }
+
+    @Test
+    void weatherWithChangingTimestampStillBlocksAfterThreshold() {
+        TurnState turnState = turnState();
+        Message.ToolCall weather = toolCall("weather", Map.of("location", "Santo Domingo"));
+        guard.afterOutcome(turnState, weather, success(weather, "updatedAt=12:00 temp=27"));
+        guard.afterOutcome(turnState, weather, success(weather, "updatedAt=12:01 temp=27"));
+
+        ToolRepeatDecision decision = guard.beforeExecute(turnState, weather);
+
+        assertInstanceOf(ToolRepeatDecision.BlockAndHint.class, decision);
+    }
+
+    @Test
+    void browseWithVolatileMetadataStillBlocksAfterThreshold() {
+        TurnState turnState = turnState();
+        Message.ToolCall browse = toolCall("browse", Map.of("url", "https://example.test"));
+        guard.afterOutcome(turnState, browse, success(browse, "content; tracking=abc"));
+        guard.afterOutcome(turnState, browse, success(browse, "content; tracking=def"));
+
+        ToolRepeatDecision decision = guard.beforeExecute(turnState, browse);
+
+        assertInstanceOf(ToolRepeatDecision.BlockAndHint.class, decision);
+    }
+
+    @Test
+    void semanticOutputDigestOverridesVolatileMessageContentForObservationProgress() {
+        TurnState turnState = turnState();
+        Message.ToolCall read = readCall("target/log.txt");
+        guard.afterOutcome(turnState, read, successWithData(read, "rendered at 12:00",
+                Map.of("semanticOutputDigest", "workspace-log-v1")));
+        guard.afterOutcome(turnState, read, successWithData(read, "rendered at 12:01",
+                Map.of("semanticOutputDigest", "workspace-log-v1")));
+
+        ToolRepeatDecision decision = guard.beforeExecute(turnState, read);
+
+        assertInstanceOf(ToolRepeatDecision.BlockAndHint.class, decision);
+    }
+
+    @Test
     void digestChangePolicyDisabledForUnknownExecutionsStillBlocks() {
         TurnState turnState = turnState();
         Message.ToolCall shell = toolCall("shell", Map.of("command", "date", "cwd", "."));
@@ -318,6 +369,59 @@ class ToolRepeatGuardTest {
         ToolRepeatDecision decision = guard.beforeExecute(turnState, shell);
 
         assertInstanceOf(ToolRepeatDecision.Allow.class, decision);
+    }
+
+    @Test
+    void planSetContentInvalidatesPlanGetButNotFilesystemRead() {
+        TurnState turnState = turnState();
+        Message.ToolCall fileRead = readCall("README.md");
+        Message.ToolCall planGet = toolCall("plan_get", Map.of());
+        Message.ToolCall planSet = toolCall("plan_set_content", Map.of("plan_markdown", "- [ ] Test"));
+        guard.afterOutcome(turnState, fileRead, success(fileRead, "same output"));
+        guard.afterOutcome(turnState, fileRead, success(fileRead, "same output"));
+        guard.afterOutcome(turnState, planGet, success(planGet, "draft v1"));
+        guard.afterOutcome(turnState, planGet, success(planGet, "draft v1"));
+        guard.afterOutcome(turnState, planSet, success(planSet, "saved"));
+
+        assertInstanceOf(ToolRepeatDecision.BlockAndHint.class, guard.beforeExecute(turnState, fileRead));
+        assertInstanceOf(ToolRepeatDecision.Allow.class, guard.beforeExecute(turnState, planGet));
+    }
+
+    @Test
+    void skillManagementCreateInvalidatesSkillListButNotFilesystemRead() {
+        TurnState turnState = turnState();
+        Message.ToolCall fileRead = readCall("README.md");
+        Message.ToolCall skillList = toolCall("skill_management", Map.of("operation", "list_skills"));
+        Message.ToolCall skillCreate = toolCall("skill_management",
+                Map.of("operation", "create_skill", "name", "reviewer"));
+        guard.afterOutcome(turnState, fileRead, success(fileRead, "same output"));
+        guard.afterOutcome(turnState, fileRead, success(fileRead, "same output"));
+        guard.afterOutcome(turnState, skillList, success(skillList, "skills v1"));
+        guard.afterOutcome(turnState, skillList, success(skillList, "skills v1"));
+        guard.afterOutcome(turnState, skillCreate, success(skillCreate, "created"));
+
+        assertInstanceOf(ToolRepeatDecision.BlockAndHint.class, guard.beforeExecute(turnState, fileRead));
+        assertInstanceOf(ToolRepeatDecision.Allow.class, guard.beforeExecute(turnState, skillList));
+    }
+
+    @Test
+    void fingerprintFailureFallbackIncludesArgumentHash() {
+        ToolRepeatGuard throwingGuard = new ToolRepeatGuard(new ThrowingFingerprintService(),
+                ToolRepeatGuardSettings.defaults(), clock);
+        TurnState turnState = turnState();
+        Message.ToolCall first = toolCall("broken_tool", Map.of("path", "a"));
+        Message.ToolCall second = toolCall("broken_tool", Map.of("path", "b"));
+        throwingGuard.afterOutcome(turnState, first, success(first, "same output"));
+        throwingGuard.afterOutcome(turnState, first, success(first, "same output"));
+
+        ToolRepeatDecision firstDecision = throwingGuard.beforeExecute(turnState, first);
+        ToolRepeatDecision secondDecision = throwingGuard.beforeExecute(turnState, second);
+
+        assertInstanceOf(ToolRepeatDecision.BlockAndHint.class, firstDecision);
+        assertInstanceOf(ToolRepeatDecision.Allow.class, secondDecision);
+        assertNotEquals(
+                ((ToolRepeatDecision.BlockAndHint) firstDecision).fingerprint().stableKey(),
+                ((ToolRepeatDecision.Allow) secondDecision).fingerprint().stableKey());
     }
 
     @Test
@@ -514,5 +618,18 @@ class ToolRepeatGuardTest {
     private ToolExecutionOutcome success(Message.ToolCall toolCall, String content) {
         return new ToolExecutionOutcome(toolCall.getId(), toolCall.getName(), ToolResult.success(content),
                 content, false, null);
+    }
+
+    private ToolExecutionOutcome successWithData(Message.ToolCall toolCall, String content, Object data) {
+        return new ToolExecutionOutcome(toolCall.getId(), toolCall.getName(), ToolResult.success(content, data),
+                content, false, null);
+    }
+
+    private static final class ThrowingFingerprintService extends ToolUseFingerprintService {
+
+        @Override
+        public ToolUseFingerprint fingerprint(Message.ToolCall toolCall) {
+            throw new IllegalArgumentException("boom");
+        }
     }
 }

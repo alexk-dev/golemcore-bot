@@ -104,11 +104,16 @@ The persisted auto ledger stores fingerprints, output digests and state-domain e
 bounded records per work item, and it does not persist per-turn warning/block counters, full tool outputs or raw
 secret-like arguments. Policy denials, confirmation denials and guard synthetic records may be retained for diagnostics,
 but they are not counted as successful prior executions for repeat-block decisions.
-The durable ledger currently writes schema version `2`; schema version `1` is still readable for branch-local upgrade
-compatibility. For observations, a changed model-visible output digest is treated as progress for that fingerprint and
-resets the immediate same-output repeat pressure. The digest is computed from the tool result content shown to the
-model, not from hidden raw adapter payloads. Unknown executions keep stricter exact-repeat behavior because their output
-volatility is tool-specific and not safe to interpret generically.
+The durable ledger currently writes schema version `3`; schema versions `1` and `2` are still readable for branch-local
+upgrade compatibility. Output-digest progress is opt-in per tool semantic. Deterministic local/read-model observations
+such as filesystem, memory, plan, skill, goal and scheduling reads may use changed output digest as progress for that
+fingerprint. Dynamic remote observations such as `datetime`, `weather`, browser/search/scrape, Perplexity and read-only
+mail checks do not use digest changes as progress, because their rendered output can change without agent progress.
+When a tool result supplies `semanticOutputDigest` or `semanticDigest` in structured data, repeat guard uses that value;
+otherwise it falls back to the model-visible tool result content. The digest is not computed from hidden raw adapter
+payloads.
+Unknown executions keep stricter exact-repeat behavior because their output volatility is tool-specific and not safe to
+interpret generically.
 Ledger file paths use readable sanitized prefixes with short hash suffixes, which prevents sanitized id collisions while
 keeping storage inspectable. Readable path prefixes are length-bounded; the hash suffix carries the full work-item identity.
 
@@ -127,10 +132,12 @@ working directories do not bypass the repeat guard. Missing shell workdir is tre
 workdir aliases are preserved in the fingerprint rather than collapsed to an arbitrary alias. Documented
 read-only filesystem operations (`read_file`, `list_directory`, `file_info`) and memory operations (`memory_search`,
 `memory_read`, `memory_expand_section`) are classified as observations, so they do not reset any verified state domain.
-First-party `goal_management`, `schedule_session_action` and Hive tools use explicit operation/name semantics instead
-of generic string matching. Official plugin observation tools such as `browse`, `brave_search`, `tavily_search`,
-`firecrawl_scrape`, `perplexity_ask`, `weather`, `datetime` and read-only `imap` calls are classified as observations;
-`smtp` is treated as a non-idempotent mutation.
+First-party `goal_management`, `schedule_session_action`, plan, skill, session-control and Hive tools use explicit
+operation/name semantics instead of generic string matching. Official plugin observation tools such as `browse`,
+`brave_search`, `tavily_search`, `firecrawl_scrape`, `perplexity_ask`, `weather`, `datetime` and read-only `imap` calls
+are classified as observations; `smtp` and `send_voice` are treated as non-idempotent mutations. Successful mutation
+records are retained until the per-work-item ledger cap rather than the observation TTL; this keeps idempotent duplicate
+write protection durable while synthetic repeat-guard records still expire by TTL.
 
 Repeat guard decisions are exposed in `TOOL_FINISHED` payloads with `repeatGuardDecision`, `repeatFingerprint`,
 `repeatCategory` and `repeatTool` fields. Synthetic blocked results carry the same stable repeat fingerprint in

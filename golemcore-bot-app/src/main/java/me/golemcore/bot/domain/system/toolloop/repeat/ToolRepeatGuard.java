@@ -1,17 +1,26 @@
 package me.golemcore.bot.domain.system.toolloop.repeat;
 
+import java.lang.reflect.Array;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Clock;
 import java.time.Instant;
+import java.util.Collection;
+import java.util.LinkedHashMap;
+import java.util.Locale;
+import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
+import java.util.TreeMap;
 import java.util.function.Supplier;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.ToolResult;
 import me.golemcore.bot.domain.system.toolloop.ToolExecutionOutcome;
 import me.golemcore.bot.domain.system.toolloop.TurnState;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Decides whether a tool call should execute, warn, or be blocked as a repeat.
@@ -19,6 +28,9 @@ import me.golemcore.bot.domain.system.toolloop.TurnState;
 public class ToolRepeatGuard {
 
     public static final String STOP_TURN_REASON = "stopped after repeated blocked tool calls; no progress detected";
+    private static final Logger log = LoggerFactory.getLogger(ToolRepeatGuard.class);
+    private static final Set<String> SECRET_FIELD_FRAGMENTS = Set.of(
+            "token", "password", "secret", "apikey", "api_key", "authorization");
 
     private final ToolUseFingerprintService fingerprintService;
     private final Supplier<ToolRepeatGuardSettings> settingsSupplier;
@@ -206,17 +218,21 @@ public class ToolRepeatGuard {
             return fingerprintService.fingerprint(toolCall);
         } catch (RuntimeException e) {
             String toolName = toolCall != null && toolCall.getName() != null
-                    ? toolCall.getName().trim().toLowerCase(java.util.Locale.ROOT)
+                    ? toolCall.getName().trim().toLowerCase(Locale.ROOT)
                     : "";
-            String stableKey = toolName + ":EXECUTE_UNKNOWN:fingerprint-failed";
+            String fallbackHash = sha256(redactedArgumentSnapshot(toolCall != null ? toolCall.getArguments() : null));
+            String stableKey = toolName + ":EXECUTE_UNKNOWN:fingerprint-failed:" + fallbackHash;
+            log.warn("Repeat guard fingerprinting failed for tool '{}' with fallback hash {}: {}",
+                    toolName, fallbackHash, e.getClass().getName());
             return new ToolUseFingerprint(
                     toolName,
                     ToolUseCategory.EXECUTE_UNKNOWN,
-                    "fingerprint-failed",
+                    "sha256:" + fallbackHash,
                     stableKey,
                     null,
-                    java.util.Set.of(ToolStateDomain.UNKNOWN),
-                    java.util.Set.of());
+                    Set.of(ToolStateDomain.UNKNOWN),
+                    Set.of(),
+                    false);
         }
     }
 
@@ -231,11 +247,75 @@ public class ToolRepeatGuard {
     }
 
     private String outputDigest(ToolExecutionOutcome outcome) {
+        String semanticDigest = semanticOutputDigest(outcome);
+        if (semanticDigest != null) {
+            return semanticDigest;
+        }
         String value = outcome.messageContent() != null ? outcome.messageContent() : "";
+        return "sha256:" + sha256(value);
+    }
+
+    private String semanticOutputDigest(ToolExecutionOutcome outcome) {
+        if (outcome == null
+                || outcome.toolResult() == null
+                || !(outcome.toolResult().getData() instanceof Map<?, ?> data)) {
+            return null;
+        }
+        Object value = data.get("semanticOutputDigest");
+        if (!(value instanceof String primaryValue) || primaryValue.isBlank()) {
+            value = data.get("semanticDigest");
+        }
+        if (!(value instanceof String digestValue) || digestValue.isBlank()) {
+            return null;
+        }
+        String trimmed = digestValue.trim();
+        return trimmed.startsWith("sha256:") ? trimmed : "sha256:" + sha256(trimmed);
+    }
+
+    private String redactedArgumentSnapshot(Object value) {
+        if (value == null) {
+            return "null";
+        }
+        if (value instanceof Map<?, ?> map) {
+            Map<String, String> sorted = new TreeMap<>();
+            map.forEach((key, item) -> {
+                String field = String.valueOf(key);
+                sorted.put(field, isSecretField(field) ? "<redacted>" : redactedArgumentSnapshot(item));
+            });
+            return sorted.toString();
+        }
+        if (value instanceof Collection<?> collection) {
+            return collection.stream()
+                    .map(this::redactedArgumentSnapshot)
+                    .toList()
+                    .toString();
+        }
+        if (value.getClass().isArray()) {
+            Map<Integer, String> values = new LinkedHashMap<>();
+            int length = Array.getLength(value);
+            for (int index = 0; index < length; index++) {
+                values.put(index, redactedArgumentSnapshot(Array.get(value, index)));
+            }
+            return values.values().toString();
+        }
+        return String.valueOf(value);
+    }
+
+    private boolean isSecretField(String field) {
+        String normalized = field == null ? "" : field.toLowerCase(Locale.ROOT);
+        for (String fragment : SECRET_FIELD_FRAGMENTS) {
+            if (normalized.contains(fragment)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private String sha256(String value) {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
             byte[] bytes = digest.digest(value.getBytes(StandardCharsets.UTF_8));
-            StringBuilder builder = new StringBuilder("sha256:");
+            StringBuilder builder = new StringBuilder();
             for (byte current : bytes) {
                 builder.append(String.format("%02x", current));
             }

@@ -241,17 +241,31 @@ class JsonToolUseLedgerStoreTest {
         ToolUseLedger ledger = new ToolUseLedger();
         store.save(WORK_KEY, ledger);
         String json = storagePort.get("auto", WORK_KEY.storageFile())
-                .replace("\"schemaVersion\" : 2", "\"schemaVersion\" : 999");
+                .replace("\"schemaVersion\" : 3", "\"schemaVersion\" : 999");
         storagePort.putText("auto", WORK_KEY.storageFile(), json).join();
 
         assertTrue(store.load(WORK_KEY, Duration.ofMinutes(120)).isEmpty());
     }
 
     @Test
-    void saveWritesCurrentSchemaVersionTwo() {
+    void saveWritesCurrentSchemaVersionThree() {
         store.save(WORK_KEY, new ToolUseLedger());
 
-        assertTrue(storagePort.get("auto", WORK_KEY.storageFile()).contains("\"schemaVersion\" : 2"));
+        assertTrue(storagePort.get("auto", WORK_KEY.storageFile()).contains("\"schemaVersion\" : 3"));
+    }
+
+    @Test
+    void loadAcceptsSchemaVersionTwoLedgerFromPreviousRepeatGuardFormat() {
+        ToolUseLedger ledger = new ToolUseLedger();
+        ledger.recordUse(successfulWorkspaceRead(NOW.minusSeconds(10), "sha256:read"));
+        store.save(WORK_KEY, ledger);
+        String schemaTwoJson = storagePort.get("auto", WORK_KEY.storageFile())
+                .replace("\"schemaVersion\" : 3", "\"schemaVersion\" : 2");
+        storagePort.putText("auto", WORK_KEY.storageFile(), schemaTwoJson).join();
+
+        ToolUseLedger loaded = store.load(WORK_KEY, Duration.ofMinutes(120)).orElseThrow();
+
+        assertEquals(1, loaded.recordsFor(WORKSPACE_READ_FINGERPRINT).size());
     }
 
     @Test

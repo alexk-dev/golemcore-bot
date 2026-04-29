@@ -36,6 +36,9 @@ final class ToolSemanticsRegistry {
             "clear_completed");
     private static final Set<String> SCHEDULE_OBSERVE_OPERATIONS = Set.of("list", "status");
     private static final Set<String> SCHEDULE_MUTATE_OPERATIONS = Set.of("create", "cancel", "run_now");
+    private static final Set<String> SKILL_OBSERVE_OPERATIONS = Set.of("list_skills", "get_skill");
+    private static final Set<String> SKILL_IDEMPOTENT_MUTATIONS = Set.of("create_skill", "update_skill");
+    private static final Set<String> SKILL_NON_IDEMPOTENT_MUTATIONS = Set.of("delete_skill");
     private static final Set<String> FIRST_PARTY_REMOTE_OBSERVE_TOOLS = Set.of(
             "browse",
             "brave_search",
@@ -50,10 +53,25 @@ final class ToolSemanticsRegistry {
         if (ToolNames.PLAN_EXIT.equals(normalizedToolName)) {
             return control();
         }
+        if ("skill_transition".equals(normalizedToolName) || "set_tier".equals(normalizedToolName)) {
+            return control();
+        }
+        if ("send_voice".equals(normalizedToolName)) {
+            return mutate(ToolUseCategory.MUTATE_NON_IDEMPOTENT, ToolStateDomain.SESSION_CONTROL);
+        }
         if (ToolNames.SHELL.equals(normalizedToolName)) {
             return observe(ToolUseCategory.EXECUTE_UNKNOWN, ToolStateDomain.WORKSPACE);
         }
         String normalizedOperation = normalizeValue(stringValue(arguments, "operation"));
+        if ("plan_get".equals(normalizedToolName)) {
+            return observe(ToolUseCategory.OBSERVE, ToolStateDomain.PLAN, true);
+        }
+        if ("plan_set_content".equals(normalizedToolName)) {
+            return mutate(ToolUseCategory.MUTATE_IDEMPOTENT, ToolStateDomain.PLAN);
+        }
+        if ("skill_management".equals(normalizedToolName)) {
+            return skillSemantics(normalizedOperation);
+        }
         if (ToolNames.MEMORY.equals(normalizedToolName)) {
             return memorySemantics(normalizedOperation);
         }
@@ -73,10 +91,10 @@ final class ToolSemanticsRegistry {
             return filesystemSemantics(normalizedOperation);
         }
         if (FIRST_PARTY_REMOTE_OBSERVE_TOOLS.contains(normalizedToolName)) {
-            return observe(ToolUseCategory.OBSERVE, ToolStateDomain.UNKNOWN);
+            return observe(ToolUseCategory.OBSERVE, ToolStateDomain.UNKNOWN, false);
         }
         if ("imap".equals(normalizedToolName)) {
-            return observe(ToolUseCategory.OBSERVE, ToolStateDomain.UNKNOWN);
+            return observe(ToolUseCategory.OBSERVE, ToolStateDomain.UNKNOWN, false);
         }
         if ("smtp".equals(normalizedToolName)) {
             return mutate(ToolUseCategory.MUTATE_NON_IDEMPOTENT, ToolStateDomain.UNKNOWN);
@@ -88,14 +106,14 @@ final class ToolSemanticsRegistry {
         }
         if (READ_OPERATIONS.contains(normalizedOperation) || normalizedToolName.contains("read")
                 || normalizedToolName.contains("list") || normalizedToolName.contains("search")) {
-            return observe(ToolUseCategory.OBSERVE, ToolStateDomain.UNKNOWN);
+            return observe(ToolUseCategory.OBSERVE, ToolStateDomain.UNKNOWN, false);
         }
         return observe(ToolUseCategory.EXECUTE_UNKNOWN, ToolStateDomain.UNKNOWN);
     }
 
     private ToolSemantics filesystemSemantics(String normalizedOperation) {
         if (READ_OPERATIONS.contains(normalizedOperation)) {
-            return observe(ToolUseCategory.OBSERVE, ToolStateDomain.WORKSPACE);
+            return observe(ToolUseCategory.OBSERVE, ToolStateDomain.WORKSPACE, true);
         }
         if (IDEMPOTENT_FILESYSTEM_MUTATIONS.contains(normalizedOperation)) {
             return mutate(ToolUseCategory.MUTATE_IDEMPOTENT, ToolStateDomain.WORKSPACE);
@@ -108,7 +126,7 @@ final class ToolSemanticsRegistry {
 
     private ToolSemantics memorySemantics(String normalizedOperation) {
         if (MEMORY_OBSERVE_OPERATIONS.contains(normalizedOperation)) {
-            return observe(ToolUseCategory.OBSERVE, ToolStateDomain.MEMORY);
+            return observe(ToolUseCategory.OBSERVE, ToolStateDomain.MEMORY, true);
         }
         if (MEMORY_MUTATE_OPERATIONS.contains(normalizedOperation)) {
             return mutate(ToolUseCategory.MUTATE_IDEMPOTENT, ToolStateDomain.MEMORY);
@@ -118,7 +136,7 @@ final class ToolSemanticsRegistry {
 
     private ToolSemantics goalSemantics(String normalizedOperation) {
         if (GOAL_OBSERVE_OPERATIONS.contains(normalizedOperation)) {
-            return observe(ToolUseCategory.OBSERVE, ToolStateDomain.AUTONOMY_PROGRESS);
+            return observe(ToolUseCategory.OBSERVE, ToolStateDomain.AUTONOMY_PROGRESS, true);
         }
         if (GOAL_MUTATE_OPERATIONS.contains(normalizedOperation)) {
             return mutate(ToolUseCategory.MUTATE_IDEMPOTENT, ToolStateDomain.AUTONOMY_PROGRESS);
@@ -128,12 +146,25 @@ final class ToolSemanticsRegistry {
 
     private ToolSemantics scheduleSemantics(String normalizedOperation) {
         if (SCHEDULE_OBSERVE_OPERATIONS.contains(normalizedOperation)) {
-            return observe(ToolUseCategory.OBSERVE, ToolStateDomain.SCHEDULING);
+            return observe(ToolUseCategory.OBSERVE, ToolStateDomain.SCHEDULING, true);
         }
         if (SCHEDULE_MUTATE_OPERATIONS.contains(normalizedOperation)) {
             return mutate(ToolUseCategory.MUTATE_IDEMPOTENT, ToolStateDomain.SCHEDULING);
         }
         return observe(ToolUseCategory.EXECUTE_UNKNOWN, ToolStateDomain.SCHEDULING);
+    }
+
+    private ToolSemantics skillSemantics(String normalizedOperation) {
+        if (SKILL_OBSERVE_OPERATIONS.contains(normalizedOperation)) {
+            return observe(ToolUseCategory.OBSERVE, ToolStateDomain.SKILLS, true);
+        }
+        if (SKILL_IDEMPOTENT_MUTATIONS.contains(normalizedOperation)) {
+            return mutate(ToolUseCategory.MUTATE_IDEMPOTENT, ToolStateDomain.SKILLS);
+        }
+        if (SKILL_NON_IDEMPOTENT_MUTATIONS.contains(normalizedOperation)) {
+            return mutate(ToolUseCategory.MUTATE_NON_IDEMPOTENT, ToolStateDomain.SKILLS);
+        }
+        return observe(ToolUseCategory.EXECUTE_UNKNOWN, ToolStateDomain.SKILLS);
     }
 
     private boolean isHiveObserveTool(String toolName) {
@@ -150,15 +181,22 @@ final class ToolSemanticsRegistry {
     }
 
     private ToolSemantics observe(ToolUseCategory category, ToolStateDomain domain) {
-        return new ToolSemantics(category, Set.of(domain), Set.of());
+        return observe(category, domain, false);
+    }
+
+    private ToolSemantics observe(
+            ToolUseCategory category,
+            ToolStateDomain domain,
+            boolean outputDigestChangeResetsRepeatCount) {
+        return new ToolSemantics(category, Set.of(domain), Set.of(), outputDigestChangeResetsRepeatCount);
     }
 
     private ToolSemantics mutate(ToolUseCategory category, ToolStateDomain domain) {
-        return new ToolSemantics(category, Set.of(domain), Set.of(domain));
+        return new ToolSemantics(category, Set.of(domain), Set.of(domain), false);
     }
 
     private ToolSemantics control() {
-        return new ToolSemantics(ToolUseCategory.CONTROL, Set.of(), Set.of());
+        return new ToolSemantics(ToolUseCategory.CONTROL, Set.of(), Set.of(), false);
     }
 
     private String stringValue(Map<String, Object> arguments, String key) {

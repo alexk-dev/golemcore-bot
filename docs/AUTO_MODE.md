@@ -116,7 +116,7 @@ Default behavior:
 - repeated unknown executions such as exact shell commands are also TTL-bound; read-only shell commands do not reset the observation or polling repeat window
 - polling backoff follows the last same poll attempt across local environment changes
 - blocked synthetic results are still written as normal tool results, so tool-call history remains protocol-correct
-- changed model-visible observation output digests are treated as progress for that same fingerprint, while same-output observations remain bounded
+- changed output digests are treated as progress only for deterministic observations such as filesystem, memory, plan, skill, goal and scheduling reads; dynamic remote observations such as `datetime`, weather, browse/search/scrape, Perplexity and read-only mail checks stay bounded even when rendered output changes
 - repeat guard decisions are emitted in tool-finished telemetry without raw arguments
 - invalid model-generated paths/workdirs in fingerprints fail open through deterministic hash placeholders, so normal tool validation can still return a protocol-correct tool result
 - official plugin observation tools such as browser, Firecrawl, Perplexity, weather and read-only mail checks use observation semantics instead of unknown-execution semantics
@@ -276,12 +276,14 @@ One JSON object per line, split by UTC date.
 ### `tool-ledgers/*`
 
 Repeat-guard continuity for autonomous work. Ledger files store bounded tool-use fingerprints, output digests,
-and state-domain environment versions. Current files are written with schema version `2`. Per-turn warning and blocked-repeat counters are intentionally not restored from durable
+and state-domain environment versions. Current files are written with schema version `3`. Per-turn warning and blocked-repeat counters are intentionally not restored from durable
 storage, so a later scheduled run can still receive a fresh recovery hint instead of being stopped by stale counters.
 Ledgers intentionally do not store full tool outputs, raw arguments containing secrets or large payloads. Disabling the
 repeat guard also disables ledger learning, so re-enabling it cannot immediately block work based on calls made while
-protection was off. Observation, poll, unknown-execution and guard-blocked synthetic records expire by
-`repeatGuardAutoLedgerTtlMinutes`; remaining records are also capped to bound per-work-item storage. A stored
+protection was off. Output digests use `semanticOutputDigest`/`semanticDigest` from structured tool result data when
+present, and otherwise fall back to the model-visible tool result content. Observation, poll, unknown-execution and
+guard-blocked synthetic records expire by `repeatGuardAutoLedgerTtlMinutes`; successful mutation records are retained
+until the per-work-item record cap. A stored
 `scheduleId` is audit-only: task and goal ledgers survive schedule replacement. Path segments keep a length-bounded
 readable sanitized prefix plus a short SHA-256 suffix so values such as `task/a` and `task_a`, or the same task id
 under different goals, cannot collide. Malformed, mismatched or unreadable ledger files are ignored for safety and
