@@ -1,5 +1,6 @@
 package me.golemcore.bot.domain.system;
 
+import me.golemcore.bot.domain.voice.VoiceResponseHandler;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.Message;
@@ -8,7 +9,7 @@ import me.golemcore.bot.domain.model.Attachment;
 import me.golemcore.bot.domain.model.OutgoingResponse;
 import me.golemcore.bot.domain.model.RoutingOutcome;
 import me.golemcore.bot.port.channel.ChannelPort;
-import me.golemcore.bot.domain.service.UserPreferencesService;
+import me.golemcore.bot.domain.runtimeconfig.UserPreferencesService;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
@@ -36,8 +37,8 @@ class ResponseRoutingSystemOutgoingResponseTest {
         when(channel.sendMessage(any(), any())).thenReturn(CompletableFuture.completedFuture(null));
         when(channel.sendMessage(any(), any(), any())).thenReturn(CompletableFuture.completedFuture(null));
 
-        me.golemcore.bot.domain.service.VoiceResponseHandler voiceHandler = mock(
-                me.golemcore.bot.domain.service.VoiceResponseHandler.class);
+        VoiceResponseHandler voiceHandler = mock(
+                VoiceResponseHandler.class);
         when(voiceHandler.isAvailable()).thenReturn(false);
 
         UserPreferencesService preferences = mock(UserPreferencesService.class);
@@ -71,8 +72,8 @@ class ResponseRoutingSystemOutgoingResponseTest {
         when(channel.sendMessage(any(), any())).thenReturn(CompletableFuture.completedFuture(null));
         when(channel.sendMessage(any(), any(), any())).thenReturn(CompletableFuture.completedFuture(null));
 
-        me.golemcore.bot.domain.service.VoiceResponseHandler voiceHandler = mock(
-                me.golemcore.bot.domain.service.VoiceResponseHandler.class);
+        VoiceResponseHandler voiceHandler = mock(
+                VoiceResponseHandler.class);
         when(voiceHandler.isAvailable()).thenReturn(false);
 
         UserPreferencesService preferences = mock(UserPreferencesService.class);
@@ -108,8 +109,8 @@ class ResponseRoutingSystemOutgoingResponseTest {
         when(channel.sendMessage(any(), any())).thenReturn(CompletableFuture.completedFuture(null));
         when(channel.sendMessage(any(), any(), any())).thenReturn(CompletableFuture.completedFuture(null));
 
-        me.golemcore.bot.domain.service.VoiceResponseHandler voiceHandler = mock(
-                me.golemcore.bot.domain.service.VoiceResponseHandler.class);
+        VoiceResponseHandler voiceHandler = mock(
+                VoiceResponseHandler.class);
         when(voiceHandler.isAvailable()).thenReturn(false);
 
         UserPreferencesService preferences = mock(UserPreferencesService.class);
@@ -147,8 +148,8 @@ class ResponseRoutingSystemOutgoingResponseTest {
         when(telegramChannel.sendMessage(any(), any())).thenReturn(CompletableFuture.completedFuture(null));
         when(telegramChannel.sendMessage(any(), any(), any())).thenReturn(CompletableFuture.completedFuture(null));
 
-        me.golemcore.bot.domain.service.VoiceResponseHandler voiceHandler = mock(
-                me.golemcore.bot.domain.service.VoiceResponseHandler.class);
+        VoiceResponseHandler voiceHandler = mock(
+                VoiceResponseHandler.class);
         when(voiceHandler.isAvailable()).thenReturn(false);
 
         UserPreferencesService preferences = mock(UserPreferencesService.class);
@@ -195,8 +196,8 @@ class ResponseRoutingSystemOutgoingResponseTest {
         when(webhookChannel.sendMessage(any(), any())).thenReturn(CompletableFuture.completedFuture(null));
         when(webhookChannel.sendMessage(any(), any(), any())).thenReturn(CompletableFuture.completedFuture(null));
 
-        me.golemcore.bot.domain.service.VoiceResponseHandler voiceHandler = mock(
-                me.golemcore.bot.domain.service.VoiceResponseHandler.class);
+        VoiceResponseHandler voiceHandler = mock(
+                VoiceResponseHandler.class);
         when(voiceHandler.isAvailable()).thenReturn(false);
 
         UserPreferencesService preferences = mock(UserPreferencesService.class);
@@ -252,8 +253,8 @@ class ResponseRoutingSystemOutgoingResponseTest {
         when(telegramChannel.sendDocument(any(), any(), any(), any()))
                 .thenReturn(CompletableFuture.completedFuture(null));
 
-        me.golemcore.bot.domain.service.VoiceResponseHandler voiceHandler = mock(
-                me.golemcore.bot.domain.service.VoiceResponseHandler.class);
+        VoiceResponseHandler voiceHandler = mock(
+                VoiceResponseHandler.class);
         when(voiceHandler.isAvailable()).thenReturn(false);
 
         UserPreferencesService preferences = mock(UserPreferencesService.class);

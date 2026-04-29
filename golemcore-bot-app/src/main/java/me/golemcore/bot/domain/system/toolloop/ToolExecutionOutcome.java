@@ -21,8 +21,33 @@ import me.golemcore.bot.domain.model.ToolResult;
  * @param attachment
  *            extracted attachment (screenshot, file), or null
  */
-public record ToolExecutionOutcome(String toolCallId,String toolName,ToolResult toolResult,String messageContent,boolean synthetic,Attachment attachment){
+// @formatter:off
+public record ToolExecutionOutcome(
+        String toolCallId,
+        String toolName,
+        ToolResult toolResult,
+        String messageContent,
+        boolean synthetic,
+        Attachment attachment) {
 
-public static ToolExecutionOutcome synthetic(Message.ToolCall toolCall,String reason){return new ToolExecutionOutcome(toolCall.getId(),toolCall.getName(),ToolResult.failure(ToolFailureKind.EXECUTION_FAILED,reason),reason,true,null);}
+    public static ToolExecutionOutcome synthetic(Message.ToolCall toolCall, String reason) {
+        return new ToolExecutionOutcome(
+                toolCall.getId(),
+                toolCall.getName(),
+                ToolResult.failure(ToolFailureKind.EXECUTION_FAILED, reason),
+                reason,
+                true,
+                null);
+    }
 
-public static ToolExecutionOutcome synthetic(Message.ToolCall toolCall,ToolFailureKind kind,String reason){return new ToolExecutionOutcome(toolCall.getId(),toolCall.getName(),ToolResult.failure(kind,reason),reason,true,null);}}
+    public static ToolExecutionOutcome synthetic(Message.ToolCall toolCall, ToolFailureKind kind, String reason) {
+        return new ToolExecutionOutcome(
+                toolCall.getId(),
+                toolCall.getName(),
+                ToolResult.failure(kind, reason),
+                reason,
+                true,
+                null);
+    }
+}
+// @formatter:on

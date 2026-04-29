@@ -54,7 +54,7 @@ import me.golemcore.bot.domain.model.RuntimeEventType;
 import me.golemcore.bot.domain.model.hive.HiveEvidenceRef;
 import me.golemcore.bot.domain.model.hive.HiveLifecycleSignalRequest;
 import me.golemcore.bot.domain.model.hive.HiveRuntimeContracts;
-import me.golemcore.bot.domain.service.HiveSessionStateStore;
+import me.golemcore.bot.domain.hive.HiveSessionStateStore;
 import me.golemcore.bot.port.outbound.StoragePort;
 
 class HiveEventBatchPublisherTest {

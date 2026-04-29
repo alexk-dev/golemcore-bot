@@ -26,17 +26,19 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.LlmUsage;
 import me.golemcore.bot.domain.model.Message;
 
-@RequiredArgsConstructor
 class Langchain4jResponseMapper {
 
     private static final String GEMINI_THINKING_SIGNATURE_KEY = "thinking_signature";
 
     private final ObjectMapper objectMapper;
+
+    public Langchain4jResponseMapper(ObjectMapper objectMapper) {
+        this.objectMapper = objectMapper;
+    }
 
     LlmResponse convertResponse(ChatResponse response, String currentModel, boolean compatibilityFlatteningApplied,
             boolean geminiApiType) {

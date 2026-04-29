@@ -101,6 +101,33 @@ Scheduled auto messages no longer bypass normal turn orchestration. They are sub
 - a long-running auto turn no longer races a same-session user message by entering `AgentLoop` directly
 - scheduler code can still await completion of the submitted run and apply `taskTimeLimitMinutes`
 
+### Repeat tool-use guard
+
+Auto runs also carry a durable repeat-guard ledger keyed by session plus task or goal id. The ledger prevents a scheduled
+run from repeatedly spending tool budget on the same observation when no state has changed.
+
+Default behavior:
+
+- the first identical observation is allowed
+- the second identical observation in the same state is warned and allowed
+- the third identical observation is blocked with a synthetic tool result and a recovery hint
+- repeated observations from a later scheduled run are blocked until the ledger TTL expires or verified state changes
+- verified state changes are domain-scoped: memory and diary updates do not reset workspace reads or local shell repeats
+- repeated unknown executions such as exact shell commands are also TTL-bound; read-only shell commands do not reset the observation or polling repeat window
+- polling backoff follows the last same poll attempt across local environment changes
+- blocked synthetic results are still written as normal tool results, so tool-call history remains protocol-correct
+- changed output digests are treated as progress only for deterministic observations such as filesystem, memory, plan, skill, goal and scheduling reads; dynamic remote observations such as `datetime`, weather, browse/search/scrape, Perplexity and read-only mail checks stay bounded even when rendered output changes
+- repeat guard decisions are emitted in tool-finished telemetry without raw arguments
+- invalid model-generated paths/workdirs in fingerprints fail open through deterministic hash placeholders, so normal tool validation can still return a protocol-correct tool result
+- official plugin observation tools such as browser, Firecrawl, Perplexity, weather, datetime and read-only mail checks use typed observation domains instead of unknown-execution semantics
+- `plan_exit` stays an always-allowed exit path, while repeated `set_tier` and `skill_transition` calls are bounded like other idempotent session-control mutations
+
+When a repeated auto observation is blocked, the recovery hint asks the model to use previous tool history, change
+arguments, perform a verified state-changing next step, write a diary/checkpoint, schedule a later check or finish the
+turn. In auto mode, the hint scope is the current autonomous task or goal until state changes, arguments change or the
+ledger TTL expires. Warning hints are emitted after the full tool-result batch and are dropped if a later tool in the
+same batch already invalidated the relevant state domain.
+
 ### GOAL schedule
 
 When a goal schedule fires:
@@ -218,9 +245,13 @@ auto/
 ├── state.json
 ├── goals.json
 ├── schedules.json
-└── diary/
-    ├── 2026-03-08.jsonl
-    └── ...
+├── diary/
+│   ├── 2026-03-08.jsonl
+│   └── ...
+└── tool-ledgers/
+    └── <session-key>-<hash>/
+        ├── goals/<goal-id>-<hash>.json
+        └── tasks/<task-id>-<hash>.json
 ```
 
 ### `state.json`
@@ -243,6 +274,22 @@ JSON array of `ScheduleEntry` records. Goals or tasks without schedules are neve
 
 One JSON object per line, split by UTC date.
 
+### `tool-ledgers/*`
+
+Repeat-guard continuity for autonomous work. Ledger files store bounded tool-use fingerprints, output digests,
+and state-domain environment versions. Current files are written with schema version `3`. Per-turn warning and blocked-repeat counters are intentionally not restored from durable
+storage, so a later scheduled run can still receive a fresh recovery hint instead of being stopped by stale counters.
+Ledgers intentionally do not store full tool outputs, raw arguments containing secrets or large payloads. Disabling the
+repeat guard also disables ledger learning, so re-enabling it cannot immediately block work based on calls made while
+protection was off. Output digests use `semanticOutputDigest`/`semanticDigest` from structured tool result data when
+present, and otherwise fall back to the model-visible tool result content. Observation, poll, unknown-execution and
+guard-blocked synthetic records expire by `repeatGuardAutoLedgerTtlMinutes`; successful mutation records are retained
+until the per-work-item record cap. A stored
+`scheduleId` is audit-only: task and goal ledgers survive schedule replacement. Path segments keep a length-bounded
+readable sanitized prefix plus a short SHA-256 suffix so values such as `task/a` and `task_a`, or the same task id
+under different goals, cannot collide. Malformed, mismatched or unreadable ledger files are ignored for safety and
+logged as repeat-guard ledger load warnings; the current turn then starts with an empty in-memory ledger.
+
 ## Configuration
 
 Runtime config:
@@ -260,9 +307,29 @@ Runtime config:
   },
   "tools": {
     "goalManagementEnabled": true
+  },
+  "toolLoop": {
+    "repeatGuardEnabled": true,
+    "repeatGuardShadowMode": false,
+    "repeatGuardMaxSameObservePerTurn": 2,
+    "repeatGuardMaxSameUnknownPerTurn": 2,
+    "repeatGuardMaxBlockedRepeatsPerTurn": 4,
+    "repeatGuardMinPollIntervalSeconds": 60,
+    "repeatGuardAutoLedgerTtlMinutes": 120
   }
 }
 ```
+
+For autonomous coding loops, successful filesystem mutations are treated as verified local state changes. That means a
+task may repeat the same shell command, such as `mvn test`, after an edit without waiting for ledger TTL. Read-only shell
+commands do not reset observation or polling backoff by themselves.
+Read-only memory operations such as `memory_search`, `memory_read` and `memory_expand_section` are classified as
+observations and also do not reset any verified state domain.
+The guard tracks separate workspace, memory, autonomous-progress, Hive, scheduling, plan, skills, session-control, web,
+weather, time and mail domains. For example, `memory_add` can unlock a later `memory_read`, and
+`hive_post_thread_message` can unlock a later `hive_get_card`, but neither call unlocks an identical
+`filesystem.read_file` or `shell mvn test` repeat. A mail send updates the mail domain without re-allowing repeated
+weather, datetime or browser observations.
 
 Field notes:
 
@@ -273,6 +340,9 @@ Field notes:
 5. `maxGoals`: guardrail for concurrently active goals.
 6. `modelTier`: preferred tier for auto messages when no tier is already assigned.
 7. `notifyMilestones`: send completion notifications to the registered channel.
+
+Repeat guard fields live in the `toolLoop` runtime section. `repeatGuardAutoLedgerTtlMinutes` controls how long
+scheduled auto runs remember observation, poll and unknown-execution fingerprints for the same task or goal.
 
 ## Pipeline Integration
 

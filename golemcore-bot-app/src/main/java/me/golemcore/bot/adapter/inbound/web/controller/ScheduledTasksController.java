@@ -6,17 +6,16 @@ import java.time.Instant;
 import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
-import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.auto.ScheduleDeliveryContext;
 import me.golemcore.bot.auto.ScheduledRunExecutor;
 import me.golemcore.bot.auto.ScheduledRunOutcome;
 import me.golemcore.bot.domain.model.ModelTierCatalog;
 import me.golemcore.bot.domain.model.ScheduleEntry;
 import me.golemcore.bot.domain.model.ScheduledTask;
-import me.golemcore.bot.domain.service.AutoModeService;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
-import me.golemcore.bot.domain.service.ScheduleService;
-import me.golemcore.bot.domain.service.StringValueSupport;
+import me.golemcore.bot.domain.auto.AutoModeService;
+import me.golemcore.bot.domain.runtimeconfig.RuntimeConfigService;
+import me.golemcore.bot.domain.scheduling.ScheduleService;
+import me.golemcore.bot.domain.support.StringValueSupport;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -32,7 +31,6 @@ import reactor.core.publisher.Mono;
 
 @RestController
 @RequestMapping("/api/scheduled-tasks")
-@RequiredArgsConstructor
 public class ScheduledTasksController {
 
     private static final String FEATURE_DISABLED = "Auto mode feature is disabled";
@@ -41,6 +39,17 @@ public class ScheduledTasksController {
     private final ScheduleService scheduleService;
     private final ScheduledRunExecutor scheduledRunExecutor;
     private final RuntimeConfigService runtimeConfigService;
+
+    public ScheduledTasksController(
+            AutoModeService autoModeService,
+            ScheduleService scheduleService,
+            ScheduledRunExecutor scheduledRunExecutor,
+            RuntimeConfigService runtimeConfigService) {
+        this.autoModeService = autoModeService;
+        this.scheduleService = scheduleService;
+        this.scheduledRunExecutor = scheduledRunExecutor;
+        this.runtimeConfigService = runtimeConfigService;
+    }
 
     @GetMapping
     public Mono<ResponseEntity<ScheduledTasksResponse>> listScheduledTasks() {

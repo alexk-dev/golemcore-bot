@@ -1,7 +1,7 @@
 package me.golemcore.bot.infrastructure.config;
 
-import me.golemcore.bot.domain.service.LegacyPluginConfigurationMigrationService;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.extensions.LegacyPluginConfigurationMigrationService;
+import me.golemcore.bot.domain.runtimeconfig.RuntimeConfigService;
 import me.golemcore.bot.plugin.runtime.ChannelRegistry;
 import me.golemcore.bot.plugin.runtime.PluginManager;
 import me.golemcore.bot.port.channel.ChannelPort;

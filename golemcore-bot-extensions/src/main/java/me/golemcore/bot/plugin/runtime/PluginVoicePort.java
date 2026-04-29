@@ -1,6 +1,5 @@
 package me.golemcore.bot.plugin.runtime;
 
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.AudioFormat;
 import me.golemcore.bot.port.outbound.RuntimeConfigQueryPort;
@@ -20,7 +19,6 @@ import java.util.concurrent.CompletionException;
  */
 @Component
 @Primary
-@RequiredArgsConstructor
 @Slf4j
 public class PluginVoicePort implements VoicePort {
 
@@ -33,6 +31,17 @@ public class PluginVoicePort implements VoicePort {
     private final SttProviderRegistry sttProviderRegistry;
     private final TtsProviderRegistry ttsProviderRegistry;
     private final PluginExtensionApiMapper pluginApiMapper;
+
+    public PluginVoicePort(
+            RuntimeConfigQueryPort runtimeConfigQueryPort,
+            SttProviderRegistry sttProviderRegistry,
+            TtsProviderRegistry ttsProviderRegistry,
+            PluginExtensionApiMapper pluginApiMapper) {
+        this.runtimeConfigQueryPort = runtimeConfigQueryPort;
+        this.sttProviderRegistry = sttProviderRegistry;
+        this.ttsProviderRegistry = ttsProviderRegistry;
+        this.pluginApiMapper = pluginApiMapper;
+    }
 
     @Override
     public CompletableFuture<TranscriptionResult> transcribe(byte[] audioData, AudioFormat format) {

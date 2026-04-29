@@ -18,7 +18,6 @@
 
 package me.golemcore.bot.tools;
 
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.component.MemoryComponent;
 import me.golemcore.bot.domain.component.ToolComponent;
@@ -27,7 +26,7 @@ import me.golemcore.bot.domain.model.MemoryQuery;
 import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.model.ToolNames;
 import me.golemcore.bot.domain.model.ToolResult;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.runtimeconfig.RuntimeConfigService;
 import org.springframework.stereotype.Component;
 
 import java.time.Instant;
@@ -43,7 +42,6 @@ import java.util.concurrent.CompletableFuture;
  * Tool for explicit Memory V2 operations from autonomous workflows.
  */
 @Component
-@RequiredArgsConstructor
 @Slf4j
 public class MemoryTool implements ToolComponent {
 
@@ -75,6 +73,13 @@ public class MemoryTool implements ToolComponent {
 
     private final MemoryComponent memoryComponent;
     private final RuntimeConfigService runtimeConfigService;
+
+    public MemoryTool(
+            MemoryComponent memoryComponent,
+            RuntimeConfigService runtimeConfigService) {
+        this.memoryComponent = memoryComponent;
+        this.runtimeConfigService = runtimeConfigService;
+    }
 
     @Override
     public ToolDefinition getDefinition() {

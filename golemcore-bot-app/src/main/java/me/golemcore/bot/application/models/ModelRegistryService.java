@@ -6,16 +6,14 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.catalog.ModelCatalogEntry;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.runtimeconfig.RuntimeConfigService;
 import me.golemcore.bot.port.outbound.ModelRegistryCachePort;
 import me.golemcore.bot.port.outbound.ModelRegistryDocumentPort;
 import me.golemcore.bot.port.outbound.ModelRegistryRemotePort;
 
-@RequiredArgsConstructor
 @Slf4j
 public class ModelRegistryService {
 
@@ -28,6 +26,17 @@ public class ModelRegistryService {
     private final ModelRegistryRemotePort modelRegistryRemotePort;
     private final ModelRegistryCachePort modelRegistryCachePort;
     private final ModelRegistryDocumentPort modelRegistryDocumentPort;
+
+    public ModelRegistryService(
+            RuntimeConfigService runtimeConfigService,
+            ModelRegistryRemotePort modelRegistryRemotePort,
+            ModelRegistryCachePort modelRegistryCachePort,
+            ModelRegistryDocumentPort modelRegistryDocumentPort) {
+        this.runtimeConfigService = runtimeConfigService;
+        this.modelRegistryRemotePort = modelRegistryRemotePort;
+        this.modelRegistryCachePort = modelRegistryCachePort;
+        this.modelRegistryDocumentPort = modelRegistryDocumentPort;
+    }
 
     public ResolveResult resolveDefaults(String provider, String modelId) {
         String normalizedProvider = requireValue(provider, "provider");

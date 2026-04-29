@@ -21,6 +21,8 @@ package me.golemcore.bot.port.inbound;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import me.golemcore.bot.domain.command.CommandInvocation;
+import me.golemcore.bot.domain.command.CommandOutcome;
 
 /**
  * Port for executing user commands such as slash commands (/skills, /status,
@@ -28,6 +30,25 @@ import java.util.concurrent.CompletableFuture;
  * functions.
  */
 public interface CommandPort {
+
+    /**
+     * Executes a typed command invocation. New adapters should prefer this method
+     * so command routing does not depend on ad-hoc context maps.
+     *
+     * @param invocation
+     *            transport-neutral command invocation
+     * @return structured command outcome suitable for surface-specific presenters
+     */
+    default CompletableFuture<CommandOutcome> execute(CommandInvocation invocation) {
+        CommandInvocation safeInvocation = invocation == null
+                ? CommandInvocation.of("", List.of(), "", null)
+                : invocation;
+        return execute(
+                safeInvocation.command(),
+                safeInvocation.args(),
+                safeInvocation.context().toLegacyMap())
+                .thenApply(CommandResult::toOutcome);
+    }
 
     /**
      * Executes a command with the given arguments and context.
@@ -79,6 +100,23 @@ public interface CommandPort {
          */
         public static CommandResult failure(String error) {
             return new CommandResult(false, error, null);
+        }
+
+        /**
+         * Creates a legacy command result from a structured outcome.
+         */
+        public static CommandResult fromOutcome(CommandOutcome outcome) {
+            if (outcome == null) {
+                return failure("");
+            }
+            return new CommandResult(outcome.success(), outcome.fallbackText(), outcome.data());
+        }
+
+        /**
+         * Converts this legacy result into a structured outcome.
+         */
+        public CommandOutcome toOutcome() {
+            return CommandOutcome.text(success, output, data);
         }
     }
 

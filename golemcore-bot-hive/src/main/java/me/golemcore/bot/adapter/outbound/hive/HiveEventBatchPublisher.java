@@ -27,7 +27,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.HiveControlCommandEnvelope;
@@ -54,14 +53,13 @@ import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchStatus;
 import me.golemcore.bot.domain.model.hive.HiveEvidenceRef;
 import me.golemcore.bot.domain.model.hive.HiveLifecycleSignalRequest;
 import me.golemcore.bot.domain.model.hive.HiveRuntimeContracts;
-import me.golemcore.bot.domain.service.HiveMetadataSupport;
+import me.golemcore.bot.domain.hive.HiveMetadataSupport;
 import me.golemcore.bot.port.outbound.HiveEventPublishPort;
 import me.golemcore.bot.port.outbound.SelfEvolvingProjectionPublishPort;
-import me.golemcore.bot.domain.service.HiveSessionStateStore;
+import me.golemcore.bot.domain.hive.HiveSessionStateStore;
 import org.springframework.stereotype.Component;
 
 @Component
-@RequiredArgsConstructor
 @Slf4j
 public class HiveEventBatchPublisher implements HiveEventPublishPort, SelfEvolvingProjectionPublishPort {
 
@@ -72,6 +70,17 @@ public class HiveEventBatchPublisher implements HiveEventPublishPort, SelfEvolvi
     private final HiveApiClient hiveApiClient;
     private final HiveEventOutboxService hiveEventOutboxService;
     private final ObjectMapper objectMapper;
+
+    public HiveEventBatchPublisher(
+            HiveSessionStateStore hiveSessionStateStore,
+            HiveApiClient hiveApiClient,
+            HiveEventOutboxService hiveEventOutboxService,
+            ObjectMapper objectMapper) {
+        this.hiveSessionStateStore = hiveSessionStateStore;
+        this.hiveApiClient = hiveApiClient;
+        this.hiveEventOutboxService = hiveEventOutboxService;
+        this.objectMapper = objectMapper;
+    }
 
     @Override
     public void publishCommandAcknowledged(HiveControlCommandEnvelope envelope) {
@@ -974,6 +983,7 @@ public class HiveEventBatchPublisher implements HiveEventPublishPort, SelfEvolvi
                     code != null ? "Run failed: " + code : null,
                     "Run failed");
         }
+        case SESSION_PERSISTENCE_FAILED -> "Session persistence failed";
         case LLM_STARTED -> "LLM request started";
         case LLM_FINISHED -> "LLM request finished";
         case TOOL_STARTED -> "Tool started: " + firstNonBlank(readMetadataString(payload, "tool"), "tool");

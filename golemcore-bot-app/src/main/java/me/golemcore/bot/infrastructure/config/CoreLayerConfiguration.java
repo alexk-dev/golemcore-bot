@@ -3,21 +3,25 @@ package me.golemcore.bot.infrastructure.config;
 import java.time.Clock;
 import java.util.List;
 import me.golemcore.bot.application.update.UpdateService;
-import me.golemcore.bot.domain.service.AutoModeMigrationService;
+import me.golemcore.bot.domain.auto.AutoModeMigrationService;
 import me.golemcore.bot.domain.loop.AgentLoop;
-import me.golemcore.bot.domain.service.ContextCompactionPolicy;
-import me.golemcore.bot.domain.service.ContextHygieneService;
-import me.golemcore.bot.domain.service.ContextTokenEstimator;
-import me.golemcore.bot.domain.service.DefaultContextHygieneService;
-import me.golemcore.bot.domain.service.ModelSelectionService;
-import me.golemcore.bot.domain.service.PlanModeToolRestrictionService;
-import me.golemcore.bot.domain.service.PlanService;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
-import me.golemcore.bot.domain.service.ScheduleService;
-import me.golemcore.bot.domain.service.TraceService;
-import me.golemcore.bot.domain.service.UpdateActivityGate;
-import me.golemcore.bot.domain.service.UpdateMaintenanceWindow;
-import me.golemcore.bot.domain.service.UserPreferencesService;
+import me.golemcore.bot.domain.loop.AgentLoopFactory;
+import me.golemcore.bot.domain.loop.AgentLoopFactory.AgentLoopPorts;
+import me.golemcore.bot.domain.loop.AgentLoopFactory.AgentLoopRuntimeServices;
+import me.golemcore.bot.domain.context.compaction.ContextCompactionPolicy;
+import me.golemcore.bot.domain.events.RuntimeEventService;
+import me.golemcore.bot.domain.context.hygiene.ContextHygieneService;
+import me.golemcore.bot.domain.context.compaction.ContextTokenEstimator;
+import me.golemcore.bot.domain.context.hygiene.DefaultContextHygieneService;
+import me.golemcore.bot.domain.model.ModelSelectionService;
+import me.golemcore.bot.domain.tools.PlanModeToolRestrictionService;
+import me.golemcore.bot.domain.planning.PlanService;
+import me.golemcore.bot.domain.runtimeconfig.RuntimeConfigService;
+import me.golemcore.bot.domain.scheduling.ScheduleService;
+import me.golemcore.bot.domain.tracing.TraceService;
+import me.golemcore.bot.domain.update.UpdateActivityGate;
+import me.golemcore.bot.domain.update.UpdateMaintenanceWindow;
+import me.golemcore.bot.domain.runtimeconfig.UserPreferencesService;
 import me.golemcore.bot.domain.system.AgentSystem;
 import me.golemcore.bot.domain.system.PlanExecutionContextCleanupSystem;
 import me.golemcore.bot.port.outbound.ChannelRuntimePort;
@@ -27,6 +31,7 @@ import me.golemcore.bot.port.outbound.ReleaseSourcePort;
 import me.golemcore.bot.port.outbound.ScheduleCronPort;
 import me.golemcore.bot.port.outbound.SchedulePersistencePort;
 import me.golemcore.bot.port.outbound.SessionPort;
+import me.golemcore.bot.port.outbound.TraceSnapshotCodecPort;
 import me.golemcore.bot.port.outbound.UpdateArtifactStorePort;
 import me.golemcore.bot.port.outbound.UpdateRestartPort;
 import me.golemcore.bot.port.outbound.UpdateRuntimeConfigPort;
@@ -100,18 +105,15 @@ public class CoreLayerConfiguration {
             LlmPort llmPort,
             Clock clock,
             TraceService traceService,
-            ContextHygieneService contextHygieneService) {
-        return new AgentLoop(
-                sessionService,
-                rateLimiter,
-                systems,
-                channelRuntimePort,
-                runtimeConfigService,
-                preferencesService,
-                llmPort,
-                clock,
-                traceService,
-                contextHygieneService);
+            TraceSnapshotCodecPort traceSnapshotCodecPort,
+            ContextHygieneService contextHygieneService,
+            RuntimeEventService runtimeEventService) {
+        return new AgentLoopFactory().create(
+                new AgentLoopPorts(sessionService, rateLimiter, channelRuntimePort, llmPort),
+                new AgentLoopRuntimeServices(runtimeConfigService, runtimeConfigService, runtimeConfigService,
+                        preferencesService, clock, traceService, traceSnapshotCodecPort, contextHygieneService,
+                        runtimeEventService),
+                systems);
     }
 
     @Bean

@@ -20,9 +20,8 @@ package me.golemcore.bot.ratelimit;
 
 import me.golemcore.bot.domain.model.BucketState;
 import me.golemcore.bot.domain.model.RateLimitResult;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.runtimeconfig.RuntimeConfigService;
 import me.golemcore.bot.port.outbound.RateLimitPort;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
@@ -54,13 +53,16 @@ import java.util.concurrent.ConcurrentHashMap;
  * @see TokenBucket
  */
 @Component
-@RequiredArgsConstructor
 @Slf4j
 public class TokenBucketRateLimiter implements RateLimitPort {
 
     private final RuntimeConfigService runtimeConfigService;
 
     private final Map<String, ConfiguredBucket> buckets = new ConcurrentHashMap<>();
+
+    public TokenBucketRateLimiter(RuntimeConfigService runtimeConfigService) {
+        this.runtimeConfigService = runtimeConfigService;
+    }
 
     @Override
     public RateLimitResult tryConsume() {

@@ -21,7 +21,6 @@ package me.golemcore.bot.tools;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
-import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.domain.component.ToolComponent;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.ContextAttributes;
@@ -30,17 +29,23 @@ import me.golemcore.bot.domain.model.ToolNames;
 import me.golemcore.bot.domain.model.ToolResult;
 import me.golemcore.bot.domain.model.hive.HiveCardDetail;
 import me.golemcore.bot.domain.model.hive.HiveCreateCardRequest;
-import me.golemcore.bot.domain.service.HiveRuntimeConfigSupport;
-import me.golemcore.bot.domain.service.HiveSdlcService;
+import me.golemcore.bot.domain.hive.HiveRuntimeConfigSupport;
+import me.golemcore.bot.domain.hive.HiveSdlcService;
 import me.golemcore.bot.port.outbound.RuntimeConfigQueryPort;
 import org.springframework.stereotype.Component;
 
 @Component
-@RequiredArgsConstructor
 public class HiveCreateFollowupCardTool implements ToolComponent {
 
     private final HiveSdlcService hiveSdlcService;
     private final RuntimeConfigQueryPort runtimeConfigQueryPort;
+
+    public HiveCreateFollowupCardTool(
+            HiveSdlcService hiveSdlcService,
+            RuntimeConfigQueryPort runtimeConfigQueryPort) {
+        this.hiveSdlcService = hiveSdlcService;
+        this.runtimeConfigQueryPort = runtimeConfigQueryPort;
+    }
 
     @Override
     public ToolDefinition getDefinition() {

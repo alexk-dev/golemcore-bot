@@ -3,17 +3,19 @@ package me.golemcore.bot.adapter.outbound.channel;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
-import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.plugin.runtime.ChannelRegistry;
 import me.golemcore.bot.port.outbound.ChannelDeliveryPort;
 import me.golemcore.bot.port.outbound.ChannelRuntimePort;
 import org.springframework.stereotype.Component;
 
 @Component
-@RequiredArgsConstructor
 public class ChannelRegistryRuntimeAdapter implements ChannelRuntimePort {
 
     private final ChannelRegistry channelRegistry;
+
+    public ChannelRegistryRuntimeAdapter(ChannelRegistry channelRegistry) {
+        this.channelRegistry = channelRegistry;
+    }
 
     @Override
     public Optional<ChannelDeliveryPort> findChannel(String channelType) {

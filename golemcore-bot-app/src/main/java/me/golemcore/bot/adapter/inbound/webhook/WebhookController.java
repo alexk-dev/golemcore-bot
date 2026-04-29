@@ -33,14 +33,13 @@ import me.golemcore.bot.domain.model.UserPreferences;
 import me.golemcore.bot.domain.model.trace.TraceContext;
 import me.golemcore.bot.domain.model.trace.TraceSpanKind;
 import me.golemcore.bot.domain.model.trace.TraceStatusCode;
-import me.golemcore.bot.domain.service.MemoryPresetService;
-import me.golemcore.bot.domain.service.TraceContextSupport;
-import me.golemcore.bot.domain.service.TraceNamingSupport;
-import me.golemcore.bot.domain.service.TraceService;
-import me.golemcore.bot.domain.service.UserPreferencesService;
+import me.golemcore.bot.domain.memory.MemoryPresetService;
+import me.golemcore.bot.domain.tracing.TraceContextSupport;
+import me.golemcore.bot.domain.tracing.TraceNamingSupport;
+import me.golemcore.bot.domain.tracing.TraceService;
+import me.golemcore.bot.domain.runtimeconfig.UserPreferencesService;
 import me.golemcore.bot.port.outbound.SessionPort;
 import me.golemcore.bot.security.InputSanitizer;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpHeaders;
@@ -93,7 +92,6 @@ import java.util.concurrent.TimeoutException;
  */
 @RestController
 @RequestMapping("/api/hooks")
-@RequiredArgsConstructor
 @Slf4j
 public class WebhookController {
 
@@ -115,6 +113,31 @@ public class WebhookController {
     private final TraceService traceService;
     private final InputSanitizer inputSanitizer;
     private final ObjectMapper objectMapper = new ObjectMapper();
+
+    public WebhookController(
+            UserPreferencesService preferencesService,
+            WebhookAuthenticator authenticator,
+            WebhookChannelAdapter channelAdapter,
+            WebhookPayloadTransformer transformer,
+            WebhookDeliveryTracker deliveryTracker,
+            WebhookResponseSchemaService responseSchemaService,
+            MemoryPresetService memoryPresetService,
+            ApplicationEventPublisher eventPublisher,
+            SessionPort sessionPort,
+            TraceService traceService,
+            InputSanitizer inputSanitizer) {
+        this.preferencesService = preferencesService;
+        this.authenticator = authenticator;
+        this.channelAdapter = channelAdapter;
+        this.transformer = transformer;
+        this.deliveryTracker = deliveryTracker;
+        this.responseSchemaService = responseSchemaService;
+        this.memoryPresetService = memoryPresetService;
+        this.eventPublisher = eventPublisher;
+        this.sessionPort = sessionPort;
+        this.traceService = traceService;
+        this.inputSanitizer = inputSanitizer;
+    }
 
     // ==================== /wake ====================
 

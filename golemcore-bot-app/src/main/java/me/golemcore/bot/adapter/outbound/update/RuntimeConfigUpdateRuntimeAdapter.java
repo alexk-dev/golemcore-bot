@@ -1,16 +1,18 @@
 package me.golemcore.bot.adapter.outbound.update;
 
-import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.domain.model.RuntimeConfig;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.runtimeconfig.RuntimeConfigService;
 import me.golemcore.bot.port.outbound.UpdateRuntimeConfigPort;
 import org.springframework.stereotype.Component;
 
 @Component
-@RequiredArgsConstructor
 public class RuntimeConfigUpdateRuntimeAdapter implements UpdateRuntimeConfigPort {
 
     private final RuntimeConfigService runtimeConfigService;
+
+    public RuntimeConfigUpdateRuntimeAdapter(RuntimeConfigService runtimeConfigService) {
+        this.runtimeConfigService = runtimeConfigService;
+    }
 
     @Override
     public RuntimeConfig.UpdateConfig getUpdateConfig() {

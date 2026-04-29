@@ -1,14 +1,13 @@
 package me.golemcore.bot.adapter.inbound.web;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.loop.AgentLoop;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.ProgressUpdate;
 import me.golemcore.bot.domain.model.RuntimeEvent;
 import me.golemcore.bot.domain.model.hive.HiveRuntimeContracts;
-import me.golemcore.bot.domain.service.StringValueSupport;
+import me.golemcore.bot.domain.support.StringValueSupport;
 import me.golemcore.bot.port.channel.ChannelPort;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
@@ -29,7 +28,6 @@ import java.util.function.Consumer;
  * registry of active WebSocket connections keyed by chatId.
  */
 @Component
-@RequiredArgsConstructor
 @Slf4j
 public class WebChannelAdapter implements ChannelPort {
 
@@ -47,6 +45,13 @@ public class WebChannelAdapter implements ChannelPort {
     /** Maps connectionId -> all chatIds bound during socket lifetime. */
     private final Map<String, Set<String>> connectionToChatIds = new ConcurrentHashMap<>();
     private volatile boolean running = false;
+
+    public WebChannelAdapter(
+            ObjectMapper objectMapper,
+            ApplicationEventPublisher eventPublisher) {
+        this.objectMapper = objectMapper;
+        this.eventPublisher = eventPublisher;
+    }
 
     @Override
     public String getChannelType() {

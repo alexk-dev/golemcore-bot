@@ -23,9 +23,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import jakarta.annotation.PostConstruct;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.runtimeconfig.RuntimeConfigService;
 import me.golemcore.bot.plugin.runtime.ChannelRegistry;
 import me.golemcore.bot.plugin.runtime.PluginManager;
 import me.golemcore.bot.port.channel.ChannelPort;
@@ -57,17 +56,33 @@ import java.time.Clock;
  * @since 1.0
  */
 @Configuration
-@RequiredArgsConstructor
 @Slf4j
 public class AutoConfiguration {
 
     private final BotProperties properties;
     private final ChannelRegistry channelRegistry;
     private final RuntimeConfigService runtimeConfigService;
-    private final me.golemcore.bot.domain.service.LegacyPluginConfigurationMigrationService legacyPluginConfigurationMigrationService;
+    private final me.golemcore.bot.domain.extensions.LegacyPluginConfigurationMigrationService legacyPluginConfigurationMigrationService;
     private final PluginManager pluginManager;
     private final ObjectProvider<BuildProperties> buildPropertiesProvider;
     private final ObjectProvider<GitProperties> gitPropertiesProvider;
+
+    public AutoConfiguration(
+            BotProperties properties,
+            ChannelRegistry channelRegistry,
+            RuntimeConfigService runtimeConfigService,
+            me.golemcore.bot.domain.extensions.LegacyPluginConfigurationMigrationService legacyPluginConfigurationMigrationService,
+            PluginManager pluginManager,
+            ObjectProvider<BuildProperties> buildPropertiesProvider,
+            ObjectProvider<GitProperties> gitPropertiesProvider) {
+        this.properties = properties;
+        this.channelRegistry = channelRegistry;
+        this.runtimeConfigService = runtimeConfigService;
+        this.legacyPluginConfigurationMigrationService = legacyPluginConfigurationMigrationService;
+        this.pluginManager = pluginManager;
+        this.buildPropertiesProvider = buildPropertiesProvider;
+        this.gitPropertiesProvider = gitPropertiesProvider;
+    }
 
     @Bean
     public static Clock clock() {
@@ -117,7 +132,7 @@ public class AutoConfiguration {
             }
         }
 
-        log.info("Java AI Bot started successfully");
+        log.info("GolemCore Bot started successfully");
     }
 
     private boolean isChannelEnabled(String channelType) {

@@ -18,19 +18,19 @@ import me.golemcore.bot.domain.context.layer.WebhookResponseSchemaLayer;
 import me.golemcore.bot.domain.context.layer.WorkspaceInstructionsLayer;
 import me.golemcore.bot.domain.context.resolution.SkillResolver;
 import me.golemcore.bot.domain.context.resolution.TierResolver;
-import me.golemcore.bot.domain.service.AutoModeService;
-import me.golemcore.bot.domain.service.ContextCompactionPolicy;
-import me.golemcore.bot.domain.service.DelayedActionPolicyService;
-import me.golemcore.bot.domain.service.MemoryPresetService;
-import me.golemcore.bot.domain.service.ModelSelectionService;
-import me.golemcore.bot.domain.service.PlanModeToolRestrictionService;
-import me.golemcore.bot.domain.service.PlanService;
-import me.golemcore.bot.domain.service.PromptSectionService;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
-import me.golemcore.bot.domain.service.SkillTemplateEngine;
-import me.golemcore.bot.domain.service.ToolCallExecutionService;
-import me.golemcore.bot.domain.service.UserPreferencesService;
-import me.golemcore.bot.domain.service.WorkspaceInstructionService;
+import me.golemcore.bot.domain.auto.AutoModeService;
+import me.golemcore.bot.domain.context.compaction.ContextCompactionPolicy;
+import me.golemcore.bot.domain.scheduling.DelayedActionPolicyService;
+import me.golemcore.bot.domain.memory.MemoryPresetService;
+import me.golemcore.bot.domain.model.ModelSelectionService;
+import me.golemcore.bot.domain.tools.PlanModeToolRestrictionService;
+import me.golemcore.bot.domain.planning.PlanService;
+import me.golemcore.bot.domain.prompt.PromptSectionService;
+import me.golemcore.bot.domain.runtimeconfig.RuntimeConfigService;
+import me.golemcore.bot.domain.skills.SkillTemplateEngine;
+import me.golemcore.bot.domain.tools.registry.ToolRegistryService;
+import me.golemcore.bot.domain.runtimeconfig.UserPreferencesService;
+import me.golemcore.bot.domain.workspace.WorkspaceInstructionService;
 import me.golemcore.bot.port.outbound.McpPort;
 import me.golemcore.bot.port.outbound.RagPort;
 import org.springframework.context.annotation.Bean;
@@ -88,11 +88,11 @@ public class ContextLayerConfiguration {
     }
 
     @Bean
-    ToolLayer toolLayer(ToolCallExecutionService toolCallExecutionService,
+    ToolLayer toolLayer(ToolRegistryService toolRegistryService,
             McpPort mcpPort,
             DelayedActionPolicyService delayedActionPolicyService,
             PlanModeToolRestrictionService planModeToolRestrictionService) {
-        return new ToolLayer(toolCallExecutionService, mcpPort, delayedActionPolicyService,
+        return new ToolLayer(toolRegistryService, mcpPort, delayedActionPolicyService,
                 planModeToolRestrictionService);
     }
 

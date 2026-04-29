@@ -28,11 +28,11 @@ import me.golemcore.bot.domain.model.ScheduleEntry;
 import me.golemcore.bot.domain.model.ScheduledTask;
 import me.golemcore.bot.domain.model.Skill;
 import me.golemcore.bot.domain.model.trace.TraceSpanKind;
-import me.golemcore.bot.domain.service.AutoModeService;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
-import me.golemcore.bot.domain.service.StringValueSupport;
-import me.golemcore.bot.domain.service.TraceContextSupport;
-import me.golemcore.bot.domain.service.TraceNamingSupport;
+import me.golemcore.bot.domain.auto.AutoModeService;
+import me.golemcore.bot.domain.runtimeconfig.RuntimeConfigService;
+import me.golemcore.bot.domain.support.StringValueSupport;
+import me.golemcore.bot.domain.tracing.TraceContextSupport;
+import me.golemcore.bot.domain.tracing.TraceNamingSupport;
 import org.springframework.stereotype.Component;
 
 import java.time.Instant;

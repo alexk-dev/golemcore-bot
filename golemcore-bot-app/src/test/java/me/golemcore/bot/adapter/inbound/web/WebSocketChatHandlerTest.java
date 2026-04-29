@@ -1,13 +1,17 @@
 package me.golemcore.bot.adapter.inbound.web;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import me.golemcore.bot.adapter.inbound.command.CommandOutcomePresenter;
+import me.golemcore.bot.adapter.inbound.command.SlashCommandParser;
+import me.golemcore.bot.domain.command.CommandInvocation;
+import me.golemcore.bot.domain.command.CommandOutcome;
 import me.golemcore.bot.domain.loop.AgentLoop;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.MemoryPresetIds;
 import me.golemcore.bot.domain.model.UserPreferences;
-import me.golemcore.bot.domain.service.ActiveSessionPointerService;
-import me.golemcore.bot.domain.service.MemoryPresetService;
-import me.golemcore.bot.domain.service.UserPreferencesService;
+import me.golemcore.bot.domain.sessions.ActiveSessionPointerService;
+import me.golemcore.bot.domain.memory.MemoryPresetService;
+import me.golemcore.bot.domain.runtimeconfig.UserPreferencesService;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.infrastructure.security.JwtTokenProvider;
 import me.golemcore.bot.port.inbound.CommandPort;
@@ -35,9 +39,6 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyList;
-import static org.mockito.ArgumentMatchers.anyMap;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -52,6 +53,8 @@ class WebSocketChatHandlerTest {
     private ActiveSessionPointerService pointerService;
     private UserPreferencesService preferencesService;
     private MemoryPresetService memoryPresetService;
+    private SlashCommandParser slashCommandParser;
+    private CommandOutcomePresenter commandOutcomePresenter;
     @SuppressWarnings("unchecked")
     private ObjectProvider<CommandPort> commandRouterProvider = mock(ObjectProvider.class);
     private WebSocketChatHandler handler;
@@ -69,12 +72,16 @@ class WebSocketChatHandlerTest {
         pointerService = mock(ActiveSessionPointerService.class);
         preferencesService = mock(UserPreferencesService.class);
         memoryPresetService = new MemoryPresetService();
+        slashCommandParser = new SlashCommandParser();
+        commandOutcomePresenter = mock(CommandOutcomePresenter.class);
         when(preferencesService.getPreferences()).thenReturn(UserPreferences.builder().build());
+        when(commandOutcomePresenter.present(any(CommandOutcome.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0, CommandOutcome.class).fallbackText());
         when(pointerService.buildWebPointerKey(any(String.class), any(String.class)))
                 .thenAnswer(invocation -> "web|" + invocation.getArgument(0) + "|" + invocation.getArgument(1));
         when(commandRouterProvider.getIfAvailable()).thenReturn(null);
         handler = new WebSocketChatHandler(tokenProvider, webChannelAdapter, objectMapper, commandRouterProvider,
-                pointerService, preferencesService, memoryPresetService);
+                pointerService, preferencesService, memoryPresetService, slashCommandParser, commandOutcomePresenter);
     }
 
     @Test
@@ -521,12 +528,11 @@ class WebSocketChatHandlerTest {
         CommandPort commandRouter = mock(CommandPort.class);
         when(commandRouterProvider.getIfAvailable()).thenReturn(commandRouter);
         when(commandRouter.hasCommand("status")).thenReturn(true);
-        when(commandRouter.execute(eq("status"), anyList(), anyMap()))
-                .thenReturn(CompletableFuture.completedFuture(
-                        CommandPort.CommandResult.success("Bot status: OK")));
+        when(commandRouter.execute(any(CommandInvocation.class)))
+                .thenReturn(CompletableFuture.completedFuture(CommandOutcome.success("Bot status: OK")));
 
         handler = new WebSocketChatHandler(tokenProvider, webChannelAdapter, objectMapper, commandRouterProvider,
-                pointerService, preferencesService, memoryPresetService);
+                pointerService, preferencesService, memoryPresetService, slashCommandParser, commandOutcomePresenter);
         String token = tokenProvider.generateAccessToken("admin");
 
         WebSocketSession session = mock(WebSocketSession.class);
@@ -541,7 +547,10 @@ class WebSocketChatHandlerTest {
 
         StepVerifier.create(handler.handle(session)).verifyComplete();
 
-        verify(commandRouter).execute(eq("status"), eq(List.of()), anyMap());
+        ArgumentCaptor<CommandInvocation> invocationCaptor = ArgumentCaptor.forClass(CommandInvocation.class);
+        verify(commandRouter).execute(invocationCaptor.capture());
+        assertEquals("status", invocationCaptor.getValue().command());
+        assertEquals(List.of(), invocationCaptor.getValue().args());
         verify(eventPublisher, never()).publishEvent(any(AgentLoop.InboundMessageEvent.class));
     }
 
@@ -550,12 +559,11 @@ class WebSocketChatHandlerTest {
         CommandPort commandRouter = mock(CommandPort.class);
         when(commandRouterProvider.getIfAvailable()).thenReturn(commandRouter);
         when(commandRouter.hasCommand("status")).thenReturn(true);
-        when(commandRouter.execute(eq("status"), anyList(), anyMap()))
-                .thenReturn(CompletableFuture.completedFuture(
-                        CommandPort.CommandResult.success("Bot status: OK")));
+        when(commandRouter.execute(any(CommandInvocation.class)))
+                .thenReturn(CompletableFuture.completedFuture(CommandOutcome.success("Bot status: OK")));
 
         handler = new WebSocketChatHandler(tokenProvider, webChannelAdapter, objectMapper, commandRouterProvider,
-                pointerService, preferencesService, memoryPresetService);
+                pointerService, preferencesService, memoryPresetService, slashCommandParser, commandOutcomePresenter);
         String token = tokenProvider.generateAccessToken("admin");
 
         WebSocketSession session = mock(WebSocketSession.class);
@@ -586,12 +594,11 @@ class WebSocketChatHandlerTest {
         CommandPort commandRouter = mock(CommandPort.class);
         when(commandRouterProvider.getIfAvailable()).thenReturn(commandRouter);
         when(commandRouter.hasCommand("status")).thenReturn(true);
-        when(commandRouter.execute(eq("status"), anyList(), anyMap()))
-                .thenReturn(CompletableFuture.completedFuture(
-                        CommandPort.CommandResult.success("Bot status: OK")));
+        when(commandRouter.execute(any(CommandInvocation.class)))
+                .thenReturn(CompletableFuture.completedFuture(CommandOutcome.success("Bot status: OK")));
 
         handler = new WebSocketChatHandler(tokenProvider, webChannelAdapter, objectMapper, commandRouterProvider,
-                pointerService, preferencesService, memoryPresetService);
+                pointerService, preferencesService, memoryPresetService, slashCommandParser, commandOutcomePresenter);
         String token = tokenProvider.generateAccessToken("admin");
 
         WebSocketSession session = mock(WebSocketSession.class);
@@ -606,17 +613,17 @@ class WebSocketChatHandlerTest {
 
         StepVerifier.create(handler.handle(session)).verifyComplete();
 
-        @SuppressWarnings("unchecked")
-        ArgumentCaptor<Map<String, Object>> contextCaptor = ArgumentCaptor.forClass(Map.class);
-        verify(commandRouter).execute(eq("status"), eq(List.of()), contextCaptor.capture());
+        ArgumentCaptor<CommandInvocation> invocationCaptor = ArgumentCaptor.forClass(CommandInvocation.class);
+        verify(commandRouter).execute(invocationCaptor.capture());
 
-        Map<String, Object> context = contextCaptor.getValue();
-        assertEquals("web:chat-cmd-ctx", context.get("sessionId"));
-        assertEquals("chat-cmd-ctx", context.get("chatId"));
-        assertEquals("chat-cmd-ctx", context.get("sessionChatId"));
-        assertEquals("chat-cmd-ctx", context.get("transportChatId"));
-        assertEquals("chat-cmd-ctx", context.get("conversationKey"));
-        assertEquals("web", context.get("channelType"));
+        CommandInvocation invocation = invocationCaptor.getValue();
+        assertEquals("status", invocation.command());
+        assertEquals("web:chat-cmd-ctx", invocation.context().sessionId());
+        assertEquals("chat-cmd-ctx", invocation.context().chatId());
+        assertEquals("chat-cmd-ctx", invocation.context().sessionChatId());
+        assertEquals("chat-cmd-ctx", invocation.context().transportChatId());
+        assertEquals("chat-cmd-ctx", invocation.context().conversationKey());
+        assertEquals("web", invocation.context().channelType());
     }
 
     @Test
@@ -624,12 +631,11 @@ class WebSocketChatHandlerTest {
         CommandPort commandRouter = mock(CommandPort.class);
         when(commandRouterProvider.getIfAvailable()).thenReturn(commandRouter);
         when(commandRouter.hasCommand("tier")).thenReturn(true);
-        when(commandRouter.execute(eq("tier"), anyList(), anyMap()))
-                .thenReturn(CompletableFuture.completedFuture(
-                        CommandPort.CommandResult.success("Tier set to smart")));
+        when(commandRouter.execute(any(CommandInvocation.class)))
+                .thenReturn(CompletableFuture.completedFuture(CommandOutcome.success("Tier set to smart")));
 
         handler = new WebSocketChatHandler(tokenProvider, webChannelAdapter, objectMapper, commandRouterProvider,
-                pointerService, preferencesService, memoryPresetService);
+                pointerService, preferencesService, memoryPresetService, slashCommandParser, commandOutcomePresenter);
         String token = tokenProvider.generateAccessToken("admin");
 
         WebSocketSession session = mock(WebSocketSession.class);
@@ -644,7 +650,10 @@ class WebSocketChatHandlerTest {
 
         StepVerifier.create(handler.handle(session)).verifyComplete();
 
-        verify(commandRouter).execute(eq("tier"), eq(List.of("smart", "force")), anyMap());
+        ArgumentCaptor<CommandInvocation> invocationCaptor = ArgumentCaptor.forClass(CommandInvocation.class);
+        verify(commandRouter).execute(invocationCaptor.capture());
+        assertEquals("tier", invocationCaptor.getValue().command());
+        assertEquals(List.of("smart", "force"), invocationCaptor.getValue().args());
     }
 
     @Test
@@ -654,7 +663,7 @@ class WebSocketChatHandlerTest {
         when(commandRouter.hasCommand("unknown")).thenReturn(false);
 
         handler = new WebSocketChatHandler(tokenProvider, webChannelAdapter, objectMapper, commandRouterProvider,
-                pointerService, preferencesService, memoryPresetService);
+                pointerService, preferencesService, memoryPresetService, slashCommandParser, commandOutcomePresenter);
         String token = tokenProvider.generateAccessToken("admin");
 
         WebSocketSession session = mock(WebSocketSession.class);
@@ -677,11 +686,11 @@ class WebSocketChatHandlerTest {
         CommandPort commandRouter = mock(CommandPort.class);
         when(commandRouterProvider.getIfAvailable()).thenReturn(commandRouter);
         when(commandRouter.hasCommand("broken")).thenReturn(true);
-        when(commandRouter.execute(eq("broken"), anyList(), anyMap()))
+        when(commandRouter.execute(any(CommandInvocation.class)))
                 .thenReturn(CompletableFuture.failedFuture(new RuntimeException("boom")));
 
         handler = new WebSocketChatHandler(tokenProvider, webChannelAdapter, objectMapper, commandRouterProvider,
-                pointerService, preferencesService, memoryPresetService);
+                pointerService, preferencesService, memoryPresetService, slashCommandParser, commandOutcomePresenter);
         String token = tokenProvider.generateAccessToken("admin");
 
         WebSocketSession session = mock(WebSocketSession.class);

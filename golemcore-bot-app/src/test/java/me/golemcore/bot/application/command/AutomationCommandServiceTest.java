@@ -17,11 +17,11 @@ import me.golemcore.bot.domain.model.DelayedSessionAction;
 import me.golemcore.bot.domain.model.DiaryEntry;
 import me.golemcore.bot.domain.model.Goal;
 import me.golemcore.bot.domain.model.ScheduleEntry;
-import me.golemcore.bot.domain.service.AutoModeService;
-import me.golemcore.bot.domain.service.DelayedActionPolicyService;
-import me.golemcore.bot.domain.service.DelayedSessionActionService;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
-import me.golemcore.bot.domain.service.ScheduleService;
+import me.golemcore.bot.domain.auto.AutoModeService;
+import me.golemcore.bot.domain.scheduling.DelayedActionPolicyService;
+import me.golemcore.bot.domain.scheduling.DelayedSessionActionService;
+import me.golemcore.bot.domain.runtimeconfig.RuntimeConfigService;
+import me.golemcore.bot.domain.scheduling.ScheduleService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 

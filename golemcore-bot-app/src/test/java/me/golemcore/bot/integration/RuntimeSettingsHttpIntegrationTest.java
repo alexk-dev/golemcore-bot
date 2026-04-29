@@ -1,14 +1,20 @@
 package me.golemcore.bot.integration;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.junit.jupiter.api.Test;
+import org.springframework.boot.test.web.server.LocalServerPort;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class RuntimeSettingsHttpIntegrationTest extends GolemCoreBotIntegrationTestBase {
+
+    RuntimeSettingsHttpIntegrationTest(@LocalServerPort int port, ObjectMapper objectMapper) {
+        super(port, objectMapper);
+    }
 
     @Test
     void shouldPersistHiveAndSelfEvolvingSettingsThroughHttpApi() throws Exception {

@@ -21,7 +21,6 @@ package me.golemcore.bot.adapter.outbound.hive;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
-import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.domain.model.ChannelTypes;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.ProgressUpdate;
@@ -31,12 +30,15 @@ import me.golemcore.bot.port.outbound.HiveEventPublishPort;
 import org.springframework.stereotype.Component;
 
 @Component
-@RequiredArgsConstructor
 public class HiveChannelAdapter implements ChannelPort {
 
     private final HiveEventPublishPort hiveEventPublishPort;
 
     private volatile boolean running = true;
+
+    public HiveChannelAdapter(HiveEventPublishPort hiveEventPublishPort) {
+        this.hiveEventPublishPort = hiveEventPublishPort;
+    }
 
     @Override
     public String getChannelType() {

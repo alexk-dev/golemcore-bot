@@ -1,19 +1,17 @@
 package me.golemcore.bot.application.command;
 
 import java.util.List;
-import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.domain.model.AutoTask;
 import me.golemcore.bot.domain.model.DelayedSessionAction;
 import me.golemcore.bot.domain.model.DiaryEntry;
 import me.golemcore.bot.domain.model.Goal;
 import me.golemcore.bot.domain.model.ScheduleEntry;
-import me.golemcore.bot.domain.service.AutoModeService;
-import me.golemcore.bot.domain.service.DelayedActionPolicyService;
-import me.golemcore.bot.domain.service.DelayedSessionActionService;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
-import me.golemcore.bot.domain.service.ScheduleService;
+import me.golemcore.bot.domain.auto.AutoModeService;
+import me.golemcore.bot.domain.scheduling.DelayedActionPolicyService;
+import me.golemcore.bot.domain.scheduling.DelayedSessionActionService;
+import me.golemcore.bot.domain.runtimeconfig.RuntimeConfigService;
+import me.golemcore.bot.domain.scheduling.ScheduleService;
 
-@RequiredArgsConstructor
 public class AutomationCommandService {
 
     private static final int MIN_SCHEDULE_ARGS = 2;
@@ -23,6 +21,19 @@ public class AutomationCommandService {
     private final ScheduleService scheduleService;
     private final DelayedActionPolicyService delayedActionPolicyService;
     private final DelayedSessionActionService delayedSessionActionService;
+
+    public AutomationCommandService(
+            AutoModeService autoModeService,
+            RuntimeConfigService runtimeConfigService,
+            ScheduleService scheduleService,
+            DelayedActionPolicyService delayedActionPolicyService,
+            DelayedSessionActionService delayedSessionActionService) {
+        this.autoModeService = autoModeService;
+        this.runtimeConfigService = runtimeConfigService;
+        this.scheduleService = scheduleService;
+        this.delayedActionPolicyService = delayedActionPolicyService;
+        this.delayedSessionActionService = delayedSessionActionService;
+    }
 
     public boolean isAutoFeatureEnabled() {
         return autoModeService.isFeatureEnabled();

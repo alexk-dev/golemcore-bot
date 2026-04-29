@@ -6,7 +6,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import me.golemcore.bot.infrastructure.telemetry.TelemetryEventPublisher;
 import org.junit.jupiter.api.io.TempDir;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.context.annotation.Import;
@@ -16,6 +15,7 @@ import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.TestConstructor;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.reactive.server.WebTestClient;
 
@@ -23,6 +23,8 @@ import org.springframework.test.web.reactive.server.WebTestClient;
 @ActiveProfiles("integration-test")
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 @Import(GolemCoreBotIntegrationTestConfiguration.class)
+@TestConstructor(autowireMode = TestConstructor.AutowireMode.ALL)
+@MockitoBean(types = TelemetryEventPublisher.class)
 abstract class GolemCoreBotIntegrationTestBase {
 
     protected static final String ADMIN_PASSWORD = "integration-admin-password";
@@ -32,14 +34,14 @@ abstract class GolemCoreBotIntegrationTestBase {
     @TempDir
     static Path tempDir;
 
-    @LocalServerPort
-    protected int port;
+    protected final int port;
 
-    @Autowired
-    protected ObjectMapper objectMapper;
+    protected final ObjectMapper objectMapper;
 
-    @MockitoBean
-    TelemetryEventPublisher telemetryEventPublisher;
+    protected GolemCoreBotIntegrationTestBase(@LocalServerPort int port, ObjectMapper objectMapper) {
+        this.port = port;
+        this.objectMapper = objectMapper;
+    }
 
     @DynamicPropertySource
     static void overrideProperties(DynamicPropertyRegistry registry) {

@@ -28,14 +28,12 @@ import java.util.UUID;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.model.HiveSessionState;
 import me.golemcore.bot.port.outbound.StoragePort;
 import org.springframework.stereotype.Component;
 
 @Component
-@RequiredArgsConstructor
 @Slf4j
 public class HiveEventOutboxService {
 
@@ -50,6 +48,13 @@ public class HiveEventOutboxService {
     private final Object lock = new Object();
     private OutboxState cachedState;
     private boolean loaded;
+
+    public HiveEventOutboxService(
+            StoragePort storagePort,
+            ObjectMapper objectMapper) {
+        this.storagePort = storagePort;
+        this.objectMapper = objectMapper;
+    }
 
     public OutboxSummary enqueue(HiveSessionState sessionState, List<HiveEventPayload> events) {
         validateSession(sessionState);

@@ -1,6 +1,5 @@
 package me.golemcore.bot.plugin.runtime;
 
-import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -19,7 +18,6 @@ import java.util.Map;
  */
 @RestController
 @RequestMapping("/api/plugins")
-@RequiredArgsConstructor
 public class PluginController {
 
     private final PluginManager pluginManager;
@@ -27,6 +25,19 @@ public class PluginController {
     private final SttProviderRegistry sttProviderRegistry;
     private final TtsProviderRegistry ttsProviderRegistry;
     private final TelemetryRollupPort telemetryRollupStore;
+
+    public PluginController(
+            PluginManager pluginManager,
+            PluginMarketplaceService pluginMarketplaceService,
+            SttProviderRegistry sttProviderRegistry,
+            TtsProviderRegistry ttsProviderRegistry,
+            TelemetryRollupPort telemetryRollupStore) {
+        this.pluginManager = pluginManager;
+        this.pluginMarketplaceService = pluginMarketplaceService;
+        this.sttProviderRegistry = sttProviderRegistry;
+        this.ttsProviderRegistry = ttsProviderRegistry;
+        this.telemetryRollupStore = telemetryRollupStore;
+    }
 
     @GetMapping
     public Mono<ResponseEntity<List<PluginRuntimeInfo>>> listPlugins() {

@@ -2,8 +2,8 @@ package me.golemcore.bot.domain.system.toolloop.view;
 
 import me.golemcore.bot.domain.context.layer.TokenEstimator;
 import me.golemcore.bot.domain.model.AgentContext;
-import me.golemcore.bot.domain.service.ContextCompactionPolicy;
-import me.golemcore.bot.domain.service.ContextTokenEstimator;
+import me.golemcore.bot.domain.context.compaction.ContextCompactionPolicy;
+import me.golemcore.bot.domain.context.compaction.ContextTokenEstimator;
 
 import java.util.Objects;
 

@@ -29,7 +29,7 @@ import me.golemcore.bot.domain.model.selfevolving.BenchmarkCampaign;
 import me.golemcore.bot.domain.model.selfevolving.BenchmarkCampaignVerdict;
 import me.golemcore.bot.domain.model.selfevolving.BenchmarkCase;
 import me.golemcore.bot.domain.model.selfevolving.BenchmarkSuite;
-import me.golemcore.bot.domain.service.StringValueSupport;
+import me.golemcore.bot.domain.support.StringValueSupport;
 import me.golemcore.bot.port.outbound.StoragePort;
 import me.golemcore.bot.port.outbound.selfevolving.BenchmarkJournalPort;
 import org.springframework.stereotype.Component;

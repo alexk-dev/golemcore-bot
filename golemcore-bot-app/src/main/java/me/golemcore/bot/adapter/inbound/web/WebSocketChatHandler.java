@@ -1,18 +1,23 @@
 package me.golemcore.bot.adapter.inbound.web;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import me.golemcore.bot.adapter.inbound.command.CommandOutcomePresenter;
+import me.golemcore.bot.adapter.inbound.command.ParsedSlashCommand;
+import me.golemcore.bot.adapter.inbound.command.SlashCommandParser;
+import me.golemcore.bot.domain.command.CommandExecutionContext;
+import me.golemcore.bot.domain.command.CommandInvocation;
+import me.golemcore.bot.domain.command.CommandOutcome;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.trace.TraceSpanKind;
-import me.golemcore.bot.domain.service.ActiveSessionPointerService;
-import me.golemcore.bot.domain.service.ConversationKeyValidator;
-import me.golemcore.bot.domain.service.MemoryPresetService;
-import me.golemcore.bot.domain.service.StringValueSupport;
-import me.golemcore.bot.domain.service.TraceContextSupport;
-import me.golemcore.bot.domain.service.TraceNamingSupport;
-import me.golemcore.bot.domain.service.UserPreferencesService;
+import me.golemcore.bot.domain.sessions.ActiveSessionPointerService;
+import me.golemcore.bot.domain.validation.ConversationKeyValidator;
+import me.golemcore.bot.domain.memory.MemoryPresetService;
+import me.golemcore.bot.domain.support.StringValueSupport;
+import me.golemcore.bot.domain.tracing.TraceContextSupport;
+import me.golemcore.bot.domain.tracing.TraceNamingSupport;
+import me.golemcore.bot.domain.runtimeconfig.UserPreferencesService;
 import me.golemcore.bot.infrastructure.security.JwtTokenProvider;
 import me.golemcore.bot.port.inbound.CommandPort;
 import org.springframework.beans.factory.ObjectProvider;
@@ -27,7 +32,6 @@ import java.io.IOException;
 import java.net.URI;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -47,7 +51,6 @@ import java.util.UUID;
  * without mutating shared settings.
  */
 @Component
-@RequiredArgsConstructor
 @Slf4j
 public class WebSocketChatHandler implements WebSocketHandler {
 
@@ -63,6 +66,29 @@ public class WebSocketChatHandler implements WebSocketHandler {
     private final ActiveSessionPointerService pointerService;
     private final UserPreferencesService preferencesService;
     private final MemoryPresetService memoryPresetService;
+    private final SlashCommandParser slashCommandParser;
+    private final CommandOutcomePresenter commandOutcomePresenter;
+
+    public WebSocketChatHandler(
+            JwtTokenProvider jwtTokenProvider,
+            WebChannelAdapter webChannelAdapter,
+            ObjectMapper objectMapper,
+            ObjectProvider<CommandPort> commandRouter,
+            ActiveSessionPointerService pointerService,
+            UserPreferencesService preferencesService,
+            MemoryPresetService memoryPresetService,
+            SlashCommandParser slashCommandParser,
+            CommandOutcomePresenter commandOutcomePresenter) {
+        this.jwtTokenProvider = jwtTokenProvider;
+        this.webChannelAdapter = webChannelAdapter;
+        this.objectMapper = objectMapper;
+        this.commandRouter = commandRouter;
+        this.pointerService = pointerService;
+        this.preferencesService = preferencesService;
+        this.memoryPresetService = memoryPresetService;
+        this.slashCommandParser = slashCommandParser;
+        this.commandOutcomePresenter = commandOutcomePresenter;
+    }
 
     @Override
     public Mono<Void> handle(WebSocketSession session) {
@@ -197,36 +223,39 @@ public class WebSocketChatHandler implements WebSocketHandler {
     }
 
     private boolean tryExecuteCommand(String text, String sessionId, String connectionId) {
-        String[] parts = text.split("\\s+", 2);
-        String cmd = parts[0].substring(1);
-        if (cmd.isBlank()) {
+        java.util.Optional<ParsedSlashCommand> parsedCommand = slashCommandParser.parse(text);
+        if (parsedCommand.isEmpty()) {
             return false;
         }
+        ParsedSlashCommand parsed = parsedCommand.get();
         webChannelAdapter.bindConnectionToChatId(connectionId, sessionId);
 
         CommandPort router = commandRouter.getIfAvailable();
-        if (router == null || !router.hasCommand(cmd)) {
+        if (router == null || !router.hasCommand(parsed.command())) {
             return false;
         }
 
-        List<String> args = parts.length > 1
-                ? Arrays.asList(parts[1].split("\\s+"))
-                : List.of();
         String fullSessionId = CHANNEL_TYPE + ":" + sessionId;
-        Map<String, Object> ctx = Map.of(
-                "sessionId", fullSessionId,
-                "chatId", sessionId,
-                "sessionChatId", sessionId,
-                "transportChatId", sessionId,
-                "conversationKey", sessionId,
-                "channelType", CHANNEL_TYPE);
+        CommandExecutionContext context = CommandExecutionContext.builder()
+                .sessionId(fullSessionId)
+                .chatId(sessionId)
+                .sessionChatId(sessionId)
+                .transportChatId(sessionId)
+                .conversationKey(sessionId)
+                .channelType(CHANNEL_TYPE)
+                .build();
+        CommandInvocation invocation = CommandInvocation.of(
+                parsed.command(),
+                parsed.args(),
+                parsed.rawInput(),
+                context);
 
         try {
-            CommandPort.CommandResult result = router.execute(cmd, args, ctx).join();
-            webChannelAdapter.sendMessage(sessionId, result.output());
-            log.debug("[WebSocket] Executed command: /{} -> {}", cmd, result.success() ? "ok" : "fail");
+            CommandOutcome result = router.execute(invocation).join();
+            webChannelAdapter.sendMessage(sessionId, commandOutcomePresenter.present(result));
+            log.debug("[WebSocket] Executed command: /{} -> {}", parsed.command(), result.success() ? "ok" : "fail");
         } catch (Exception e) { // NOSONAR
-            log.error("[WebSocket] Command execution failed: /{}", cmd, e);
+            log.error("[WebSocket] Command execution failed: /{}", parsed.command(), e);
             webChannelAdapter.sendMessage(sessionId, "Command failed: " + e.getMessage());
         }
         return true;

@@ -14,7 +14,7 @@ import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.SessionIdentity;
 import me.golemcore.bot.domain.model.ToolNames;
 import me.golemcore.bot.domain.model.ToolResult;
-import me.golemcore.bot.domain.service.PlanService;
+import me.golemcore.bot.domain.planning.PlanService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -30,7 +30,7 @@ class PlanExitToolTest {
 
     @BeforeEach
     void setUp() {
-        planService = new PlanService(CLOCK);
+        planService = new PlanService(CLOCK, null);
         tool = new PlanExitTool(planService);
         context = AgentContext.builder()
                 .session(AgentSession.builder().channelType("web").chatId("chat-1").build())

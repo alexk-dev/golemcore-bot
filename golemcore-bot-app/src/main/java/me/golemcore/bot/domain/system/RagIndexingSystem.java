@@ -24,7 +24,6 @@ import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.TurnOutcome;
 import me.golemcore.bot.port.outbound.RagPort;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
@@ -42,7 +41,6 @@ import java.util.Set;
  * {@link me.golemcore.bot.port.outbound.RagPort}.
  */
 @Component
-@RequiredArgsConstructor
 @Slf4j
 public class RagIndexingSystem implements AgentSystem {
 
@@ -55,6 +53,10 @@ public class RagIndexingSystem implements AgentSystem {
             "hi", "hello", "hey", "bye", "thanks", "thank you", "ok", "okay",
             "yes", "no", "\u043f\u0440\u0438\u0432\u0435\u0442", "\u043f\u043e\u043a\u0430",
             "\u0441\u043f\u0430\u0441\u0438\u0431\u043e", "\u0434\u0430", "\u043d\u0435\u0442");
+
+    public RagIndexingSystem(RagPort ragPort) {
+        this.ragPort = ragPort;
+    }
 
     @Override
     public String getName() {

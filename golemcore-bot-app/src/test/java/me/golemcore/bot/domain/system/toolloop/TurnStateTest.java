@@ -3,6 +3,7 @@ package me.golemcore.bot.domain.system.toolloop;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.AgentSession;
 import me.golemcore.bot.domain.model.RuntimeConfig;
+import me.golemcore.bot.domain.system.toolloop.repeat.ToolUseLedger;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -210,5 +211,33 @@ class TurnStateTest {
 
         // Assert
         assertSame(tracingConfig, result);
+    }
+
+    @Test
+    void initializesEmptyToolUseLedger() {
+        assertNotNull(turnState.getToolUseLedger());
+        assertEquals(0, turnState.getToolUseLedger().getEnvironmentVersion());
+        assertEquals(0, turnState.getToolUseLedger().getBlockedRepeatCount());
+    }
+
+    @Test
+    void exposesProvidedToolUseLedgerForExecutionPhase() {
+        ToolUseLedger ledger = new ToolUseLedger();
+
+        TurnState state = new TurnState(
+                context,
+                tracingConfig,
+                5,
+                10,
+                deadline,
+                true,
+                false,
+                true,
+                3,
+                1000L,
+                true,
+                ledger);
+
+        assertSame(ledger, state.getToolUseLedger());
     }
 }

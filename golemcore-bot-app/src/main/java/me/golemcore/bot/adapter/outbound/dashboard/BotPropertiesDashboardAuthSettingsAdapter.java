@@ -1,15 +1,17 @@
 package me.golemcore.bot.adapter.outbound.dashboard;
 
-import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import me.golemcore.bot.port.outbound.DashboardAuthSettingsPort;
 import org.springframework.stereotype.Component;
 
 @Component
-@RequiredArgsConstructor
 public class BotPropertiesDashboardAuthSettingsAdapter implements DashboardAuthSettingsPort {
 
     private final BotProperties botProperties;
+
+    public BotPropertiesDashboardAuthSettingsAdapter(BotProperties botProperties) {
+        this.botProperties = botProperties;
+    }
 
     @Override
     public boolean isDashboardEnabled() {

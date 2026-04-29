@@ -10,15 +10,15 @@ import me.golemcore.bot.domain.model.DelayedActionKind;
 import me.golemcore.bot.domain.model.DelayedActionStatus;
 import me.golemcore.bot.domain.model.DelayedSessionAction;
 import me.golemcore.bot.domain.model.UserPreferences;
-import me.golemcore.bot.domain.service.AutoModeService;
-import me.golemcore.bot.domain.service.CompactionOrchestrationService;
-import me.golemcore.bot.domain.service.DelayedActionPolicyService;
-import me.golemcore.bot.domain.service.DelayedSessionActionService;
-import me.golemcore.bot.domain.service.PlanService;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
-import me.golemcore.bot.domain.service.ScheduleService;
-import me.golemcore.bot.domain.service.SessionRunCoordinator;
-import me.golemcore.bot.domain.service.UserPreferencesService;
+import me.golemcore.bot.domain.auto.AutoModeService;
+import me.golemcore.bot.domain.context.compaction.CompactionOrchestrationService;
+import me.golemcore.bot.domain.scheduling.DelayedActionPolicyService;
+import me.golemcore.bot.domain.scheduling.DelayedSessionActionService;
+import me.golemcore.bot.domain.planning.PlanService;
+import me.golemcore.bot.domain.runtimeconfig.RuntimeConfigService;
+import me.golemcore.bot.domain.scheduling.ScheduleService;
+import me.golemcore.bot.domain.session.SessionRunCoordinator;
+import me.golemcore.bot.domain.runtimeconfig.UserPreferencesService;
 import me.golemcore.bot.port.inbound.CommandPort;
 import me.golemcore.bot.port.outbound.SessionPort;
 import me.golemcore.bot.port.outbound.UsageTrackingPort;
@@ -112,23 +112,27 @@ class CommandRouterDelayedActionsTest {
         ModelSelectionCommandHandler modelSelectionCommandHandler = new ModelSelectionCommandHandler(
                 mock(ModelSelectionCommandService.class),
                 preferencesService);
+        PlanCommandService planCommandService = new PlanCommandService(mock(PlanService.class));
         PlanCommandHandler planCommandHandler = new PlanCommandHandler(
-                new PlanCommandService(mock(PlanService.class)),
+                planCommandService,
                 preferencesService);
 
-        CommandRouter router = new CommandRouter(
-                mock(SkillComponent.class),
-                List.of(delayedTool),
-                mock(SessionPort.class),
-                mock(UsageTrackingPort.class),
-                preferencesService,
-                mock(CompactionOrchestrationService.class),
+        CommandRouter router = new CommandRouter(new CommandDispatcher(List.of(
+                new SystemCommandHandler(
+                        mock(SkillComponent.class),
+                        List.of(delayedTool),
+                        mock(SessionPort.class),
+                        mock(UsageTrackingPort.class),
+                        preferencesService,
+                        mock(CompactionOrchestrationService.class),
+                        automationCommandHandler,
+                        planCommandService,
+                        delayedActionPolicyService,
+                        mock(SessionRunCoordinator.class),
+                        mock(ObjectProvider.class)),
                 automationCommandHandler,
                 modelSelectionCommandHandler,
-                planCommandHandler,
-                delayedActionPolicyService,
-                mock(SessionRunCoordinator.class),
-                mock(ObjectProvider.class));
+                planCommandHandler), preferencesService));
 
         CommandPort.CommandResult result = router.execute("tools", List.of(), Map.of(
                 "sessionId", "webhook:conv-1",
@@ -204,23 +208,27 @@ class CommandRouterDelayedActionsTest {
         ModelSelectionCommandHandler modelSelectionCommandHandler = new ModelSelectionCommandHandler(
                 mock(ModelSelectionCommandService.class),
                 preferencesService);
+        PlanCommandService planCommandService = new PlanCommandService(mock(PlanService.class));
         PlanCommandHandler planCommandHandler = new PlanCommandHandler(
-                new PlanCommandService(mock(PlanService.class)),
+                planCommandService,
                 preferencesService);
 
-        return new CommandRouter(
-                mock(SkillComponent.class),
-                List.<ToolComponent>of(),
-                mock(SessionPort.class),
-                mock(UsageTrackingPort.class),
-                preferencesService,
-                mock(CompactionOrchestrationService.class),
+        return new CommandRouter(new CommandDispatcher(List.of(
+                new SystemCommandHandler(
+                        mock(SkillComponent.class),
+                        List.<ToolComponent>of(),
+                        mock(SessionPort.class),
+                        mock(UsageTrackingPort.class),
+                        preferencesService,
+                        mock(CompactionOrchestrationService.class),
+                        automationCommandHandler,
+                        planCommandService,
+                        delayedActionPolicyService,
+                        mock(SessionRunCoordinator.class),
+                        mock(ObjectProvider.class)),
                 automationCommandHandler,
                 modelSelectionCommandHandler,
-                planCommandHandler,
-                delayedActionPolicyService,
-                mock(SessionRunCoordinator.class),
-                mock(ObjectProvider.class));
+                planCommandHandler), preferencesService));
     }
 
     private static UserPreferencesService createPreferencesService(Map<String, String> messages) {

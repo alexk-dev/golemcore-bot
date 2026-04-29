@@ -236,6 +236,94 @@ class ToolFailurePolicyTest {
         assertTrue(stop.reason().contains("shell"));
     }
 
+    @Test
+    void repeatGuardFailureKindReturnsRecoveryHintBeforeGenericStopOnFailure() {
+        TurnState turnState = buildTurnState(true, false, false);
+        Message.ToolCall toolCall = filesystemReadToolCall("README.md");
+        ToolExecutionOutcome outcome = new ToolExecutionOutcome(
+                "tc-1", "filesystem",
+                ToolResult.failure(ToolFailureKind.REPEATED_TOOL_USE_BLOCKED,
+                        "Repeated tool call blocked by repeat guard."),
+                "Repeated tool call blocked by repeat guard.", true, null);
+
+        ToolFailurePolicy.Verdict verdict = policy.evaluate(turnState, toolCall, outcome);
+
+        assertInstanceOf(ToolFailurePolicy.Verdict.RecoveryHint.class, verdict);
+        ToolFailurePolicy.Verdict.RecoveryHint hint = (ToolFailurePolicy.Verdict.RecoveryHint) verdict;
+        assertEquals("REPEAT_GUARD", hint.recoverabilityName());
+        assertTrue(hint.hint().contains("Repeated tool call blocked"));
+    }
+
+    @Test
+    void repeatGuardRecoveryHintUsesStableRepeatFingerprintFromStructuredData() {
+        TurnState turnState = buildTurnState(true, false, false);
+        Message.ToolCall toolCall = filesystemReadToolCall("README.md");
+        ToolResult result = ToolResult.builder()
+                .success(false)
+                .failureKind(ToolFailureKind.REPEATED_TOOL_USE_BLOCKED)
+                .error("Repeated tool call blocked by repeat guard.")
+                .data(Map.of("repeatFingerprint", "filesystem:OBSERVE:sha256:stable"))
+                .build();
+        ToolExecutionOutcome outcome = new ToolExecutionOutcome(
+                "tc-1", "filesystem", result, result.getError(), true, null);
+
+        ToolFailurePolicy.Verdict verdict = policy.evaluate(turnState, toolCall, outcome);
+
+        ToolFailurePolicy.Verdict.RecoveryHint hint = assertInstanceOf(
+                ToolFailurePolicy.Verdict.RecoveryHint.class, verdict);
+        assertEquals("filesystem:OBSERVE:sha256:stable", hint.fingerprint());
+    }
+
+    @Test
+    void repeatGuardStopTurnDoesNotDependOnRepeatedBlockErrorText() {
+        TurnState turnState = buildTurnState(true, false, false);
+        Message.ToolCall toolCall = filesystemReadToolCall("README.md");
+        ToolExecutionOutcome outcome = new ToolExecutionOutcome(
+                "tc-1", "filesystem",
+                ToolResult.failure(ToolFailureKind.REPEATED_TOOL_USE_BLOCKED,
+                        me.golemcore.bot.domain.system.toolloop.repeat.ToolRepeatGuard.STOP_TURN_REASON),
+                me.golemcore.bot.domain.system.toolloop.repeat.ToolRepeatGuard.STOP_TURN_REASON,
+                true,
+                null);
+
+        ToolFailurePolicy.Verdict verdict = policy.evaluate(turnState, toolCall, outcome);
+
+        assertInstanceOf(ToolFailurePolicy.Verdict.RecoveryHint.class, verdict);
+    }
+
+    @Test
+    void repeatGuardStopTurnIsTypedInsteadOfDependingOnExactErrorText() {
+        TurnState turnState = buildTurnState(true, false, false);
+        Message.ToolCall toolCall = filesystemReadToolCall("README.md");
+        ToolExecutionOutcome outcome = new ToolExecutionOutcome(
+                "tc-1", "filesystem",
+                ToolResult.failure(ToolFailureKind.REPEAT_GUARD_STOP_TURN, "localized human-readable text"),
+                "localized human-readable text",
+                true,
+                null);
+
+        ToolFailurePolicy.Verdict verdict = policy.evaluate(turnState, toolCall, outcome);
+
+        assertInstanceOf(ToolFailurePolicy.Verdict.StopTurn.class, verdict);
+    }
+
+    @Test
+    void repeatGuardFailureKindDoesNotUseShellFailureRecoveryCounters() {
+        TurnState turnState = buildTurnState(false, false, false);
+        Message.ToolCall toolCall = shellToolCall("ls -la");
+        ToolExecutionOutcome outcome = new ToolExecutionOutcome(
+                "tc-1", "shell",
+                ToolResult.failure(ToolFailureKind.REPEATED_TOOL_USE_BLOCKED,
+                        "Repeated shell command blocked by repeat guard."),
+                "Repeated shell command blocked by repeat guard.", true, null);
+
+        ToolFailurePolicy.Verdict verdict = policy.evaluate(turnState, toolCall, outcome);
+
+        assertInstanceOf(ToolFailurePolicy.Verdict.RecoveryHint.class, verdict);
+        assertTrue(turnState.getToolFailureCounts().isEmpty());
+        assertTrue(turnState.getToolRecoveryCounts().isEmpty());
+    }
+
     // -----------------------------------------------------------------------
     // Helpers
     // -----------------------------------------------------------------------
@@ -266,6 +354,14 @@ class ToolFailurePolicyTest {
                 .id("tc-1")
                 .name("shell")
                 .arguments(Map.of("command", command))
+                .build();
+    }
+
+    private Message.ToolCall filesystemReadToolCall(String path) {
+        return Message.ToolCall.builder()
+                .id("tc-1")
+                .name("filesystem")
+                .arguments(Map.of("operation", "read_file", "path", path))
                 .build();
     }
 }

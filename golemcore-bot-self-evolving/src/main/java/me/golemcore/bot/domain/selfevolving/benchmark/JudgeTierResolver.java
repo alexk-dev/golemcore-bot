@@ -19,7 +19,6 @@ package me.golemcore.bot.domain.selfevolving.benchmark;
  */
 
 import java.util.Locale;
-import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import me.golemcore.bot.port.outbound.ModelSelectionQueryPort;
 import me.golemcore.bot.port.outbound.SelfEvolvingRuntimeConfigPort;
@@ -28,11 +27,17 @@ import me.golemcore.bot.port.outbound.SelfEvolvingRuntimeConfigPort;
  * Resolves judge-model selections from SelfEvolving tier settings.
  */
 @Service
-@RequiredArgsConstructor
 public class JudgeTierResolver {
 
     private final SelfEvolvingRuntimeConfigPort runtimeConfigPort;
     private final ModelSelectionQueryPort modelSelectionQueryPort;
+
+    public JudgeTierResolver(
+            SelfEvolvingRuntimeConfigPort runtimeConfigPort,
+            ModelSelectionQueryPort modelSelectionQueryPort) {
+        this.runtimeConfigPort = runtimeConfigPort;
+        this.modelSelectionQueryPort = modelSelectionQueryPort;
+    }
 
     public String resolveModel(String judgeLane) {
         return resolveSelection(judgeLane).model();

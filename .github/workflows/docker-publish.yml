@@ -331,8 +331,21 @@ jobs:
       - name: Run SpotBugs
         run: ./mvnw -B -ntp -P strict -Dfrontend.skip=true -DskipTests -DskipGitHooks=true compile com.github.spotbugs:spotbugs-maven-plugin:4.9.8.3:check
 
+      - name: Generate dependency report
+        run: |
+          mkdir -p target/dependency-report
+          ./mvnw -B -ntp -Dfrontend.skip=true -DskipTests -DskipGitHooks=true dependency:tree \
+            | tee target/dependency-report/dependency-tree.txt
+
       - name: Generate Javadoc
         run: ./mvnw -pl ./golemcore-bot-app -am -B -ntp -Dfrontend.skip=true -DskipTests -DskipGitHooks=true test-compile org.apache.maven.plugins:maven-javadoc-plugin:3.12.0:javadoc
+
+      - name: Upload dependency report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: dependency-report
+          path: target/dependency-report/dependency-tree.txt
 
       - name: Upload PMD report
         if: always()

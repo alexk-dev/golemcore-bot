@@ -66,11 +66,31 @@ describe('settings telemetry metadata', () => {
   });
 
   it('saves tool-loop limits through the tool-loop endpoint under turn settings telemetry', async () => {
-    await updateToolLoopConfig({ maxLlmCalls: 24, maxToolExecutions: 96 });
+    await updateToolLoopConfig({
+      maxLlmCalls: 24,
+      maxToolExecutions: 96,
+      repeatGuardEnabled: true,
+      repeatGuardShadowMode: false,
+      repeatGuardMaxSameObservePerTurn: 2,
+      repeatGuardMaxSameUnknownPerTurn: 2,
+      repeatGuardMaxBlockedRepeatsPerTurn: 4,
+      repeatGuardMinPollIntervalSeconds: 60,
+      repeatGuardAutoLedgerTtlMinutes: 120,
+    });
 
     expect(clientPut).toHaveBeenCalledWith(
       '/settings/runtime/tool-loop',
-      { maxLlmCalls: 24, maxToolExecutions: 96 },
+      {
+        maxLlmCalls: 24,
+        maxToolExecutions: 96,
+        repeatGuardEnabled: true,
+        repeatGuardShadowMode: false,
+        repeatGuardMaxSameObservePerTurn: 2,
+        repeatGuardMaxSameUnknownPerTurn: 2,
+        repeatGuardMaxBlockedRepeatsPerTurn: 4,
+        repeatGuardMinPollIntervalSeconds: 60,
+        repeatGuardAutoLedgerTtlMinutes: 120,
+      },
       expect.objectContaining({
         _telemetry: {
           counterKey: 'settings_save_count_by_section',

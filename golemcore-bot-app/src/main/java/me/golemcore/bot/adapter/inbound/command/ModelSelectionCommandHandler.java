@@ -3,29 +3,71 @@ package me.golemcore.bot.adapter.inbound.command;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.application.command.ModelSelectionCommandService;
+import me.golemcore.bot.domain.command.CommandInvocation;
+import me.golemcore.bot.domain.command.CommandOutcome;
 import me.golemcore.bot.domain.model.ModelTierCatalog;
-import me.golemcore.bot.domain.service.UserPreferencesService;
+import me.golemcore.bot.domain.runtimeconfig.UserPreferencesService;
 import me.golemcore.bot.port.inbound.CommandPort;
 import org.springframework.stereotype.Component;
 
 @Component
-@RequiredArgsConstructor
-class ModelSelectionCommandHandler {
+class ModelSelectionCommandHandler implements CommandHandler {
 
     private static final int MIN_REASONING_ARGS = 2;
     private static final String SUBCMD_RESET = "reset";
     private static final String SUBCMD_REASONING = "reasoning";
+    private static final List<String> COMMAND_NAMES = List.of("tier", "model");
 
     private final ModelSelectionCommandService modelSelectionCommandService;
     private final UserPreferencesService preferencesService;
 
-    CommandPort.CommandResult handleTier(List<String> args) {
+    public ModelSelectionCommandHandler(
+            ModelSelectionCommandService modelSelectionCommandService,
+            UserPreferencesService preferencesService) {
+        this.modelSelectionCommandService = modelSelectionCommandService;
+        this.preferencesService = preferencesService;
+    }
+
+    @Override
+    public int order() {
+        return 20;
+    }
+
+    @Override
+    public List<String> commandNames() {
+        return COMMAND_NAMES;
+    }
+
+    @Override
+    public List<CommandPort.CommandDefinition> listCommands() {
+        return List.of(
+                new CommandPort.CommandDefinition(
+                        "tier",
+                        "Set model tier",
+                        "/tier [" + String.join("|", ModelTierCatalog.orderedExplicitTiers()) + "] [force]"),
+                new CommandPort.CommandDefinition(
+                        "model",
+                        "Per-tier model selection",
+                        "/model [list|<tier> <model>|<tier> reasoning <level>|<tier> reset]"));
+    }
+
+    @Override
+    public CommandOutcome handle(CommandInvocation invocation) {
+        if ("tier".equals(invocation.command())) {
+            return handleTier(invocation.args(), invocation.context().sessionId());
+        }
+        if ("model".equals(invocation.command())) {
+            return handleModel(invocation.args());
+        }
+        return CommandOutcome.failure(msg("command.unknown", invocation.command()));
+    }
+
+    CommandOutcome handleTier(List<String> args) {
         return handleTier(args, null);
     }
 
-    CommandPort.CommandResult handleTier(List<String> args, String sessionId) {
+    CommandOutcome handleTier(List<String> args, String sessionId) {
         if (args.isEmpty()) {
             return renderTierOutcome(
                     modelSelectionCommandService
@@ -38,7 +80,7 @@ class ModelSelectionCommandHandler {
                 new ModelSelectionCommandService.SetTierSelection(tier, force, sessionId)));
     }
 
-    CommandPort.CommandResult handleModel(List<String> args) {
+    CommandOutcome handleModel(List<String> args) {
         if (args.isEmpty()) {
             return renderModelOutcome(
                     modelSelectionCommandService.handleModel(new ModelSelectionCommandService.ShowModelSelection()));
@@ -50,12 +92,12 @@ class ModelSelectionCommandHandler {
                     modelSelectionCommandService.handleModel(new ModelSelectionCommandService.ListAvailableModels()));
         }
         if (!ModelTierCatalog.isExplicitSelectableTier(subcommand)) {
-            return CommandPort.CommandResult.success(msg("command.model.invalid.tier"));
+            return CommandOutcome.success(msg("command.model.invalid.tier"));
         }
 
         List<String> subArgs = args.subList(1, args.size());
         if (subArgs.isEmpty()) {
-            return CommandPort.CommandResult.success(msg("command.model.usage"));
+            return CommandOutcome.success(msg("command.model.usage"));
         }
 
         String action = subArgs.get(0).toLowerCase(Locale.ROOT);
@@ -65,7 +107,7 @@ class ModelSelectionCommandHandler {
         }
         if (SUBCMD_REASONING.equals(action)) {
             if (subArgs.size() < MIN_REASONING_ARGS) {
-                return CommandPort.CommandResult.success(msg("command.model.usage"));
+                return CommandOutcome.success(msg("command.model.usage"));
             }
             return renderModelOutcome(modelSelectionCommandService.handleModel(
                     new ModelSelectionCommandService.SetReasoningLevel(subcommand,
@@ -76,67 +118,67 @@ class ModelSelectionCommandHandler {
                 new ModelSelectionCommandService.SetModelOverride(subcommand, subArgs.get(0))));
     }
 
-    private CommandPort.CommandResult renderTierOutcome(ModelSelectionCommandService.TierOutcome outcome) {
+    private CommandOutcome renderTierOutcome(ModelSelectionCommandService.TierOutcome outcome) {
         if (outcome instanceof ModelSelectionCommandService.CurrentTier currentTier) {
             String force = currentTier.force() ? "on" : "off";
-            return CommandPort.CommandResult.success(msg("command.tier.current", currentTier.tier(), force));
+            return CommandOutcome.success(msg("command.tier.current", currentTier.tier(), force));
         }
         if (outcome instanceof ModelSelectionCommandService.TierUpdated tierUpdated) {
             if (tierUpdated.force()) {
-                return CommandPort.CommandResult.success(msg("command.tier.set.force", tierUpdated.tier()));
+                return CommandOutcome.success(msg("command.tier.set.force", tierUpdated.tier()));
             }
-            return CommandPort.CommandResult.success(msg("command.tier.set", tierUpdated.tier()));
+            return CommandOutcome.success(msg("command.tier.set", tierUpdated.tier()));
         }
-        return CommandPort.CommandResult.success(msg("command.tier.invalid"));
+        return CommandOutcome.success(msg("command.tier.invalid"));
     }
 
-    private CommandPort.CommandResult renderModelOutcome(ModelSelectionCommandService.ModelOutcome outcome) {
+    private CommandOutcome renderModelOutcome(ModelSelectionCommandService.ModelOutcome outcome) {
         if (outcome instanceof ModelSelectionCommandService.ModelSelectionOverview overview) {
-            return CommandPort.CommandResult.success(renderModelOverview(overview));
+            return CommandOutcome.success(renderModelOverview(overview));
         }
         if (outcome instanceof ModelSelectionCommandService.AvailableModels availableModels) {
-            return CommandPort.CommandResult.success(renderAvailableModels(availableModels));
+            return CommandOutcome.success(renderAvailableModels(availableModels));
         }
         if (outcome instanceof ModelSelectionCommandService.InvalidModelTier) {
-            return CommandPort.CommandResult.success(msg("command.model.invalid.tier"));
+            return CommandOutcome.success(msg("command.model.invalid.tier"));
         }
         if (outcome instanceof ModelSelectionCommandService.ModelOverrideSet modelOverrideSet) {
             String displayReasoning = modelOverrideSet.defaultReasoning() != null
                     ? " (reasoning: " + modelOverrideSet.defaultReasoning() + ")"
                     : "";
-            return CommandPort.CommandResult.success(
+            return CommandOutcome.success(
                     msg("command.model.set", modelOverrideSet.tier(), modelOverrideSet.modelSpec()) + displayReasoning);
         }
         if (outcome instanceof ModelSelectionCommandService.ProviderNotConfigured providerNotConfigured) {
-            return CommandPort.CommandResult.success(msg(
+            return CommandOutcome.success(msg(
                     "command.model.invalid.provider",
                     providerNotConfigured.modelSpec(),
                     String.join(", ", providerNotConfigured.configuredProviders())));
         }
         if (outcome instanceof ModelSelectionCommandService.InvalidModel invalidModel) {
-            return CommandPort.CommandResult.success(msg("command.model.invalid.model", invalidModel.modelSpec()));
+            return CommandOutcome.success(msg("command.model.invalid.model", invalidModel.modelSpec()));
         }
         if (outcome instanceof ModelSelectionCommandService.MissingModelOverride missingModelOverride) {
-            return CommandPort.CommandResult.success(msg("command.model.no.override", missingModelOverride.tier()));
+            return CommandOutcome.success(msg("command.model.no.override", missingModelOverride.tier()));
         }
         if (outcome instanceof ModelSelectionCommandService.MissingReasoningSupport missingReasoningSupport) {
-            return CommandPort.CommandResult
+            return CommandOutcome
                     .success(msg("command.model.no.reasoning", missingReasoningSupport.modelSpec()));
         }
         if (outcome instanceof ModelSelectionCommandService.InvalidReasoningLevel invalidReasoningLevel) {
-            return CommandPort.CommandResult.success(msg(
+            return CommandOutcome.success(msg(
                     "command.model.invalid.reasoning",
                     invalidReasoningLevel.requestedLevel(),
                     String.join(", ", invalidReasoningLevel.availableLevels())));
         }
         if (outcome instanceof ModelSelectionCommandService.ModelReasoningSet modelReasoningSet) {
-            return CommandPort.CommandResult.success(msg(
+            return CommandOutcome.success(msg(
                     "command.model.set.reasoning",
                     modelReasoningSet.tier(),
                     modelReasoningSet.level()));
         }
         ModelSelectionCommandService.ModelOverrideReset modelOverrideReset = (ModelSelectionCommandService.ModelOverrideReset) outcome;
-        return CommandPort.CommandResult.success(msg("command.model.reset", modelOverrideReset.tier()));
+        return CommandOutcome.success(msg("command.model.reset", modelOverrideReset.tier()));
     }
 
     private String renderModelOverview(ModelSelectionCommandService.ModelSelectionOverview overview) {

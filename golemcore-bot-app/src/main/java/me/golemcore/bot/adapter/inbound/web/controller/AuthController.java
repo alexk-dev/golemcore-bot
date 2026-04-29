@@ -2,7 +2,6 @@ package me.golemcore.bot.adapter.inbound.web.controller;
 
 import java.time.Duration;
 import java.util.Map;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.client.dto.ChangePasswordRequest;
 import me.golemcore.bot.client.dto.LoginRequest;
@@ -12,7 +11,7 @@ import me.golemcore.bot.client.dto.MfaEnableRequest;
 import me.golemcore.bot.client.dto.MfaSetupResponse;
 import me.golemcore.bot.client.dto.MfaStatusResponse;
 import me.golemcore.bot.domain.model.AdminCredentials;
-import me.golemcore.bot.domain.service.DashboardAuthService;
+import me.golemcore.bot.domain.dashboard.DashboardAuthService;
 import org.springframework.http.HttpCookie;
 import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
@@ -30,7 +29,6 @@ import reactor.core.publisher.Mono;
  */
 @RestController
 @RequestMapping("/api/auth")
-@RequiredArgsConstructor
 @Slf4j
 public class AuthController {
 
@@ -38,6 +36,10 @@ public class AuthController {
     private static final String KEY_SUCCESS = "success";
 
     private final DashboardAuthService authService;
+
+    public AuthController(DashboardAuthService authService) {
+        this.authService = authService;
+    }
 
     @GetMapping("/mfa-status")
     public Mono<ResponseEntity<MfaStatusResponse>> getMfaStatus() {

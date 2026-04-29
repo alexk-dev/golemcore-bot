@@ -5,7 +5,7 @@ import me.golemcore.bot.client.dto.HiveSsoExchangeRequest;
 import me.golemcore.bot.client.dto.HiveSsoStatusResponse;
 import me.golemcore.bot.client.dto.LoginResponse;
 import me.golemcore.bot.domain.model.hive.HiveSsoTokenResponse;
-import me.golemcore.bot.domain.service.HiveSsoService;
+import me.golemcore.bot.domain.hive.HiveSsoService;
 import me.golemcore.bot.port.outbound.DashboardFederatedAuthPort;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseCookie;

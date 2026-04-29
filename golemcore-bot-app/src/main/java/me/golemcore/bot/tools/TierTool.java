@@ -24,10 +24,9 @@ import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.ModelTierCatalog;
 import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.model.ToolResult;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
-import me.golemcore.bot.domain.service.SessionModelSettingsSupport;
-import me.golemcore.bot.domain.service.UserPreferencesService;
-import lombok.RequiredArgsConstructor;
+import me.golemcore.bot.domain.runtimeconfig.RuntimeConfigService;
+import me.golemcore.bot.domain.sessions.SessionModelSettingsSupport;
+import me.golemcore.bot.domain.runtimeconfig.UserPreferencesService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
@@ -51,12 +50,18 @@ import java.util.concurrent.CompletableFuture;
  * @see me.golemcore.bot.domain.loop.AgentContextHolder
  */
 @Component
-@RequiredArgsConstructor
 @Slf4j
 public class TierTool implements ToolComponent {
 
     private final UserPreferencesService userPreferencesService;
     private final RuntimeConfigService runtimeConfigService;
+
+    public TierTool(
+            UserPreferencesService userPreferencesService,
+            RuntimeConfigService runtimeConfigService) {
+        this.userPreferencesService = userPreferencesService;
+        this.runtimeConfigService = runtimeConfigService;
+    }
 
     @Override
     public String getToolName() {

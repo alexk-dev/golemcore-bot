@@ -1,13 +1,15 @@
 package me.golemcore.bot.application.command;
 
-import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.domain.model.SessionIdentity;
-import me.golemcore.bot.domain.service.PlanService;
+import me.golemcore.bot.domain.planning.PlanService;
 
-@RequiredArgsConstructor
 public class PlanCommandService {
 
     private final PlanService planService;
+
+    public PlanCommandService(PlanService planService) {
+        this.planService = planService;
+    }
 
     public boolean isFeatureEnabled() {
         return true;

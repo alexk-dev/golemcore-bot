@@ -1,5 +1,10 @@
 package me.golemcore.bot.plugin.runtime.api;
 
+import me.golemcore.bot.domain.planning.PlanService;
+import me.golemcore.bot.domain.model.ModelSelectionService;
+import me.golemcore.bot.domain.auto.AutoModeService;
+import me.golemcore.bot.domain.runtimeconfig.UserPreferencesService;
+import me.golemcore.bot.domain.runtimeconfig.RuntimeConfigService;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.Secret;
 import org.junit.jupiter.api.Test;
@@ -28,8 +33,8 @@ class PluginRuntimeApiConfigurationTest {
     @Test
     void shouldPreserveHostRuntimeSectionsWhenPluginUpdatesPartialConfig() {
         PluginRuntimeApiConfiguration configuration = new PluginRuntimeApiConfiguration();
-        me.golemcore.bot.domain.service.RuntimeConfigService delegate = mock(
-                me.golemcore.bot.domain.service.RuntimeConfigService.class);
+        RuntimeConfigService delegate = mock(
+                RuntimeConfigService.class);
         PluginRuntimeApiMapper mapper = new PluginRuntimeApiMapper();
 
         RuntimeConfig current = RuntimeConfig.builder()
@@ -97,8 +102,8 @@ class PluginRuntimeApiConfigurationTest {
     @Test
     void shouldIgnoreNullOrDefaultRuntimeSectionsWhenPluginUpdatesConfig() {
         PluginRuntimeApiConfiguration configuration = new PluginRuntimeApiConfiguration();
-        me.golemcore.bot.domain.service.RuntimeConfigService delegate = mock(
-                me.golemcore.bot.domain.service.RuntimeConfigService.class);
+        RuntimeConfigService delegate = mock(
+                RuntimeConfigService.class);
         PluginRuntimeApiMapper mapper = new PluginRuntimeApiMapper();
 
         RuntimeConfig current = RuntimeConfig.builder()
@@ -149,8 +154,8 @@ class PluginRuntimeApiConfigurationTest {
     @Test
     void shouldDelegateRuntimeConfigAccessorsAndInviteWorkflow() {
         PluginRuntimeApiConfiguration configuration = new PluginRuntimeApiConfiguration();
-        me.golemcore.bot.domain.service.RuntimeConfigService delegate = mock(
-                me.golemcore.bot.domain.service.RuntimeConfigService.class);
+        RuntimeConfigService delegate = mock(
+                RuntimeConfigService.class);
         PluginRuntimeApiMapper mapper = new PluginRuntimeApiMapper();
 
         RuntimeConfig runtimeConfig = RuntimeConfig.builder()
@@ -238,8 +243,8 @@ class PluginRuntimeApiConfigurationTest {
         PluginRuntimeApiConfiguration configuration = new PluginRuntimeApiConfiguration();
         PluginRuntimeApiMapper mapper = new PluginRuntimeApiMapper();
 
-        me.golemcore.bot.domain.service.ActiveSessionPointerService activePointerDelegate = mock(
-                me.golemcore.bot.domain.service.ActiveSessionPointerService.class);
+        me.golemcore.bot.domain.sessions.ActiveSessionPointerService activePointerDelegate = mock(
+                me.golemcore.bot.domain.sessions.ActiveSessionPointerService.class);
         when(activePointerDelegate.buildTelegramPointerKey("42")).thenReturn("telegram:42");
         when(activePointerDelegate.getActiveConversationKey("telegram:42")).thenReturn(Optional.of("conv-1"));
 
@@ -250,8 +255,8 @@ class PluginRuntimeApiConfigurationTest {
         activePointerService.setActiveConversationKey("telegram:42", "conv-2");
         verify(activePointerDelegate).setActiveConversationKey("telegram:42", "conv-2");
 
-        me.golemcore.bot.domain.service.AutoModeService autoModeDelegate = mock(
-                me.golemcore.bot.domain.service.AutoModeService.class);
+        AutoModeService autoModeDelegate = mock(
+                AutoModeService.class);
         when(autoModeDelegate.isFeatureEnabled()).thenReturn(true);
         when(autoModeDelegate.isAutoModeEnabled()).thenReturn(false);
 
@@ -264,10 +269,10 @@ class PluginRuntimeApiConfigurationTest {
         verify(autoModeDelegate).enableAutoMode();
         verify(autoModeDelegate).disableAutoMode();
 
-        me.golemcore.bot.domain.service.ModelSelectionService modelSelectionDelegate = mock(
-                me.golemcore.bot.domain.service.ModelSelectionService.class);
+        ModelSelectionService modelSelectionDelegate = mock(
+                ModelSelectionService.class);
         when(modelSelectionDelegate.resolveForTier("balanced"))
-                .thenReturn(new me.golemcore.bot.domain.service.ModelSelectionService.ModelSelection(
+                .thenReturn(new ModelSelectionService.ModelSelection(
                         "openai/gpt-5.1",
                         "high"));
 
@@ -278,8 +283,8 @@ class PluginRuntimeApiConfigurationTest {
         assertEquals("openai/gpt-5.1", selection.model());
         assertEquals("high", selection.reasoning());
 
-        me.golemcore.bot.domain.service.PlanService planDelegate = mock(
-                me.golemcore.bot.domain.service.PlanService.class);
+        PlanService planDelegate = mock(
+                PlanService.class);
         me.golemcore.bot.domain.model.SessionIdentity hostIdentity = new me.golemcore.bot.domain.model.SessionIdentity(
                 "telegram",
                 "chat-1");
@@ -312,8 +317,8 @@ class PluginRuntimeApiConfigurationTest {
                 () -> planExecutionService.executePlan("plan-1").join());
         assertTrue(executionException.getCause() instanceof UnsupportedOperationException);
 
-        me.golemcore.bot.domain.service.PluginConfigurationService pluginConfigDelegate = mock(
-                me.golemcore.bot.domain.service.PluginConfigurationService.class);
+        me.golemcore.bot.domain.extensions.PluginConfigurationService pluginConfigDelegate = mock(
+                me.golemcore.bot.domain.extensions.PluginConfigurationService.class);
         when(pluginConfigDelegate.hasPluginConfig("plugin-1")).thenReturn(true);
         when(pluginConfigDelegate.getPluginConfig("plugin-1")).thenReturn(Map.of("enabled", true));
 
@@ -332,8 +337,8 @@ class PluginRuntimeApiConfigurationTest {
         PluginRuntimeApiConfiguration configuration = new PluginRuntimeApiConfiguration();
         PluginRuntimeApiMapper mapper = new PluginRuntimeApiMapper();
 
-        me.golemcore.bot.domain.service.UserPreferencesService userPreferencesDelegate = mock(
-                me.golemcore.bot.domain.service.UserPreferencesService.class);
+        UserPreferencesService userPreferencesDelegate = mock(
+                UserPreferencesService.class);
         me.golemcore.bot.domain.model.UserPreferences hostPreferences = me.golemcore.bot.domain.model.UserPreferences
                 .builder()
                 .language("en")

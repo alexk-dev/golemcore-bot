@@ -55,12 +55,99 @@ Notable runtime sections:
 - `voice.json`
 - `memory.json`
 - `skills.json`
+- `tool-loop.json`
 - `turn.json`
 - `usage.json`
 - `mcp.json`
 - `plan.json`
 - `hive.json`
 - `self-evolving.json`
+
+### Tool Loop Repeat Guard
+
+Repeat guard settings live in `preferences/tool-loop.json` under the `toolLoop` section. The guard prevents the
+same tool call with the same canonical arguments from being executed indefinitely when no state changes.
+
+Default runtime shape:
+
+```json
+{
+  "toolLoop": {
+    "maxLlmCalls": 20,
+    "maxToolExecutions": 80,
+    "stopOnToolFailure": false,
+    "stopOnConfirmationDenied": true,
+    "stopOnToolPolicyDenied": true,
+    "repeatGuardEnabled": true,
+    "repeatGuardShadowMode": false,
+    "repeatGuardMaxSameObservePerTurn": 2,
+    "repeatGuardMaxSameUnknownPerTurn": 2,
+    "repeatGuardMaxBlockedRepeatsPerTurn": 4,
+    "repeatGuardMinPollIntervalSeconds": 60,
+    "repeatGuardAutoLedgerTtlMinutes": 120
+  }
+}
+```
+
+Field notes:
+
+- `repeatGuardEnabled`: enables pre-execution repeat protection. When disabled, the guard is a hard kill switch and
+  does not accumulate future-blocking ledger state.
+- `repeatGuardShadowMode`: records warning telemetry and model-visible hints for would-block decisions while still allowing execution.
+- `repeatGuardMaxSameObservePerTurn`: successful identical observe calls allowed in the current verified state before blocking.
+- `repeatGuardMaxSameUnknownPerTurn`: successful identical unknown execution calls, including shell, allowed before blocking in the current verified state. Unknown executions do not by themselves prove that workspace or remote state changed, but verified filesystem mutations reset the repeat window for local shell-style commands such as repeated test runs.
+- `repeatGuardMaxBlockedRepeatsPerTurn`: stops a turn after repeated ignored guard hints.
+- `repeatGuardMinPollIntervalSeconds`: minimum backoff before repeating the same polling call, independent of unrelated local environment changes.
+- `repeatGuardAutoLedgerTtlMinutes`: TTL for autonomous task/goal repeat ledgers under `auto/tool-ledgers/`; applies to observations, polling, unknown executions and guard-blocked synthetic records.
+
+The persisted auto ledger stores fingerprints, output digests and state-domain environment versions only. It is capped to the newest
+bounded records per work item, and it does not persist per-turn warning/block counters, full tool outputs or raw
+secret-like arguments. Policy denials, confirmation denials and guard synthetic records may be retained for diagnostics,
+but they are not counted as successful prior executions for repeat-block decisions.
+The durable ledger currently writes schema version `3`; schema versions `1` and `2` are still readable for branch-local
+upgrade compatibility. Output-digest progress is opt-in per tool semantic. Deterministic local/read-model observations
+such as filesystem, memory, plan, skill, goal and scheduling reads may use changed output digest as progress for that
+fingerprint. Dynamic remote observations such as `datetime`, `weather`, browser/search/scrape, Perplexity and read-only
+mail checks do not use digest changes as progress, because their rendered output can change without agent progress.
+When a tool result supplies `semanticOutputDigest` or `semanticDigest` in structured data, repeat guard uses that value;
+otherwise it falls back to the model-visible tool result content. The digest is not computed from hidden raw adapter
+payloads.
+Unknown executions keep stricter exact-repeat behavior because their output volatility is tool-specific and not safe to
+interpret generically.
+Ledger file paths use readable sanitized prefixes with short hash suffixes, which prevents sanitized id collisions while
+keeping storage inspectable. Readable path prefixes are length-bounded; the hash suffix carries the full work-item identity.
+
+Repeat windows are scoped by state domain, not one global state bit. Filesystem writes invalidate `WORKSPACE`
+observations and local shell repeats, memory writes invalidate `MEMORY` observations, goal/diary updates invalidate
+`AUTONOMY_PROGRESS`, Hive writes invalidate `HIVE_REMOTE`, delayed-action changes invalidate `SCHEDULING`, plan edits
+invalidate `PLAN`, skill changes invalidate `SKILLS`, tier/skill-transition changes invalidate `SESSION_CONTROL`, web
+tools observe `WEB_REMOTE`, weather observes `WEATHER`, datetime observes `TIME`, and mail tools use `MAIL`.
+Unrelated progress writes do not re-allow the same workspace read, search or shell command.
+
+Repeat warning hints are appended only after all tool results for the current assistant tool-call batch have been
+written, and stale warning hints are suppressed when a later tool in the same batch invalidates the warning's observed
+state domain. This keeps strict provider tool-call adjacency intact while still giving the model guidance before the next
+LLM call. Fingerprinting is fail-open for model-generated invalid paths/workdirs: invalid path strings are replaced with
+a deterministic hash placeholder instead of throwing before normal tool validation can run. Shell fingerprints include
+normalized `cwd`, `workdir` and `workingDirectory` values, so equivalent relative
+working directories do not bypass the repeat guard. Missing shell workdir is treated as the workspace root; conflicting
+workdir aliases are preserved in the fingerprint rather than collapsed to an arbitrary alias. Documented
+read-only filesystem operations (`read_file`, `list_directory`, `file_info`) and memory operations (`memory_search`,
+`memory_read`, `memory_expand_section`) are classified as observations, so they do not reset any verified state domain.
+First-party `goal_management`, `schedule_session_action`, plan, skill, session-control and Hive tools use explicit
+operation/name semantics instead of generic string matching. `plan_exit` remains an unconditional safe exit path, while
+`set_tier` and `skill_transition` are bounded idempotent `SESSION_CONTROL` mutations. Official plugin observation tools such as `browse`,
+`brave_search`, `tavily_search`, `firecrawl_scrape`, `perplexity_ask`, `weather`, `datetime` and read-only `imap` calls
+are classified as observations in their own remote/time/mail domains; `smtp` and `send_voice` are treated as
+non-idempotent mutations. Successful mutation
+records are retained until the per-work-item ledger cap rather than the observation TTL; this keeps idempotent duplicate
+write protection durable while synthetic repeat-guard records still expire by TTL.
+
+Repeat guard decisions are exposed in `TOOL_FINISHED` payloads with `repeatGuardDecision`, `repeatFingerprint`,
+`repeatCategory` and `repeatTool` fields. Synthetic blocked results carry the same stable repeat fingerprint in
+`ToolResult.data`, so recovery telemetry can aggregate by semantic fingerprint instead of transient tool-call id.
+Malformed or unreadable durable ledgers fail open to an empty in-turn ledger and emit a warning with the ledger path and
+exception class.
 
 ### SelfEvolving
 

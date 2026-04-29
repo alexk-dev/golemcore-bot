@@ -1,6 +1,5 @@
 package me.golemcore.bot.plugin.runtime;
 
-import lombok.RequiredArgsConstructor;
 import me.golemcore.plugin.api.extension.model.rag.RagCorpusRef;
 import me.golemcore.plugin.api.extension.model.rag.RagDocument;
 import me.golemcore.plugin.api.extension.model.rag.RagIngestionResult;
@@ -14,10 +13,13 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
 @Component
-@RequiredArgsConstructor
 public class PluginBackedRagIngestionService implements RagIngestionService {
 
     private final RagIngestionProviderRegistry ragIngestionProviderRegistry;
+
+    public PluginBackedRagIngestionService(RagIngestionProviderRegistry ragIngestionProviderRegistry) {
+        this.ragIngestionProviderRegistry = ragIngestionProviderRegistry;
+    }
 
     @Override
     public List<RagIngestionTargetDescriptor> listInstalledTargets() {

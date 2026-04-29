@@ -1,15 +1,21 @@
 package me.golemcore.bot.infrastructure.config;
 
-import me.golemcore.bot.domain.service.CompactionOrchestrationService;
-import me.golemcore.bot.domain.service.ContextCompactionPolicy;
-import me.golemcore.bot.domain.service.ContextTokenEstimator;
-import me.golemcore.bot.domain.service.ModelSelectionService;
-import me.golemcore.bot.domain.service.PlanModeToolRestrictionService;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
-import me.golemcore.bot.domain.service.RuntimeEventService;
-import me.golemcore.bot.domain.service.TraceService;
-import me.golemcore.bot.domain.service.TurnProgressService;
-import me.golemcore.bot.domain.service.ToolCallExecutionService;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import java.time.Clock;
+import java.util.List;
+import me.golemcore.bot.domain.component.ToolComponent;
+import me.golemcore.bot.domain.context.compaction.CompactionOrchestrationService;
+import me.golemcore.bot.domain.context.compaction.ContextCompactionPolicy;
+import me.golemcore.bot.domain.context.compaction.ContextTokenEstimator;
+import me.golemcore.bot.domain.model.ModelSelectionService;
+import me.golemcore.bot.domain.tools.PlanModeToolRestrictionService;
+import me.golemcore.bot.domain.runtimeconfig.RuntimeConfigService;
+import me.golemcore.bot.domain.runtimeconfig.ToolLoopRuntimeConfigView;
+import me.golemcore.bot.domain.events.RuntimeEventService;
+import me.golemcore.bot.domain.tracing.TraceService;
+import me.golemcore.bot.domain.progress.TurnProgressService;
+import me.golemcore.bot.domain.tools.execution.ToolCallExecutionService;
+import me.golemcore.bot.domain.tools.registry.ToolRegistryService;
 import me.golemcore.bot.domain.system.toolloop.ContextCompactionCoordinator;
 import me.golemcore.bot.domain.system.toolloop.DefaultHistoryWriter;
 import me.golemcore.bot.domain.system.toolloop.DefaultToolLoopSystem;
@@ -19,6 +25,10 @@ import me.golemcore.bot.domain.system.toolloop.ToolExecutorPort;
 import me.golemcore.bot.domain.system.toolloop.ToolFailureRecoveryService;
 import me.golemcore.bot.domain.system.toolloop.ToolLoopSystem;
 import me.golemcore.bot.domain.system.toolloop.UsageTrackingLlmPortDecorator;
+import me.golemcore.bot.domain.system.toolloop.repeat.ToolRepeatGuard;
+import me.golemcore.bot.domain.system.toolloop.repeat.ToolRepeatGuardSettings;
+import me.golemcore.bot.domain.system.toolloop.repeat.ToolUseFingerprintService;
+import me.golemcore.bot.domain.system.toolloop.repeat.ToolUseLedgerStore;
 import me.golemcore.bot.domain.system.toolloop.view.ContextBudgetResolver;
 import me.golemcore.bot.domain.system.toolloop.view.ContextGarbagePolicy;
 import me.golemcore.bot.domain.system.toolloop.view.ContextWindowProjector;
@@ -30,18 +40,23 @@ import me.golemcore.bot.domain.system.toolloop.view.FlatteningToolMessageMasker;
 import me.golemcore.bot.domain.system.toolloop.view.HygieneConversationViewBuilder;
 import me.golemcore.bot.domain.system.toolloop.view.ToolMessageMasker;
 import me.golemcore.bot.domain.system.toolloop.resilience.LlmResilienceOrchestrator;
+import me.golemcore.bot.infrastructure.toolloop.repeat.JsonToolUseLedgerStore;
 import me.golemcore.bot.port.outbound.LlmPort;
+import me.golemcore.bot.port.outbound.StoragePort;
 import me.golemcore.bot.port.outbound.TelemetryRollupPort;
 import me.golemcore.bot.port.outbound.ToolRuntimeSettingsPort;
 import me.golemcore.bot.port.outbound.UsageTrackingPort;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
-import java.time.Clock;
-
 /** Spring wiring for ToolLoopSystem (domain orchestrator + ports). */
 @Configuration
 public class ToolLoopAutoConfiguration {
+
+    @Bean
+    public ToolRegistryService toolRegistryService(List<ToolComponent> toolComponents) {
+        return new ToolRegistryService(toolComponents);
+    }
 
     @Bean
     public ToolExecutorPort toolExecutorPort(ToolCallExecutionService toolCallExecutionService) {
@@ -54,6 +69,25 @@ public class ToolLoopAutoConfiguration {
     @Bean
     public HistoryWriter toolLoopHistoryWriter(Clock clock) {
         return new DefaultHistoryWriter(clock);
+    }
+
+    @Bean
+    public ToolUseFingerprintService toolUseFingerprintService() {
+        return new ToolUseFingerprintService();
+    }
+
+    @Bean
+    public ToolRepeatGuard toolRepeatGuard(ToolUseFingerprintService fingerprintService,
+            ToolLoopRuntimeConfigView runtimeConfigView, Clock clock) {
+        return new ToolRepeatGuard(
+                fingerprintService,
+                () -> ToolRepeatGuardSettings.from(runtimeConfigView),
+                clock);
+    }
+
+    @Bean
+    public ToolUseLedgerStore toolUseLedgerStore(StoragePort storagePort, ObjectMapper objectMapper, Clock clock) {
+        return new JsonToolUseLedgerStore(storagePort, objectMapper, clock);
     }
 
     @Bean
@@ -102,6 +136,8 @@ public class ToolLoopAutoConfiguration {
             TraceService traceService,
             ToolFailureRecoveryService toolFailureRecoveryService,
             PlanModeToolRestrictionService planModeToolRestrictionService,
+            ToolRepeatGuard repeatGuard,
+            ToolUseLedgerStore toolUseLedgerStore,
             LlmResilienceOrchestrator resilienceOrchestrator) {
         LlmPort tracked = new UsageTrackingLlmPortDecorator(llmPort, usageTracker, telemetryRollupPort);
         return DefaultToolLoopSystem.builder()
@@ -122,6 +158,8 @@ public class ToolLoopAutoConfiguration {
                 .traceService(traceService)
                 .toolFailureRecoveryService(toolFailureRecoveryService)
                 .planModeToolRestrictionService(planModeToolRestrictionService)
+                .repeatGuard(repeatGuard)
+                .toolUseLedgerStore(toolUseLedgerStore)
                 .resilienceOrchestrator(resilienceOrchestrator)
                 .clock(Clock.systemUTC())
                 .build();

@@ -1,16 +1,18 @@
 package me.golemcore.bot.adapter.outbound.update;
 
-import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.port.outbound.UpdateVersionPort;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.info.BuildProperties;
 import org.springframework.stereotype.Component;
 
 @Component
-@RequiredArgsConstructor
 public class BuildPropertiesUpdateVersionAdapter implements UpdateVersionPort {
 
     private final ObjectProvider<BuildProperties> buildPropertiesProvider;
+
+    public BuildPropertiesUpdateVersionAdapter(ObjectProvider<BuildProperties> buildPropertiesProvider) {
+        this.buildPropertiesProvider = buildPropertiesProvider;
+    }
 
     @Override
     public String currentVersion() {

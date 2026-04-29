@@ -26,7 +26,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.List;
 import java.util.Locale;
-import me.golemcore.bot.domain.service.StringValueSupport;
+import me.golemcore.bot.domain.support.StringValueSupport;
 
 /**
  * Produces concrete structured change proposals from judged runs.

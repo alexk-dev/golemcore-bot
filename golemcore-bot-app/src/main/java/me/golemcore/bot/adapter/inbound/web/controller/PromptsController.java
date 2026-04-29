@@ -1,6 +1,5 @@
 package me.golemcore.bot.adapter.inbound.web.controller;
 
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.client.dto.PromptCreateRequest;
 import me.golemcore.bot.client.dto.PromptSectionDto;
@@ -29,11 +28,14 @@ import java.util.NoSuchElementException;
  */
 @RestController
 @RequestMapping("/api/prompts")
-@RequiredArgsConstructor
 @Slf4j
 public class PromptsController {
 
     private final PromptManagementFacade promptManagementFacade;
+
+    public PromptsController(PromptManagementFacade promptManagementFacade) {
+        this.promptManagementFacade = promptManagementFacade;
+    }
 
     @GetMapping
     public Mono<ResponseEntity<List<PromptSectionDto>>> listSections() {

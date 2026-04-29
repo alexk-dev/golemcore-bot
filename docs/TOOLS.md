@@ -8,6 +8,7 @@ Built-in tools that the agent can call (via function/tool calling).
 - Official integrations such as browser, Brave Search, Tavily Search, Firecrawl, Perplexity Sonar, weather, and mail are loaded through the plugin runtime and keep their own configuration under `preferences/plugins/<owner>/<plugin>.json`.
 - File and shell access are sandboxed to the tool workspace (`bot.tools.*.workspace`).
 - Destructive actions may require user confirmation when tool confirmations are enabled.
+- The tool loop repeat guard blocks repeated identical observation or shell calls after conservative same-state thresholds and returns a synthetic tool result with a recovery hint.
 
 ## Runtime Configuration
 
@@ -40,6 +41,9 @@ Plugin-owned tool settings are stored separately, for example:
 - `preferences/plugins/golemcore/perplexity-sonar.json`
 - `preferences/plugins/golemcore/weather.json`
 - `preferences/plugins/golemcore/mail.json`
+
+Repeat-guard tool-loop settings live in `preferences/tool-loop.json`. See
+[Configuration Guide](CONFIGURATION.md#tool-loop-repeat-guard).
 
 ## Workspace Sandboxing (FileSystem/Shell)
 

@@ -42,7 +42,7 @@ import me.golemcore.bot.domain.selfevolving.artifact.ArtifactBundleService;
 import me.golemcore.bot.domain.selfevolving.benchmark.BenchmarkLabService;
 import me.golemcore.bot.domain.selfevolving.benchmark.BenchmarkWinRateCalculator;
 import me.golemcore.bot.domain.selfevolving.run.SelfEvolvingRunService;
-import me.golemcore.bot.domain.service.StringValueSupport;
+import me.golemcore.bot.domain.support.StringValueSupport;
 
 /**
  * Derives user-facing tactic quality/runtime metrics from observed runtime

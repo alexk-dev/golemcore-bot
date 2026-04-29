@@ -32,6 +32,41 @@
         </dependency>
         <dependency>
             <groupId>me.golemcore</groupId>
+            <artifactId>golemcore-bot-runtime-config</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>me.golemcore</groupId>
+            <artifactId>golemcore-bot-sessions</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>me.golemcore</groupId>
+            <artifactId>golemcore-bot-memory</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>me.golemcore</groupId>
+            <artifactId>golemcore-bot-tools</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>me.golemcore</groupId>
+            <artifactId>golemcore-bot-tracing</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>me.golemcore</groupId>
+            <artifactId>golemcore-bot-scheduling</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>me.golemcore</groupId>
+            <artifactId>golemcore-bot-runtime-core</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>me.golemcore</groupId>
             <artifactId>golemcore-bot-self-evolving</artifactId>
             <version>${project.version}</version>
         </dependency>
@@ -354,6 +389,13 @@
                         <phase>test</phase>
                         <goals>
                             <goal>report</goal>
+                        </goals>
+                    </execution>
+                    <execution>
+                        <id>aggregate-report</id>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>report-aggregate</goal>
                         </goals>
                     </execution>
                 </executions>

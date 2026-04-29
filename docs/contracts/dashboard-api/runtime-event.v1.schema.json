@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://golemcore.dev/contracts/dashboard-api/runtime-event.v1.schema.json",
+  "title": "RuntimeEventV1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "type", "timestamp", "payload"],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "type": {
+      "type": "string",
+      "enum": [
+        "TURN_STARTED",
+        "TURN_INTERRUPT_REQUESTED",
+        "TURN_FINISHED",
+        "TURN_FAILED",
+        "LLM_STARTED",
+        "LLM_FINISHED",
+        "TOOL_STARTED",
+        "TOOL_FINISHED",
+        "RETRY_STARTED",
+        "RETRY_FINISHED",
+        "COMPACTION_STARTED",
+        "COMPACTION_FINISHED",
+        "CONTEXT_HYGIENE"
+      ]
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "sessionId": {
+      "type": ["string", "null"],
+      "minLength": 1
+    },
+    "channelType": {
+      "type": ["string", "null"],
+      "minLength": 1
+    },
+    "chatId": {
+      "type": ["string", "null"],
+      "minLength": 1
+    },
+    "payload": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  }
+}

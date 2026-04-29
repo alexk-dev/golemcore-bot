@@ -1,15 +1,17 @@
 package me.golemcore.bot.adapter.outbound.dashboard;
 
 import jakarta.annotation.PostConstruct;
-import lombok.RequiredArgsConstructor;
-import me.golemcore.bot.domain.service.DashboardAuthService;
+import me.golemcore.bot.domain.dashboard.DashboardAuthService;
 import org.springframework.stereotype.Component;
 
 @Component
-@RequiredArgsConstructor
 public class DashboardAuthBootstrap {
 
     private final DashboardAuthService dashboardAuthService;
+
+    public DashboardAuthBootstrap(DashboardAuthService dashboardAuthService) {
+        this.dashboardAuthService = dashboardAuthService;
+    }
 
     @PostConstruct
     void initializeDashboardAuth() {

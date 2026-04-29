@@ -57,7 +57,8 @@ public class RuntimeConfig {
      * <p>
      * <b>Warning:</b> do not use this directly for snapshot capture decisions —
      * self-evolving overrides (forcePayloadCapture) are not applied here. Use
-     * {@code TraceRuntimeConfigSupport.resolve(runtimeConfigService)} instead.
+     * {@code TraceRuntimeConfigSupport.resolve(tracingConfigView, forcePayloadCapture)}
+     * instead.
      * </p>
      */
     @Builder.Default
@@ -816,6 +817,20 @@ public class RuntimeConfig {
         private Integer maxLlmCalls = 20;
         @Builder.Default
         private Integer maxToolExecutions = 80;
+        @Builder.Default
+        private Boolean repeatGuardEnabled = true;
+        @Builder.Default
+        private Boolean repeatGuardShadowMode = false;
+        @Builder.Default
+        private Integer repeatGuardMaxSameObservePerTurn = 2;
+        @Builder.Default
+        private Integer repeatGuardMaxSameUnknownPerTurn = 2;
+        @Builder.Default
+        private Integer repeatGuardMaxBlockedRepeatsPerTurn = 4;
+        @Builder.Default
+        private Long repeatGuardMinPollIntervalSeconds = 60L;
+        @Builder.Default
+        private Long repeatGuardAutoLedgerTtlMinutes = 120L;
     }
 
     @Data

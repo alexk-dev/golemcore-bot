@@ -18,7 +18,6 @@
 
 package me.golemcore.bot.tools;
 
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.component.SkillComponent;
 import me.golemcore.bot.domain.component.ToolComponent;
@@ -29,8 +28,8 @@ import me.golemcore.bot.domain.model.Skill;
 import me.golemcore.bot.domain.model.SkillTransitionRequest;
 import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.model.ToolResult;
-import me.golemcore.bot.domain.service.DynamicSkillFactory;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.skills.DynamicSkillFactory;
+import me.golemcore.bot.domain.runtimeconfig.RuntimeConfigService;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
@@ -63,13 +62,21 @@ import java.util.stream.Collectors;
  * propagated.
  */
 @Component
-@RequiredArgsConstructor
 @Slf4j
 public class DiscoverMcpServerTool implements ToolComponent {
 
     private final RuntimeConfigService runtimeConfigService;
     private final DynamicSkillFactory dynamicSkillFactory;
     private final SkillComponent skillComponent;
+
+    public DiscoverMcpServerTool(
+            RuntimeConfigService runtimeConfigService,
+            DynamicSkillFactory dynamicSkillFactory,
+            SkillComponent skillComponent) {
+        this.runtimeConfigService = runtimeConfigService;
+        this.dynamicSkillFactory = dynamicSkillFactory;
+        this.skillComponent = skillComponent;
+    }
 
     @Override
     public String getToolName() {

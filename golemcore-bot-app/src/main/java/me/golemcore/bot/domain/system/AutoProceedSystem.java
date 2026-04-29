@@ -13,10 +13,10 @@ import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.resilience.ClassifierRequest;
 import me.golemcore.bot.domain.resilience.autoproceed.AutoProceedClassifier;
 import me.golemcore.bot.domain.resilience.autoproceed.ClassifierVerdict;
-import me.golemcore.bot.domain.service.InternalTurnService;
-import me.golemcore.bot.domain.service.ResilienceObservabilitySupport;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
-import me.golemcore.bot.domain.service.TraceService;
+import me.golemcore.bot.domain.scheduling.InternalTurnService;
+import me.golemcore.bot.domain.resilience.ResilienceObservabilitySupport;
+import me.golemcore.bot.domain.runtimeconfig.RuntimeConfigService;
+import me.golemcore.bot.domain.tracing.TraceService;
 import me.golemcore.bot.port.outbound.TraceSnapshotCodecPort;
 import org.springframework.stereotype.Component;
 

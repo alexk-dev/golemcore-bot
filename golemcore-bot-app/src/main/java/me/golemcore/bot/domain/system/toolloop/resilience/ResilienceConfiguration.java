@@ -18,12 +18,12 @@ package me.golemcore.bot.domain.system.toolloop.resilience;
  * Contact: alex@kuleshov.tech
  */
 
-import me.golemcore.bot.domain.service.CompactionOrchestrationService;
-import me.golemcore.bot.domain.service.ContextCompactionPolicy;
-import me.golemcore.bot.domain.service.DelayedSessionActionService;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
-import me.golemcore.bot.domain.service.RuntimeEventService;
-import me.golemcore.bot.domain.service.TurnProgressService;
+import me.golemcore.bot.domain.context.compaction.CompactionOrchestrationService;
+import me.golemcore.bot.domain.context.compaction.ContextCompactionPolicy;
+import me.golemcore.bot.domain.scheduling.DelayedSessionActionService;
+import me.golemcore.bot.domain.runtimeconfig.RuntimeConfigService;
+import me.golemcore.bot.domain.events.RuntimeEventService;
+import me.golemcore.bot.domain.progress.TurnProgressService;
 import me.golemcore.bot.domain.system.toolloop.ContextCompactionCoordinator;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;

@@ -4,14 +4,12 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
 import java.util.Optional;
 import java.util.concurrent.CompletionException;
-import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.domain.model.UserPreferences;
 import me.golemcore.bot.port.outbound.StoragePort;
 import me.golemcore.bot.port.outbound.UserPreferencesStorePort;
 import org.springframework.stereotype.Component;
 
 @Component
-@RequiredArgsConstructor
 public class StorageUserPreferencesStoreAdapter implements UserPreferencesStorePort {
 
     private static final String PREFERENCES_DIR = "preferences";
@@ -19,6 +17,13 @@ public class StorageUserPreferencesStoreAdapter implements UserPreferencesStoreP
 
     private final StoragePort storagePort;
     private final ObjectMapper objectMapper;
+
+    public StorageUserPreferencesStoreAdapter(
+            StoragePort storagePort,
+            ObjectMapper objectMapper) {
+        this.storagePort = storagePort;
+        this.objectMapper = objectMapper;
+    }
 
     @Override
     public Optional<UserPreferences> loadPreferences() {

@@ -33,11 +33,11 @@ import me.golemcore.bot.domain.model.RuntimeEvent;
 import me.golemcore.bot.domain.model.RuntimeEventType;
 import me.golemcore.bot.domain.model.Secret;
 import me.golemcore.bot.domain.model.SessionIdentity;
-import me.golemcore.bot.domain.service.AutoModeService;
-import me.golemcore.bot.domain.service.PlanService;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
-import me.golemcore.bot.domain.service.SessionScopedGoalService;
-import me.golemcore.bot.domain.service.SessionInspectionService;
+import me.golemcore.bot.domain.auto.AutoModeService;
+import me.golemcore.bot.domain.planning.PlanService;
+import me.golemcore.bot.domain.runtimeconfig.RuntimeConfigService;
+import me.golemcore.bot.domain.session.SessionScopedGoalService;
+import me.golemcore.bot.domain.sessions.SessionInspectionService;
 import me.golemcore.bot.domain.view.SessionTraceExportView;
 import me.golemcore.bot.infrastructure.config.ModelConfigService;
 import me.golemcore.bot.infrastructure.telemetry.TelemetryEventPublisher;
@@ -45,13 +45,13 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.junit.jupiter.api.io.TempDir;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.TestConstructor;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.NONE)
@@ -59,6 +59,8 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 @Import(GolemCoreBotIntegrationTestConfiguration.class)
 @EnabledIfEnvironmentVariable(named = "AGENTLOOP_E2E_ENABLED", matches = "true")
+@TestConstructor(autowireMode = TestConstructor.AutowireMode.ALL)
+@MockitoBean(types = TelemetryEventPublisher.class)
 class AgentLoopContextWindowExternalE2ETest {
 
     private static final int DEFAULT_MAX_INPUT_TOKENS = 16_000;
@@ -82,39 +84,48 @@ class AgentLoopContextWindowExternalE2ETest {
     @TempDir
     static Path tempDir;
 
-    @Autowired
-    private AgentLoop agentLoop;
+    private final AgentLoop agentLoop;
 
-    @Autowired
-    private WebhookChannelAdapter webhookChannelAdapter;
+    private final WebhookChannelAdapter webhookChannelAdapter;
 
-    @Autowired
-    private RuntimeConfigService runtimeConfigService;
+    private final RuntimeConfigService runtimeConfigService;
 
-    @Autowired
-    private AutoModeService autoModeService;
+    private final AutoModeService autoModeService;
 
-    @Autowired
-    private SessionScopedGoalService sessionScopedGoalService;
+    private final SessionScopedGoalService sessionScopedGoalService;
 
-    @Autowired
-    private PlanService planService;
+    private final PlanService planService;
 
-    @Autowired
-    private ModelConfigService modelConfigService;
+    private final ModelConfigService modelConfigService;
 
-    @Autowired
-    private SessionInspectionService sessionInspectionService;
+    private final SessionInspectionService sessionInspectionService;
 
-    @Autowired
-    private ObjectMapper objectMapper;
-
-    @MockitoBean
-    TelemetryEventPublisher telemetryEventPublisher;
+    private final ObjectMapper objectMapper;
 
     private String providerId;
     private String catalogModelId;
     private int maxInputTokens;
+
+    AgentLoopContextWindowExternalE2ETest(
+            AgentLoop agentLoop,
+            WebhookChannelAdapter webhookChannelAdapter,
+            RuntimeConfigService runtimeConfigService,
+            AutoModeService autoModeService,
+            SessionScopedGoalService sessionScopedGoalService,
+            PlanService planService,
+            ModelConfigService modelConfigService,
+            SessionInspectionService sessionInspectionService,
+            ObjectMapper objectMapper) {
+        this.agentLoop = agentLoop;
+        this.webhookChannelAdapter = webhookChannelAdapter;
+        this.runtimeConfigService = runtimeConfigService;
+        this.autoModeService = autoModeService;
+        this.sessionScopedGoalService = sessionScopedGoalService;
+        this.planService = planService;
+        this.modelConfigService = modelConfigService;
+        this.sessionInspectionService = sessionInspectionService;
+        this.objectMapper = objectMapper;
+    }
 
     @DynamicPropertySource
     static void overrideProperties(DynamicPropertyRegistry registry) {

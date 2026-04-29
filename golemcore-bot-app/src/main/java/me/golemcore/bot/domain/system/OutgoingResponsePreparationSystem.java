@@ -28,11 +28,10 @@ import me.golemcore.bot.domain.model.LlmUsage;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.OutgoingResponse;
 import me.golemcore.bot.domain.model.TurnLimitReason;
-import me.golemcore.bot.domain.service.InternalTurnService;
-import me.golemcore.bot.domain.service.ModelSelectionService;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
-import me.golemcore.bot.domain.service.UserPreferencesService;
-import lombok.RequiredArgsConstructor;
+import me.golemcore.bot.domain.scheduling.InternalTurnService;
+import me.golemcore.bot.domain.model.ModelSelectionService;
+import me.golemcore.bot.domain.runtimeconfig.RuntimeConfigService;
+import me.golemcore.bot.domain.runtimeconfig.UserPreferencesService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
@@ -52,7 +51,6 @@ import java.util.Map;
  * </p>
  */
 @Component
-@RequiredArgsConstructor
 @Slf4j
 public class OutgoingResponsePreparationSystem implements AgentSystem {
 
@@ -62,6 +60,17 @@ public class OutgoingResponsePreparationSystem implements AgentSystem {
     private final ModelSelectionService modelSelectionService;
     private final RuntimeConfigService runtimeConfigService;
     private final InternalTurnService internalTurnService;
+
+    public OutgoingResponsePreparationSystem(
+            UserPreferencesService preferencesService,
+            ModelSelectionService modelSelectionService,
+            RuntimeConfigService runtimeConfigService,
+            InternalTurnService internalTurnService) {
+        this.preferencesService = preferencesService;
+        this.modelSelectionService = modelSelectionService;
+        this.runtimeConfigService = runtimeConfigService;
+        this.internalTurnService = internalTurnService;
+    }
 
     @Override
     public String getName() {

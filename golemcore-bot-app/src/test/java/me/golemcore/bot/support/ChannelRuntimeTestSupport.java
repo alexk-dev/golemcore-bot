@@ -2,10 +2,10 @@ package me.golemcore.bot.support;
 
 import java.util.List;
 import me.golemcore.bot.adapter.outbound.channel.ChannelRegistryRuntimeAdapter;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
-import me.golemcore.bot.domain.service.TraceService;
-import me.golemcore.bot.domain.service.UserPreferencesService;
-import me.golemcore.bot.domain.service.VoiceResponseHandler;
+import me.golemcore.bot.domain.runtimeconfig.RuntimeConfigService;
+import me.golemcore.bot.domain.tracing.TraceService;
+import me.golemcore.bot.domain.runtimeconfig.UserPreferencesService;
+import me.golemcore.bot.domain.voice.VoiceResponseHandler;
 import me.golemcore.bot.domain.system.ResponseRoutingSystem;
 import me.golemcore.bot.plugin.runtime.ChannelRegistry;
 import me.golemcore.bot.port.channel.ChannelPort;

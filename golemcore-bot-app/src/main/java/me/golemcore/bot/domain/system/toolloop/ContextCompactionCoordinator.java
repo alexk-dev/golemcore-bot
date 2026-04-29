@@ -23,12 +23,11 @@ import me.golemcore.bot.domain.model.CompactionReason;
 import me.golemcore.bot.domain.model.CompactionResult;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.RuntimeEventType;
-import me.golemcore.bot.domain.service.CompactionOrchestrationService;
-import me.golemcore.bot.domain.service.CompactionPayloadMapper;
-import me.golemcore.bot.domain.service.ContextCompactionPolicy;
-import me.golemcore.bot.domain.service.RuntimeEventService;
-import me.golemcore.bot.domain.service.TurnProgressService;
-import lombok.RequiredArgsConstructor;
+import me.golemcore.bot.domain.context.compaction.CompactionOrchestrationService;
+import me.golemcore.bot.domain.context.compaction.CompactionPayloadMapper;
+import me.golemcore.bot.domain.context.compaction.ContextCompactionPolicy;
+import me.golemcore.bot.domain.events.RuntimeEventService;
+import me.golemcore.bot.domain.progress.TurnProgressService;
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.ArrayList;
@@ -45,7 +44,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * collaborator assembled by {@link DefaultToolLoopSystem}, not a Spring
  * service.
  */
-@RequiredArgsConstructor
 @Slf4j
 public class ContextCompactionCoordinator {
 
@@ -58,6 +56,17 @@ public class ContextCompactionCoordinator {
     private final TurnProgressService turnProgressService;
 
     private final AtomicBoolean compactionDisabledOverflowLogged = new AtomicBoolean();
+
+    public ContextCompactionCoordinator(
+            ContextCompactionPolicy contextCompactionPolicy,
+            CompactionOrchestrationService compactionOrchestrationService,
+            RuntimeEventService runtimeEventService,
+            TurnProgressService turnProgressService) {
+        this.contextCompactionPolicy = contextCompactionPolicy;
+        this.compactionOrchestrationService = compactionOrchestrationService;
+        this.runtimeEventService = runtimeEventService;
+        this.turnProgressService = turnProgressService;
+    }
 
     /**
      * Shared compaction cycle. Emits the canonical COMPACTION_STARTED /

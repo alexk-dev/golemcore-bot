@@ -30,7 +30,7 @@ import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.model.selfevolving.tactic.TacticSearchQuery;
 import me.golemcore.bot.port.outbound.ModelSelectionQueryPort;
 import me.golemcore.bot.port.outbound.SelfEvolvingRuntimeConfigPort;
-import me.golemcore.bot.domain.service.StringValueSupport;
+import me.golemcore.bot.domain.support.StringValueSupport;
 import me.golemcore.bot.port.outbound.LlmPort;
 import org.springframework.stereotype.Service;
 

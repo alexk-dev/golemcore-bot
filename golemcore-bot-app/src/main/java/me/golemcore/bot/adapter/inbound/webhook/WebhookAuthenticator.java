@@ -20,8 +20,7 @@ package me.golemcore.bot.adapter.inbound.webhook;
 
 import me.golemcore.bot.domain.model.Secret;
 import me.golemcore.bot.domain.model.UserPreferences;
-import me.golemcore.bot.domain.service.UserPreferencesService;
-import lombok.RequiredArgsConstructor;
+import me.golemcore.bot.domain.runtimeconfig.UserPreferencesService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpHeaders;
 import org.springframework.stereotype.Component;
@@ -46,7 +45,6 @@ import java.util.HexFormat;
  * All comparisons use constant-time algorithms to prevent timing attacks.
  */
 @Component
-@RequiredArgsConstructor
 @Slf4j
 public class WebhookAuthenticator {
 
@@ -56,6 +54,10 @@ public class WebhookAuthenticator {
     private static final String AUTH_MODE_HMAC = "hmac";
 
     private final UserPreferencesService preferencesService;
+
+    public WebhookAuthenticator(UserPreferencesService preferencesService) {
+        this.preferencesService = preferencesService;
+    }
 
     /**
      * Authenticates a request using the global Bearer token.

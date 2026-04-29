@@ -19,8 +19,7 @@ package me.golemcore.bot.security;
  */
 
 import me.golemcore.bot.domain.component.SanitizerComponent;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
-import lombok.RequiredArgsConstructor;
+import me.golemcore.bot.domain.runtimeconfig.RuntimeConfigService;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
@@ -42,12 +41,20 @@ import java.util.List;
  * @since 1.0
  */
 @Component
-@RequiredArgsConstructor
 public class DefaultSanitizerComponent implements SanitizerComponent {
 
     private final InputSanitizer inputSanitizer;
     private final InjectionGuard injectionGuard;
     private final RuntimeConfigService runtimeConfigService;
+
+    public DefaultSanitizerComponent(
+            InputSanitizer inputSanitizer,
+            InjectionGuard injectionGuard,
+            RuntimeConfigService runtimeConfigService) {
+        this.inputSanitizer = inputSanitizer;
+        this.injectionGuard = injectionGuard;
+        this.runtimeConfigService = runtimeConfigService;
+    }
 
     @Override
     public String sanitize(String input) {

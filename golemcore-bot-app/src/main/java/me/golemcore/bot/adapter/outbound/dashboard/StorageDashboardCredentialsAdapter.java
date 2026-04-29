@@ -2,14 +2,12 @@ package me.golemcore.bot.adapter.outbound.dashboard;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.Optional;
-import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.domain.model.AdminCredentials;
 import me.golemcore.bot.port.outbound.DashboardCredentialsPort;
 import me.golemcore.bot.port.outbound.StoragePort;
 import org.springframework.stereotype.Component;
 
 @Component
-@RequiredArgsConstructor
 public class StorageDashboardCredentialsAdapter implements DashboardCredentialsPort {
 
     private static final String ADMIN_DIR = "preferences";
@@ -17,6 +15,13 @@ public class StorageDashboardCredentialsAdapter implements DashboardCredentialsP
 
     private final StoragePort storagePort;
     private final ObjectMapper objectMapper;
+
+    public StorageDashboardCredentialsAdapter(
+            StoragePort storagePort,
+            ObjectMapper objectMapper) {
+        this.storagePort = storagePort;
+        this.objectMapper = objectMapper;
+    }
 
     @Override
     public Optional<AdminCredentials> load() {

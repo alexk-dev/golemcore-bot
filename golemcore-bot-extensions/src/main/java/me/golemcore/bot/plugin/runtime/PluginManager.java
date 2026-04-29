@@ -2,7 +2,6 @@ package me.golemcore.bot.plugin.runtime;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.plugin.runtime.config.PluginRuntimeProperties;
 import me.golemcore.bot.plugin.runtime.extension.PluginToolAdapter;
@@ -54,7 +53,6 @@ import java.util.jar.JarFile;
  * extension beans into host registries.
  */
 @Component
-@RequiredArgsConstructor
 @Slf4j
 public class PluginManager {
 
@@ -81,6 +79,35 @@ public class PluginManager {
     private final Map<Path, JarFingerprint> fingerprintsByJar = new LinkedHashMap<>();
 
     private ScheduledExecutorService pollExecutor;
+
+    public PluginManager(
+            PluginRuntimeProperties pluginRuntimeProperties,
+            ConfigurableApplicationContext applicationContext,
+            ObjectProvider<BuildProperties> buildPropertiesProvider,
+            ChannelRegistry channelRegistry,
+            PluginBackedConfirmationPort confirmationPort,
+            SttProviderRegistry sttProviderRegistry,
+            TtsProviderRegistry ttsProviderRegistry,
+            RagProviderRegistry ragProviderRegistry,
+            RagIngestionProviderRegistry ragIngestionProviderRegistry,
+            PluginSettingsRegistry pluginSettingsRegistry,
+            TelegramWebhookUpdateConsumerRegistry telegramWebhookUpdateConsumerRegistry,
+            ToolRegistryPort toolRegistryPort,
+            PluginExtensionApiMapper pluginApiMapper) {
+        this.pluginRuntimeProperties = pluginRuntimeProperties;
+        this.applicationContext = applicationContext;
+        this.buildPropertiesProvider = buildPropertiesProvider;
+        this.channelRegistry = channelRegistry;
+        this.confirmationPort = confirmationPort;
+        this.sttProviderRegistry = sttProviderRegistry;
+        this.ttsProviderRegistry = ttsProviderRegistry;
+        this.ragProviderRegistry = ragProviderRegistry;
+        this.ragIngestionProviderRegistry = ragIngestionProviderRegistry;
+        this.pluginSettingsRegistry = pluginSettingsRegistry;
+        this.telegramWebhookUpdateConsumerRegistry = telegramWebhookUpdateConsumerRegistry;
+        this.toolRegistryPort = toolRegistryPort;
+        this.pluginApiMapper = pluginApiMapper;
+    }
 
     @PostConstruct
     public synchronized void startPolling() {

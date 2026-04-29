@@ -1,6 +1,5 @@
 package me.golemcore.bot.adapter.inbound.web.terminal;
 
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.infrastructure.config.BotProperties;
 import org.springframework.stereotype.Component;
@@ -21,12 +20,15 @@ import java.util.concurrent.atomic.AtomicReference;
  * lease is released so long-lived instances do not accumulate stale keys.
  */
 @Component
-@RequiredArgsConstructor
 @Slf4j
 public class TerminalSessionLimiter {
 
     private final BotProperties botProperties;
     private final Map<String, AtomicInteger> activeByUser = new ConcurrentHashMap<>();
+
+    public TerminalSessionLimiter(BotProperties botProperties) {
+        this.botProperties = botProperties;
+    }
 
     public boolean isEnabled() {
         return botProperties.getDashboard().getTerminal().isEnabled();

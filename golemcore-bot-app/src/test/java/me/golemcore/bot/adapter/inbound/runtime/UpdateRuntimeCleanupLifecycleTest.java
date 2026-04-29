@@ -1,6 +1,6 @@
 package me.golemcore.bot.adapter.inbound.runtime;
 
-import me.golemcore.bot.domain.service.UpdateRuntimeCleanupService;
+import me.golemcore.bot.domain.update.UpdateRuntimeCleanupService;
 import me.golemcore.bot.port.outbound.UpdateVersionPort;
 import org.junit.jupiter.api.Test;
 

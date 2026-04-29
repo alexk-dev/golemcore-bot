@@ -29,9 +29,9 @@ import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.MemoryPresetIds;
 import me.golemcore.bot.domain.model.ToolDefinition;
 import me.golemcore.bot.domain.model.ToolNames;
-import me.golemcore.bot.domain.service.DelayedActionPolicyService;
-import me.golemcore.bot.domain.service.PlanModeToolRestrictionService;
-import me.golemcore.bot.domain.service.ToolCallExecutionService;
+import me.golemcore.bot.domain.scheduling.DelayedActionPolicyService;
+import me.golemcore.bot.domain.tools.PlanModeToolRestrictionService;
+import me.golemcore.bot.domain.tools.registry.ToolRegistryService;
 import me.golemcore.bot.port.outbound.McpPort;
 
 import java.util.ArrayList;
@@ -47,7 +47,7 @@ import java.util.Map;
  * <p>
  * This layer:
  * <ul>
- * <li>Lists all native tools via {@link ToolCallExecutionService}</li>
+ * <li>Lists all native tools via {@link ToolRegistryService}</li>
  * <li>Filters by enabled/advertised status (Hive, delays)</li>
  * <li>Starts MCP servers for active skills with MCP config</li>
  * <li>Creates turn-scoped tool adapters for MCP tools</li>
@@ -82,23 +82,23 @@ public class ToolLayer extends AbstractContextLayer {
             Plan Mode is active. Shell tools and mutating edit/write/patch tools are unavailable. Use only the advertised plan-mode tools and their schemas.
             """;
 
-    private final ToolCallExecutionService toolCallExecutionService;
+    private final ToolRegistryService toolRegistryService;
     private final McpPort mcpPort;
     private final DelayedActionPolicyService delayedActionPolicyService;
     private final PlanModeToolRestrictionService planModeToolRestrictionService;
 
-    public ToolLayer(ToolCallExecutionService toolCallExecutionService,
+    public ToolLayer(ToolRegistryService toolRegistryService,
             McpPort mcpPort,
             DelayedActionPolicyService delayedActionPolicyService) {
-        this(toolCallExecutionService, mcpPort, delayedActionPolicyService, null);
+        this(toolRegistryService, mcpPort, delayedActionPolicyService, null);
     }
 
-    public ToolLayer(ToolCallExecutionService toolCallExecutionService,
+    public ToolLayer(ToolRegistryService toolRegistryService,
             McpPort mcpPort,
             DelayedActionPolicyService delayedActionPolicyService,
             PlanModeToolRestrictionService planModeToolRestrictionService) {
         super("tool", 50, 65, ContextLayerLifecycle.TURN, 3_000, true);
-        this.toolCallExecutionService = toolCallExecutionService;
+        this.toolRegistryService = toolRegistryService;
         this.mcpPort = mcpPort;
         this.delayedActionPolicyService = delayedActionPolicyService;
         this.planModeToolRestrictionService = planModeToolRestrictionService;
@@ -120,7 +120,7 @@ public class ToolLayer extends AbstractContextLayer {
 
         // Collect native tools
         Map<String, ToolDefinition> toolsByName = new LinkedHashMap<>();
-        toolCallExecutionService.listTools().stream()
+        toolRegistryService.listTools().stream()
                 .filter(ToolComponent::isEnabled)
                 .filter(tool -> isToolAdvertised(tool, context, hiveSessionActive))
                 .map(ToolComponent::getDefinition)

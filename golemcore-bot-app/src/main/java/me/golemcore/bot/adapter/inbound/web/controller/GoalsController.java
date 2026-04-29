@@ -1,13 +1,12 @@
 package me.golemcore.bot.adapter.inbound.web.controller;
 
-import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.domain.model.AutoTask;
 import me.golemcore.bot.domain.model.Goal;
 import me.golemcore.bot.domain.model.ModelTierCatalog;
 import me.golemcore.bot.domain.model.SessionIdentity;
-import me.golemcore.bot.domain.service.AutoModeService;
-import me.golemcore.bot.domain.service.SessionIdentitySupport;
-import me.golemcore.bot.domain.service.StringValueSupport;
+import me.golemcore.bot.domain.auto.AutoModeService;
+import me.golemcore.bot.domain.identity.SessionIdentitySupport;
+import me.golemcore.bot.domain.support.StringValueSupport;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -31,12 +30,15 @@ import java.util.Locale;
  */
 @RestController
 @RequestMapping("/api")
-@RequiredArgsConstructor
 public class GoalsController {
 
     private static final String FEATURE_DISABLED = "Auto mode feature is disabled";
 
     private final AutoModeService autoModeService;
+
+    public GoalsController(AutoModeService autoModeService) {
+        this.autoModeService = autoModeService;
+    }
 
     @GetMapping("/goals")
     public Mono<ResponseEntity<GoalsResponse>> getGoals(

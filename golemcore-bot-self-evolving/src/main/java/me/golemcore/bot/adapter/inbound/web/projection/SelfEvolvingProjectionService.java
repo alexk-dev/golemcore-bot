@@ -61,7 +61,7 @@ import me.golemcore.bot.domain.selfevolving.tactic.LocalEmbeddingBootstrapServic
 import me.golemcore.bot.domain.selfevolving.tactic.TacticRecordService;
 import me.golemcore.bot.domain.selfevolving.tactic.TacticSearchMetricsService;
 import me.golemcore.bot.domain.selfevolving.tactic.TacticSearchService;
-import me.golemcore.bot.domain.service.StringValueSupport;
+import me.golemcore.bot.domain.support.StringValueSupport;
 
 /**
  * Projects SelfEvolving core records into dashboard-friendly DTOs.

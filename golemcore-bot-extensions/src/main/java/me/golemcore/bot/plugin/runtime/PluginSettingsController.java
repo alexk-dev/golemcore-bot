@@ -1,6 +1,5 @@
 package me.golemcore.bot.plugin.runtime;
 
-import lombok.RequiredArgsConstructor;
 import me.golemcore.plugin.api.extension.spi.PluginActionResult;
 import me.golemcore.plugin.api.extension.spi.PluginSettingsCatalogItem;
 import me.golemcore.plugin.api.extension.spi.PluginSettingsSection;
@@ -23,11 +22,17 @@ import java.util.Map;
  */
 @RestController
 @RequestMapping("/api/plugins/settings")
-@RequiredArgsConstructor
 public class PluginSettingsController {
 
     private final PluginSettingsRegistry pluginSettingsRegistry;
     private final TelemetryRollupPort telemetryRollupStore;
+
+    public PluginSettingsController(
+            PluginSettingsRegistry pluginSettingsRegistry,
+            TelemetryRollupPort telemetryRollupStore) {
+        this.pluginSettingsRegistry = pluginSettingsRegistry;
+        this.telemetryRollupStore = telemetryRollupStore;
+    }
 
     @GetMapping("/catalog")
     public Mono<ResponseEntity<List<PluginSettingsCatalogItem>>> listCatalogItems() {

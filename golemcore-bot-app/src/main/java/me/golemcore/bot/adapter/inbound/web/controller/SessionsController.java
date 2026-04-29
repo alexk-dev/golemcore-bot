@@ -5,7 +5,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.function.Supplier;
-import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.client.dto.ActiveSessionRequest;
 import me.golemcore.bot.client.dto.ActiveSessionResponse;
 import me.golemcore.bot.client.dto.CreateSessionRequest;
@@ -17,8 +16,8 @@ import me.golemcore.bot.client.dto.SessionTraceSummaryDto;
 import me.golemcore.bot.adapter.inbound.web.mapper.SessionWebDtoMapper;
 import me.golemcore.bot.client.dto.SessionTraceExportPayload;
 import me.golemcore.bot.domain.view.ActiveSessionSelectionView;
-import me.golemcore.bot.domain.service.SessionInspectionService;
-import me.golemcore.bot.domain.service.SessionSelectionService;
+import me.golemcore.bot.domain.sessions.SessionInspectionService;
+import me.golemcore.bot.domain.sessions.SessionSelectionService;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -39,12 +38,20 @@ import reactor.core.publisher.Mono;
  */
 @RestController
 @RequestMapping("/api/sessions")
-@RequiredArgsConstructor
 public class SessionsController {
 
     private final SessionInspectionService sessionInspectionService;
     private final SessionSelectionService sessionSelectionService;
     private final SessionWebDtoMapper sessionWebDtoMapper;
+
+    public SessionsController(
+            SessionInspectionService sessionInspectionService,
+            SessionSelectionService sessionSelectionService,
+            SessionWebDtoMapper sessionWebDtoMapper) {
+        this.sessionInspectionService = sessionInspectionService;
+        this.sessionSelectionService = sessionSelectionService;
+        this.sessionWebDtoMapper = sessionWebDtoMapper;
+    }
 
     @GetMapping
     public Mono<ResponseEntity<List<SessionSummaryDto>>> listSessions(

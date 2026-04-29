@@ -21,7 +21,7 @@ package me.golemcore.bot.usage;
 import me.golemcore.bot.domain.model.LlmUsage;
 import me.golemcore.bot.domain.model.UsageMetric;
 import me.golemcore.bot.domain.model.UsageStats;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
+import me.golemcore.bot.domain.runtimeconfig.RuntimeConfigService;
 import me.golemcore.bot.port.outbound.StoragePort;
 import me.golemcore.bot.port.outbound.UsageTrackingPort;
 import com.fasterxml.jackson.core.type.TypeReference;
@@ -30,7 +30,6 @@ import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
@@ -73,7 +72,6 @@ import java.util.stream.Collectors;
  * @since 1.0
  */
 @Component
-@RequiredArgsConstructor
 @Slf4j
 public class LlmUsageTrackerImpl implements UsageTrackingPort {
 
@@ -112,6 +110,15 @@ public class LlmUsageTrackerImpl implements UsageTrackingPort {
         t.setDaemon(true);
         return t;
     });
+
+    public LlmUsageTrackerImpl(
+            StoragePort storagePort,
+            RuntimeConfigService runtimeConfigService,
+            ObjectMapper objectMapper) {
+        this.storagePort = storagePort;
+        this.runtimeConfigService = runtimeConfigService;
+        this.objectMapper = objectMapper;
+    }
 
     @PostConstruct
     void init() {

@@ -18,19 +18,19 @@ package me.golemcore.bot.domain.context.resolution;
  * Contact: alex@kuleshov.tech
  */
 
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import me.golemcore.bot.domain.component.SkillComponent;
+import me.golemcore.bot.domain.context.ContextResolver;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.Skill;
 import me.golemcore.bot.domain.model.UserPreferences;
-import me.golemcore.bot.domain.service.AutoRunContextSupport;
-import me.golemcore.bot.domain.service.ModelSelectionService;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
-import me.golemcore.bot.domain.service.SessionModelSettingsSupport;
-import me.golemcore.bot.domain.service.UserPreferencesService;
+import me.golemcore.bot.domain.autorun.AutoRunContextSupport;
+import me.golemcore.bot.domain.model.ModelSelectionService;
+import me.golemcore.bot.domain.runtimeconfig.RuntimeConfigService;
+import me.golemcore.bot.domain.sessions.SessionModelSettingsSupport;
+import me.golemcore.bot.domain.runtimeconfig.UserPreferencesService;
 
 import java.util.Optional;
 
@@ -64,14 +64,24 @@ import java.util.Optional;
  * {@code MODEL_TIER_MODEL_ID}, {@code MODEL_TIER_REASONING}) is published to
  * {@link ContextAttributes} for observability.
  */
-@RequiredArgsConstructor
 @Slf4j
-public class TierResolver {
+public class TierResolver implements ContextResolver {
 
     private final UserPreferencesService userPreferencesService;
     private final ModelSelectionService modelSelectionService;
     private final RuntimeConfigService runtimeConfigService;
     private final SkillComponent skillComponent;
+
+    public TierResolver(
+            UserPreferencesService userPreferencesService,
+            ModelSelectionService modelSelectionService,
+            RuntimeConfigService runtimeConfigService,
+            SkillComponent skillComponent) {
+        this.userPreferencesService = userPreferencesService;
+        this.modelSelectionService = modelSelectionService;
+        this.runtimeConfigService = runtimeConfigService;
+        this.skillComponent = skillComponent;
+    }
 
     /**
      * Resolves the model tier for the given context and publishes tier metadata to

@@ -11,9 +11,9 @@ import me.golemcore.bot.domain.model.ContextAttributes;
 import me.golemcore.bot.domain.model.LlmResponse;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.resilience.ClassifierRequest;
-import me.golemcore.bot.domain.service.ResilienceObservabilitySupport;
-import me.golemcore.bot.domain.service.RuntimeConfigService;
-import me.golemcore.bot.domain.service.TraceService;
+import me.golemcore.bot.domain.resilience.ResilienceObservabilitySupport;
+import me.golemcore.bot.domain.runtimeconfig.RuntimeConfigService;
+import me.golemcore.bot.domain.tracing.TraceService;
 import me.golemcore.bot.port.outbound.TraceSnapshotCodecPort;
 import org.slf4j.Logger;
 

@@ -21,14 +21,17 @@ package me.golemcore.bot.domain.system;
 import me.golemcore.bot.domain.model.AgentContext;
 import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.ToolResult;
-import me.golemcore.bot.domain.service.ToolCallExecutionResult;
-import me.golemcore.bot.domain.service.ToolCallExecutionService;
+import me.golemcore.bot.domain.tools.execution.ToolCallExecutionResult;
+import me.golemcore.bot.domain.tools.execution.ToolCallExecutionService;
+import me.golemcore.bot.domain.tools.execution.ToolExecutionContext;
 import me.golemcore.bot.domain.system.toolloop.ToolCallExecutionServiceToolExecutorAdapter;
 import me.golemcore.bot.domain.system.toolloop.ToolExecutionOutcome;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -48,7 +51,7 @@ class ToolLoopToolExecutorAdaptersTest {
                 ToolResult.success("ok"),
                 "ok",
                 null);
-        when(svc.execute(ctx, call)).thenReturn(svcResult);
+        when(svc.execute(any(ToolExecutionContext.class), eq(call))).thenReturn(svcResult);
 
         ToolExecutionOutcome out = adapter.execute(ctx, call);
         assertEquals("tc1", out.toolCallId());

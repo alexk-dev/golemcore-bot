@@ -18,9 +18,9 @@ package me.golemcore.bot.domain.selfevolving;
  * Contact: alex@kuleshov.tech
  */
 
-import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.Secret;
+import me.golemcore.bot.port.outbound.SelfEvolvingBootstrapOverridePort;
 import me.golemcore.bot.port.outbound.SelfEvolvingBootstrapSettingsPort;
 import org.springframework.stereotype.Service;
 
@@ -32,8 +32,7 @@ import java.util.List;
  * onto the effective runtime config without changing persisted preferences.
  */
 @Service
-@RequiredArgsConstructor
-public class SelfEvolvingBootstrapOverrideService {
+public class SelfEvolvingBootstrapOverrideService implements SelfEvolvingBootstrapOverridePort {
 
     private static final String PATH_ENABLED = "enabled";
     private static final String PATH_TACTICS_ENABLED = "tactics.enabled";
@@ -56,6 +55,11 @@ public class SelfEvolvingBootstrapOverrideService {
 
     private final SelfEvolvingBootstrapSettingsPort settingsPort;
 
+    public SelfEvolvingBootstrapOverrideService(SelfEvolvingBootstrapSettingsPort settingsPort) {
+        this.settingsPort = settingsPort;
+    }
+
+    @Override
     public void apply(RuntimeConfig runtimeConfig) {
         if (runtimeConfig == null) {
             return;
@@ -68,6 +72,7 @@ public class SelfEvolvingBootstrapOverrideService {
         overrideTactics(selfEvolvingConfig, bootstrap.tactics());
     }
 
+    @Override
     public void restorePersistedValues(RuntimeConfig candidateConfig, RuntimeConfig persistedConfig) {
         if (candidateConfig == null) {
             return;
@@ -84,10 +89,12 @@ public class SelfEvolvingBootstrapOverrideService {
         restoreTactics(candidate, persisted, bootstrap.tactics());
     }
 
+    @Override
     public boolean hasManagedOverrides() {
         return !getOverriddenPaths().isEmpty();
     }
 
+    @Override
     public List<String> getOverriddenPaths() {
         List<String> overriddenPaths = new ArrayList<>();
         SelfEvolvingBootstrapSettingsPort.SelfEvolvingBootstrapSettings bootstrap = settingsPort

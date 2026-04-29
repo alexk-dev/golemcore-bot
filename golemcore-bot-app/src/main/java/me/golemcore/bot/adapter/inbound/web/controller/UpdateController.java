@@ -1,7 +1,6 @@
 package me.golemcore.bot.adapter.inbound.web.controller;
 
 import me.golemcore.bot.application.update.UpdateService;
-import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.domain.model.RuntimeConfig;
 import me.golemcore.bot.domain.model.UpdateActionResult;
 import me.golemcore.bot.domain.model.UpdateStatus;
@@ -17,10 +16,13 @@ import reactor.core.scheduler.Schedulers;
 
 @RestController
 @RequestMapping("/api/system/update")
-@RequiredArgsConstructor
 public class UpdateController {
 
     private final UpdateService updateService;
+
+    public UpdateController(UpdateService updateService) {
+        this.updateService = updateService;
+    }
 
     @GetMapping("/status")
     public Mono<ResponseEntity<UpdateStatus>> getStatus() {

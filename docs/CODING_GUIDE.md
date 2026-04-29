@@ -86,12 +86,12 @@ This applies to all code: production, tests, and configuration classes.
 
 ### Constructor Injection
 
-All Spring-managed beans use constructor injection via Lombok's `@RequiredArgsConstructor`. Field injection (`@Autowired`) is prohibited.
+All Spring-managed beans use explicit constructor injection. Field injection (`@Autowired`) and generated injection
+constructors are prohibited.
 
 ```java
 // Correct
 @Service
-@RequiredArgsConstructor
 @Slf4j
 public class SessionService implements SessionPort {
 
@@ -99,7 +99,11 @@ public class SessionService implements SessionPort {
     private final ObjectMapper objectMapper;
     private final Clock clock;
 
-    // Lombok generates the constructor
+    public SessionService(StoragePort storagePort, ObjectMapper objectMapper, Clock clock) {
+        this.storagePort = storagePort;
+        this.objectMapper = objectMapper;
+        this.clock = clock;
+    }
 }
 
 // Incorrect — never use field injection
@@ -111,7 +115,8 @@ public class SessionService {
 }
 ```
 
-Dependencies must be `private final` fields. This guarantees immutability and makes dependencies explicit.
+Dependencies must be `private final` fields and every injected dependency must appear in the single explicit
+constructor. This guarantees immutability and makes dependencies visible in source.
 
 **`@Lazy` is prohibited.** It masks circular dependency problems. Break cycles by:
 1. Extracting a shared interface/service that both sides depend on
@@ -124,7 +129,6 @@ Order members within a class consistently:
 
 ```java
 @Service
-@RequiredArgsConstructor
 @Slf4j
 public class ExampleService {
 
@@ -139,20 +143,26 @@ public class ExampleService {
     // 3. Mutable state (caches, registries)
     private final Map<String, Item> cache = new ConcurrentHashMap<>();
 
-    // 4. Initialization (@PostConstruct)
+    // 4. Constructor
+    public ExampleService(StoragePort storagePort, BotProperties properties) {
+        this.storagePort = storagePort;
+        this.properties = properties;
+    }
+
+    // 5. Initialization (@PostConstruct)
     @PostConstruct
     public void init() {
         reload();
     }
 
-    // 5. Public interface methods
+    // 6. Public interface methods
     @Override
     public List<Item> getAll() { ... }
 
-    // 6. Public methods
+    // 7. Public methods
     public void reload() { ... }
 
-    // 7. Private methods
+    // 8. Private methods
     private Optional<Item> load(String id) { ... }
 }
 ```
@@ -226,7 +236,6 @@ import static org.mockito.Mockito.verify;
 
 | Annotation | Where | Purpose |
 |------------|-------|---------|
-| `@RequiredArgsConstructor` | Services, adapters, systems, tools | Constructor injection |
 | `@Slf4j` | Any class that logs | Generates `log` field |
 | `@Data` | Domain model POJOs | Getters, setters, equals, hashCode, toString |
 | `@Builder` | Domain models, request/response objects | Builder pattern |
@@ -270,11 +279,14 @@ All beans always exist at runtime. Use `isEnabled()` for runtime enable/disable 
 
 ```java
 @Component
-@RequiredArgsConstructor
 @Slf4j
 public class BraveSearchTool implements ToolComponent {
 
     private final BotProperties properties;
+
+    public BraveSearchTool(BotProperties properties) {
+        this.properties = properties;
+    }
 
     @Override
     public boolean isEnabled() {
@@ -307,10 +319,13 @@ String workspace = config.getWorkspace();
 
 ```java
 @Configuration
-@RequiredArgsConstructor
 public class AutoConfiguration {
 
     private final List<ChannelPort> channels;
+
+    public AutoConfiguration(List<ChannelPort> channels) {
+        this.channels = channels;
+    }
 
     @Bean
     public static Clock clock() {  // static — no dependency on instance fields
@@ -556,9 +571,14 @@ Pipeline systems implement `AgentSystem` with `@Order`. Always check `shouldProc
 ```java
 @Component
 @Order(25)
-@RequiredArgsConstructor
 @Slf4j
 public class DynamicTierSystem implements AgentSystem {
+
+    private final RuntimeConfigService runtimeConfigService;
+
+    public DynamicTierSystem(RuntimeConfigService runtimeConfigService) {
+        this.runtimeConfigService = runtimeConfigService;
+    }
 
     @Override
     public boolean shouldProcess(AgentContext context) {
