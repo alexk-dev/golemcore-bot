@@ -22,6 +22,7 @@ import me.golemcore.bot.domain.system.toolloop.repeat.ToolUseCategory;
 import me.golemcore.bot.domain.system.toolloop.repeat.ToolUseFingerprint;
 import me.golemcore.bot.domain.system.toolloop.repeat.ToolUseLedger;
 import me.golemcore.bot.domain.system.toolloop.repeat.ToolUseRecord;
+import me.golemcore.bot.domain.model.ToolFailureKind;
 import me.golemcore.bot.port.outbound.StoragePort;
 import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
@@ -114,6 +115,17 @@ class JsonToolUseLedgerStoreTest {
 
         assertEquals(1, loaded.recordsFor(SHELL_FINGERPRINT).size());
         assertEquals("sha256:new-shell", loaded.recordsFor(SHELL_FINGERPRINT).getFirst().outputDigest());
+    }
+
+    @Test
+    void repeatGuardStopTurnSyntheticMutationExpiresByTtl() {
+        ToolUseLedger ledger = new ToolUseLedger();
+        ledger.restore(repeatGuardStopMutation(NOW.minus(Duration.ofMinutes(121))));
+        store.save(WORK_KEY, ledger);
+
+        ToolUseLedger loaded = store.load(WORK_KEY, Duration.ofMinutes(120)).orElseThrow();
+
+        assertEquals(0, loaded.recordsFor(MEMORY_WRITE_FINGERPRINT).size());
     }
 
     @Test
@@ -229,10 +241,17 @@ class JsonToolUseLedgerStoreTest {
         ToolUseLedger ledger = new ToolUseLedger();
         store.save(WORK_KEY, ledger);
         String json = storagePort.get("auto", WORK_KEY.storageFile())
-                .replace("\"schemaVersion\" : 1", "\"schemaVersion\" : 999");
+                .replace("\"schemaVersion\" : 2", "\"schemaVersion\" : 999");
         storagePort.putText("auto", WORK_KEY.storageFile(), json).join();
 
         assertTrue(store.load(WORK_KEY, Duration.ofMinutes(120)).isEmpty());
+    }
+
+    @Test
+    void saveWritesCurrentSchemaVersionTwo() {
+        store.save(WORK_KEY, new ToolUseLedger());
+
+        assertTrue(storagePort.get("auto", WORK_KEY.storageFile()).contains("\"schemaVersion\" : 2"));
     }
 
     @Test
@@ -342,6 +361,19 @@ class JsonToolUseLedgerStoreTest {
                 0,
                 false,
                 null);
+    }
+
+    private ToolUseRecord repeatGuardStopMutation(Instant finishedAt) {
+        return new ToolUseRecord(
+                MEMORY_WRITE_FINGERPRINT,
+                finishedAt.minusMillis(50),
+                finishedAt,
+                false,
+                ToolFailureKind.REPEAT_GUARD_STOP_TURN.name(),
+                "sha256:stop",
+                0,
+                false,
+                "stopped");
     }
 
     private ToolUseRecord successfulShell(Instant finishedAt, String outputDigest) {

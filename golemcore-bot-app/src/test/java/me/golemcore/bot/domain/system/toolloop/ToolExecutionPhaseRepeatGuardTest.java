@@ -1,6 +1,7 @@
 package me.golemcore.bot.domain.system.toolloop;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -235,6 +236,25 @@ class ToolExecutionPhaseRepeatGuardTest {
     }
 
     @Test
+    void repeatGuardFingerprintFailureDoesNotBreakTurn() {
+        ToolExecutionPhase phase = phase();
+        TurnState turnState = buildTurnState();
+        Message.ToolCall invalidPath = Message.ToolCall.builder()
+                .id("tc-invalid")
+                .name(ToolNames.FILESYSTEM)
+                .arguments(Map.of("operation", "read_file", "path", "bad\u0000path"))
+                .build();
+        when(toolExecutor.execute(turnState.getContext(), invalidPath))
+                .thenReturn(failure(invalidPath, "Invalid path"));
+
+        assertDoesNotThrow(() -> phase.execute(turnState, response(invalidPath), historyWriter, llmCallPhase));
+
+        verify(toolExecutor).execute(turnState.getContext(), invalidPath);
+        assertEquals(ToolFailureKind.EXECUTION_FAILED,
+                turnState.getContext().getToolResults().get("tc-invalid").getFailureKind());
+    }
+
+    @Test
     void planModePolicyDenialsDoNotPoisonRepeatGuardAfterPlanModeEnds() {
         SessionIdentity sessionIdentity = new SessionIdentity("web", "chat-1");
         planService.activatePlanMode(sessionIdentity, "chat-1", null);
@@ -264,10 +284,11 @@ class ToolExecutionPhaseRepeatGuardTest {
         ToolExecutionPhase phase = new ToolExecutionPhase(toolExecutor, failurePolicy, runtimeEventService, null,
                 null, null, clock, null, repeatGuard);
         TurnState turnState = buildTurnState();
+        Message.ToolCall toolCall = readCall("tc-repeat");
+        recordTwoSuccessfulRepeats(turnState, toolCall);
         for (int index = 0; index < ToolRepeatGuardSettings.defaults().maxBlockedRepeatsPerTurn(); index++) {
             turnState.getToolUseLedger().incrementBlockedRepeatCount();
         }
-        Message.ToolCall toolCall = readCall("tc-repeat");
         when(failurePolicy.evaluate(any(), any(), any()))
                 .thenReturn(new ToolFailurePolicy.Verdict.StopTurn(ToolRepeatGuard.STOP_TURN_REASON));
         LlmCallPhase eventLlmCallPhase = buildLlmCallPhaseWithEvents(runtimeEventService);
@@ -314,6 +335,28 @@ class ToolExecutionPhaseRepeatGuardTest {
         assertEquals("WOULD_BLOCK_SHADOW", toolFinished.payload().get("repeatGuardDecision"));
         assertEquals("filesystem", toolFinished.payload().get("tool"));
         assertTrue(String.valueOf(toolFinished.payload().get("repeatFingerprint")).contains("filesystem:OBSERVE"));
+    }
+
+    @Test
+    void pendingWarningHintSuppressedAfterSameDomainMutation() {
+        ToolExecutionPhase phase = phase();
+        TurnState turnState = buildTurnState();
+        HistoryWriter realHistoryWriter = new DefaultHistoryWriter(clock);
+        Message.ToolCall repeated = readCall("tc-repeat");
+        Message.ToolCall write = Message.ToolCall.builder()
+                .id("tc-write")
+                .name(ToolNames.FILESYSTEM)
+                .arguments(Map.of("operation", "write_file", "path", "README.md", "content", "updated"))
+                .build();
+        repeatGuard.afterOutcome(turnState, repeated, success(repeated, "first"));
+        when(toolExecutor.execute(turnState.getContext(), repeated)).thenReturn(success(repeated, "second"));
+        when(toolExecutor.execute(turnState.getContext(), write)).thenReturn(success(write, "updated"));
+
+        phase.execute(turnState, LlmResponse.builder().toolCalls(List.of(repeated, write)).build(),
+                realHistoryWriter, llmCallPhase);
+
+        assertMessageOrder(turnState.getContext().getMessages(),
+                "assistant", "tool:tc-repeat", "tool:tc-write");
     }
 
     private LlmCallPhase buildLlmCallPhaseWithEvents(RuntimeEventService runtimeEventService) {

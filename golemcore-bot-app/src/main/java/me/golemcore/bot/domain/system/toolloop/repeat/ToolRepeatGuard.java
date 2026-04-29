@@ -47,16 +47,13 @@ public class ToolRepeatGuard {
 
     public ToolRepeatDecision beforeExecute(TurnState turnState, Message.ToolCall toolCall) {
         ToolRepeatGuardSettings settings = settings();
-        ToolUseFingerprint fingerprint = fingerprintService.fingerprint(toolCall);
+        ToolUseFingerprint fingerprint = safeFingerprint(toolCall);
         if (!settings.enabled()) {
             return new ToolRepeatDecision.Allow(fingerprint);
         }
         ToolUseLedger ledger = turnState.getToolUseLedger();
         if (fingerprint.category() == ToolUseCategory.CONTROL) {
             return new ToolRepeatDecision.Allow(fingerprint);
-        }
-        if (!settings.shadowMode() && ledger.getBlockedRepeatCount() >= settings.maxBlockedRepeatsPerTurn()) {
-            return new ToolRepeatDecision.StopTurn(STOP_TURN_REASON, fingerprint);
         }
 
         boolean durableLedgerActive = durableLedgerActive(turnState);
@@ -79,11 +76,12 @@ public class ToolRepeatGuard {
         if (turnState == null || toolCall == null || outcome == null || outcome.toolResult() == null) {
             return;
         }
-        ToolUseFingerprint fingerprint = fingerprintService.fingerprint(toolCall);
+        ToolUseFingerprint fingerprint = safeFingerprint(toolCall);
         ToolResult toolResult = outcome.toolResult();
         boolean guardBlocked = !toolResult.isSuccess()
                 && toolResult.getFailureKind() != null
-                && "REPEATED_TOOL_USE_BLOCKED".equals(toolResult.getFailureKind().name());
+                && ("REPEATED_TOOL_USE_BLOCKED".equals(toolResult.getFailureKind().name())
+                        || "REPEAT_GUARD_STOP_TURN".equals(toolResult.getFailureKind().name()));
         Instant now = clock.instant();
         turnState.getToolUseLedger().recordUse(new ToolUseRecord(
                 fingerprint,
@@ -196,8 +194,30 @@ public class ToolRepeatGuard {
             ledger.incrementWarnedRepeatCount();
             return new ToolRepeatDecision.WarnAndAllow(fingerprint, hint, true);
         }
+        if (ledger.getBlockedRepeatCount() >= settings.maxBlockedRepeatsPerTurn()) {
+            return new ToolRepeatDecision.StopTurn(STOP_TURN_REASON, fingerprint);
+        }
         ledger.incrementBlockedRepeatCount();
         return new ToolRepeatDecision.BlockAndHint(fingerprint, hint);
+    }
+
+    private ToolUseFingerprint safeFingerprint(Message.ToolCall toolCall) {
+        try {
+            return fingerprintService.fingerprint(toolCall);
+        } catch (RuntimeException e) {
+            String toolName = toolCall != null && toolCall.getName() != null
+                    ? toolCall.getName().trim().toLowerCase(java.util.Locale.ROOT)
+                    : "";
+            String stableKey = toolName + ":EXECUTE_UNKNOWN:fingerprint-failed";
+            return new ToolUseFingerprint(
+                    toolName,
+                    ToolUseCategory.EXECUTE_UNKNOWN,
+                    "fingerprint-failed",
+                    stableKey,
+                    null,
+                    java.util.Set.of(ToolStateDomain.UNKNOWN),
+                    java.util.Set.of());
+        }
     }
 
     private ToolRepeatGuardSettings settings() {

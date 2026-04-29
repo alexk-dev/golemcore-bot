@@ -143,6 +143,27 @@ public class ToolUseLedger {
         return Collections.unmodifiableMap(environmentVersions);
     }
 
+    public Map<ToolStateDomain, Integer> environmentSnapshotFor(ToolUseFingerprint fingerprint) {
+        return environmentSnapshot(fingerprint);
+    }
+
+    public boolean isEnvironmentSnapshotCurrent(
+            ToolUseFingerprint fingerprint,
+            Map<ToolStateDomain, Integer> snapshot) {
+        if (fingerprint == null || fingerprint.observedDomains().isEmpty()) {
+            return true;
+        }
+        Map<ToolStateDomain, Integer> safeSnapshot = snapshot != null ? snapshot : Map.of();
+        for (ToolStateDomain domain : fingerprint.observedDomains()) {
+            if (!Objects.equals(
+                    safeSnapshot.getOrDefault(domain, 0),
+                    environmentVersions.getOrDefault(domain, 0))) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     public void setEnvironmentVersions(Map<ToolStateDomain, Integer> versions) {
         environmentVersions.clear();
         if (versions == null) {

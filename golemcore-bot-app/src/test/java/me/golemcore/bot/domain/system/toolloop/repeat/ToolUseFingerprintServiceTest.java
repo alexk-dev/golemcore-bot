@@ -1,6 +1,7 @@
 package me.golemcore.bot.domain.system.toolloop.repeat;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -29,6 +30,29 @@ class ToolUseFingerprintServiceTest {
         Message.ToolCall second = toolCall("filesystem", Map.of("operation", "read_file", "path", "README.md"));
 
         assertEquals(service.fingerprint(first).stableKey(), service.fingerprint(second).stableKey());
+    }
+
+    @Test
+    void invalidFilesystemPathDoesNotThrowDuringFingerprinting() {
+        Message.ToolCall call = toolCall(ToolNames.FILESYSTEM,
+                Map.of("operation", "read_file", "path", "bad\u0000path"));
+
+        ToolUseFingerprint fingerprint = assertDoesNotThrow(() -> service.fingerprint(call));
+
+        assertEquals(ToolUseCategory.OBSERVE, fingerprint.category());
+        assertTrue(fingerprint.stableKey().startsWith("filesystem:OBSERVE:"));
+        assertFalse(fingerprint.debugArguments().contains("bad\u0000path"));
+    }
+
+    @Test
+    void invalidShellWorkdirDoesNotThrowDuringFingerprinting() {
+        Message.ToolCall call = toolCall(ToolNames.SHELL,
+                Map.of("command", "pwd", "workdir", "bad\u0000dir"));
+
+        ToolUseFingerprint fingerprint = assertDoesNotThrow(() -> service.fingerprint(call));
+
+        assertEquals(ToolUseCategory.EXECUTE_UNKNOWN, fingerprint.category());
+        assertTrue(fingerprint.stableKey().startsWith("shell:EXECUTE_UNKNOWN:"));
     }
 
     @Test
@@ -211,6 +235,29 @@ class ToolUseFingerprintServiceTest {
         assertEquals(ToolUseCategory.OBSERVE,
                 service.fingerprint(toolCall(ToolNames.FILESYSTEM,
                         Map.of("operation", "file_info", "path", "pom.xml"))).category());
+    }
+
+    @Test
+    void classifiesFirstPartyPluginObservationTools() {
+        assertEquals(ToolUseCategory.OBSERVE,
+                service.fingerprint(toolCall("browse", Map.of("url", "https://example.test"))).category());
+        assertEquals(ToolUseCategory.OBSERVE,
+                service.fingerprint(toolCall("firecrawl_scrape", Map.of("url", "https://example.test")))
+                        .category());
+        assertEquals(ToolUseCategory.OBSERVE,
+                service.fingerprint(toolCall("perplexity_ask", Map.of("query", "latest docs"))).category());
+        assertEquals(ToolUseCategory.OBSERVE,
+                service.fingerprint(toolCall("weather", Map.of("location", "San Francisco"))).category());
+    }
+
+    @Test
+    void classifiesMailPluginToolsConservatively() {
+        assertEquals(ToolUseCategory.OBSERVE,
+                service.fingerprint(toolCall("imap", Map.of("operation", "search", "query", "from:ops")))
+                        .category());
+        assertEquals(ToolUseCategory.MUTATE_NON_IDEMPOTENT,
+                service.fingerprint(toolCall("smtp", Map.of("to", "ops@example.test", "body", "hello")))
+                        .category());
     }
 
     @Test

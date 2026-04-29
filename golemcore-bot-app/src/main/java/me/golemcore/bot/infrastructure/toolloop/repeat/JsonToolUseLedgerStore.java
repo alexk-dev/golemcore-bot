@@ -12,6 +12,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import me.golemcore.bot.domain.model.ToolFailureKind;
 import me.golemcore.bot.domain.system.toolloop.repeat.AutonomyWorkKey;
 import me.golemcore.bot.domain.system.toolloop.repeat.ToolStateDomain;
 import me.golemcore.bot.domain.system.toolloop.repeat.ToolUseCategory;
@@ -29,8 +30,12 @@ import org.slf4j.LoggerFactory;
 public class JsonToolUseLedgerStore implements ToolUseLedgerStore {
 
     private static final Logger log = LoggerFactory.getLogger(JsonToolUseLedgerStore.class);
-    private static final int SCHEMA_VERSION = 1;
+    private static final int SCHEMA_VERSION = 2;
     private static final int MAX_STORED_RECORDS_PER_WORK_ITEM = 500;
+    private static final Set<Integer> SUPPORTED_SCHEMA_VERSIONS = Set.of(1, SCHEMA_VERSION);
+    private static final Set<String> REPEAT_GUARD_SYNTHETIC_FAILURE_KINDS = Set.of(
+            ToolFailureKind.REPEATED_TOOL_USE_BLOCKED.name(),
+            ToolFailureKind.REPEAT_GUARD_STOP_TURN.name());
 
     private final StoragePort storagePort;
     private final ObjectMapper objectMapper;
@@ -65,7 +70,8 @@ public class JsonToolUseLedgerStore implements ToolUseLedgerStore {
             }
             return Optional.of(toLedger(stored, ttl));
         } catch (RuntimeException | java.io.IOException e) {
-            log.warn("Failed to load repeat-guard ledger at {}: {}", key.storageFile(), e.getClass().getName());
+            log.warn("Failed to load repeat-guard ledger at {}: {} ({})",
+                    key.storageFile(), e.getClass().getName(), e.getMessage());
             return Optional.empty();
         }
     }
@@ -117,7 +123,7 @@ public class JsonToolUseLedgerStore implements ToolUseLedgerStore {
 
     private boolean isLoadable(StoredLedger stored, AutonomyWorkKey requestedKey) {
         return stored != null
-                && stored.schemaVersion() == SCHEMA_VERSION
+                && SUPPORTED_SCHEMA_VERSIONS.contains(stored.schemaVersion())
                 && stored.workKey() != null
                 && stored.workKey().matches(requestedKey);
     }
@@ -128,6 +134,9 @@ public class JsonToolUseLedgerStore implements ToolUseLedgerStore {
         }
         if (!entry.finishedAt().isBefore(cutoff)) {
             return false;
+        }
+        if (entry.failureKind() != null && REPEAT_GUARD_SYNTHETIC_FAILURE_KINDS.contains(entry.failureKind())) {
+            return true;
         }
         ToolUseCategory category = entry.fingerprint().category();
         return switch (category) {

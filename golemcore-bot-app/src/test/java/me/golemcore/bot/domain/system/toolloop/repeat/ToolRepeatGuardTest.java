@@ -347,13 +347,32 @@ class ToolRepeatGuardTest {
     @Test
     void stopsTurnAfterMaxBlockedRepeatsPerTurn() {
         TurnState turnState = turnState();
+        Message.ToolCall call = readCall("README.md");
+        guard.afterOutcome(turnState, call, success(call, "same output"));
+        guard.afterOutcome(turnState, call, success(call, "same output"));
         for (int index = 0; index < ToolRepeatGuardSettings.defaults().maxBlockedRepeatsPerTurn(); index++) {
             turnState.getToolUseLedger().incrementBlockedRepeatCount();
         }
 
-        ToolRepeatDecision decision = guard.beforeExecute(turnState, readCall("README.md"));
+        ToolRepeatDecision decision = guard.beforeExecute(turnState, call);
 
         assertInstanceOf(ToolRepeatDecision.StopTurn.class, decision);
+    }
+
+    @Test
+    void blockedRepeatThresholdAllowsDifferentRecoveryAction() {
+        TurnState turnState = turnState();
+        Message.ToolCall repeatedRead = readCall("README.md");
+        Message.ToolCall checkpoint = toolCall("memory", Map.of("operation", "memory_add", "content", "checkpoint"));
+        guard.afterOutcome(turnState, repeatedRead, success(repeatedRead, "same output"));
+        guard.afterOutcome(turnState, repeatedRead, success(repeatedRead, "same output"));
+        for (int index = 0; index < ToolRepeatGuardSettings.defaults().maxBlockedRepeatsPerTurn(); index++) {
+            turnState.getToolUseLedger().incrementBlockedRepeatCount();
+        }
+
+        ToolRepeatDecision decision = guard.beforeExecute(turnState, checkpoint);
+
+        assertInstanceOf(ToolRepeatDecision.Allow.class, decision);
     }
 
     @Test

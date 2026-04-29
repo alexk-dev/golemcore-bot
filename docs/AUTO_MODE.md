@@ -116,13 +116,16 @@ Default behavior:
 - repeated unknown executions such as exact shell commands are also TTL-bound; read-only shell commands do not reset the observation or polling repeat window
 - polling backoff follows the last same poll attempt across local environment changes
 - blocked synthetic results are still written as normal tool results, so tool-call history remains protocol-correct
-- changed observation output digests are treated as progress for that same fingerprint, while same-output observations remain bounded
+- changed model-visible observation output digests are treated as progress for that same fingerprint, while same-output observations remain bounded
 - repeat guard decisions are emitted in tool-finished telemetry without raw arguments
+- invalid model-generated paths/workdirs in fingerprints fail open through deterministic hash placeholders, so normal tool validation can still return a protocol-correct tool result
+- official plugin observation tools such as browser, Firecrawl, Perplexity, weather and read-only mail checks use observation semantics instead of unknown-execution semantics
 
 When a repeated auto observation is blocked, the recovery hint asks the model to use previous tool history, change
 arguments, perform a verified state-changing next step, write a diary/checkpoint, schedule a later check or finish the
 turn. In auto mode, the hint scope is the current autonomous task or goal until state changes, arguments change or the
-ledger TTL expires.
+ledger TTL expires. Warning hints are emitted after the full tool-result batch and are dropped if a later tool in the
+same batch already invalidated the relevant state domain.
 
 ### GOAL schedule
 
@@ -273,7 +276,7 @@ One JSON object per line, split by UTC date.
 ### `tool-ledgers/*`
 
 Repeat-guard continuity for autonomous work. Ledger files store bounded tool-use fingerprints, output digests,
-and state-domain environment versions. Per-turn warning and blocked-repeat counters are intentionally not restored from durable
+and state-domain environment versions. Current files are written with schema version `2`. Per-turn warning and blocked-repeat counters are intentionally not restored from durable
 storage, so a later scheduled run can still receive a fresh recovery hint instead of being stopped by stale counters.
 Ledgers intentionally do not store full tool outputs, raw arguments containing secrets or large payloads. Disabling the
 repeat guard also disables ledger learning, so re-enabling it cannot immediately block work based on calls made while

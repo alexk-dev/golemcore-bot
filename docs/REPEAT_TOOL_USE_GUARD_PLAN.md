@@ -47,6 +47,11 @@ polling and re-check behavior after state changes.
 - [x] Carry stable repeat fingerprints in synthetic blocked results and recovery telemetry.
 - [x] Log durable ledger load diagnostics while still failing open to an empty in-turn ledger.
 - [x] Bound readable durable-ledger path segment lengths while retaining hash identity.
+- [x] Keep pre-execution fingerprinting fail-open for invalid model-generated paths and shell workdirs.
+- [x] Classify official plugin observation tools (`browse`, `firecrawl_scrape`, `perplexity_ask`, `weather`, read-only mail) explicitly.
+- [x] Suppress stale batch-level warning hints after same-domain mutations.
+- [x] Allow a different recovery/checkpoint tool after the blocked-repeat threshold; stop only on another would-block repeat.
+- [x] Expire repeat-guard stop-turn synthetic records by durable ledger TTL and write schema version `2`.
 - [x] Treat disabled repeat guard as a hard kill switch with no ledger learning.
 - [x] Emit a dedicated `repeat_guard_stop` runtime reason for repeat-guard stop turns.
 - [x] Use hash-suffixed durable ledger paths to avoid sanitized work-key collisions.
