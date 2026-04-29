@@ -954,6 +954,179 @@
 }
 
 /* ------------------------------------------------------------------ */
+/* Chat shell adapter                                                 */
+/* The legacy ChatWindow renders ChatSessionTabs / ChatToolbar /      */
+/* ContextPanel inside .chat-page-layout. The harness chrome already  */
+/* hosts equivalents (TopBar pills, IconRail, SecondarySidebar with   */
+/* recent sessions, InspectorPanel) so the legacy duplicates are      */
+/* hidden and the inner thread is restyled with harness tokens.       */
+/* ------------------------------------------------------------------ */
+
+.harness-chat-layout {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+  background: var(--hns-bg-app);
+}
+
+.harness-chat-layout__hero {
+  width: 100%;
+  max-width: 860px;
+  margin: 0 auto;
+  padding: var(--hns-space-5) var(--hns-space-4) var(--hns-space-3);
+}
+
+.harness-chat-layout__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+}
+
+.harness-chat-layout__body > .chat-page-layout {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.harness-shell .chat-page-layout {
+  background: transparent;
+}
+
+.harness-shell .chat-page-layout:not(.chat-page-layout--embedded) {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.harness-shell .chat-page-layout:not(.chat-page-layout--embedded) > .context-panel {
+  display: none;
+}
+
+.harness-shell .context-panel-offcanvas {
+  display: none;
+}
+
+.harness-shell .chat-page-layout:not(.chat-page-layout--embedded) .chat-session-tabs,
+.harness-shell .chat-page-layout:not(.chat-page-layout--embedded) .chat-toolbar {
+  display: none;
+}
+
+.harness-shell .chat-page-layout:not(.chat-page-layout--embedded) .chat-container {
+  flex: 1 1 auto;
+  min-height: 0;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  display: flex;
+  flex-direction: column;
+}
+
+.harness-shell .chat-page-layout:not(.chat-page-layout--embedded) .chat-workspace-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: transparent;
+}
+
+.harness-shell .chat-page-layout:not(.chat-page-layout--embedded) .chat-window {
+  flex: 1 1 auto;
+  background: transparent;
+  padding: 0 var(--hns-space-4);
+}
+
+.harness-shell .chat-page-layout:not(.chat-page-layout--embedded) .chat-content-shell {
+  width: 100%;
+  max-width: 860px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--hns-space-3);
+  padding: var(--hns-space-3) 0 var(--hns-space-4);
+}
+
+.harness-shell .chat-page-layout:not(.chat-page-layout--embedded) .message-bubble {
+  background: var(--hns-bg-card);
+  border: 1px solid var(--hns-border-subtle);
+  border-radius: var(--hns-radius-lg);
+  color: var(--hns-text-primary);
+  box-shadow: none;
+}
+
+.harness-shell .chat-page-layout:not(.chat-page-layout--embedded) .message-bubble--user {
+  background: var(--hns-bg-elevated);
+}
+
+.harness-shell .chat-page-layout:not(.chat-page-layout--embedded) .message-bubble--assistant {
+  background: var(--hns-bg-card);
+}
+
+.harness-shell .chat-page-layout:not(.chat-page-layout--embedded) .message-author,
+.harness-shell .chat-page-layout:not(.chat-page-layout--embedded) .message-time {
+  color: var(--hns-text-muted);
+}
+
+.harness-shell .chat-page-layout:not(.chat-page-layout--embedded) .tool-call-card {
+  background: var(--hns-bg-panel);
+  border: 1px solid var(--hns-border-subtle);
+  border-radius: var(--hns-radius-md);
+  color: var(--hns-text-primary);
+}
+
+.harness-shell .chat-page-layout:not(.chat-page-layout--embedded) .chat-input-area {
+  background: transparent;
+  border-top: 1px solid var(--hns-border-subtle);
+  padding: var(--hns-space-3) var(--hns-space-4) var(--hns-space-4);
+}
+
+.harness-shell .chat-page-layout:not(.chat-page-layout--embedded) .chat-input-area > * {
+  width: 100%;
+  max-width: 860px;
+  margin: 0 auto;
+}
+
+.harness-shell .chat-page-layout:not(.chat-page-layout--embedded) .chat-input-form {
+  background: var(--hns-bg-card);
+  border: 1px solid var(--hns-border-medium);
+  border-radius: var(--hns-radius-lg);
+  box-shadow: none;
+}
+
+.harness-shell .chat-page-layout:not(.chat-page-layout--embedded) .chat-input-form textarea,
+.harness-shell .chat-page-layout:not(.chat-page-layout--embedded) .chat-input-form input {
+  background: transparent;
+  color: var(--hns-text-primary);
+}
+
+.harness-shell .chat-page-layout:not(.chat-page-layout--embedded) .chat-history-state {
+  color: var(--hns-text-muted);
+}
+
+.harness-shell .chat-page-layout:not(.chat-page-layout--embedded) .chat-empty-state {
+  color: var(--hns-text-secondary);
+}
+
+.harness-shell .chat-page-layout:not(.chat-page-layout--embedded) .chat-empty-state h3,
+.harness-shell .chat-page-layout:not(.chat-page-layout--embedded) .chat-empty-state h4 {
+  color: var(--hns-text-primary);
+}
+
+.harness-shell .chat-page-layout:not(.chat-page-layout--embedded) .starter-prompt {
+  background: var(--hns-bg-card);
+  border: 1px solid var(--hns-border-subtle);
+  color: var(--hns-text-primary);
+  border-radius: var(--hns-radius-md);
+}
+
+.harness-shell .chat-page-layout:not(.chat-page-layout--embedded) .starter-prompt:hover,
+.harness-shell .chat-page-layout:not(.chat-page-layout--embedded) .starter-prompt:focus-visible {
+  border-color: var(--hns-accent-soft);
+  background: var(--hns-bg-card-hover);
+}
+
+/* ------------------------------------------------------------------ */
 /* Skip link                                                          */
 /* ------------------------------------------------------------------ */
 
