@@ -4,7 +4,7 @@ import { useChatSessionStore } from '../../../store/chatSessionStore';
 import { useSidebarStore } from '../../../store/sidebarStore';
 import { useActiveSession, useCreateSession, useRecentSessions } from '../../../hooks/useSessions';
 import { useRuntimeConfig } from '../../../hooks/useSettings';
-import { useSystemUpdateStatus } from '../../../hooks/useSystem';
+import { useSystemHealth, useSystemUpdateStatus } from '../../../hooks/useSystem';
 import { isLegacyCompatibleConversationKey, normalizeConversationKey } from '../../../utils/conversationKey';
 import { getSidebarUpdateBadge } from '../../../utils/systemUpdateUi';
 import { createUuid } from '../../../utils/uuid';
@@ -44,7 +44,9 @@ export default function SecondarySidebar() {
   const activeSessionId = useChatSessionStore((s) => s.activeSessionId);
   const setActiveSessionId = useChatSessionStore((s) => s.setActiveSessionId);
   const { data: runtimeConfig } = useRuntimeConfig();
+  const { data: health } = useSystemHealth();
   const isSelfEvolvingEnabled = runtimeConfig?.selfEvolving?.enabled === true;
+  const versionLabel = health?.version != null ? `v${health.version}` : 'v…';
   const {
     data: recentSessionsData,
     isLoading: recentSessionsLoading,
@@ -96,8 +98,9 @@ export default function SecondarySidebar() {
         className={`harness-sidebar sidebar${mobileOpen ? ' mobile-open' : ''}`}
         aria-label="Primary navigation"
       >
-        <div className="harness-sidebar__header">
-          <h2 className="harness-sidebar__title">Workspace</h2>
+        <div className="harness-sidebar__brand">
+          <span className="harness-sidebar__brand-mark" aria-hidden="true">G</span>
+          <span className="harness-sidebar__brand-text">GolemCore</span>
           <button
             type="button"
             className="harness-sidebar__close-btn d-md-none"
@@ -111,7 +114,7 @@ export default function SecondarySidebar() {
           {SIDEBAR_GROUPS.map((group) => (
             <div key={group.id} className="harness-sidebar__group">
               <div className="harness-sidebar__group-header">
-                <span>{group.label}</span>
+                <span className="harness-sidebar__group-label">{group.label}</span>
               </div>
               {group.links.filter((link) => shouldRenderLink(link, isSelfEvolvingEnabled)).map((link) => (
                 <NavLink
@@ -119,6 +122,8 @@ export default function SecondarySidebar() {
                   to={link.to}
                   end={link.end === true}
                   onClick={handleNavClick}
+                  aria-label={link.label}
+                  title={link.label}
                   className={({ isActive }) => `harness-sidebar__link${isActive ? ' active' : ''}`}
                 >
                   <span className="harness-sidebar__link-icon" aria-hidden="true">{link.icon}</span>
@@ -138,6 +143,10 @@ export default function SecondarySidebar() {
             onSessionClick={handleSessionClick}
           />
         </nav>
+        <div className="harness-sidebar__footer" aria-label={`Dashboard version ${versionLabel}`}>
+          <span className="harness-sidebar__footer-mark" aria-hidden="true">●</span>
+          <span className="harness-sidebar__footer-text">{versionLabel}</span>
+        </div>
       </aside>
     </>
   );

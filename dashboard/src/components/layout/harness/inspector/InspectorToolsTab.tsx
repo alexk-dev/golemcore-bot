@@ -2,8 +2,7 @@ import { useMemo } from 'react';
 import { useChatSessionStore } from '../../../../store/chatSessionStore';
 import { useChatRuntimeStore } from '../../../../store/chatRuntimeStore';
 import ToolCallTimeline from '../../../agentRun/ToolCallTimeline';
-import IncidentCard from '../../../agentRun/IncidentCard';
-import { SAMPLE_INCIDENT, SAMPLE_TOOL_CALLS } from '../../../agentRun/sampleAgentRun';
+import { SAMPLE_TOOL_CALLS } from '../../../agentRun/sampleAgentRun';
 import { normalizeChatMessages } from '../../../agentRun/normalizeRunEvents';
 import type { ToolCallViewModel } from '../../../agentRun/types';
 
@@ -26,13 +25,12 @@ export default function InspectorToolsTab() {
     <div className="harness-inspector__placeholder-stack">
       {isDemo && (
         <p className="harness-inspector__card-label">
-          Demo tool history — replace with live data once the runtime emits
-          structured tool events. Real tool calls extracted from chat markers
-          will surface here automatically.
+          No tool calls in this session yet — the timeline below is a §23 reference render.
+          Real tool calls extracted from chat markers will surface here automatically as the
+          assistant invokes tools.
         </p>
       )}
       <ToolCallTimeline calls={calls} />
-      {isDemo && <IncidentCard incident={SAMPLE_INCIDENT} />}
     </div>
   );
 }
