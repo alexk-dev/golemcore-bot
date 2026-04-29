@@ -41,6 +41,11 @@ polling and re-check behavior after state changes.
 - [x] Classify documented read-only memory and filesystem operations as observations.
 - [x] Add domain-scoped state invalidation so memory, diary, Hive and scheduling mutations do not globally reset workspace repeats.
 - [x] Add explicit first-party semantics for `goal_management`, `schedule_session_action` and Hive tools.
+- [x] Treat changed observation output digests as progress for that fingerprint.
+- [x] Preserve conflicting shell workdir aliases in the fingerprint instead of collapsing them.
+- [x] Emit repeat-guard decision telemetry on `TOOL_FINISHED` without raw arguments.
+- [x] Carry stable repeat fingerprints in synthetic blocked results and recovery telemetry.
+- [x] Log durable ledger load diagnostics while still failing open to an empty in-turn ledger.
 - [x] Bound readable durable-ledger path segment lengths while retaining hash identity.
 - [x] Treat disabled repeat guard as a hard kill switch with no ledger learning.
 - [x] Emit a dedicated `repeat_guard_stop` runtime reason for repeat-guard stop turns.

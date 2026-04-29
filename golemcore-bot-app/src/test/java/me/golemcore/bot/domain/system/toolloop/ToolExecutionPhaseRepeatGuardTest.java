@@ -94,6 +94,8 @@ class ToolExecutionPhaseRepeatGuardTest {
         assertFalse(result.isSuccess());
         assertEquals(ToolFailureKind.REPEATED_TOOL_USE_BLOCKED, result.getFailureKind());
         assertTrue(result.getError().contains("Repeated tool call blocked"));
+        assertTrue(result.getData() instanceof Map<?, ?>);
+        assertTrue(((Map<?, ?>) result.getData()).containsKey("repeatFingerprint"));
         verify(historyWriter).appendToolResult(eq(turnState.getContext()), any());
     }
 
@@ -284,6 +286,36 @@ class ToolExecutionPhaseRepeatGuardTest {
         assertEquals("repeat_guard_stop", turnFinished.payload().get("reason"));
     }
 
+    @Test
+    void shadowWouldBlockEmitsTelemetryWithoutBlockingExecutor() {
+        RuntimeEventService runtimeEventService = new RuntimeEventService(clock);
+        ToolRepeatGuard shadowGuard = new ToolRepeatGuard(
+                new ToolUseFingerprintService(),
+                new ToolRepeatGuardSettings(true, true, 1, 1, 4,
+                        java.time.Duration.ofSeconds(60), java.time.Duration.ofMinutes(120)),
+                clock);
+        ToolExecutionPhase phase = new ToolExecutionPhase(toolExecutor, failurePolicy, runtimeEventService, null,
+                null, null, clock, null, shadowGuard);
+        TurnState turnState = buildTurnState();
+        Message.ToolCall toolCall = readCall("tc-repeat");
+        shadowGuard.afterOutcome(turnState, toolCall, success(toolCall, "same output"));
+        when(toolExecutor.execute(turnState.getContext(), toolCall)).thenReturn(success(toolCall, "same output"));
+
+        phase.execute(turnState, response(toolCall), historyWriter, buildLlmCallPhaseWithEvents(runtimeEventService));
+
+        verify(toolExecutor).execute(turnState.getContext(), toolCall);
+        @SuppressWarnings("unchecked")
+        List<RuntimeEvent> events = (List<RuntimeEvent>) turnState.getContext()
+                .getAttribute(ContextAttributes.RUNTIME_EVENTS);
+        RuntimeEvent toolFinished = events.stream()
+                .filter(event -> event.type() == RuntimeEventType.TOOL_FINISHED)
+                .findFirst()
+                .orElseThrow();
+        assertEquals("WOULD_BLOCK_SHADOW", toolFinished.payload().get("repeatGuardDecision"));
+        assertEquals("filesystem", toolFinished.payload().get("tool"));
+        assertTrue(String.valueOf(toolFinished.payload().get("repeatFingerprint")).contains("filesystem:OBSERVE"));
+    }
+
     private LlmCallPhase buildLlmCallPhaseWithEvents(RuntimeEventService runtimeEventService) {
         ModelSelectionService modelSelectionService = mock(ModelSelectionService.class);
         when(modelSelectionService.resolveMaxInputTokensForContext(any())).thenReturn(2_000_000_000);
@@ -370,7 +402,7 @@ class ToolExecutionPhaseRepeatGuardTest {
     }
 
     private void recordTwoSuccessfulRepeats(TurnState turnState, Message.ToolCall toolCall) {
-        repeatGuard.afterOutcome(turnState, toolCall, success(toolCall, "first"));
-        repeatGuard.afterOutcome(turnState, toolCall, success(toolCall, "second"));
+        repeatGuard.afterOutcome(turnState, toolCall, success(toolCall, "same output"));
+        repeatGuard.afterOutcome(turnState, toolCall, success(toolCall, "same output"));
     }
 }

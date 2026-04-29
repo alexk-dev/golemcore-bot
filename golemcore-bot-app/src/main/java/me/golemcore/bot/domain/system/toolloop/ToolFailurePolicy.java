@@ -25,6 +25,7 @@ import me.golemcore.bot.domain.model.Message;
 import me.golemcore.bot.domain.model.ToolFailureKind;
 
 import java.time.Clock;
+import java.util.Map;
 
 /**
  * Unified policy for all tool failure handling within the tool loop.
@@ -63,9 +64,8 @@ public class ToolFailurePolicy {
     /**
      * Result of evaluating the failure policy for a single tool execution.
      */
-    public sealed
-
-    interface Verdict {
+    // @formatter:off
+    public sealed interface Verdict {
 
         /** Continue normally — no policy triggered. */
         record Ok() implements Verdict {
@@ -93,6 +93,7 @@ public class ToolFailurePolicy {
         record RecoveryHint(String hint, String fingerprint, String recoverabilityName) implements Verdict {
         }
     }
+    // @formatter:on
 
     /**
      * Evaluates the failure policy for a tool execution outcome.
@@ -119,7 +120,7 @@ public class ToolFailurePolicy {
         }
 
         if (kind == ToolFailureKind.REPEATED_TOOL_USE_BLOCKED) {
-            return new Verdict.RecoveryHint(repeatGuardHint(outcome), repeatGuardFingerprint(toolCall),
+            return new Verdict.RecoveryHint(repeatGuardHint(outcome), repeatGuardFingerprint(toolCall, outcome),
                     "REPEAT_GUARD");
         }
 
@@ -157,7 +158,14 @@ public class ToolFailurePolicy {
             return error;
         }
 
-        private String repeatGuardFingerprint(Message.ToolCall toolCall) {
+        private String repeatGuardFingerprint(Message.ToolCall toolCall, ToolExecutionOutcome outcome) {
+            if (outcome != null && outcome.toolResult() != null
+                    && outcome.toolResult().getData() instanceof Map<?, ?> data) {
+                Object fingerprint = data.get("repeatFingerprint");
+                if (fingerprint instanceof String text && !text.isBlank()) {
+                    return text;
+                }
+            }
             if (toolCall == null) {
                 return "repeat-guard:unknown";
             }

@@ -1,5 +1,9 @@
 package me.golemcore.bot.infrastructure.toolloop.repeat;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.Clock;
 import java.time.Duration;
@@ -20,6 +24,7 @@ import me.golemcore.bot.domain.system.toolloop.repeat.ToolUseLedger;
 import me.golemcore.bot.domain.system.toolloop.repeat.ToolUseRecord;
 import me.golemcore.bot.port.outbound.StoragePort;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -186,6 +191,26 @@ class JsonToolUseLedgerStoreTest {
 
         storagePort.putText("auto", WORK_KEY.storageFile(), "{not-json").join();
         assertTrue(store.load(WORK_KEY, Duration.ofMinutes(120)).isEmpty());
+    }
+
+    @Test
+    void malformedLedgerLoadEmitsDiagnosticAndFallsBackToEmptyLedger() {
+        Logger logger = (Logger) LoggerFactory.getLogger(JsonToolUseLedgerStore.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        storagePort.putText("auto", WORK_KEY.storageFile(), "{not-json").join();
+
+        try {
+            assertTrue(store.load(WORK_KEY, Duration.ofMinutes(120)).isEmpty());
+        } finally {
+            logger.detachAppender(appender);
+        }
+
+        assertTrue(appender.list.stream()
+                .anyMatch(event -> event.getLevel() == Level.WARN
+                        && event.getFormattedMessage().contains("Failed to load repeat-guard ledger")
+                        && event.getFormattedMessage().contains(WORK_KEY.storageFile())));
     }
 
     @Test

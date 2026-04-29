@@ -104,6 +104,9 @@ The persisted auto ledger stores fingerprints, output digests and state-domain e
 bounded records per work item, and it does not persist per-turn warning/block counters, full tool outputs or raw
 secret-like arguments. Policy denials, confirmation denials and guard synthetic records may be retained for diagnostics,
 but they are not counted as successful prior executions for repeat-block decisions.
+For observations, a changed output digest is treated as progress for that fingerprint and resets the immediate
+same-output repeat pressure. Unknown executions keep stricter exact-repeat behavior because their output volatility is
+tool-specific and not safe to interpret generically.
 Ledger file paths use readable sanitized prefixes with short hash suffixes, which prevents sanitized id collisions while
 keeping storage inspectable. Readable path prefixes are length-bounded; the hash suffix carries the full work-item identity.
 
@@ -115,11 +118,18 @@ Unrelated progress writes do not re-allow the same workspace read, search or she
 Repeat warning hints are appended only after all tool results for the current assistant tool-call batch have been
 written. This keeps strict provider tool-call adjacency intact while still giving the model guidance before the next
 LLM call. Shell fingerprints include normalized `cwd`, `workdir` and `workingDirectory` values, so equivalent relative
-working directories do not bypass the repeat guard. Missing shell workdir is treated as the workspace root. Documented
+working directories do not bypass the repeat guard. Missing shell workdir is treated as the workspace root; conflicting
+workdir aliases are preserved in the fingerprint rather than collapsed to an arbitrary alias. Documented
 read-only filesystem operations (`read_file`, `list_directory`, `file_info`) and memory operations (`memory_search`,
 `memory_read`, `memory_expand_section`) are classified as observations, so they do not reset any verified state domain.
 First-party `goal_management`, `schedule_session_action` and Hive tools use explicit operation/name semantics instead
 of generic string matching.
+
+Repeat guard decisions are exposed in `TOOL_FINISHED` payloads with `repeatGuardDecision`, `repeatFingerprint`,
+`repeatCategory` and `repeatTool` fields. Synthetic blocked results carry the same stable repeat fingerprint in
+`ToolResult.data`, so recovery telemetry can aggregate by semantic fingerprint instead of transient tool-call id.
+Malformed or unreadable durable ledgers fail open to an empty in-turn ledger and emit a warning with the ledger path and
+exception class.
 
 ### SelfEvolving
 

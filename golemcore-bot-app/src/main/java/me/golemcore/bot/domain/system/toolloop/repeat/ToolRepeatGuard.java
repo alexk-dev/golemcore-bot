@@ -56,7 +56,7 @@ public class ToolRepeatGuard {
             return new ToolRepeatDecision.Allow(fingerprint);
         }
         if (!settings.shadowMode() && ledger.getBlockedRepeatCount() >= settings.maxBlockedRepeatsPerTurn()) {
-            return new ToolRepeatDecision.StopTurn(STOP_TURN_REASON);
+            return new ToolRepeatDecision.StopTurn(STOP_TURN_REASON, fingerprint);
         }
 
         boolean durableLedgerActive = durableLedgerActive(turnState);
@@ -109,7 +109,7 @@ public class ToolRepeatGuard {
         String toolName = fingerprint != null ? fingerprint.toolName() : "unknown";
         return "Repeated tool call allowed this time by repeat guard. Tool: " + toolName
                 + ". Reason: same fingerprint was already executed " + count
-                + " times with no verified state change. The next identical call may be blocked "
+                + " " + timeWord(count) + " with no verified state change. The next identical call may be blocked "
                 + scope(durableLedgerActive) + ". "
                 + "Prefer the previous result already present in conversation/tool history, change the arguments, "
                 + "perform a state-changing next step, write a diary/checkpoint, schedule a later check, "
@@ -120,7 +120,8 @@ public class ToolRepeatGuard {
         String toolName = fingerprint != null ? fingerprint.toolName() : "unknown";
         return "Repeated tool call blocked by repeat guard. Tool: " + toolName
                 + ". Reason: same fingerprint was already executed " + count
-                + " times with no verified state change. Do not call this tool with the same arguments again "
+                + " " + timeWord(count)
+                + " with no verified state change. Do not call this tool with the same arguments again "
                 + scope(durableLedgerActive) + ". "
                 + "Use the previous result already present in conversation/tool history, change the arguments, "
                 + "perform a state-changing next step, write a diary/checkpoint, schedule a later check, "
@@ -180,6 +181,10 @@ public class ToolRepeatGuard {
                 "Repeated exact mutation blocked by repeat guard. Tool: " + fingerprint.toolName()
                         + ". Confirm a new intent or change arguments before retrying.",
                 settings);
+    }
+
+    private String timeWord(int count) {
+        return count == 1 ? "time" : "times";
     }
 
     private ToolRepeatDecision blockOrShadow(

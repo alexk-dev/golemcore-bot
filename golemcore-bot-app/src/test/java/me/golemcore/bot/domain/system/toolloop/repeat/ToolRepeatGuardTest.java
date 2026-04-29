@@ -47,8 +47,8 @@ class ToolRepeatGuardTest {
     void blocksThirdIdenticalObservationInSameState() {
         TurnState turnState = turnState();
         Message.ToolCall call = readCall("README.md");
-        guard.afterOutcome(turnState, call, success(call, "first"));
-        guard.afterOutcome(turnState, call, success(call, "second"));
+        guard.afterOutcome(turnState, call, success(call, "same output"));
+        guard.afterOutcome(turnState, call, success(call, "same output"));
 
         ToolRepeatDecision decision = guard.beforeExecute(turnState, call);
 
@@ -74,8 +74,8 @@ class ToolRepeatGuardTest {
         TurnState turnState = turnState();
         Message.ToolCall read = readCall("README.md");
         Message.ToolCall shell = toolCall("shell", Map.of("command", "pwd"));
-        guard.afterOutcome(turnState, read, success(read, "before-1"));
-        guard.afterOutcome(turnState, read, success(read, "before-2"));
+        guard.afterOutcome(turnState, read, success(read, "same output"));
+        guard.afterOutcome(turnState, read, success(read, "same output"));
         guard.afterOutcome(turnState, shell, success(shell, "ok"));
 
         ToolRepeatDecision decision = guard.beforeExecute(turnState, read);
@@ -88,8 +88,8 @@ class ToolRepeatGuardTest {
         TurnState turnState = turnState();
         Message.ToolCall read = readCall("README.md");
         Message.ToolCall memorySearch = toolCall("memory", Map.of("operation", "memory_search", "query", "repeat"));
-        guard.afterOutcome(turnState, read, success(read, "before-1"));
-        guard.afterOutcome(turnState, read, success(read, "before-2"));
+        guard.afterOutcome(turnState, read, success(read, "same output"));
+        guard.afterOutcome(turnState, read, success(read, "same output"));
         guard.afterOutcome(turnState, memorySearch, success(memorySearch, "memory result"));
 
         ToolRepeatDecision decision = guard.beforeExecute(turnState, read);
@@ -102,8 +102,8 @@ class ToolRepeatGuardTest {
         TurnState turnState = turnState();
         Message.ToolCall read = readCall("README.md");
         Message.ToolCall memoryAdd = toolCall("memory", Map.of("operation", "memory_add", "content", "checkpoint"));
-        guard.afterOutcome(turnState, read, success(read, "before-1"));
-        guard.afterOutcome(turnState, read, success(read, "before-2"));
+        guard.afterOutcome(turnState, read, success(read, "same output"));
+        guard.afterOutcome(turnState, read, success(read, "same output"));
         guard.afterOutcome(turnState, memoryAdd, success(memoryAdd, "stored"));
 
         ToolRepeatDecision decision = guard.beforeExecute(turnState, read);
@@ -116,8 +116,8 @@ class ToolRepeatGuardTest {
         TurnState turnState = turnState();
         Message.ToolCall read = readCall("README.md");
         Message.ToolCall listGoals = toolCall("goal_management", Map.of("operation", "list_goals"));
-        guard.afterOutcome(turnState, read, success(read, "before-1"));
-        guard.afterOutcome(turnState, read, success(read, "before-2"));
+        guard.afterOutcome(turnState, read, success(read, "same output"));
+        guard.afterOutcome(turnState, read, success(read, "same output"));
         guard.afterOutcome(turnState, listGoals, success(listGoals, "goals"));
 
         ToolRepeatDecision decision = guard.beforeExecute(turnState, read);
@@ -132,8 +132,8 @@ class ToolRepeatGuardTest {
         Message.ToolCall memoryRead = toolCall("memory", Map.of("operation", "memory_read", "id", "m1"));
         Message.ToolCall memoryUpdate = toolCall("memory",
                 Map.of("operation", "memory_update", "id", "m1", "content", "updated"));
-        guard.afterOutcome(turnState, fileRead, success(fileRead, "before-1"));
-        guard.afterOutcome(turnState, fileRead, success(fileRead, "before-2"));
+        guard.afterOutcome(turnState, fileRead, success(fileRead, "same output"));
+        guard.afterOutcome(turnState, fileRead, success(fileRead, "same output"));
         guard.afterOutcome(turnState, memoryRead, success(memoryRead, "memory-1"));
         guard.afterOutcome(turnState, memoryRead, success(memoryRead, "memory-2"));
         guard.afterOutcome(turnState, memoryUpdate, success(memoryUpdate, "updated"));
@@ -162,8 +162,8 @@ class ToolRepeatGuardTest {
         Message.ToolCall hiveGet = toolCall("hive_get_card", Map.of("cardId", "card-1"));
         Message.ToolCall hivePost = toolCall("hive_post_thread_message",
                 Map.of("threadId", "thread-1", "message", "updated"));
-        guard.afterOutcome(turnState, shell, success(shell, "first shell"));
-        guard.afterOutcome(turnState, shell, success(shell, "second shell"));
+        guard.afterOutcome(turnState, shell, success(shell, "same shell output"));
+        guard.afterOutcome(turnState, shell, success(shell, "same shell output"));
         guard.afterOutcome(turnState, hiveGet, success(hiveGet, "card-1"));
         guard.afterOutcome(turnState, hiveGet, success(hiveGet, "card-2"));
         guard.afterOutcome(turnState, hivePost, success(hivePost, "posted"));
@@ -237,8 +237,8 @@ class ToolRepeatGuardTest {
     void allowsDifferentArguments() {
         TurnState turnState = turnState();
         Message.ToolCall first = readCall("README.md");
-        guard.afterOutcome(turnState, first, success(first, "first"));
-        guard.afterOutcome(turnState, first, success(first, "second"));
+        guard.afterOutcome(turnState, first, success(first, "same output"));
+        guard.afterOutcome(turnState, first, success(first, "same output"));
 
         ToolRepeatDecision decision = guard.beforeExecute(turnState, readCall("docs/AUTO_MODE.md"));
 
@@ -276,6 +276,30 @@ class ToolRepeatGuardTest {
         Message.ToolCall shell = toolCall("shell", Map.of("command", "ls -la", "cwd", "."));
         guard.afterOutcome(turnState, shell, success(shell, "first"));
         guard.afterOutcome(turnState, shell, success(shell, "second"));
+
+        ToolRepeatDecision decision = guard.beforeExecute(turnState, shell);
+
+        assertInstanceOf(ToolRepeatDecision.BlockAndHint.class, decision);
+    }
+
+    @Test
+    void changedObservationDigestResetsRepeatCountForThatFingerprint() {
+        TurnState turnState = turnState();
+        Message.ToolCall read = readCall("target/log.txt");
+        guard.afterOutcome(turnState, read, success(read, "line A"));
+        guard.afterOutcome(turnState, read, success(read, "line A\nline B"));
+
+        ToolRepeatDecision decision = guard.beforeExecute(turnState, read);
+
+        assertInstanceOf(ToolRepeatDecision.Allow.class, decision);
+    }
+
+    @Test
+    void digestChangePolicyDisabledForUnknownExecutionsStillBlocks() {
+        TurnState turnState = turnState();
+        Message.ToolCall shell = toolCall("shell", Map.of("command", "date", "cwd", "."));
+        guard.afterOutcome(turnState, shell, success(shell, "2026-04-29T12:00:00Z"));
+        guard.afterOutcome(turnState, shell, success(shell, "2026-04-29T12:00:01Z"));
 
         ToolRepeatDecision decision = guard.beforeExecute(turnState, shell);
 

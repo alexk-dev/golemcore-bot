@@ -131,9 +131,6 @@ public class ToolUseFingerprintService {
                 || toolName.contains("list") || toolName.contains("search")) {
             return observe(ToolUseCategory.OBSERVE, ToolStateDomain.UNKNOWN);
         }
-        if (toolName.contains("goal") || toolName.contains("diary") || toolName.contains("memory")) {
-            return mutate(ToolUseCategory.MUTATE_IDEMPOTENT, ToolStateDomain.AUTONOMY_PROGRESS);
-        }
         return observe(ToolUseCategory.EXECUTE_UNKNOWN, ToolStateDomain.UNKNOWN);
     }
 
@@ -176,9 +173,19 @@ public class ToolUseFingerprintService {
             }
         }
         if (ToolNames.SHELL.equals(toolName)) {
-            sorted.put("cwd", shellWorkingDirectories.isEmpty()
-                    ? normalizePath(".")
-                    : shellWorkingDirectories.stream().sorted().findFirst().orElse(normalizePath(".")));
+            List<String> canonicalDirectories = shellWorkingDirectories.stream()
+                    .distinct()
+                    .sorted()
+                    .toList();
+            if (canonicalDirectories.isEmpty()) {
+                sorted.put("cwd", normalizePath("."));
+            } else if (canonicalDirectories.size() == 1) {
+                sorted.put("cwd", canonicalDirectories.getFirst());
+            } else {
+                sorted.put("cwd", canonicalDirectories.getFirst());
+                sorted.put("cwd_aliases", canonicalDirectories);
+                sorted.put("cwd_aliases_conflict", true);
+            }
         }
         result.putAll(sorted);
         return result;

@@ -71,6 +71,20 @@ class ToolUseFingerprintServiceTest {
     }
 
     @Test
+    void conflictingShellWorkdirAliasesDoNotCollapseToSingleAlias() {
+        Message.ToolCall first = toolCall(ToolNames.SHELL,
+                Map.of("command", "pwd", "workdir", "src", "cwd", "."));
+        Message.ToolCall second = toolCall(ToolNames.SHELL,
+                Map.of("command", "pwd", "workdir", "src"));
+        Message.ToolCall third = toolCall(ToolNames.SHELL,
+                Map.of("command", "pwd", "cwd", "."));
+
+        assertNotEquals(service.fingerprint(first).stableKey(), service.fingerprint(second).stableKey());
+        assertNotEquals(service.fingerprint(first).stableKey(), service.fingerprint(third).stableKey());
+        assertTrue(service.fingerprint(first).debugArguments().contains("cwd_aliases_conflict"));
+    }
+
+    @Test
     void redactsSecretLikeArgumentsBeforeHashingAndDebugSnapshot() {
         Message.ToolCall first = toolCall("http.get",
                 Map.of("url", "https://example.test", "apiKey", "secret-one", "password", "secret-two"));
@@ -114,7 +128,7 @@ class ToolUseFingerprintServiceTest {
         assertEquals(ToolUseCategory.MUTATE_IDEMPOTENT,
                 service.fingerprint(toolCall("filesystem",
                         Map.of("operation", "write_file", "path", "README.md", "content", "updated"))).category());
-        assertEquals(ToolUseCategory.MUTATE_IDEMPOTENT,
+        assertEquals(ToolUseCategory.EXECUTE_UNKNOWN,
                 service.fingerprint(toolCall("goal.diary", Map.of("text", "checkpoint"))).category());
     }
 

@@ -20,12 +20,15 @@ import me.golemcore.bot.domain.system.toolloop.repeat.ToolUseLedger;
 import me.golemcore.bot.domain.system.toolloop.repeat.ToolUseLedgerStore;
 import me.golemcore.bot.domain.system.toolloop.repeat.ToolUseRecord;
 import me.golemcore.bot.port.outbound.StoragePort;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * JSON storage adapter for bounded repeat-guard ledgers.
  */
 public class JsonToolUseLedgerStore implements ToolUseLedgerStore {
 
+    private static final Logger log = LoggerFactory.getLogger(JsonToolUseLedgerStore.class);
     private static final int SCHEMA_VERSION = 1;
     private static final int MAX_STORED_RECORDS_PER_WORK_ITEM = 500;
 
@@ -56,10 +59,13 @@ public class JsonToolUseLedgerStore implements ToolUseLedgerStore {
             }
             StoredLedger stored = objectMapper.readValue(json, StoredLedger.class);
             if (!isLoadable(stored, key)) {
+                log.warn("Ignored repeat-guard ledger at {} because schema or work key did not match",
+                        key.storageFile());
                 return Optional.empty();
             }
             return Optional.of(toLedger(stored, ttl));
         } catch (RuntimeException | java.io.IOException e) {
+            log.warn("Failed to load repeat-guard ledger at {}: {}", key.storageFile(), e.getClass().getName());
             return Optional.empty();
         }
     }

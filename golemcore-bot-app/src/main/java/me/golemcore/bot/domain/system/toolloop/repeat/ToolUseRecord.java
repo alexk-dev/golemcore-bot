@@ -50,7 +50,9 @@ public record ToolUseRecord(
         return withEnvironmentSnapshot(version, environmentVersions);
     }
 
-    public ToolUseRecord withEnvironmentSnapshot(int version, Map<ToolStateDomain, Integer> domainVersions) {
+    public ToolUseRecord withEnvironmentSnapshot(
+            int version,
+            Map<ToolStateDomain, Integer> domainVersions) {
         return new ToolUseRecord(
                 fingerprint,
                 startedAt,

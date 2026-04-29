@@ -110,8 +110,8 @@ class DefaultToolLoopSystemToolExecutionTest extends DefaultToolLoopSystemFixtur
                 storagePort(), new ObjectMapper().findAndRegisterModules(), clock);
         ToolUseLedger priorLedger = new ToolUseLedger();
         ToolUseFingerprint fingerprint = fingerprintService.fingerprint(readCall);
-        priorLedger.recordUse(priorObservation(fingerprint, "sha256:first"));
-        priorLedger.recordUse(priorObservation(fingerprint, "sha256:second"));
+        priorLedger.recordUse(priorObservation(fingerprint, "sha256:same"));
+        priorLedger.recordUse(priorObservation(fingerprint, "sha256:same"));
         ledgerStore.save(new AutonomyWorkKey("web:chat-1", "goal-1", "task-1", null), priorLedger);
 
         DefaultToolLoopSystem guardedSystem = DefaultToolLoopSystem.builder()
@@ -160,8 +160,8 @@ class DefaultToolLoopSystemToolExecutionTest extends DefaultToolLoopSystemFixtur
                 storagePort(), new ObjectMapper().findAndRegisterModules(), clock);
         ToolUseLedger priorLedger = new ToolUseLedger();
         ToolUseFingerprint fingerprint = fingerprintService.fingerprint(readCall);
-        priorLedger.recordUse(priorObservation(fingerprint, "sha256:first"));
-        priorLedger.recordUse(priorObservation(fingerprint, "sha256:second"));
+        priorLedger.recordUse(priorObservation(fingerprint, "sha256:same"));
+        priorLedger.recordUse(priorObservation(fingerprint, "sha256:same"));
         for (int index = 0; index < ToolRepeatGuardSettings.defaults().maxBlockedRepeatsPerTurn(); index++) {
             priorLedger.incrementBlockedRepeatCount();
         }

@@ -11,7 +11,11 @@ import me.golemcore.bot.domain.model.ContextAttributes;
  * Durable ledger identity for one autonomous goal or task.
  */
 // @formatter:off
-public record AutonomyWorkKey(String sessionKey, String goalId, String taskId, String scheduleId) {
+public record AutonomyWorkKey(
+        String sessionKey,
+        String goalId,
+        String taskId,
+        String scheduleId) {
 
     private static final String STORAGE_DIRECTORY = "auto";
     private static final String STORAGE_ROOT = STORAGE_DIRECTORY + "/tool-ledgers";

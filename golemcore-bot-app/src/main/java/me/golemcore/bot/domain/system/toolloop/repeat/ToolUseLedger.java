@@ -97,9 +97,13 @@ public class ToolUseLedger {
     }
 
     public int successfulRepeatCountInCurrentEnvironment(ToolUseFingerprint fingerprint) {
-        return (int) recordsForCurrentEnvironment(fingerprint).stream()
+        List<ToolUseRecord> records = recordsForCurrentEnvironment(fingerprint).stream()
                 .filter(this::isSuccessfulActualExecution)
-                .count();
+                .toList();
+        if (fingerprint != null && fingerprint.category() == ToolUseCategory.OBSERVE) {
+            return stableObservationRepeatCount(records);
+        }
+        return records.size();
     }
 
     public int successfulRepeatCount(ToolUseFingerprint fingerprint) {
@@ -216,6 +220,29 @@ public class ToolUseLedger {
             }
         }
         return true;
+    }
+
+    private int stableObservationRepeatCount(List<ToolUseRecord> records) {
+        if (records == null || records.size() <= 1) {
+            return records == null ? 0 : records.size();
+        }
+        ToolUseRecord latest = records.getLast();
+        ToolUseRecord previous = records.get(records.size() - 2);
+        String latestDigest = latest.outputDigest();
+        if (latestDigest == null || latestDigest.isBlank()) {
+            return records.size();
+        }
+        if (!Objects.equals(latestDigest, previous.outputDigest())) {
+            return 0;
+        }
+        int count = 0;
+        for (int index = records.size() - 1; index >= 0; index--) {
+            if (!Objects.equals(latestDigest, records.get(index).outputDigest())) {
+                break;
+            }
+            count++;
+        }
+        return count;
     }
 
     private Map<ToolStateDomain, Integer> environmentSnapshot(ToolUseFingerprint fingerprint) {

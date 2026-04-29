@@ -255,6 +255,26 @@ class ToolFailurePolicyTest {
     }
 
     @Test
+    void repeatGuardRecoveryHintUsesStableRepeatFingerprintFromStructuredData() {
+        TurnState turnState = buildTurnState(true, false, false);
+        Message.ToolCall toolCall = filesystemReadToolCall("README.md");
+        ToolResult result = ToolResult.builder()
+                .success(false)
+                .failureKind(ToolFailureKind.REPEATED_TOOL_USE_BLOCKED)
+                .error("Repeated tool call blocked by repeat guard.")
+                .data(Map.of("repeatFingerprint", "filesystem:OBSERVE:sha256:stable"))
+                .build();
+        ToolExecutionOutcome outcome = new ToolExecutionOutcome(
+                "tc-1", "filesystem", result, result.getError(), true, null);
+
+        ToolFailurePolicy.Verdict verdict = policy.evaluate(turnState, toolCall, outcome);
+
+        ToolFailurePolicy.Verdict.RecoveryHint hint = assertInstanceOf(
+                ToolFailurePolicy.Verdict.RecoveryHint.class, verdict);
+        assertEquals("filesystem:OBSERVE:sha256:stable", hint.fingerprint());
+    }
+
+    @Test
     void repeatGuardStopTurnDoesNotDependOnRepeatedBlockErrorText() {
         TurnState turnState = buildTurnState(true, false, false);
         Message.ToolCall toolCall = filesystemReadToolCall("README.md");

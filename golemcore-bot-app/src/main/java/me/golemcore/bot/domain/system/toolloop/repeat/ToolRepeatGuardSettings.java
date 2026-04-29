@@ -30,24 +30,12 @@ public record ToolRepeatGuardSettings(
 
     public static ToolRepeatGuardSettings defaults() {
         return new ToolRepeatGuardSettings(
-                true,
-                false,
-                2,
-                2,
-                4,
-                Duration.ofSeconds(60),
-                Duration.ofMinutes(120));
+                true, false, 2, 2, 4, Duration.ofSeconds(60), Duration.ofMinutes(120));
     }
 
     public static ToolRepeatGuardSettings disabled() {
         return new ToolRepeatGuardSettings(
-                false,
-                false,
-                2,
-                2,
-                4,
-                Duration.ofSeconds(60),
-                Duration.ofMinutes(120));
+                false, false, 2, 2, 4, Duration.ofSeconds(60), Duration.ofMinutes(120));
     }
 
     public static ToolRepeatGuardSettings from(ToolLoopRuntimeConfigView view) {

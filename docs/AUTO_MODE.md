@@ -116,6 +116,8 @@ Default behavior:
 - repeated unknown executions such as exact shell commands are also TTL-bound; read-only shell commands do not reset the observation or polling repeat window
 - polling backoff follows the last same poll attempt across local environment changes
 - blocked synthetic results are still written as normal tool results, so tool-call history remains protocol-correct
+- changed observation output digests are treated as progress for that same fingerprint, while same-output observations remain bounded
+- repeat guard decisions are emitted in tool-finished telemetry without raw arguments
 
 When a repeated auto observation is blocked, the recovery hint asks the model to use previous tool history, change
 arguments, perform a verified state-changing next step, write a diary/checkpoint, schedule a later check or finish the
@@ -279,7 +281,8 @@ protection was off. Observation, poll, unknown-execution and guard-blocked synth
 `repeatGuardAutoLedgerTtlMinutes`; remaining records are also capped to bound per-work-item storage. A stored
 `scheduleId` is audit-only: task and goal ledgers survive schedule replacement. Path segments keep a length-bounded
 readable sanitized prefix plus a short SHA-256 suffix so values such as `task/a` and `task_a`, or the same task id
-under different goals, cannot collide.
+under different goals, cannot collide. Malformed, mismatched or unreadable ledger files are ignored for safety and
+logged as repeat-guard ledger load warnings; the current turn then starts with an empty in-memory ledger.
 
 ## Configuration
 

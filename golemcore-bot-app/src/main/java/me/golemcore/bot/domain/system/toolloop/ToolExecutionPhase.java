@@ -40,6 +40,7 @@ import me.golemcore.bot.domain.tracing.TraceService;
 import me.golemcore.bot.domain.progress.TurnProgressService;
 import me.golemcore.bot.domain.system.toolloop.repeat.ToolRepeatDecision;
 import me.golemcore.bot.domain.system.toolloop.repeat.ToolRepeatGuard;
+import me.golemcore.bot.domain.system.toolloop.repeat.ToolUseFingerprint;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Duration;
@@ -137,9 +138,8 @@ class ToolExecutionPhase {
     /**
      * Outcome of executing a tool call batch.
      */
-    sealed
-
-    interface ToolBatchOutcome {
+    // @formatter:off
+    sealed interface ToolBatchOutcome {
 
         /** All tool calls executed successfully — continue the main loop. */
         record Continue() implements ToolBatchOutcome {
@@ -157,6 +157,7 @@ class ToolExecutionPhase {
         record Interrupted(ToolLoopTurnResult result) implements ToolBatchOutcome {
         }
     }
+    // @formatter:on
 
     /**
      * Executes a batch of tool calls, applying failure policy after each.
@@ -271,18 +272,19 @@ class ToolExecutionPhase {
             RepeatGuardExecution execution = planModeToolRestrictionService != null
                     ? planModeToolRestrictionService.denialReason(context, toolCall)
                             .map(reason -> new RepeatGuardExecution(ToolExecutionOutcome.synthetic(toolCall,
-                                    ToolFailureKind.POLICY_DENIED, reason), null))
+                                    ToolFailureKind.POLICY_DENIED, reason), null, null))
                             .orElseGet(() -> executeAfterRepeatGuard(context, toolCall, turnState))
                     : executeAfterRepeatGuard(context, toolCall, turnState);
             ToolExecutionOutcome outcome = execution.outcome();
             turnState.incrementToolExecutions();
             long toolDuration = Duration.between(toolStarted, clock.instant()).toMillis();
 
-            emitRuntimeEvent(context, RuntimeEventType.TOOL_FINISHED,
-                    eventPayload("toolCallId", toolCall.getId(), "tool", toolCall.getName(),
-                            "success", outcome != null && outcome.toolResult() != null
-                                    && outcome.toolResult().isSuccess(),
-                            "durationMs", toolDuration));
+            Map<String, Object> finishedPayload = eventPayload("toolCallId", toolCall.getId(), "tool",
+                    toolCall.getName(),
+                    "success", outcome != null && outcome.toolResult() != null && outcome.toolResult().isSuccess(),
+                    "durationMs", toolDuration);
+            addRepeatGuardPayload(finishedPayload, execution.decision());
+            emitRuntimeEvent(context, RuntimeEventType.TOOL_FINISHED, finishedPayload);
 
             if (outcome != null && outcome.toolResult() != null && outcome.toolResult().isSuccess()) {
                 captureFileChanges(toolCall, turnState.getTurnFileChanges());
@@ -330,19 +332,89 @@ class ToolExecutionPhase {
                 TurnState turnState) {
             ToolRepeatDecision decision = repeatGuard.beforeExecute(turnState, toolCall);
             if (decision instanceof ToolRepeatDecision.BlockAndHint block) {
-                return new RepeatGuardExecution(ToolExecutionOutcome.synthetic(toolCall,
-                        ToolFailureKind.REPEATED_TOOL_USE_BLOCKED, block.hint()), null);
+                return new RepeatGuardExecution(repeatGuardSyntheticOutcome(toolCall,
+                        ToolFailureKind.REPEATED_TOOL_USE_BLOCKED, block.hint(), block), null, decision);
             }
             if (decision instanceof ToolRepeatDecision.StopTurn stop) {
-                return new RepeatGuardExecution(ToolExecutionOutcome.synthetic(toolCall,
-                        ToolFailureKind.REPEAT_GUARD_STOP_TURN, stop.reason()), null);
+                return new RepeatGuardExecution(repeatGuardSyntheticOutcome(toolCall,
+                        ToolFailureKind.REPEAT_GUARD_STOP_TURN, stop.reason(), stop), null, decision);
             }
             String warningHint = decision instanceof ToolRepeatDecision.WarnAndAllow warn ? warn.hint() : null;
             return new RepeatGuardExecution(executeWithTracing(context, toolCall, turnState.getTracingConfig()),
-                    warningHint);
+                    warningHint, decision);
         }
 
-        private record RepeatGuardExecution(ToolExecutionOutcome outcome, String warningHint) {
+        private ToolExecutionOutcome repeatGuardSyntheticOutcome(
+                Message.ToolCall toolCall,
+                ToolFailureKind failureKind,
+                String message,
+                ToolRepeatDecision decision) {
+            me.golemcore.bot.domain.model.ToolResult toolResult = me.golemcore.bot.domain.model.ToolResult.builder()
+                    .success(false)
+                    .failureKind(failureKind)
+                    .error(message)
+                    .data(repeatGuardPayload(decision))
+                    .build();
+            return new ToolExecutionOutcome(
+                    toolCall.getId(), toolCall.getName(), toolResult, message, true, null);
+        }
+
+        private void addRepeatGuardPayload(Map<String, Object> payload, ToolRepeatDecision decision) {
+            if (payload == null || decision == null) {
+                return;
+            }
+            Map<String, Object> guardPayload = repeatGuardPayload(decision);
+            payload.put("repeatGuardDecision", decisionName(decision));
+            guardPayload.forEach(payload::putIfAbsent);
+        }
+
+        private Map<String, Object> repeatGuardPayload(ToolRepeatDecision decision) {
+            Map<String, Object> payload = new LinkedHashMap<>();
+            if (decision == null) {
+                return payload;
+            }
+            ToolUseFingerprint fingerprint = decisionFingerprint(decision);
+            payload.put("repeatGuardDecision", decisionName(decision));
+            if (fingerprint != null) {
+                payload.put("repeatFingerprint", fingerprint.stableKey());
+                payload.put("repeatCategory", fingerprint.category().name());
+                payload.put("repeatTool", fingerprint.toolName());
+            }
+            return payload;
+        }
+
+        private String decisionName(ToolRepeatDecision decision) {
+            if (decision instanceof ToolRepeatDecision.WarnAndAllow warn && warn.wouldBlock()) {
+                return "WOULD_BLOCK_SHADOW";
+            }
+            if (decision instanceof ToolRepeatDecision.Allow) {
+                return "ALLOW";
+            }
+            if (decision instanceof ToolRepeatDecision.WarnAndAllow) {
+                return "WARN_AND_ALLOW";
+            }
+            if (decision instanceof ToolRepeatDecision.BlockAndHint) {
+                return "BLOCK_AND_HINT";
+            }
+            if (decision instanceof ToolRepeatDecision.StopTurn) {
+                return "STOP_TURN";
+            }
+            return "UNKNOWN";
+        }
+
+        private ToolUseFingerprint decisionFingerprint(ToolRepeatDecision decision) {
+            return switch (decision) {
+            case ToolRepeatDecision.Allow allow -> allow.fingerprint();
+            case ToolRepeatDecision.WarnAndAllow warn -> warn.fingerprint();
+            case ToolRepeatDecision.BlockAndHint block -> block.fingerprint();
+            case ToolRepeatDecision.StopTurn stop -> stop.fingerprint();
+            };
+        }
+
+        private record RepeatGuardExecution(
+                ToolExecutionOutcome outcome,
+                String warningHint,
+                ToolRepeatDecision decision) {
         }
 
         private ToolExecutionOutcome executeWithTracing(AgentContext context, Message.ToolCall toolCall,
