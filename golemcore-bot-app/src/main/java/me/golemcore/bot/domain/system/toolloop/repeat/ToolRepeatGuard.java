@@ -52,11 +52,11 @@ public class ToolRepeatGuard {
             return new ToolRepeatDecision.Allow(fingerprint);
         }
         ToolUseLedger ledger = turnState.getToolUseLedger();
-        if (!settings.shadowMode() && ledger.getBlockedRepeatCount() >= settings.maxBlockedRepeatsPerTurn()) {
-            return new ToolRepeatDecision.StopTurn(STOP_TURN_REASON);
-        }
         if (fingerprint.category() == ToolUseCategory.CONTROL) {
             return new ToolRepeatDecision.Allow(fingerprint);
+        }
+        if (!settings.shadowMode() && ledger.getBlockedRepeatCount() >= settings.maxBlockedRepeatsPerTurn()) {
+            return new ToolRepeatDecision.StopTurn(STOP_TURN_REASON);
         }
 
         boolean durableLedgerActive = durableLedgerActive(turnState);
@@ -98,21 +98,39 @@ public class ToolRepeatGuard {
     }
 
     public String repeatHint(ToolUseFingerprint fingerprint, int count) {
-        return repeatHint(fingerprint, count, false);
+        return blockedHint(fingerprint, count, false);
     }
 
     public String repeatHint(ToolUseFingerprint fingerprint, int count, boolean durableLedgerActive) {
+        return blockedHint(fingerprint, count, durableLedgerActive);
+    }
+
+    private String warningHint(ToolUseFingerprint fingerprint, int count, boolean durableLedgerActive) {
         String toolName = fingerprint != null ? fingerprint.toolName() : "unknown";
-        String scope = durableLedgerActive
-                ? "for this autonomous task until state changes, arguments change, or the repeat ledger TTL expires"
-                : "in this turn";
+        return "Repeated tool call allowed this time by repeat guard. Tool: " + toolName
+                + ". Reason: same fingerprint was already executed " + count
+                + " times with no verified state change. The next identical call may be blocked "
+                + scope(durableLedgerActive) + ". "
+                + "Prefer the previous result already present in conversation/tool history, change the arguments, "
+                + "perform a state-changing next step, write a diary/checkpoint, schedule a later check, "
+                + "or provide the final answer.";
+    }
+
+    private String blockedHint(ToolUseFingerprint fingerprint, int count, boolean durableLedgerActive) {
+        String toolName = fingerprint != null ? fingerprint.toolName() : "unknown";
         return "Repeated tool call blocked by repeat guard. Tool: " + toolName
                 + ". Reason: same fingerprint was already executed " + count
                 + " times with no verified state change. Do not call this tool with the same arguments again "
-                + scope + ". "
+                + scope(durableLedgerActive) + ". "
                 + "Use the previous result already present in conversation/tool history, change the arguments, "
                 + "perform a state-changing next step, write a diary/checkpoint, schedule a later check, "
                 + "or provide the final answer.";
+    }
+
+    private String scope(boolean durableLedgerActive) {
+        return durableLedgerActive
+                ? "for this autonomous task until state changes, arguments change, or the repeat ledger TTL expires"
+                : "in this turn";
     }
 
     private ToolRepeatDecision decideCountedRepeat(
@@ -127,10 +145,10 @@ public class ToolRepeatGuard {
         }
         if (count < maxAllowed) {
             ledger.incrementWarnedRepeatCount();
-            return new ToolRepeatDecision.WarnAndAllow(fingerprint, repeatHint(fingerprint, count,
+            return new ToolRepeatDecision.WarnAndAllow(fingerprint, warningHint(fingerprint, count,
                     durableLedgerActive));
         }
-        return blockOrShadow(ledger, fingerprint, repeatHint(fingerprint, count, durableLedgerActive), settings);
+        return blockOrShadow(ledger, fingerprint, blockedHint(fingerprint, count, durableLedgerActive), settings);
     }
 
     private ToolRepeatDecision decidePolling(

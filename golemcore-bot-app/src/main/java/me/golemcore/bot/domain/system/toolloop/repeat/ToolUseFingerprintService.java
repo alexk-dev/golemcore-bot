@@ -27,10 +27,14 @@ public class ToolUseFingerprintService {
     private static final Set<String> SECRET_FIELD_FRAGMENTS = Set.of(
             "token", "password", "secret", "apikey", "api_key", "authorization");
     private static final Set<String> READ_OPERATIONS = Set.of(
-            "read_file", "read", "list", "list_files", "search", "status", "stat");
+            "read_file", "read", "list", "list_files", "list_directory", "search", "status", "stat", "file_info");
     private static final Set<String> IDEMPOTENT_FILESYSTEM_MUTATIONS = Set.of(
             "write_file", "delete", "create_directory", "mkdir");
     private static final Set<String> NON_IDEMPOTENT_FILESYSTEM_MUTATIONS = Set.of("append");
+    private static final Set<String> MEMORY_OBSERVE_OPERATIONS = Set.of(
+            "memory_search", "memory_read", "memory_expand_section");
+    private static final Set<String> MEMORY_MUTATE_OPERATIONS = Set.of(
+            "memory_add", "memory_update", "memory_promote", "memory_forget");
     private static final Set<String> SHELL_WORKING_DIRECTORY_FIELDS = Set.of(
             "cwd", "workdir", "workingdirectory", "working_directory");
 
@@ -54,8 +58,17 @@ public class ToolUseFingerprintService {
             return ToolUseCategory.EXECUTE_UNKNOWN;
         }
         String operation = stringValue(arguments, "operation");
+        String normalizedOperation = normalizeValue(operation);
+        if (ToolNames.MEMORY.equals(toolName)) {
+            if (MEMORY_OBSERVE_OPERATIONS.contains(normalizedOperation)) {
+                return ToolUseCategory.OBSERVE;
+            }
+            if (MEMORY_MUTATE_OPERATIONS.contains(normalizedOperation)) {
+                return ToolUseCategory.MUTATE_IDEMPOTENT;
+            }
+            return ToolUseCategory.EXECUTE_UNKNOWN;
+        }
         if (ToolNames.FILESYSTEM.equals(toolName)) {
-            String normalizedOperation = normalizeValue(operation);
             if (READ_OPERATIONS.contains(normalizedOperation)) {
                 return ToolUseCategory.OBSERVE;
             }
@@ -104,13 +117,25 @@ public class ToolUseFingerprintService {
     private Map<String, Object> canonicalizeMap(String toolName, Map<?, ?> map) {
         Map<String, Object> result = new LinkedHashMap<>();
         Map<String, Object> sorted = new TreeMap<>();
+        List<String> shellWorkingDirectories = new ArrayList<>();
         for (Map.Entry<?, ?> entry : map.entrySet()) {
             String fieldName = String.valueOf(entry.getKey());
             String normalizedField = normalizeValue(fieldName);
             if (!VOLATILE_FIELDS.contains(normalizedField)) {
+                if (ToolNames.SHELL.equals(toolName) && SHELL_WORKING_DIRECTORY_FIELDS.contains(normalizedField)) {
+                    if (entry.getValue() instanceof String stringValue && !stringValue.isBlank()) {
+                        shellWorkingDirectories.add(normalizePath(stringValue));
+                    }
+                    continue;
+                }
                 sorted.put(canonicalFieldName(toolName, fieldName, normalizedField),
                         canonicalizeMapValue(toolName, normalizedField, entry.getValue()));
             }
+        }
+        if (ToolNames.SHELL.equals(toolName)) {
+            sorted.put("cwd", shellWorkingDirectories.isEmpty()
+                    ? normalizePath(".")
+                    : shellWorkingDirectories.stream().sorted().findFirst().orElse(normalizePath(".")));
         }
         result.putAll(sorted);
         return result;

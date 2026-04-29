@@ -55,7 +55,7 @@ class JsonToolUseLedgerStoreTest {
 
         assertTrue(loaded.isPresent());
         assertEquals(1, loaded.orElseThrow().recordsFor(READ_FINGERPRINT).size());
-        assertTrue(storagePort.contains("auto", "tool-ledgers/web_chat-1/tasks/task-1.json"));
+        assertTrue(storagePort.contains("auto", WORK_KEY.storageFile()));
     }
 
     @Test
@@ -64,7 +64,7 @@ class JsonToolUseLedgerStoreTest {
 
         store.save(WORK_KEY, ledger);
 
-        assertEquals(List.of("auto/tool-ledgers/web_chat-1/tasks/task-1.json"), storagePort.atomicWrites());
+        assertEquals(List.of(WORK_KEY.storagePath()), storagePort.atomicWrites());
     }
 
     @Test
@@ -137,7 +137,7 @@ class JsonToolUseLedgerStoreTest {
                 "raw-secret-token inside very large raw output"));
 
         store.save(WORK_KEY, ledger);
-        String json = storagePort.get("auto", "tool-ledgers/web_chat-1/tasks/task-1.json");
+        String json = storagePort.get("auto", WORK_KEY.storageFile());
 
         assertTrue(json.contains("sha256:digest-only"));
         assertFalse(json.contains("raw-secret-token"));
@@ -150,10 +150,10 @@ class JsonToolUseLedgerStoreTest {
         assertTrue(store.load(null, Duration.ofMinutes(120)).isEmpty());
         assertTrue(store.load(WORK_KEY, Duration.ofMinutes(120)).isEmpty());
 
-        storagePort.putText("auto", "tool-ledgers/web_chat-1/tasks/task-1.json", "   ").join();
+        storagePort.putText("auto", WORK_KEY.storageFile(), "   ").join();
         assertTrue(store.load(WORK_KEY, Duration.ofMinutes(120)).isEmpty());
 
-        storagePort.putText("auto", "tool-ledgers/web_chat-1/tasks/task-1.json", "{not-json").join();
+        storagePort.putText("auto", WORK_KEY.storageFile(), "{not-json").join();
         assertTrue(store.load(WORK_KEY, Duration.ofMinutes(120)).isEmpty());
     }
 
@@ -161,9 +161,9 @@ class JsonToolUseLedgerStoreTest {
     void loadRejectsLedgerWithMismatchedWorkKey() {
         ToolUseLedger ledger = new ToolUseLedger();
         ledger.recordUse(successfulRead(NOW, "sha256:output"));
-        store.save(new AutonomyWorkKey("web:other", "goal-1", "task-1", null), ledger);
-        storagePort.putText("auto", "tool-ledgers/web_chat-1/tasks/task-1.json",
-                storagePort.get("auto", "tool-ledgers/web_other/tasks/task-1.json")).join();
+        AutonomyWorkKey otherKey = new AutonomyWorkKey("web:other", "goal-1", "task-1", null);
+        store.save(otherKey, ledger);
+        storagePort.putText("auto", WORK_KEY.storageFile(), storagePort.get("auto", otherKey.storageFile())).join();
 
         assertTrue(store.load(WORK_KEY, Duration.ofMinutes(120)).isEmpty());
     }
@@ -172,9 +172,9 @@ class JsonToolUseLedgerStoreTest {
     void loadRejectsUnsupportedSchemaVersion() {
         ToolUseLedger ledger = new ToolUseLedger();
         store.save(WORK_KEY, ledger);
-        String json = storagePort.get("auto", "tool-ledgers/web_chat-1/tasks/task-1.json")
+        String json = storagePort.get("auto", WORK_KEY.storageFile())
                 .replace("\"schemaVersion\" : 1", "\"schemaVersion\" : 999");
-        storagePort.putText("auto", "tool-ledgers/web_chat-1/tasks/task-1.json", json).join();
+        storagePort.putText("auto", WORK_KEY.storageFile(), json).join();
 
         assertTrue(store.load(WORK_KEY, Duration.ofMinutes(120)).isEmpty());
     }

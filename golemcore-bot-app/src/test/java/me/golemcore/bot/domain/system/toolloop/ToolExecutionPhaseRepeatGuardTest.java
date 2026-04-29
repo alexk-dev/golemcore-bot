@@ -159,6 +159,21 @@ class ToolExecutionPhaseRepeatGuardTest {
     }
 
     @Test
+    void warningHintTextDoesNotClaimAllowedCallWasBlocked() {
+        ToolExecutionPhase phase = phase();
+        TurnState turnState = buildTurnState();
+        Message.ToolCall toolCall = readCall("tc-repeat");
+        repeatGuard.afterOutcome(turnState, toolCall, success(toolCall, "first"));
+        when(toolExecutor.execute(turnState.getContext(), toolCall)).thenReturn(success(toolCall, "second"));
+
+        phase.execute(turnState, response(toolCall), historyWriter, llmCallPhase);
+
+        verify(historyWriter).appendInternalRecoveryHint(eq(turnState.getContext()), contains("allowed this time"));
+        verify(historyWriter, never()).appendInternalRecoveryHint(eq(turnState.getContext()),
+                contains("blocked by repeat guard"));
+    }
+
+    @Test
     void warnHintIsAppendedOnlyAfterAllToolResultsInBatch() {
         ToolExecutionPhase phase = phase();
         TurnState turnState = buildTurnState();

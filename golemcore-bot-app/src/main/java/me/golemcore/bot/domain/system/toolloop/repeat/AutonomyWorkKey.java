@@ -1,5 +1,8 @@
 package me.golemcore.bot.domain.system.toolloop.repeat;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.Map;
 import java.util.Optional;
 import me.golemcore.bot.domain.model.ContextAttributes;
@@ -29,11 +32,12 @@ public record AutonomyWorkKey(String sessionKey, String goalId, String taskId, S
     }
 
     public String storagePath() {
-        String sessionSegment = safeSegment(sessionKey);
+        String sessionSegment = hashedSegment(sessionKey, sessionKey);
         if (!isBlank(taskId)) {
-            return STORAGE_ROOT + "/" + sessionSegment + "/tasks/" + safeSegment(taskId) + ".json";
+            String taskIdentity = valueOrUnknown(goalId) + ":" + valueOrUnknown(taskId);
+            return STORAGE_ROOT + "/" + sessionSegment + "/tasks/" + hashedSegment(taskId, taskIdentity) + ".json";
         }
-        return STORAGE_ROOT + "/" + sessionSegment + "/goals/" + safeSegment(goalId) + ".json";
+        return STORAGE_ROOT + "/" + sessionSegment + "/goals/" + hashedSegment(goalId, goalId) + ".json";
     }
 
     public String storageDirectory() {
@@ -60,12 +64,34 @@ public record AutonomyWorkKey(String sessionKey, String goalId, String taskId, S
     }
 
     private static String safeSegment(String value) {
-        String source = value == null ? UNKNOWN_SEGMENT : value.trim();
+        String source = valueOrUnknown(value);
         StringBuilder out = new StringBuilder(source.length());
         for (int index = 0; index < source.length(); index++) {
             appendSafeCharacter(out, source.charAt(index));
         }
         return out.isEmpty() ? UNKNOWN_SEGMENT : out.toString();
+    }
+
+    private static String hashedSegment(String displayValue, String identityValue) {
+        return safeSegment(displayValue) + "-" + shortHash(valueOrUnknown(identityValue));
+    }
+
+    private static String valueOrUnknown(String value) {
+        return value == null || value.isBlank() ? UNKNOWN_SEGMENT : value.trim();
+    }
+
+    private static String shortHash(String value) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] bytes = digest.digest(value.getBytes(StandardCharsets.UTF_8));
+            StringBuilder builder = new StringBuilder(12);
+            for (int index = 0; index < 6; index++) {
+                builder.append(String.format("%02x", bytes[index]));
+            }
+            return builder.toString();
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 is required", e);
+        }
     }
 
     private static void appendSafeCharacter(StringBuilder out, char ch) {

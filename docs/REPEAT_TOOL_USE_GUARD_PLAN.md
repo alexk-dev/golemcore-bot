@@ -37,8 +37,11 @@ polling and re-check behavior after state changes.
 - [x] Keep repeat warning hints batch-safe so user/internal hints are never interleaved between tool results.
 - [x] Allow exact shell repeats after verified local filesystem mutations.
 - [x] Normalize shell `cwd`/`workdir`/`workingDirectory` values in fingerprints.
+- [x] Treat missing shell workdir as workspace root in fingerprints.
+- [x] Classify documented read-only memory and filesystem operations as observations.
 - [x] Treat disabled repeat guard as a hard kill switch with no ledger learning.
 - [x] Emit a dedicated `repeat_guard_stop` runtime reason for repeat-guard stop turns.
+- [x] Use hash-suffixed durable ledger paths to avoid sanitized work-key collisions.
 - [x] Document repeat guard defaults, storage layout and troubleshooting.
 - [x] Run full local verification.
 - [x] Push the branch and open a `feat:` PR.

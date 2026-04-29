@@ -103,11 +103,16 @@ The persisted auto ledger stores fingerprints, output digests and environment ve
 bounded records per work item, and it does not persist per-turn warning/block counters, full tool outputs or raw
 secret-like arguments. Policy denials, confirmation denials and guard synthetic records may be retained for diagnostics,
 but they are not counted as successful prior executions for repeat-block decisions.
+Ledger file paths use readable sanitized prefixes with short hash suffixes, which prevents sanitized id collisions while
+keeping storage inspectable.
 
 Repeat warning hints are appended only after all tool results for the current assistant tool-call batch have been
 written. This keeps strict provider tool-call adjacency intact while still giving the model guidance before the next
 LLM call. Shell fingerprints include normalized `cwd`, `workdir` and `workingDirectory` values, so equivalent relative
-working directories do not bypass the repeat guard.
+working directories do not bypass the repeat guard. Missing shell workdir is treated as the workspace root. Documented
+read-only filesystem operations (`read_file`, `list_directory`, `file_info`) and memory operations (`memory_search`,
+`memory_read`, `memory_expand_section`) are classified as observations, so they do not reset the verified environment
+version.
 
 ### SelfEvolving
 

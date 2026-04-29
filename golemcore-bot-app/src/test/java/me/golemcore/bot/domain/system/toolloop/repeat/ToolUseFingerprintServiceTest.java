@@ -61,6 +61,16 @@ class ToolUseFingerprintServiceTest {
     }
 
     @Test
+    void treatsMissingShellWorkdirAsWorkspaceRoot() {
+        Message.ToolCall first = toolCall(ToolNames.SHELL, Map.of("command", "pwd"));
+        Message.ToolCall second = toolCall(ToolNames.SHELL, Map.of("command", "pwd", "workdir", "."));
+        Message.ToolCall third = toolCall(ToolNames.SHELL, Map.of("command", "pwd", "cwd", "./"));
+
+        assertEquals(service.fingerprint(first).stableKey(), service.fingerprint(second).stableKey());
+        assertEquals(service.fingerprint(first).stableKey(), service.fingerprint(third).stableKey());
+    }
+
+    @Test
     void redactsSecretLikeArgumentsBeforeHashingAndDebugSnapshot() {
         Message.ToolCall first = toolCall("http.get",
                 Map.of("url", "https://example.test", "apiKey", "secret-one", "password", "secret-two"));
@@ -113,6 +123,45 @@ class ToolUseFingerprintServiceTest {
         assertEquals(ToolUseCategory.MUTATE_NON_IDEMPOTENT,
                 service.fingerprint(toolCall("filesystem",
                         Map.of("operation", "append", "path", "README.md", "content", "x"))).category());
+    }
+
+    @Test
+    void classifiesMemorySearchReadAndExpandAsObserve() {
+        assertEquals(ToolUseCategory.OBSERVE,
+                service.fingerprint(toolCall(ToolNames.MEMORY, Map.of("operation", "memory_search", "query",
+                        "repeat"))).category());
+        assertEquals(ToolUseCategory.OBSERVE,
+                service.fingerprint(toolCall(ToolNames.MEMORY, Map.of("operation", "memory_read", "id", "m1")))
+                        .category());
+        assertEquals(ToolUseCategory.OBSERVE,
+                service.fingerprint(toolCall(ToolNames.MEMORY,
+                        Map.of("operation", "memory_expand_section", "section", "semantic"))).category());
+    }
+
+    @Test
+    void classifiesMemoryAddUpdatePromoteForgetAsMutation() {
+        assertEquals(ToolUseCategory.MUTATE_IDEMPOTENT,
+                service.fingerprint(toolCall(ToolNames.MEMORY, Map.of("operation", "memory_add", "text", "note")))
+                        .category());
+        assertEquals(ToolUseCategory.MUTATE_IDEMPOTENT,
+                service.fingerprint(toolCall(ToolNames.MEMORY, Map.of("operation", "memory_update", "id", "m1")))
+                        .category());
+        assertEquals(ToolUseCategory.MUTATE_IDEMPOTENT,
+                service.fingerprint(toolCall(ToolNames.MEMORY, Map.of("operation", "memory_promote", "id", "m1")))
+                        .category());
+        assertEquals(ToolUseCategory.MUTATE_IDEMPOTENT,
+                service.fingerprint(toolCall(ToolNames.MEMORY, Map.of("operation", "memory_forget", "id", "m1")))
+                        .category());
+    }
+
+    @Test
+    void classifiesFilesystemListDirectoryAndFileInfoAsObserve() {
+        assertEquals(ToolUseCategory.OBSERVE,
+                service.fingerprint(toolCall(ToolNames.FILESYSTEM,
+                        Map.of("operation", "list_directory", "path", "src"))).category());
+        assertEquals(ToolUseCategory.OBSERVE,
+                service.fingerprint(toolCall(ToolNames.FILESYSTEM,
+                        Map.of("operation", "file_info", "path", "pom.xml"))).category());
     }
 
     @Test

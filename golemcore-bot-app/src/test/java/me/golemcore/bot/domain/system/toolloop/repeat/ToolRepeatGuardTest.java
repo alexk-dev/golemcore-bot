@@ -84,6 +84,20 @@ class ToolRepeatGuardTest {
     }
 
     @Test
+    void readOnlyMemorySearchDoesNotResetObservationRepeatWindow() {
+        TurnState turnState = turnState();
+        Message.ToolCall read = readCall("README.md");
+        Message.ToolCall memorySearch = toolCall("memory", Map.of("operation", "memory_search", "query", "repeat"));
+        guard.afterOutcome(turnState, read, success(read, "before-1"));
+        guard.afterOutcome(turnState, read, success(read, "before-2"));
+        guard.afterOutcome(turnState, memorySearch, success(memorySearch, "memory result"));
+
+        ToolRepeatDecision decision = guard.beforeExecute(turnState, read);
+
+        assertInstanceOf(ToolRepeatDecision.BlockAndHint.class, decision);
+    }
+
+    @Test
     void pollBackoffUsesLastPollAcrossAllEnvironmentVersions() {
         TurnState turnState = turnState();
         Message.ToolCall poll = toolCall("job.status", Map.of("jobId", "42"));
@@ -215,6 +229,18 @@ class ToolRepeatGuardTest {
         guard.afterOutcome(turnState, planExit, success(planExit, "done"));
 
         ToolRepeatDecision decision = guard.beforeExecute(turnState, planExit);
+
+        assertInstanceOf(ToolRepeatDecision.Allow.class, decision);
+    }
+
+    @Test
+    void controlToolCanExitAfterBlockedRepeatThreshold() {
+        TurnState turnState = turnState();
+        for (int index = 0; index < ToolRepeatGuardSettings.defaults().maxBlockedRepeatsPerTurn(); index++) {
+            turnState.getToolUseLedger().incrementBlockedRepeatCount();
+        }
+
+        ToolRepeatDecision decision = guard.beforeExecute(turnState, toolCall("plan_exit", Map.of()));
 
         assertInstanceOf(ToolRepeatDecision.Allow.class, decision);
     }

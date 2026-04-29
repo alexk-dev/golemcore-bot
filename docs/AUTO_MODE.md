@@ -242,9 +242,9 @@ auto/
 │   ├── 2026-03-08.jsonl
 │   └── ...
 └── tool-ledgers/
-    └── <session-key>/
-        ├── goals/<goal-id>.json
-        └── tasks/<task-id>.json
+    └── <session-key>-<hash>/
+        ├── goals/<goal-id>-<hash>.json
+        └── tasks/<task-id>-<hash>.json
 ```
 
 ### `state.json`
@@ -276,7 +276,9 @@ Ledgers intentionally do not store full tool outputs, raw arguments containing s
 repeat guard also disables ledger learning, so re-enabling it cannot immediately block work based on calls made while
 protection was off. Observation, poll, unknown-execution and guard-blocked synthetic records expire by
 `repeatGuardAutoLedgerTtlMinutes`; remaining records are also capped to bound per-work-item storage. A stored
-`scheduleId` is audit-only: task and goal ledgers survive schedule replacement.
+`scheduleId` is audit-only: task and goal ledgers survive schedule replacement. Path segments keep a readable sanitized
+prefix plus a short SHA-256 suffix so values such as `task/a` and `task_a`, or the same task id under different goals,
+cannot collide.
 
 ## Configuration
 
@@ -311,6 +313,8 @@ Runtime config:
 For autonomous coding loops, successful filesystem mutations are treated as verified local state changes. That means a
 task may repeat the same shell command, such as `mvn test`, after an edit without waiting for ledger TTL. Read-only shell
 commands do not reset observation or polling backoff by themselves.
+Read-only memory operations such as `memory_search`, `memory_read` and `memory_expand_section` are classified as
+observations and also do not reset the environment version.
 
 Field notes:
 
