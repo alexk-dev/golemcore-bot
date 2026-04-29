@@ -262,21 +262,33 @@ class ToolUseFingerprintServiceTest {
 
     @Test
     void classifiesDynamicObservationToolsWithoutDigestProgress() {
-        assertFalse(service.fingerprint(toolCall("datetime", Map.of())).outputDigestChangeResetsRepeatCount());
-        assertFalse(service.fingerprint(toolCall("weather", Map.of("location", "Santo Domingo")))
-                .outputDigestChangeResetsRepeatCount());
-        assertFalse(service.fingerprint(toolCall("browse", Map.of("url", "https://example.test")))
-                .outputDigestChangeResetsRepeatCount());
-        assertFalse(service.fingerprint(toolCall("brave_search", Map.of("query", "updates")))
-                .outputDigestChangeResetsRepeatCount());
-        assertFalse(service.fingerprint(toolCall("tavily_search", Map.of("query", "updates")))
-                .outputDigestChangeResetsRepeatCount());
-        assertFalse(service.fingerprint(toolCall("firecrawl_scrape", Map.of("url", "https://example.test")))
-                .outputDigestChangeResetsRepeatCount());
-        assertFalse(service.fingerprint(toolCall("perplexity_ask", Map.of("question", "latest status")))
-                .outputDigestChangeResetsRepeatCount());
-        assertFalse(service.fingerprint(toolCall("imap", Map.of("operation", "search")))
-                .outputDigestChangeResetsRepeatCount());
+        ToolUseFingerprint datetime = service.fingerprint(toolCall("datetime", Map.of()));
+        ToolUseFingerprint weather = service.fingerprint(toolCall("weather", Map.of("location", "Santo Domingo")));
+        ToolUseFingerprint browse = service.fingerprint(toolCall("browse", Map.of("url", "https://example.test")));
+        ToolUseFingerprint braveSearch = service.fingerprint(toolCall("brave_search", Map.of("query", "updates")));
+        ToolUseFingerprint tavilySearch = service.fingerprint(toolCall("tavily_search", Map.of("query", "updates")));
+        ToolUseFingerprint firecrawl = service.fingerprint(toolCall("firecrawl_scrape",
+                Map.of("url", "https://example.test")));
+        ToolUseFingerprint perplexity = service.fingerprint(toolCall("perplexity_ask",
+                Map.of("question", "latest status")));
+        ToolUseFingerprint imap = service.fingerprint(toolCall("imap", Map.of("operation", "search")));
+
+        assertFalse(datetime.outputDigestChangeResetsRepeatCount());
+        assertTrue(datetime.observedDomains().contains(ToolStateDomain.TIME));
+        assertFalse(weather.outputDigestChangeResetsRepeatCount());
+        assertTrue(weather.observedDomains().contains(ToolStateDomain.WEATHER));
+        assertFalse(browse.outputDigestChangeResetsRepeatCount());
+        assertTrue(browse.observedDomains().contains(ToolStateDomain.WEB_REMOTE));
+        assertFalse(braveSearch.outputDigestChangeResetsRepeatCount());
+        assertTrue(braveSearch.observedDomains().contains(ToolStateDomain.WEB_REMOTE));
+        assertFalse(tavilySearch.outputDigestChangeResetsRepeatCount());
+        assertTrue(tavilySearch.observedDomains().contains(ToolStateDomain.WEB_REMOTE));
+        assertFalse(firecrawl.outputDigestChangeResetsRepeatCount());
+        assertTrue(firecrawl.observedDomains().contains(ToolStateDomain.WEB_REMOTE));
+        assertFalse(perplexity.outputDigestChangeResetsRepeatCount());
+        assertTrue(perplexity.observedDomains().contains(ToolStateDomain.WEB_REMOTE));
+        assertFalse(imap.outputDigestChangeResetsRepeatCount());
+        assertTrue(imap.observedDomains().contains(ToolStateDomain.MAIL));
     }
 
     @Test
@@ -284,7 +296,7 @@ class ToolUseFingerprintServiceTest {
         ToolUseFingerprint smtp = service.fingerprint(toolCall("smtp", Map.of("to", "a@example.test")));
 
         assertEquals(ToolUseCategory.MUTATE_NON_IDEMPOTENT, smtp.category());
-        assertTrue(smtp.invalidatedDomains().contains(ToolStateDomain.UNKNOWN));
+        assertTrue(smtp.invalidatedDomains().contains(ToolStateDomain.MAIL));
     }
 
     @Test
@@ -320,13 +332,17 @@ class ToolUseFingerprintServiceTest {
 
     @Test
     void classifiesSessionControlToolsExplicitly() {
-        assertEquals(ToolUseCategory.CONTROL,
-                service.fingerprint(toolCall("skill_transition", Map.of("target_skill", "reviewer")))
-                        .category());
-        assertEquals(ToolUseCategory.CONTROL,
-                service.fingerprint(toolCall("set_tier", Map.of("tier", "coding"))).category());
+        assertEquals(ToolUseCategory.CONTROL, service.fingerprint(toolCall(ToolNames.PLAN_EXIT, Map.of()))
+                .category());
+        ToolUseFingerprint skillTransition = service.fingerprint(toolCall("skill_transition",
+                Map.of("target_skill", "reviewer")));
+        ToolUseFingerprint setTier = service.fingerprint(toolCall("set_tier", Map.of("tier", "coding")));
         ToolUseFingerprint sendVoice = service.fingerprint(toolCall("send_voice", Map.of("text", "hello")));
 
+        assertEquals(ToolUseCategory.MUTATE_IDEMPOTENT, skillTransition.category());
+        assertTrue(skillTransition.invalidatedDomains().contains(ToolStateDomain.SESSION_CONTROL));
+        assertEquals(ToolUseCategory.MUTATE_IDEMPOTENT, setTier.category());
+        assertTrue(setTier.invalidatedDomains().contains(ToolStateDomain.SESSION_CONTROL));
         assertEquals(ToolUseCategory.MUTATE_NON_IDEMPOTENT, sendVoice.category());
         assertTrue(sendVoice.invalidatedDomains().contains(ToolStateDomain.SESSION_CONTROL));
     }

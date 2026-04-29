@@ -119,7 +119,8 @@ Default behavior:
 - changed output digests are treated as progress only for deterministic observations such as filesystem, memory, plan, skill, goal and scheduling reads; dynamic remote observations such as `datetime`, weather, browse/search/scrape, Perplexity and read-only mail checks stay bounded even when rendered output changes
 - repeat guard decisions are emitted in tool-finished telemetry without raw arguments
 - invalid model-generated paths/workdirs in fingerprints fail open through deterministic hash placeholders, so normal tool validation can still return a protocol-correct tool result
-- official plugin observation tools such as browser, Firecrawl, Perplexity, weather and read-only mail checks use observation semantics instead of unknown-execution semantics
+- official plugin observation tools such as browser, Firecrawl, Perplexity, weather, datetime and read-only mail checks use typed observation domains instead of unknown-execution semantics
+- `plan_exit` stays an always-allowed exit path, while repeated `set_tier` and `skill_transition` calls are bounded like other idempotent session-control mutations
 
 When a repeated auto observation is blocked, the recovery hint asks the model to use previous tool history, change
 arguments, perform a verified state-changing next step, write a diary/checkpoint, schedule a later check or finish the
@@ -324,9 +325,11 @@ task may repeat the same shell command, such as `mvn test`, after an edit withou
 commands do not reset observation or polling backoff by themselves.
 Read-only memory operations such as `memory_search`, `memory_read` and `memory_expand_section` are classified as
 observations and also do not reset any verified state domain.
-The guard tracks separate workspace, memory, autonomous-progress, Hive and scheduling domains. For example, `memory_add`
-can unlock a later `memory_read`, and `hive_post_thread_message` can unlock a later `hive_get_card`, but neither call
-unlocks an identical `filesystem.read_file` or `shell mvn test` repeat.
+The guard tracks separate workspace, memory, autonomous-progress, Hive, scheduling, plan, skills, session-control, web,
+weather, time and mail domains. For example, `memory_add` can unlock a later `memory_read`, and
+`hive_post_thread_message` can unlock a later `hive_get_card`, but neither call unlocks an identical
+`filesystem.read_file` or `shell mvn test` repeat. A mail send updates the mail domain without re-allowing repeated
+weather, datetime or browser observations.
 
 Field notes:
 

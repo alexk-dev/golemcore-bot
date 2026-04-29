@@ -405,6 +405,42 @@ class ToolRepeatGuardTest {
     }
 
     @Test
+    void setTierAndSkillTransitionExactRepeatsAreBoundedButPlanExitAlwaysAllowed() {
+        TurnState turnState = turnState();
+        Message.ToolCall setTier = toolCall("set_tier", Map.of("tier", "coding"));
+        Message.ToolCall skillTransition = toolCall("skill_transition", Map.of("target_skill", "reviewer"));
+        Message.ToolCall planExit = toolCall("plan_exit", Map.of());
+        guard.afterOutcome(turnState, setTier, success(setTier, "tier set"));
+        guard.afterOutcome(turnState, skillTransition, success(skillTransition, "skill selected"));
+        guard.afterOutcome(turnState, planExit, success(planExit, "done"));
+        guard.afterOutcome(turnState, planExit, success(planExit, "done"));
+
+        assertInstanceOf(ToolRepeatDecision.BlockAndHint.class, guard.beforeExecute(turnState, setTier));
+        assertInstanceOf(ToolRepeatDecision.BlockAndHint.class, guard.beforeExecute(turnState, skillTransition));
+        assertInstanceOf(ToolRepeatDecision.Allow.class, guard.beforeExecute(turnState, planExit));
+    }
+
+    @Test
+    void smtpMutationDoesNotUnlockDynamicRemoteObservationRepeats() {
+        TurnState turnState = turnState();
+        Message.ToolCall weather = toolCall("weather", Map.of("location", "Santo Domingo"));
+        Message.ToolCall datetime = toolCall("datetime", Map.of());
+        Message.ToolCall browse = toolCall("browse", Map.of("url", "https://example.test"));
+        Message.ToolCall smtp = toolCall("smtp", Map.of("to", "ops@example.test", "body", "sent"));
+        guard.afterOutcome(turnState, weather, success(weather, "weather-1"));
+        guard.afterOutcome(turnState, weather, success(weather, "weather-2"));
+        guard.afterOutcome(turnState, datetime, success(datetime, "12:00:00"));
+        guard.afterOutcome(turnState, datetime, success(datetime, "12:00:01"));
+        guard.afterOutcome(turnState, browse, success(browse, "content; nonce=1"));
+        guard.afterOutcome(turnState, browse, success(browse, "content; nonce=2"));
+        guard.afterOutcome(turnState, smtp, success(smtp, "sent"));
+
+        assertInstanceOf(ToolRepeatDecision.BlockAndHint.class, guard.beforeExecute(turnState, weather));
+        assertInstanceOf(ToolRepeatDecision.BlockAndHint.class, guard.beforeExecute(turnState, datetime));
+        assertInstanceOf(ToolRepeatDecision.BlockAndHint.class, guard.beforeExecute(turnState, browse));
+    }
+
+    @Test
     void fingerprintFailureFallbackIncludesArgumentHash() {
         ToolRepeatGuard throwingGuard = new ToolRepeatGuard(new ThrowingFingerprintService(),
                 ToolRepeatGuardSettings.defaults(), clock);
@@ -422,6 +458,18 @@ class ToolRepeatGuardTest {
         assertNotEquals(
                 ((ToolRepeatDecision.BlockAndHint) firstDecision).fingerprint().stableKey(),
                 ((ToolRepeatDecision.Allow) secondDecision).fingerprint().stableKey());
+    }
+
+    @Test
+    void fingerprintFailureFallbackHandlesUnprintableArguments() {
+        ToolRepeatGuard throwingGuard = new ToolRepeatGuard(new ThrowingFingerprintService(),
+                ToolRepeatGuardSettings.defaults(), clock);
+        TurnState turnState = turnState();
+        Message.ToolCall call = toolCall("broken_tool", Map.of("value", new UnprintableArgument()));
+
+        ToolRepeatDecision decision = throwingGuard.beforeExecute(turnState, call);
+
+        assertInstanceOf(ToolRepeatDecision.Allow.class, decision);
     }
 
     @Test
@@ -630,6 +678,14 @@ class ToolRepeatGuardTest {
         @Override
         public ToolUseFingerprint fingerprint(Message.ToolCall toolCall) {
             throw new IllegalArgumentException("boom");
+        }
+    }
+
+    private static final class UnprintableArgument {
+
+        @Override
+        public String toString() {
+            throw new IllegalStateException("cannot render");
         }
     }
 }

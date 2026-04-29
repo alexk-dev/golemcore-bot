@@ -39,14 +39,8 @@ final class ToolSemanticsRegistry {
     private static final Set<String> SKILL_OBSERVE_OPERATIONS = Set.of("list_skills", "get_skill");
     private static final Set<String> SKILL_IDEMPOTENT_MUTATIONS = Set.of("create_skill", "update_skill");
     private static final Set<String> SKILL_NON_IDEMPOTENT_MUTATIONS = Set.of("delete_skill");
-    private static final Set<String> FIRST_PARTY_REMOTE_OBSERVE_TOOLS = Set.of(
-            "browse",
-            "brave_search",
-            "tavily_search",
-            "firecrawl_scrape",
-            "perplexity_ask",
-            "weather",
-            "datetime");
+    private static final Set<String> FIRST_PARTY_WEB_OBSERVE_TOOLS = Set.of(
+            "browse", "brave_search", "tavily_search", "firecrawl_scrape", "perplexity_ask");
 
     ToolSemantics semantics(String toolName, Map<String, Object> arguments) {
         String normalizedToolName = normalizeValue(toolName);
@@ -54,7 +48,7 @@ final class ToolSemanticsRegistry {
             return control();
         }
         if ("skill_transition".equals(normalizedToolName) || "set_tier".equals(normalizedToolName)) {
-            return control();
+            return mutate(ToolUseCategory.MUTATE_IDEMPOTENT, ToolStateDomain.SESSION_CONTROL);
         }
         if ("send_voice".equals(normalizedToolName)) {
             return mutate(ToolUseCategory.MUTATE_NON_IDEMPOTENT, ToolStateDomain.SESSION_CONTROL);
@@ -90,14 +84,20 @@ final class ToolSemanticsRegistry {
         if (ToolNames.FILESYSTEM.equals(normalizedToolName)) {
             return filesystemSemantics(normalizedOperation);
         }
-        if (FIRST_PARTY_REMOTE_OBSERVE_TOOLS.contains(normalizedToolName)) {
-            return observe(ToolUseCategory.OBSERVE, ToolStateDomain.UNKNOWN, false);
+        if (FIRST_PARTY_WEB_OBSERVE_TOOLS.contains(normalizedToolName)) {
+            return observe(ToolUseCategory.OBSERVE, ToolStateDomain.WEB_REMOTE, false);
+        }
+        if ("weather".equals(normalizedToolName)) {
+            return observe(ToolUseCategory.OBSERVE, ToolStateDomain.WEATHER, false);
+        }
+        if ("datetime".equals(normalizedToolName)) {
+            return observe(ToolUseCategory.OBSERVE, ToolStateDomain.TIME, false);
         }
         if ("imap".equals(normalizedToolName)) {
-            return observe(ToolUseCategory.OBSERVE, ToolStateDomain.UNKNOWN, false);
+            return observe(ToolUseCategory.OBSERVE, ToolStateDomain.MAIL, false);
         }
         if ("smtp".equals(normalizedToolName)) {
-            return mutate(ToolUseCategory.MUTATE_NON_IDEMPOTENT, ToolStateDomain.UNKNOWN);
+            return mutate(ToolUseCategory.MUTATE_NON_IDEMPOTENT, ToolStateDomain.MAIL);
         }
 
         String combined = normalizedToolName + "." + normalizedOperation;

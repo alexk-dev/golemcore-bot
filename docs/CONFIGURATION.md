@@ -119,7 +119,9 @@ keeping storage inspectable. Readable path prefixes are length-bounded; the hash
 
 Repeat windows are scoped by state domain, not one global state bit. Filesystem writes invalidate `WORKSPACE`
 observations and local shell repeats, memory writes invalidate `MEMORY` observations, goal/diary updates invalidate
-`AUTONOMY_PROGRESS`, Hive writes invalidate `HIVE_REMOTE`, and delayed-action changes invalidate `SCHEDULING`.
+`AUTONOMY_PROGRESS`, Hive writes invalidate `HIVE_REMOTE`, delayed-action changes invalidate `SCHEDULING`, plan edits
+invalidate `PLAN`, skill changes invalidate `SKILLS`, tier/skill-transition changes invalidate `SESSION_CONTROL`, web
+tools observe `WEB_REMOTE`, weather observes `WEATHER`, datetime observes `TIME`, and mail tools use `MAIL`.
 Unrelated progress writes do not re-allow the same workspace read, search or shell command.
 
 Repeat warning hints are appended only after all tool results for the current assistant tool-call batch have been
@@ -133,9 +135,11 @@ workdir aliases are preserved in the fingerprint rather than collapsed to an arb
 read-only filesystem operations (`read_file`, `list_directory`, `file_info`) and memory operations (`memory_search`,
 `memory_read`, `memory_expand_section`) are classified as observations, so they do not reset any verified state domain.
 First-party `goal_management`, `schedule_session_action`, plan, skill, session-control and Hive tools use explicit
-operation/name semantics instead of generic string matching. Official plugin observation tools such as `browse`,
+operation/name semantics instead of generic string matching. `plan_exit` remains an unconditional safe exit path, while
+`set_tier` and `skill_transition` are bounded idempotent `SESSION_CONTROL` mutations. Official plugin observation tools such as `browse`,
 `brave_search`, `tavily_search`, `firecrawl_scrape`, `perplexity_ask`, `weather`, `datetime` and read-only `imap` calls
-are classified as observations; `smtp` and `send_voice` are treated as non-idempotent mutations. Successful mutation
+are classified as observations in their own remote/time/mail domains; `smtp` and `send_voice` are treated as
+non-idempotent mutations. Successful mutation
 records are retained until the per-work-item ledger cap rather than the observation TTL; this keeps idempotent duplicate
 write protection durable while synthetic repeat-guard records still expire by TTL.
 

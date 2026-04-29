@@ -53,8 +53,10 @@ polling and re-check behavior after state changes.
 - [x] Allow a different recovery/checkpoint tool after the blocked-repeat threshold; stop only on another would-block repeat.
 - [x] Expire repeat-guard stop-turn synthetic records by durable ledger TTL and write schema version `3`.
 - [x] Add explicit first-party semantics for plan, skill, session-control and voice tools.
+- [x] Keep only `plan_exit` as an unconditional control escape; bound `set_tier` and `skill_transition` exact repeats.
+- [x] Split broad remote `UNKNOWN` semantics into web, weather, time and mail state domains.
 - [x] Prefer semantic output digests from structured tool result data when available.
-- [x] Include a redacted argument hash in fail-open fingerprint fallback keys.
+- [x] Include a redacted argument hash in fail-open fingerprint fallback keys, including unprintable argument values.
 - [x] Treat disabled repeat guard as a hard kill switch with no ledger learning.
 - [x] Emit a dedicated `repeat_guard_stop` runtime reason for repeat-guard stop turns.
 - [x] Use hash-suffixed durable ledger paths to avoid sanitized work-key collisions.

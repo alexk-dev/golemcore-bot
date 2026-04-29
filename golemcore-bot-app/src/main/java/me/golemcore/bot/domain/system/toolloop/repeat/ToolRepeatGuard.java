@@ -183,7 +183,7 @@ public class ToolRepeatGuard {
             ToolUseFingerprint fingerprint,
             ToolRepeatGuardSettings settings,
             boolean durableLedgerActive) {
-        int count = ledger.successfulRepeatCountInCurrentEnvironment(fingerprint);
+        int count = ledger.successfulRepeatCount(fingerprint);
         if (count <= 0) {
             return new ToolRepeatDecision.Allow(fingerprint);
         }
@@ -279,7 +279,7 @@ public class ToolRepeatGuard {
         if (value instanceof Map<?, ?> map) {
             Map<String, String> sorted = new TreeMap<>();
             map.forEach((key, item) -> {
-                String field = String.valueOf(key);
+                String field = safeStringValue(key);
                 sorted.put(field, isSecretField(field) ? "<redacted>" : redactedArgumentSnapshot(item));
             });
             return sorted.toString();
@@ -298,7 +298,18 @@ public class ToolRepeatGuard {
             }
             return values.values().toString();
         }
-        return String.valueOf(value);
+        return safeStringValue(value);
+    }
+
+    private String safeStringValue(Object value) {
+        if (value == null) {
+            return "null";
+        }
+        try {
+            return String.valueOf(value);
+        } catch (RuntimeException e) {
+            return "<unprintable:" + value.getClass().getName() + ">";
+        }
     }
 
     private boolean isSecretField(String field) {
