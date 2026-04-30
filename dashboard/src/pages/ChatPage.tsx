@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactElement } from 'react';
 import { Button, Modal } from '../components/ui/tailwind-components';
 import { useNavigate } from 'react-router-dom';
 import ChatWindow from '../components/chat/ChatWindow';
+import HarnessChatLayout from '../components/agentRun/HarnessChatLayout';
 import { useRuntimeConfig } from '../hooks/useSettings';
 import {
   dismissStartupSetupInviteForSession,
@@ -37,7 +38,9 @@ export default function ChatPage(): ReactElement {
 
   return (
     <>
-      <ChatWindow />
+      <HarnessChatLayout>
+        <ChatWindow />
+      </HarnessChatLayout>
       <Modal show={isSetupInviteVisible} onHide={handleCloseSetupInvite} centered>
         <Modal.Header closeButton>
           <Modal.Title>Complete Startup Setup?</Modal.Title>

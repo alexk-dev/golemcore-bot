@@ -8,6 +8,8 @@ import './styles/tailwind.css';
 import './styles/custom.scss';
 import './styles/workspace.scss';
 import './styles/responsive.scss';
+import './styles/harness.scss';
+import './styles/agentRun.scss';
 
 const queryClient = new QueryClient({
   defaultOptions: {
