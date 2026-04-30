@@ -1,55 +1,128 @@
-import { FiBookmark } from 'react-icons/fi';
-import { useMemoryPresets } from '../../../../hooks/useSettings';
-import type { MemoryPreset } from '../../../../api/settings';
+import { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { FiArrowRight, FiFilter, FiSearch } from 'react-icons/fi';
+import { useChatRuntimeStore } from '../../../../store/chatRuntimeStore';
+import { useChatSessionStore } from '../../../../store/chatSessionStore';
+import { useRelevantMemories } from '../../../../hooks/useRelevantMemories';
+import MemoryArtifactCard from './MemoryArtifactCard';
+import {
+  buildTypeFilterOptions,
+  filterMemoryItems,
+  type MemoryTypeFilter,
+} from './memoryFormat';
 
-function MemoryPresetCard({ preset }: { preset: MemoryPreset }) {
-  return (
-    <article className="agent-card" aria-label={`Memory preset ${preset.label}`}>
-      <header className="agent-card__header">
-        <FiBookmark size={14} aria-hidden="true" />
-        <span>{preset.label}</span>
-      </header>
-      {preset.comment.length > 0 && (
-        <p className="harness-inspector__card-label">{preset.comment}</p>
-      )}
-      <div className="harness-inspector__card-row">
-        <span className="harness-inspector__card-label">Identifier</span>
-        <span className="harness-inspector__card-value"><code>{preset.id}</code></span>
-      </div>
-    </article>
-  );
+const TYPE_FILTERS = buildTypeFilterOptions();
+
+function deriveQueryFromMessages(messages: ReturnType<typeof useChatRuntimeStore.getState>['sessions'][string]['messages'] | undefined): string {
+  if (messages == null) {
+    return '';
+  }
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message.role === 'user' && message.content.length > 0) {
+      return message.content.slice(0, 256);
+    }
+  }
+  return '';
 }
 
 export default function InspectorMemoryTab() {
-  const { data, isLoading, isError, refetch } = useMemoryPresets();
+  const navigate = useNavigate();
+  const sessionId = useChatSessionStore((s) => s.activeSessionId);
+  const session = useChatRuntimeStore((s) => s.sessions[sessionId]);
+  const queryHint = useMemo(() => deriveQueryFromMessages(session?.messages), [session?.messages]);
+  const [typeFilter, setTypeFilter] = useState<MemoryTypeFilter>('all');
+  const [search, setSearch] = useState('');
+  const [autoRefresh, setAutoRefresh] = useState(true);
+  const [now, setNow] = useState(() => Date.now());
 
-  if (isLoading) {
-    return <div className="harness-inspector__placeholder"><span>Loading memory…</span></div>;
-  }
+  const { data, isLoading, isError, refetch } = useRelevantMemories({
+    sessionId,
+    query: queryHint,
+    autoRefresh,
+  });
+
+  // Tick once a minute to keep the relative timestamps ("Just now", "2 days ago") fresh.
+  useEffect(() => {
+    const id = window.setInterval(() => setNow(Date.now()), 60_000);
+    return () => window.clearInterval(id);
+  }, []);
+
+  const items = useMemo(() => data?.items ?? [], [data?.items]);
+  const filtered = useMemo(() => filterMemoryItems(items, typeFilter, search), [items, typeFilter, search]);
+
   if (isError) {
     return (
-      <div className="harness-inspector__placeholder">
-        <span>Failed to load memory presets</span>
+      <div className="harness-inspector__placeholder" role="alert">
+        <span>Failed to load relevant memories</span>
         <button type="button" className="agent-btn" onClick={() => refetch()}>Retry</button>
       </div>
     );
   }
 
-  const presets = data ?? [];
-
   return (
     <div className="harness-inspector__placeholder-stack">
-      <p className="harness-inspector__card-label">
-        Memory presets configured for the workspace. Once the runtime emits
-        relevant-memory events per turn they will appear here.
-      </p>
-      {presets.length === 0 ? (
-        <div className="harness-inspector__placeholder">
-          <span>No memory presets configured.</span>
+      <header className="memory-tab__header">
+        <div className="memory-tab__title-row">
+          <h3 className="harness-inspector__card-title">Relevant memories</h3>
+          <span className="memory-tab__count">{items.length}</span>
         </div>
+        <label className="memory-tab__toggle">
+          <span>Auto-refresh</span>
+          <input
+            type="checkbox"
+            checked={autoRefresh}
+            onChange={(event) => setAutoRefresh(event.target.checked)}
+          />
+        </label>
+      </header>
+      <div className="memory-tab__filters">
+        <label className="memory-tab__select">
+          <FiFilter size={14} aria-hidden="true" />
+          <select
+            value={typeFilter}
+            onChange={(event) => setTypeFilter(event.target.value as MemoryTypeFilter)}
+            aria-label="Filter memories by type"
+          >
+            {TYPE_FILTERS.map((option) => (
+              <option key={option.value} value={option.value}>{option.label}</option>
+            ))}
+          </select>
+        </label>
+        <label className="memory-tab__search">
+          <FiSearch size={14} aria-hidden="true" />
+          <input
+            type="text"
+            placeholder="Search memories…"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            aria-label="Search memories"
+          />
+        </label>
+      </div>
+      {isLoading ? (
+        <p className="harness-inspector__card-label">Loading memories…</p>
+      ) : filtered.length === 0 ? (
+        <p className="harness-inspector__card-label">
+          {items.length === 0
+            ? 'The runtime has not surfaced any memories for this session yet. They will appear here once Memory V2 records relate to the active conversation.'
+            : 'No memories match the current filter.'}
+        </p>
       ) : (
-        presets.map((preset) => <MemoryPresetCard key={preset.id} preset={preset} />)
+        <div className="memory-tab__list">
+          {filtered.map((item) => (
+            <MemoryArtifactCard key={item.id} item={item} now={now} />
+          ))}
+        </div>
       )}
+      <button
+        type="button"
+        className="memory-tab__view-all"
+        onClick={() => navigate('/settings/memory')}
+      >
+        <span>View all memories</span>
+        <FiArrowRight size={14} aria-hidden="true" />
+      </button>
     </div>
   );
 }
