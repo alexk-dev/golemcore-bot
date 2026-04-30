@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { FiArrowRight, FiFilter, FiSearch } from 'react-icons/fi';
+import { FiFilter, FiSearch } from 'react-icons/fi';
 import { useChatRuntimeStore } from '../../../../store/chatRuntimeStore';
 import { useChatSessionStore } from '../../../../store/chatSessionStore';
 import { useRelevantMemories } from '../../../../hooks/useRelevantMemories';
@@ -27,7 +26,6 @@ function deriveQueryFromMessages(messages: ReturnType<typeof useChatRuntimeStore
 }
 
 export default function InspectorMemoryTab() {
-  const navigate = useNavigate();
   const sessionId = useChatSessionStore((s) => s.activeSessionId);
   const session = useChatRuntimeStore((s) => s.sessions[sessionId]);
   const queryHint = useMemo(() => deriveQueryFromMessages(session?.messages), [session?.messages]);
@@ -115,14 +113,6 @@ export default function InspectorMemoryTab() {
           ))}
         </div>
       )}
-      <button
-        type="button"
-        className="memory-tab__view-all"
-        onClick={() => navigate('/settings/memory')}
-      >
-        <span>View all memories</span>
-        <FiArrowRight size={14} aria-hidden="true" />
-      </button>
     </div>
   );
 }

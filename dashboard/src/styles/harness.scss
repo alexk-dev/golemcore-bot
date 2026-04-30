@@ -876,29 +876,6 @@
   gap: var(--hns-space-3);
 }
 
-.memory-tab__view-all {
-  appearance: none;
-  border: 1px solid var(--hns-border-subtle);
-  background: transparent;
-  color: var(--hns-text-secondary);
-  border-radius: var(--hns-radius-md);
-  padding: 8px var(--hns-space-3);
-  display: inline-flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--hns-space-2);
-  cursor: pointer;
-  font-size: var(--hns-font-md);
-}
-
-.memory-tab__view-all:hover,
-.memory-tab__view-all:focus-visible {
-  background: var(--hns-bg-card-hover);
-  color: var(--hns-text-primary);
-  border-color: var(--hns-border-strong);
-  outline: none;
-}
-
 /* Memory card */
 
 .memory-card {
