@@ -18,7 +18,6 @@
 
 package me.golemcore.bot.adapter.inbound.web.controller;
 
-import lombok.RequiredArgsConstructor;
 import me.golemcore.bot.client.dto.RelevantMemoryResponse;
 import me.golemcore.bot.domain.component.MemoryComponent;
 import me.golemcore.bot.domain.model.MemoryItem;
@@ -41,13 +40,16 @@ import java.util.List;
  */
 @RestController
 @RequestMapping("/api/memory")
-@RequiredArgsConstructor
 public class MemoryController {
 
     private static final int DEFAULT_LIMIT = 8;
     private static final int MAX_LIMIT = 50;
 
     private final MemoryComponent memoryComponent;
+
+    public MemoryController(MemoryComponent memoryComponent) {
+        this.memoryComponent = memoryComponent;
+    }
 
     @GetMapping("/relevant")
     public Mono<ResponseEntity<RelevantMemoryResponse>> getRelevantMemories(
