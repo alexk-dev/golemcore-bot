@@ -16,7 +16,7 @@ Legend: `[ ]` pending · `[~]` in progress · `[x]` done
 - [x] G.3 Make `golemcore-bot-app` the composition root for CLI runtime wiring.
 - [x] G.4 Replace hand-written JSON with shared Jackson serialization.
 - [x] G.5 Make command parsing deterministic: no silent typo acceptance, no discarded arguments, clear exit code `2` for invalid usage.
-- [ ] G.6 Preserve current green CI while adding stronger contract, architecture, parser, and presenter tests.
+- [x] G.6 Preserve current green CI while adding stronger contract, architecture, parser, and presenter tests.
 
 ## Definition Of Done
 
@@ -29,7 +29,7 @@ Legend: `[ ]` pending · `[~]` in progress · `[x]` done
 - [x] DOD.7 `CliRootCommand` receives dependencies/bootstrap objects and does not instantiate future runtime use cases directly.
 - [x] DOD.8 Stub commands either preserve raw arguments in the invocation or are replaced by typed planned subcommands.
 - [x] DOD.9 Exit code source of truth is unified.
-- [ ] DOD.10 Local `clean verify` passes and PR checks are green.
+- [x] DOD.10 Local `clean verify` passes and PR checks are green.
 
 ## Phase R0 — Contract Wire Serialization And Event Envelope
 
@@ -345,7 +345,7 @@ Classification note:
 - [x] R6.4.3 Run app/launcher tests after bootstrap/composition changes.
 - [x] R6.4.4 Run full `./mvnw -DskipGitHooks=true -Dfrontend.skip=true -Dmaven.gitcommitid.skip=true clean verify`.
 - [x] R6.4.5 Run `git diff --check`.
-- [ ] R6.4.6 Push `feat/cli-client` and verify GitHub PR checks are green.
+- [x] R6.4.6 Push `feat/cli-client` and verify GitHub PR checks are green.
 
 ## Review Finding Traceability
 
