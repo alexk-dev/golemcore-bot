@@ -788,7 +788,8 @@ class CliRootCommandTest {
     }
 
     private static String golden(String resourcePath) throws IOException {
-        try (InputStream input = CliRootCommandTest.class.getClassLoader().getResourceAsStream(resourcePath)) {
+        ClassLoader classLoader = Thread.currentThread().getContextClassLoader();
+        try (InputStream input = classLoader.getResourceAsStream(resourcePath)) {
             assertNotNull(input, "Missing golden fixture " + resourcePath);
             return normalize(new String(input.readAllBytes(), StandardCharsets.UTF_8));
         }

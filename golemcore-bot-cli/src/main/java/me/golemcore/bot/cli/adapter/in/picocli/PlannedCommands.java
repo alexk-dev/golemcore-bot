@@ -2,6 +2,7 @@ package me.golemcore.bot.cli.adapter.in.picocli;
 
 import picocli.CommandLine.Command;
 
+@SuppressWarnings("PMD.MissingStaticMethodInNonInstantiatableClass")
 public final class PlannedCommands {
 
     private PlannedCommands() {
@@ -123,7 +124,7 @@ public final class PlannedCommands {
             AuthActionCommand.class,
             LogoutCommand.class,
             DebugCommand.class,
-            TestCommand.class,
+            ProbeCommand.class,
             ImportCommand.class,
             ExportCommand.class,
             LogsCommand.class
@@ -706,7 +707,7 @@ public final class PlannedCommands {
     }
 
     @Command(name = "test", mixinStandardHelpOptions = true, description = "Test resource.")
-    public static final class TestCommand extends PlannedStubCommand {
+    public static final class ProbeCommand extends PlannedStubCommand {
     }
 
     @Command(name = "tools", mixinStandardHelpOptions = true, description = "Group by tools.")

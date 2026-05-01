@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Test;
 
 class CliDependencyArchitectureTest {
 
+    @SuppressWarnings("PMD.LooseCoupling")
     private static final com.tngtech.archunit.core.domain.JavaClasses CLI_CLASSES = new ClassFileImporter()
             .withImportOption(ImportOption.Predefined.DO_NOT_INCLUDE_TESTS)
             .importPackages("me.golemcore.bot.cli");

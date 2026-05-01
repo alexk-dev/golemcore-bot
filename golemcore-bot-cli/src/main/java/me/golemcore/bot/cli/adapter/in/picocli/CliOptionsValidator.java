@@ -65,8 +65,7 @@ final class CliOptionsValidator {
             return true;
         }
         try {
-            Duration.parse(value);
-            return true;
+            return !Duration.parse(value).isNegative();
         } catch (DateTimeParseException ignored) {
             return false;
         }

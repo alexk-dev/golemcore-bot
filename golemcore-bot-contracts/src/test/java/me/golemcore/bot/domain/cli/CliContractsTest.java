@@ -433,9 +433,11 @@ class CliContractsTest {
         String actual = objectMapper.writeValueAsString(events.get(0)) + "\n"
                 + objectMapper.writeValueAsString(events.get(1)) + "\n";
 
-        InputStream fixture = getClass().getResourceAsStream("/golden/cli/run-events.ndjson");
-        assertNotNull(fixture, "golden fixture must exist");
-        String expected = new String(fixture.readAllBytes(), StandardCharsets.UTF_8);
+        String expected;
+        try (InputStream fixture = getClass().getResourceAsStream("/golden/cli/run-events.ndjson")) {
+            assertNotNull(fixture, "golden fixture must exist");
+            expected = new String(fixture.readAllBytes(), StandardCharsets.UTF_8);
+        }
 
         assertEquals(expected, actual);
     }

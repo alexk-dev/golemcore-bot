@@ -5,6 +5,7 @@ import me.golemcore.bot.domain.cli.CliOutputFormat;
 import me.golemcore.bot.domain.cli.CliPermissionMode;
 import picocli.CommandLine.Option;
 
+@SuppressWarnings("PMD.AvoidFieldNameMatchingMethodName")
 final class CliProjectOptions {
 
     private static final String DEFAULT_PROFILE = "default";
@@ -89,6 +90,7 @@ final class CliProjectOptions {
     }
 }
 
+@SuppressWarnings("PMD.AvoidFieldNameMatchingMethodName")
 final class CliRuntimeSelectionOptions {
 
     @Option(names = { "-m", "--model" }, description = "Explicit model override.")
@@ -158,6 +160,7 @@ final class CliRuntimeSelectionOptions {
     }
 }
 
+@SuppressWarnings("PMD.AvoidFieldNameMatchingMethodName")
 final class CliOutputOptions {
 
     private static final CliOutputFormat DEFAULT_FORMAT = CliOutputFormat.TEXT;
@@ -251,6 +254,7 @@ final class CliOutputOptions {
     }
 }
 
+@SuppressWarnings("PMD.AvoidFieldNameMatchingMethodName")
 final class CliTraceOptions {
 
     @Option(names = "--trace", description = "Enable/print trace id and trace collection.")
@@ -284,6 +288,7 @@ final class CliTraceOptions {
     }
 }
 
+@SuppressWarnings("PMD.AvoidFieldNameMatchingMethodName")
 final class CliCapabilityOptions {
 
     @Option(names = "--no-memory", description = "Disable memory read/write for this run.")
@@ -331,6 +336,7 @@ final class CliCapabilityOptions {
     }
 }
 
+@SuppressWarnings("PMD.AvoidFieldNameMatchingMethodName")
 final class CliPermissionOptions {
 
     private static final CliPermissionMode DEFAULT_PERMISSION_MODE = CliPermissionMode.ASK;
@@ -383,6 +389,7 @@ final class CliPermissionOptions {
     }
 }
 
+@SuppressWarnings("PMD.AvoidFieldNameMatchingMethodName")
 final class CliBudgetOptions {
 
     @Option(names = "--timeout", description = "Run timeout.")
@@ -425,6 +432,7 @@ final class CliBudgetOptions {
     }
 }
 
+@SuppressWarnings("PMD.AvoidFieldNameMatchingMethodName")
 final class CliAttachOptions {
 
     private static final CliAttachMode DEFAULT_ATTACH_MODE = CliAttachMode.AUTO;

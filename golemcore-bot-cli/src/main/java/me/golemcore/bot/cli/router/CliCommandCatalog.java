@@ -6,7 +6,7 @@ import me.golemcore.bot.cli.adapter.in.picocli.PlannedCommands;
 
 public final class CliCommandCatalog {
 
-    private static final List<CliCommandDescriptor> DESCRIPTORS = List.of(
+    private static final List<CliCommandDescriptor> COMMAND_DESCRIPTORS = List.of(
             descriptor("run", "Run agent non-interactively.", PlannedCommands.RunCommand.class),
             descriptor("serve", "Start headless runtime server.", PlannedCommands.ServeCommand.class),
             descriptor("attach", "Attach TUI to runtime.", PlannedCommands.AttachCommand.class),
@@ -45,11 +45,11 @@ public final class CliCommandCatalog {
     }
 
     public static List<CliCommandDescriptor> descriptors() {
-        return DESCRIPTORS;
+        return COMMAND_DESCRIPTORS;
     }
 
     public static List<String> subcommandNames() {
-        return DESCRIPTORS.stream()
+        return COMMAND_DESCRIPTORS.stream()
                 .map(CliCommandDescriptor::name)
                 .toList();
     }
