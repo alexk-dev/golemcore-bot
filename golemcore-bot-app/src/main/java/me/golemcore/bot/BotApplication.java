@@ -20,7 +20,6 @@ package me.golemcore.bot;
 import java.io.PrintWriter;
 import java.nio.charset.StandardCharsets;
 
-import me.golemcore.bot.cli.CliApplication;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.properties.ConfigurationPropertiesScan;
@@ -76,7 +75,7 @@ public class BotApplication {
 
     public static void main(String[] args) {
         if (BotApplicationCommandLine.isCliMode(args)) {
-            int exitCode = CliApplication.run(
+            int exitCode = createCliRunner().runCli(
                     BotApplicationCommandLine.cliArguments(args),
                     new PrintWriter(System.out, true, StandardCharsets.UTF_8),
                     new PrintWriter(System.err, true, StandardCharsets.UTF_8));
@@ -86,6 +85,10 @@ public class BotApplication {
             return;
         }
         SpringApplication.run(BotApplication.class, BotApplicationCommandLine.springArguments(args));
+    }
+
+    static BotApplicationCliRunner createCliRunner() {
+        return new BotApplicationCliRunner(new BotApplicationNoRuntimeCli(), new BotApplicationCliRuntime());
     }
 
 }

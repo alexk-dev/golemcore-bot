@@ -1,4 +1,4 @@
-package me.golemcore.bot.cli.application.port.out;
+package me.golemcore.bot.domain.cli.port.out;
 
 import me.golemcore.bot.domain.cli.RunRequest;
 import me.golemcore.bot.domain.cli.RunResult;

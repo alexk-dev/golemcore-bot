@@ -1,0 +1,57 @@
+--no-input cannot be combined with --permission-mode ask
+Usage: cli run [-chVy] [--json] [--no-color] [--no-input] [--no-mcp]
+               [--no-memory] [--no-rag] [--no-skills] [--quiet] [--trace]
+               [--verbose] [--attach[=<attach>]] [-a=<agent>] [--color=<color>]
+               [--config=<config>] [--config-dir=<configDir>] [--cwd=<cwd>]
+               [--env-file=<envFile>] [--fork=<fork>] [--format=<format>]
+               [--hostname=<hostname>] [--log-level=<logLevel>] [-m=<model>]
+               [--max-llm-calls=<maxLlmCalls>]
+               [--max-tool-executions=<maxToolExecutions>]
+               [--permission-mode=<permissionMode>] [--port=<port>]
+               [--profile=<profile>] [--project=<project>] [-s=<session>]
+               [--tier=<tier>] [--timeout=<timeout>]
+               [--trace-export=<traceExport>] [--workspace=<workspace>]
+Run agent non-interactively.
+  -a, --agent=<agent>        Agent profile.
+      --attach[=<attach>]    Use existing server.
+  -c, --continue             Continue latest session for project.
+      --color=<color>        Color policy: auto, always, never.
+      --config=<config>      Runtime config file.
+      --config-dir=<configDir>
+                             Config directory.
+      --cwd=<cwd>            Working directory for command.
+      --env-file=<envFile>   Load provider/API env vars.
+      --fork=<fork>          Fork existing session.
+      --format=<format>      Output format: TEXT, JSON, NDJSON, MARKDOWN.
+  -h, --help                 Show this help message and exit.
+      --hostname=<hostname>  Server host.
+      --json                 Alias for --format json.
+      --log-level=<logLevel> Logging level.
+  -m, --model=<model>        Explicit model override.
+      --max-llm-calls=<maxLlmCalls>
+                             Budget override.
+      --max-tool-executions=<maxToolExecutions>
+                             Budget override.
+      --no-color             Disable ANSI colors.
+      --no-input             Never prompt; fail if input required.
+      --no-mcp               Disable MCP tools for this run.
+      --no-memory            Disable memory read/write for this run.
+      --no-rag               Disable RAG retrieval/indexing for this run.
+      --no-skills            Disable skills for this run.
+      --permission-mode=<permissionMode>
+                             Permission preset.
+      --port=<port>          Server/TUI attach port.
+      --profile=<profile>    Runtime/profile selection.
+      --project=<project>    Explicit project root.
+      --quiet                Suppress non-essential output.
+  -s, --session=<session>    Session id.
+      --tier=<tier>          Model tier preference.
+      --timeout=<timeout>    Run timeout.
+      --trace                Enable/print trace id and trace collection.
+      --trace-export=<traceExport>
+                             Export trace after run.
+  -V, --version              Print version information and exit.
+      --verbose              Verbose diagnostics.
+      --workspace=<workspace>
+                             GolemCore storage workspace.
+  -y, --yes                  Auto-confirm safe prompts only.

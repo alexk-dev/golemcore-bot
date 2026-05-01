@@ -1,5 +1,8 @@
 package me.golemcore.bot.domain.cli;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonValue;
+
 /**
  * User or policy decision for a pending tool permission request.
  */
@@ -13,7 +16,18 @@ public enum PermissionDecisionKind {
         this.serializedValue = serializedValue;
     }
 
+    @JsonValue
     public String wireValue() {
         return serializedValue;
+    }
+
+    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
+    public static PermissionDecisionKind fromWireValue(String value) {
+        for (PermissionDecisionKind decisionKind : values()) {
+            if (decisionKind.serializedValue.equals(value)) {
+                return decisionKind;
+            }
+        }
+        throw new IllegalArgumentException("Unsupported permission decision kind: " + value);
     }
 }

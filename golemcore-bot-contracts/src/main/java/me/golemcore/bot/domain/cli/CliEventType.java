@@ -1,5 +1,8 @@
 package me.golemcore.bot.domain.cli;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonValue;
+
 /**
  * Event types emitted by CLI-oriented agent runs.
  */
@@ -30,7 +33,18 @@ public enum CliEventType {
         this.serializedValue = serializedValue;
     }
 
+    @JsonValue
     public String wireValue() {
         return serializedValue;
+    }
+
+    @JsonCreator(mode = JsonCreator.Mode.DELEGATING)
+    public static CliEventType fromWireValue(String value) {
+        for (CliEventType eventType : values()) {
+            if (eventType.serializedValue.equals(value)) {
+                return eventType;
+            }
+        }
+        throw new IllegalArgumentException("Unsupported CLI event type: " + value);
     }
 }

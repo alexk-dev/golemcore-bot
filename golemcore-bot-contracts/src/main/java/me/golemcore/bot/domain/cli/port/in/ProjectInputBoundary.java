@@ -1,12 +1,12 @@
-package me.golemcore.bot.cli.application.port.in;
+package me.golemcore.bot.domain.cli.port.in;
 
-import me.golemcore.bot.cli.domain.CliCommandOptions;
+import java.nio.file.Path;
 import me.golemcore.bot.domain.cli.ProjectIdentity;
 import me.golemcore.bot.domain.cli.ProjectTrust;
 
 public interface ProjectInputBoundary {
 
-    ProjectIdentity discover(CliCommandOptions options);
+    ProjectIdentity discover(Path cwd);
 
     ProjectTrust trustStatus(ProjectIdentity project);
 }

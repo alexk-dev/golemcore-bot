@@ -1,328 +1,202 @@
 package me.golemcore.bot.cli.adapter.in.picocli;
 
-import java.util.ArrayList;
-import java.util.List;
 import me.golemcore.bot.cli.config.CliAttachMode;
 import me.golemcore.bot.domain.cli.CliOutputFormat;
 import me.golemcore.bot.domain.cli.CliPermissionMode;
-import picocli.CommandLine.Option;
+import picocli.CommandLine.Mixin;
 
 public final class CliGlobalOptions {
 
-    private static final String DEFAULT_PROFILE = "default";
-    private static final String DEFAULT_COLOR = "auto";
-    private static final CliOutputFormat DEFAULT_FORMAT = CliOutputFormat.TEXT;
-    private static final CliPermissionMode DEFAULT_PERMISSION_MODE = CliPermissionMode.ASK;
-    private static final CliAttachMode DEFAULT_ATTACH_MODE = CliAttachMode.AUTO;
-    private static final String DEFAULT_HOSTNAME = "127.0.0.1";
+    @Mixin
+    private final CliProjectOptions projectOptions = new CliProjectOptions();
 
-    @Option(names = "--cwd", description = "Working directory for command.")
-    private String cwd;
+    @Mixin
+    private final CliRuntimeSelectionOptions runtimeSelectionOptions = new CliRuntimeSelectionOptions();
 
-    @Option(names = "--project", description = "Explicit project root.")
-    private String project;
+    @Mixin
+    private final CliOutputOptions outputOptions = new CliOutputOptions();
 
-    @Option(names = "--workspace", description = "GolemCore storage workspace.")
-    private String workspace;
+    @Mixin
+    private final CliTraceOptions traceOptions = new CliTraceOptions();
 
-    @Option(names = "--config", description = "Runtime config file.")
-    private String config;
+    @Mixin
+    private final CliCapabilityOptions capabilityOptions = new CliCapabilityOptions();
 
-    @Option(names = "--config-dir", description = "Config directory.")
-    private String configDir;
+    @Mixin
+    private final CliPermissionOptions permissionOptions = new CliPermissionOptions();
 
-    @Option(names = "--profile", description = "Runtime/profile selection.")
-    private String profile;
+    @Mixin
+    private final CliBudgetOptions budgetOptions = new CliBudgetOptions();
 
-    @Option(names = "--env-file", description = "Load provider/API env vars.")
-    private String envFile;
-
-    @Option(names = { "-m", "--model" }, description = "Explicit model override.")
-    private String model;
-
-    @Option(names = "--tier", description = "Model tier preference.")
-    private String tier;
-
-    @Option(names = { "-a", "--agent" }, description = "Agent profile.")
-    private String agent;
-
-    @Option(names = { "-s", "--session" }, description = "Session id.")
-    private String session;
-
-    @Option(names = { "-c", "--continue" }, description = "Continue latest session for project.")
-    private boolean continueLatest;
-
-    @Option(names = "--fork", description = "Fork existing session.")
-    private String fork;
-
-    @Option(names = "--format", converter = CliOutputFormatConverter.class, description = "Output format: ${COMPLETION-CANDIDATES}.")
-    private CliOutputFormat format;
-
-    @Option(names = "--json", description = "Alias for --format json.")
-    private boolean json;
-
-    @Option(names = "--no-color", description = "Disable ANSI colors.")
-    private boolean noColor;
-
-    @Option(names = "--color", description = "Color policy: auto, always, never.")
-    private String color;
-
-    @Option(names = "--quiet", description = "Suppress non-essential output.")
-    private boolean quiet;
-
-    @Option(names = "--verbose", description = "Verbose diagnostics.")
-    private boolean verbose;
-
-    @Option(names = "--log-level", description = "Logging level.")
-    private String logLevel;
-
-    @Option(names = "--trace", description = "Enable/print trace id and trace collection.")
-    private boolean trace;
-
-    @Option(names = "--trace-export", description = "Export trace after run.")
-    private String traceExport;
-
-    @Option(names = "--no-memory", description = "Disable memory read/write for this run.")
-    private boolean noMemory;
-
-    @Option(names = "--no-rag", description = "Disable RAG retrieval/indexing for this run.")
-    private boolean noRag;
-
-    @Option(names = "--no-mcp", description = "Disable MCP tools for this run.")
-    private boolean noMcp;
-
-    @Option(names = "--no-skills", description = "Disable skills for this run.")
-    private boolean noSkills;
-
-    @Option(names = "--permission-mode", converter = CliPermissionModeConverter.class, description = "Permission preset.")
-    private CliPermissionMode permissionMode;
-
-    @Option(names = { "--yes", "-y" }, description = "Auto-confirm safe prompts only.")
-    private boolean yes;
-
-    @Option(names = "--no-input", description = "Never prompt; fail if input required.")
-    private boolean noInput;
-
-    @Option(names = "--timeout", description = "Run timeout.")
-    private String timeout;
-
-    @Option(names = "--max-llm-calls", description = "Budget override.")
-    private Integer maxLlmCalls;
-
-    @Option(names = "--max-tool-executions", description = "Budget override.")
-    private Integer maxToolExecutions;
-
-    @Option(names = "--attach", arity = "0..1", parameterConsumer = CliAttachModeParameterConsumer.class, description = "Use existing server.")
-    private CliAttachMode attach;
-
-    @Option(names = "--port", description = "Server/TUI attach port.")
-    private Integer port;
-
-    @Option(names = "--hostname", description = "Server host.")
-    private String hostname;
-
-    @Option(names = { "-J", "--java-option" }, description = "Forward JVM option.", arity = "1")
-    private final List<String> javaOptions = new ArrayList<>();
+    @Mixin
+    private final CliAttachOptions attachOptions = new CliAttachOptions();
 
     public String cwd() {
-        return cwd;
+        return projectOptions.cwd();
     }
 
     public String project() {
-        return project;
+        return projectOptions.project();
     }
 
     public String workspace() {
-        return workspace;
+        return projectOptions.workspace();
     }
 
     public String config() {
-        return config;
+        return projectOptions.config();
     }
 
     public String configDir() {
-        return configDir;
+        return projectOptions.configDir();
     }
 
     public String profile() {
-        return valueOrDefault(profile, DEFAULT_PROFILE);
+        return projectOptions.profile();
     }
 
     public String envFile() {
-        return envFile;
+        return projectOptions.envFile();
     }
 
     public String model() {
-        return model;
+        return runtimeSelectionOptions.model();
     }
 
     public String tier() {
-        return tier;
+        return runtimeSelectionOptions.tier();
     }
 
     public String agent() {
-        return agent;
+        return runtimeSelectionOptions.agent();
     }
 
     public String session() {
-        return session;
+        return runtimeSelectionOptions.session();
     }
 
     public boolean continueLatest() {
-        return continueLatest;
+        return runtimeSelectionOptions.continueLatest();
     }
 
     public String fork() {
-        return fork;
+        return runtimeSelectionOptions.fork();
     }
 
     public CliOutputFormat format() {
-        return effectiveFormat();
+        return outputOptions.effectiveFormat();
     }
 
     public boolean json() {
-        return json;
+        return outputOptions.json();
     }
 
     public boolean noColor() {
-        return noColor;
+        return outputOptions.noColor();
     }
 
     public String color() {
-        return valueOrDefault(color, DEFAULT_COLOR);
+        return outputOptions.color();
     }
 
     public boolean quiet() {
-        return quiet;
+        return outputOptions.quiet();
     }
 
     public boolean verbose() {
-        return verbose;
+        return outputOptions.verbose();
     }
 
     public String logLevel() {
-        return logLevel;
+        return outputOptions.logLevel();
     }
 
     public boolean trace() {
-        return trace;
+        return traceOptions.trace();
     }
 
     public String traceExport() {
-        return traceExport;
+        return traceOptions.traceExport();
     }
 
     public boolean noMemory() {
-        return noMemory;
+        return capabilityOptions.noMemory();
     }
 
     public boolean noRag() {
-        return noRag;
+        return capabilityOptions.noRag();
     }
 
     public boolean noMcp() {
-        return noMcp;
+        return capabilityOptions.noMcp();
     }
 
     public boolean noSkills() {
-        return noSkills;
+        return capabilityOptions.noSkills();
     }
 
     public CliPermissionMode permissionMode() {
-        return valueOrDefault(permissionMode, DEFAULT_PERMISSION_MODE);
+        return permissionOptions.permissionMode();
     }
 
     public boolean yes() {
-        return yes;
+        return permissionOptions.yes();
     }
 
     public boolean noInput() {
-        return noInput;
+        return permissionOptions.noInput();
     }
 
     public String timeout() {
-        return timeout;
+        return budgetOptions.timeout();
     }
 
     public Integer maxLlmCalls() {
-        return maxLlmCalls;
+        return budgetOptions.maxLlmCalls();
     }
 
     public Integer maxToolExecutions() {
-        return maxToolExecutions;
+        return budgetOptions.maxToolExecutions();
     }
 
     public CliAttachMode attach() {
-        return valueOrDefault(attach, DEFAULT_ATTACH_MODE);
+        return attachOptions.attach();
     }
 
     public Integer port() {
-        return port;
+        return attachOptions.port();
     }
 
     public String hostname() {
-        return valueOrDefault(hostname, DEFAULT_HOSTNAME);
-    }
-
-    public List<String> javaOptions() {
-        return List.copyOf(javaOptions);
+        return attachOptions.hostname();
     }
 
     public CliOutputFormat effectiveFormat() {
-        return json ? CliOutputFormat.JSON : valueOrDefault(format, DEFAULT_FORMAT);
+        return outputOptions.effectiveFormat();
+    }
+
+    CliOutputFormat explicitFormat() {
+        return outputOptions.explicitFormat();
+    }
+
+    String explicitColor() {
+        return outputOptions.explicitColor();
+    }
+
+    CliPermissionMode explicitPermissionMode() {
+        return permissionOptions.explicitPermissionMode();
     }
 
     CliGlobalOptions merge(CliGlobalOptions override) {
         CliGlobalOptions merged = new CliGlobalOptions();
-        merged.cwd = firstNonNull(override.cwd, cwd);
-        merged.project = firstNonNull(override.project, project);
-        merged.workspace = firstNonNull(override.workspace, workspace);
-        merged.config = firstNonNull(override.config, config);
-        merged.configDir = firstNonNull(override.configDir, configDir);
-        merged.profile = firstNonNull(override.profile, profile);
-        merged.envFile = firstNonNull(override.envFile, envFile);
-        merged.model = firstNonNull(override.model, model);
-        merged.tier = firstNonNull(override.tier, tier);
-        merged.agent = firstNonNull(override.agent, agent);
-        merged.session = firstNonNull(override.session, session);
-        merged.continueLatest = override.continueLatest || continueLatest;
-        merged.fork = firstNonNull(override.fork, fork);
-        merged.format = firstNonNull(override.format, format);
-        merged.json = override.json || json;
-        merged.noColor = override.noColor || noColor;
-        merged.color = firstNonNull(override.color, color);
-        merged.quiet = override.quiet || quiet;
-        merged.verbose = override.verbose || verbose;
-        merged.logLevel = firstNonNull(override.logLevel, logLevel);
-        merged.trace = override.trace || trace;
-        merged.traceExport = firstNonNull(override.traceExport, traceExport);
-        merged.noMemory = override.noMemory || noMemory;
-        merged.noRag = override.noRag || noRag;
-        merged.noMcp = override.noMcp || noMcp;
-        merged.noSkills = override.noSkills || noSkills;
-        merged.permissionMode = firstNonNull(override.permissionMode, permissionMode);
-        merged.yes = override.yes || yes;
-        merged.noInput = override.noInput || noInput;
-        merged.timeout = firstNonNull(override.timeout, timeout);
-        merged.maxLlmCalls = firstNonNull(override.maxLlmCalls, maxLlmCalls);
-        merged.maxToolExecutions = firstNonNull(override.maxToolExecutions, maxToolExecutions);
-        merged.attach = firstNonNull(override.attach, attach);
-        merged.port = firstNonNull(override.port, port);
-        merged.hostname = firstNonNull(override.hostname, hostname);
-        merged.javaOptions.addAll(javaOptions);
-        merged.javaOptions.addAll(override.javaOptions);
+        merged.projectOptions.copyFrom(projectOptions.merge(override.projectOptions));
+        merged.runtimeSelectionOptions.copyFrom(runtimeSelectionOptions.merge(override.runtimeSelectionOptions));
+        merged.outputOptions.copyFrom(outputOptions.merge(override.outputOptions));
+        merged.traceOptions.copyFrom(traceOptions.merge(override.traceOptions));
+        merged.capabilityOptions.copyFrom(capabilityOptions.merge(override.capabilityOptions));
+        merged.permissionOptions.copyFrom(permissionOptions.merge(override.permissionOptions));
+        merged.budgetOptions.copyFrom(budgetOptions.merge(override.budgetOptions));
+        merged.attachOptions.copyFrom(attachOptions.merge(override.attachOptions));
         return merged;
-    }
-
-    private static String valueOrDefault(String value, String defaultValue) {
-        return value == null ? defaultValue : value;
-    }
-
-    private static <T> T valueOrDefault(T value, T defaultValue) {
-        return value == null ? defaultValue : value;
-    }
-
-    private static <T> T firstNonNull(T primary, T fallback) {
-        return primary == null ? fallback : primary;
     }
 }

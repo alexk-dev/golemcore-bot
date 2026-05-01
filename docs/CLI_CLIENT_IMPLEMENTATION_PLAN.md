@@ -20,6 +20,17 @@ Legend: `[ ]` pending · `[~]` in progress · `[x]` done
 - [x] Verified the slice with targeted tests and local Maven `clean verify`.
 - [ ] Next implementation slice: project discovery, trust registry, config resolution, and real adapters behind the current command shell.
 
+### Current Stable Contract Notes
+
+- `CliEvent` uses envelope schema `cli-event/v1`.
+- Event streams must include `eventId` and monotonic per-stream `sequence` values so `serve`, `attach`, TUI reconnect, trace replay, permission decisions, and patch approvals can deduplicate and replay events deterministically.
+- Public CLI JSON uses documented wire values for enums, for example `run.completed`, `read-only`, `json`, `info`, and never Java enum constant names.
+- Public time and duration fields are serialized as ISO strings.
+- Native launcher `golemcore-bot cli -J=<option> ...` forwards JVM options before runtime startup; direct jar execution `java -jar ... cli ...` enters the app-level CLI bootstrap after the JVM is already running, so runtime CLI parsing rejects `-J/--java-option` as invalid usage.
+- JSON and NDJSON presenters must pass event payloads and view models through an explicit `RedactionPolicy` before output; the default policy redacts common secret-bearing keys such as token, password, api key, credential, authorization, and private key.
+- App-level CLI bootstrap keeps parser-only commands (`--help`, `--version`, `completion`, and shallow `doctor`) on a no-runtime path and reserves the non-web runtime path (`WebApplicationType.NONE`) for default TUI, `run`, `serve`, and `attach`.
+- Attach mode parsing is deterministic: bare `--attach` means `required`, explicit modes are `auto|required|never`, and mode words are consumed only when they immediately follow `--attach` or are supplied as `--attach=<mode>`.
+
 ---
 
 ## TDD Protocol

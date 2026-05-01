@@ -1,4 +1,4 @@
-package me.golemcore.bot.cli.application.port.out;
+package me.golemcore.bot.domain.cli.port.out;
 
 import java.util.Map;
 import me.golemcore.bot.domain.cli.ProjectIdentity;
