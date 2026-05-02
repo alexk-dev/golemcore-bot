@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Callable;
 import me.golemcore.bot.cli.domain.CliExitCodes;
+import picocli.CommandLine;
 import picocli.CommandLine.Mixin;
 import picocli.CommandLine.ParentCommand;
 import picocli.CommandLine.Spec;
@@ -32,6 +33,7 @@ abstract class PlannedStubCommand implements Callable<Integer> {
         }
         CliGlobalOptions effectiveOptions = effectiveOptions(rootCommand);
         CliOptionsValidator.validate(effectiveOptions, commandSpec.commandLine());
+        rejectUnknownOptionLikeArguments();
         return rootCommand.executeStub(commandName(), effectiveOptions, plannedArguments);
     }
 
@@ -70,5 +72,13 @@ abstract class PlannedStubCommand implements Callable<Integer> {
             return qualifiedName.substring("cli ".length());
         }
         return commandSpec.name();
+    }
+
+    private void rejectUnknownOptionLikeArguments() {
+        for (String argument : plannedArguments) {
+            if (argument.length() > 1 && argument.startsWith("-")) {
+                throw new CommandLine.ParameterException(commandSpec.commandLine(), "Unknown option: " + argument);
+            }
+        }
     }
 }

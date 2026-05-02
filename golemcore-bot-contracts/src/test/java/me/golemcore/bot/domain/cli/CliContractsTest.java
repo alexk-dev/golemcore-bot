@@ -16,6 +16,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -205,6 +206,50 @@ class CliContractsTest {
                 now,
                 CliEventSeverity.INFO,
                 Map.of()));
+    }
+
+    @Test
+    void shouldPreserveContractMapInsertionOrderForDeterministicJson() {
+        Instant now = Instant.parse("2026-04-28T10:15:30Z");
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("first", "1");
+        payload.put("second", "2");
+        payload.put("third", "3");
+        Map<String, String> metadata = new LinkedHashMap<>();
+        metadata.put("alpha", "a");
+        metadata.put("beta", "b");
+        metadata.put("gamma", "c");
+
+        CliEvent event = new CliEvent(
+                "cli-event/v1",
+                "evt-1",
+                1,
+                CliEventType.RUN_STARTED,
+                "run-1",
+                "session-1",
+                "project-1",
+                "trace-1",
+                null,
+                null,
+                now,
+                CliEventSeverity.INFO,
+                payload);
+        RunRequest request = new RunRequest(
+                "request-1",
+                "prompt",
+                List.of(),
+                List.of(),
+                null,
+                null,
+                null,
+                null,
+                null,
+                CliPermissionMode.READ_ONLY,
+                CliOutputFormat.JSON,
+                metadata);
+
+        assertEquals(List.of("first", "second", "third"), new ArrayList<>(event.payload().keySet()));
+        assertEquals(List.of("alpha", "beta", "gamma"), new ArrayList<>(request.metadata().keySet()));
     }
 
     @Test

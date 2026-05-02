@@ -583,6 +583,22 @@ class CliRootCommandTest {
     }
 
     @Test
+    void shouldRejectUnknownOptionLikeArgumentsInManagementStub() {
+        StringWriter err = new StringWriter();
+        CliRootCommand rootCommand = new CliRootCommand(new PrintWriter(new StringWriter(), true),
+                new PrintWriter(err, true));
+
+        int exitCode = CliApplication.commandLine(rootCommand).execute(
+                "session",
+                "show",
+                "--jsoon",
+                "ses_123");
+
+        assertEquals(CliExitCodes.INVALID_USAGE, exitCode);
+        assertTrue(err.toString().contains("Unknown option"));
+    }
+
+    @Test
     void shouldRejectConflictingGlobalOptions() {
         assertInvalidUsage("--json", "--format", "ndjson", "doctor");
         assertInvalidUsage("--quiet", "--verbose", "doctor");
@@ -591,10 +607,18 @@ class CliRootCommandTest {
         assertInvalidUsage("--session", "ses_1", "--fork", "ses_2", "doctor");
         assertInvalidUsage("--continue", "--fork", "ses_2", "doctor");
         assertInvalidUsage("--no-input", "--permission-mode", "ask", "doctor");
+        assertInvalidUsage("--yes", "--permission-mode", "full", "doctor");
         assertInvalidUsage("--port", "-1", "doctor");
         assertInvalidUsage("--max-llm-calls", "-5", "doctor");
         assertInvalidUsage("--max-tool-executions", "-5", "doctor");
         assertInvalidUsage("--timeout", "soon", "doctor");
+    }
+
+    @Test
+    void shouldRejectInvalidEnumeratedGlobalOptionValues() {
+        assertInvalidUsage("--color", "purple", "doctor");
+        assertInvalidUsage("--log-level", "chatty", "doctor");
+        assertInvalidUsage("--tier", "ultradeep", "doctor");
     }
 
     @Test
