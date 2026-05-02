@@ -1,0 +1,91 @@
+Usage: cli [-chVy] [--json] [--no-color] [--no-input] [--no-mcp] [--no-memory]
+           [--no-rag] [--no-skills] [--quiet] [--trace] [--verbose] [--attach
+           [=<attach>]] [-a=<agent>] [--color=<color>] [--config=<config>]
+           [--config-dir=<configDir>] [--cwd=<cwd>] [--env-file=<envFile>]
+           [--fork=<fork>] [--format=<format>] [--hostname=<hostname>]
+           [--log-level=<logLevel>] [-m=<model>]
+           [--max-llm-calls=<maxLlmCalls>]
+           [--max-tool-executions=<maxToolExecutions>]
+           [--permission-mode=<permissionMode>] [--port=<port>]
+           [--profile=<profile>] [--project=<project>] [-s=<session>]
+           [--tier=<tier>] [--timeout=<timeout>] [--trace-export=<traceExport>]
+           [--workspace=<workspace>] [COMMAND]
+Local coding-agent runtime adapter for GolemCore Bot.
+      --cwd=<cwd>            Working directory for command.
+      --project=<project>    Explicit project root.
+      --workspace=<workspace>
+                             GolemCore storage workspace.
+      --config=<config>      Runtime config file.
+      --config-dir=<configDir>
+                             Config directory.
+      --profile=<profile>    Runtime/profile selection.
+      --env-file=<envFile>   Load provider/API env vars.
+  -m, --model=<model>        Explicit model override.
+      --tier=<tier>          Model tier preference.
+  -a, --agent=<agent>        Agent profile.
+  -s, --session=<session>    Session id.
+  -c, --continue             Continue latest session for project.
+      --fork=<fork>          Fork existing session.
+      --format=<format>      Output format: TEXT, JSON, NDJSON, MARKDOWN.
+      --json                 Alias for --format json.
+      --no-color             Disable ANSI colors.
+      --color=<color>        Color policy: auto, always, never.
+      --quiet                Suppress non-essential output.
+      --verbose              Verbose diagnostics.
+      --log-level=<logLevel> Logging level.
+      --trace                Enable/print trace id and trace collection.
+      --trace-export=<traceExport>
+                             Export trace after run.
+      --no-memory            Disable memory read/write for this run.
+      --no-rag               Disable RAG retrieval/indexing for this run.
+      --no-mcp               Disable MCP tools for this run.
+      --no-skills            Disable skills for this run.
+      --permission-mode=<permissionMode>
+                             Permission preset.
+  -y, --yes                  Auto-confirm safe prompts only.
+      --no-input             Never prompt; fail if input required.
+      --timeout=<timeout>    Run timeout.
+      --max-llm-calls=<maxLlmCalls>
+                             Budget override.
+      --max-tool-executions=<maxToolExecutions>
+                             Budget override.
+      --attach[=<attach>]    Use existing server.
+      --port=<port>          Server/TUI attach port.
+      --hostname=<hostname>  Server host.
+  -h, --help                 Show this help message and exit.
+  -V, --version              Print version information and exit.
+Commands:
+  run          Run agent non-interactively.
+  serve        Start headless runtime server.
+  attach       Attach TUI to runtime.
+  acp          Start IDE/ACP stdio server.
+  session      Manage sessions.
+  agent        Manage agent profiles.
+  auth         Manage credentials.
+  providers    Manage provider definitions.
+  models       Manage/discover models.
+  tier         Manage model tier preference.
+  mcp          Manage MCP servers.
+  skill        Manage skills.
+  plugin       Manage plugins.
+  tool         Inspect/run tools.
+  permissions  Manage permission policy.
+  project      Project config/trust/index.
+  config       Runtime/project config.
+  memory       Inspect/manage Memory V2.
+  rag          Inspect/manage RAG.
+  auto         Manage Auto Mode.
+  lsp          LSP diagnostics/symbols.
+  terminal     PTY terminal sessions.
+  git          Git/checkpoint helpers.
+  patch        Agent patch approval/application.
+  github       GitHub integration.
+  trace        Trace inspect/export/replay.
+  stats        Usage/cost/tool stats.
+  doctor       Environment diagnostics.
+  export       Export sessions/config/etc.
+  import       Import bundle.
+  completion   Shell completions.
+  upgrade      Upgrade runtime/launcher.
+  uninstall    Uninstall with data/config options.
+  help         Displays help information about the specified command

@@ -30,7 +30,8 @@ import picocli.CommandLine;
  * {@link RuntimeCliLauncher} exposes the strict picocli CLI entrypoint. This
  * class keeps the legacy main entrypoint used by older Docker images and
  * defaults it to the {@code web} command before launching the same runtime
- * loop.
+ * loop. The strict native launcher can also dispatch the {@code cli} command
+ * into the runtime.
  */
 public final class RuntimeLauncher {
 
@@ -235,7 +236,7 @@ public final class RuntimeLauncher {
             emitUsage(commandLine, true);
             return ParseOutcome.exit(CLI_ERROR_EXIT_CODE);
         }
-        return ParseOutcome.success(cliArguments.toLauncherArguments());
+        return ParseOutcome.success(cliArguments.toLauncherArguments(parseResult.subcommand().commandSpec().name()));
     }
 
     private CommandLine.ParseResult findUsageHelpRequest(CommandLine.ParseResult parseResult) {
@@ -388,6 +389,7 @@ public final class RuntimeLauncher {
     private CommandLine createCommandLine(LauncherCliArguments cliArguments) {
         CommandLine commandLine = new CommandLine(cliArguments);
         commandLine.addSubcommand("web", cliArguments.webCommand());
+        commandLine.addSubcommand("cli", cliArguments.cliCommand());
         commandLine.setUnmatchedArgumentsAllowed(true);
         commandLine.getSubcommands().values()
                 .forEach(subcommand -> subcommand.setUnmatchedArgumentsAllowed(true));
