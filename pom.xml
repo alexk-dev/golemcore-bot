@@ -5,7 +5,7 @@
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
-        <version>4.0.5</version>
+        <version>4.0.6</version>
         <relativePath/>
     </parent>
     <groupId>me.golemcore</groupId>
@@ -58,7 +58,7 @@
 
     <properties>
         <java.version>25</java.version>
-        <spring-boot.version>4.0.5</spring-boot.version>
+        <spring-boot.version>4.0.6</spring-boot.version>
         <feign.version>13.12</feign.version>
         <okhttp.version>5.3.2</okhttp.version>
         <telegram.version>9.5.0</telegram.version>
