@@ -65,7 +65,7 @@
         <langchain4j.version>1.12.2</langchain4j.version>
         <jjwt.version>0.13.0</jjwt.version>
         <totp.version>1.7.1</totp.version>
-        <protobuf.version>4.34.1</protobuf.version>
+        <protobuf.version>4.35.0</protobuf.version>
         <protobuf.maven.plugin.version>0.6.1</protobuf.maven.plugin.version>
         <json.schema.validator.version>3.0.2</json.schema.validator.version>
         <picocli.version>4.0.4</picocli.version>
