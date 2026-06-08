@@ -66,7 +66,7 @@ jobs:
 
       - name: Upload coverage to Codecov
         if: always() && matrix.arch == 'amd64' && steps.codecov-token.outputs.available == 'true'
-        uses: codecov/codecov-action@v6
+        uses: codecov/codecov-action@v7
         with:
           files: |
             ./golemcore-bot-contracts/target/site/jacoco/jacoco.xml
