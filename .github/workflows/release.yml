@@ -25,7 +25,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -189,7 +189,7 @@ jobs:
 
       - name: Checkout plugin APIs
         if: steps.release-flag.outputs.should-release == 'true' && steps.tag-push.outputs.should-release == 'true'
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           repository: alexk-dev/golemcore-plugins
           ref: ${{ env.PLUGIN_API_REPO_REF }}
