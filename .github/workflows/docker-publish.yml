@@ -30,7 +30,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Set up JDK 25
         uses: actions/setup-java@v5
@@ -40,7 +40,7 @@ jobs:
           cache: maven
 
       - name: Checkout plugin APIs
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           repository: alexk-dev/golemcore-plugins
           ref: ${{ env.PLUGIN_API_REPO_REF }}
@@ -89,7 +89,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Set up JDK 25
         uses: actions/setup-java@v5
@@ -99,7 +99,7 @@ jobs:
           cache: maven
 
       - name: Checkout plugin APIs
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           repository: alexk-dev/golemcore-plugins
           ref: ${{ env.PLUGIN_API_REPO_REF }}
@@ -121,7 +121,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -133,7 +133,7 @@ jobs:
           cache: maven
 
       - name: Checkout plugin APIs
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           repository: alexk-dev/golemcore-plugins
           ref: ${{ env.PLUGIN_API_REPO_REF }}
@@ -293,7 +293,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -313,7 +313,7 @@ jobs:
           cache: maven
 
       - name: Checkout plugin APIs
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           repository: alexk-dev/golemcore-plugins
           ref: ${{ env.PLUGIN_API_REPO_REF }}
@@ -392,7 +392,7 @@ jobs:
 
       - name: Checkout
         if: steps.sonar-token.outputs.available == 'true'
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0  # full history for accurate blame
 
@@ -406,7 +406,7 @@ jobs:
 
       - name: Checkout plugin APIs
         if: steps.sonar-token.outputs.available == 'true'
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           repository: alexk-dev/golemcore-plugins
           ref: ${{ env.PLUGIN_API_REPO_REF }}
@@ -446,7 +446,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Set up JDK 25
         uses: actions/setup-java@v5
@@ -456,7 +456,7 @@ jobs:
           cache: maven
 
       - name: Checkout plugin APIs
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           repository: alexk-dev/golemcore-plugins
           ref: ${{ env.PLUGIN_API_REPO_REF }}
